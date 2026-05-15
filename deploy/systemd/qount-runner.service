@@ -1,0 +1,10 @@
+[Unit]
+Description=qount scheduled AI trading run
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Code/qount
+EnvironmentFile=%h/Code/qount/.env
+ExecStart=%h/Code/qount/.venv/bin/python -m qount.main run-once

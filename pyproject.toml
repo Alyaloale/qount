@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qount"
+version = "0.1.0"
+description = "AI decision trading system with a risk executor for Binance spot."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "ccxt>=4.4.80",
+  "openai>=1.82.0",
+]
+
+[project.scripts]
+qount-run = "qount.main:main"
+qount-monitor = "qount.mac_monitor:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

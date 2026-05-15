@@ -1,0 +1,51 @@
+Decide whether the trading system should buy, sell, hold, or close a position for the next {{timeframe}} bar.
+
+You may only choose one symbol from the allowed list in the snapshot.
+
+Return a JSON object with these fields:
+- timestamp
+- symbol
+- action
+- size_pct
+- take_profit_pct
+- stop_loss_pct
+- ttl_minutes
+- confidence
+- reason
+- prompt_version
+
+Formatting rules for numeric ratios:
+- `size_pct`, `take_profit_pct`, and `stop_loss_pct` must all be decimal fractions, never percentages.
+- Write `0.20` instead of `20`.
+- Write `0.007` instead of `0.7`.
+- Write `0.0035` instead of `0.35`.
+- `ttl_minutes` should usually be one of `5`, `15`, `30`, or `60` for this 5m strategy. Use `0` only for immediate hold/close style decisions.
+- Do not use `%`.
+- If the snapshot market type is `future`, `size_pct` is the pre-leverage margin fraction of account equity and leverage is applied after that to determine actual notional.
+- If `action` is `buy` or `sell`, choose a `size_pct` whose leveraged notional is at least as large as `exchange_min_cost_quote` for that symbol.
+- For futures entries, avoid tiny starter sizes by default. When a fresh setup is genuinely clear after costs, prefer `size_pct` around `0.10` to `0.15` unless the snapshot gives a strong reason to stay smaller.
+
+Decision policy:
+- The snapshot uses the latest fully closed {{timeframe}} bar.
+- The snapshot indicators are bar-based, not wall-clock aliases:
+  - `return_1bar` is the return of the latest closed {{timeframe}} bar.
+  - `return_24bars` is the return across 24 closed {{timeframe}} bars.
+- A fresh futures entry must clear estimated round-trip cost. Treat `0.12%` as a practical minimum cost hurdle for new entries.
+- If `candidate_filter` has already selected one or two symbols, treat them as pre-screened possibilities rather than demanding a perfect setup.
+- If `candidate_context.reasons` includes `short_setup_pre_breakdown_watch` or `long_setup_pre_breakout_watch`, treat that as an early continuation watchlist signal; slightly sub-average 5m volatility alone is not enough reason to force `hold`.
+- When one pre-screened symbol has aligned direction, no direct contradiction, and the latest closed bar is not an obvious terminal extension, a small starter entry can be acceptable.
+- If the snapshot market type is `spot`, prefer buy/close/hold and avoid sell unless the best outcome is effectively flattening a position.
+- If the snapshot market type is `future`, then buy means long, sell means short, and close means flatten.
+- If the chosen symbol already has an open position in the snapshot, or its `candidate_context.manage_only` flag is true, treat the decision as position management first rather than as a fresh entry search.
+- For an existing position, hold is the default when the current side is still supported and there is no clear post-cost reason to flatten.
+- For a fresh futures entry, avoid very tight profit targets. `take_profit_pct` should usually be at least `0.015`, and `0.02` to `0.03` is preferred when momentum and higher-timeframe bias are aligned.
+- If the latest closed bar already extends far in the proposed trade direction and looks climactic or terminal, prefer `hold` rather than chasing it even when participation is expanding aggressively.
+- For an existing long, prefer close only when the latest closed bar, fast/slow SMA context, or higher-timeframe bias have turned against the long strongly enough that avoiding further adverse move is likely worth the close cost.
+- For an existing short, prefer close only when the latest closed bar, fast/slow SMA context, or higher-timeframe bias have turned against the short strongly enough that avoiding further adverse move is likely worth the close cost.
+- If an existing position has already built a meaningful unrealized gain, prefer close rather than letting that gain retrace materially unless the latest closed bars still show clearly strengthening follow-through in the same direction.
+- For a new futures short, prefer sell when downside evidence is aligned: higher-timeframe bias is short or clearly bearish, `return_24bars` is not fighting the short thesis, fast/slow SMA context is supportive, the latest closed bar is not a clear rebound, and participation is at least adequate.
+- A `flat` higher-timeframe bias can still allow a fresh short, but only when the 5m breakdown is clean, not terminal, and the post-cost edge is clearer than `hold`.
+- If the latest closed bar strongly rebounds against the short thesis, or if the setup mostly relies on a vague "still bearish overall" story, prefer hold.
+- Use hold when multiple core signals conflict, when there is no clear best symbol, or when the edge still looks too weak even after candidate pre-screening.
+
+Do not add markdown. Do not add explanations outside JSON.

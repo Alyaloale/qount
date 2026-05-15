@@ -1,0 +1,3 @@
+[console_scripts]
+qount-monitor = qount.mac_monitor:main
+qount-run = qount.main:main

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run qount every 5 minutes with duplicate-bar protection
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

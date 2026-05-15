@@ -1,0 +1,155 @@
+Metadata-Version: 2.4
+Name: qount
+Version: 0.1.0
+Summary: AI decision trading system with a risk executor for Binance spot.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: ccxt>=4.4.80
+Requires-Dist: openai>=1.82.0
+
+# qount
+
+`qount` 是按当前真实机器拓扑设计的 `AI 决策系统 + 风控执行器 + Binance 现货执行` 骨架。
+
+## 主机职责
+
+- `Mac`
+  - 开发、回测、看日志、手动运维
+  - 不跑实盘执行器
+- `Windows`
+  - 提供 `Clash Verge`、`CLIProxyAPI`、WSL bridge
+- `WSL Linux`
+  - 唯一生产节点
+  - 跑 `snapshot -> AI -> validate -> risk -> execute -> journal`
+
+## 当前工程范围
+
+这版已经落下来了：
+
+- 配置加载
+- 市场快照构建
+- AI JSON 决策请求
+- 决策校验
+- 风控裁决
+- `paper` 执行器
+- `live` 执行器骨架
+- SQLite 审计链
+- WSL 运行脚本与 `systemd` 示例
+
+## 初始化
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
+cp .env.example .env
+```
+
+首版建议先跑：
+
+```bash
+. .venv/bin/activate
+export $(grep -v '^#' .env | xargs)
+python -m qount.main healthcheck
+python -m qount.main preflight-live
+python -m qount.main run-once
+python -m qount.main paper-status
+python -m qount.main signal-review --limit 20 --horizon-bars 3
+python -m qount.main paper-replay
+```
+
+如果你在 `Mac` 上不想盯 CLI，可以直接开本机浏览器面板：
+
+```bash
+./scripts/mac-monitor.sh --open
+```
+
+默认会在：
+
+```text
+http://127.0.0.1:8787
+```
+
+这个面板会通过 `ssh home -> WSL` 聚合：
+
+- `healthcheck`
+- `paper-status`
+- `paper-replay`
+- `signal-review`
+- `live-guard-status`
+- `systemd` timer 状态
+
+## 运行模式
+
+- `QOUNT_MODE=paper`
+  - 不需要 Binance key
+  - 用本地 paper portfolio 演进仓位
+- `QOUNT_MODE=live`
+  - 需要 Binance spot API key / secret
+  - 执行真实下单
+
+## 交易所选择
+
+默认配置仍然保留 `binance`，但运行环境如果对 `api.binance.com` 有区域限制，需要把：
+
+```bash
+QOUNT_EXCHANGE_ID=binanceus
+```
+
+写进 `.env`。当前这台 Windows/WSL 链路就属于这种情况。
+
+如果同时要让 WSL 内的 Python 访问本地 relay 和外网交易所，`.env` 里还要保留：
+
+```bash
+HTTP_PROXY=http://192.168.128.1:7898
+HTTPS_PROXY=http://192.168.128.1:7898
+NO_PROXY=127.0.0.1,localhost,192.168.128.1
+```
+
+## Live 切换保护
+
+`live` 模式不会因为你改了 `QOUNT_MODE=live` 就直接开单。
+
+还必须满足：
+
+```bash
+QOUNT_LIVE_ENABLE=true
+QOUNT_LIVE_CONFIRMATION=I_UNDERSTAND_LIVE_TRADING
+```
+
+然后手动执行：
+
+```bash
+python -m qount.main preflight-live --arm
+python -m qount.main live-guard-status
+```
+
+只有在 guard 仍然有效、交易所检查仍然通过时，`run-once` 才会继续执行真实下单。
+
+## Review 工具
+
+- `signal-review`
+  - 批量回看已记录的 AI 决策
+  - 按未来若干根 K 线后的价格变化给出 `good / bad / missed_move`
+- `paper-replay`
+  - 根据已记录的 `paper` 订单历史重放组合现金和持仓变化
+  - 输出当前 paper equity、已实现盈亏和时间线
+
+## 目录
+
+```text
+app logic: src/qount/
+prompts: prompts/
+runtime state: state/
+run scripts: scripts/
+systemd examples: deploy/systemd/
+```
+
+## 下一步
+
+这版的重点是把最终设计压成可运行骨架。接下来最应该补的是：
+
+1. 更严格的 prompt / replay 评估
+2. 真实 paper 回放
+3. Binance live safety checks
+4. 通知和管理面板
