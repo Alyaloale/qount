@@ -2,6 +2,17 @@
 
 这份文档记录 `2026-05-12` review 之后的新计划。
 
+先区分用途：
+
+- 如果你现在想看**生产真实基线 / 当前持仓 / 当前策略状态**，先看：
+  - [live-baseline-and-strategy-current.md](live-baseline-and-strategy-current.md)
+- 如果你现在想看**按阶段执行的实施计划**，先看：
+  - [strategy-implementation-plan-2026-05-17.md](strategy-implementation-plan-2026-05-17.md)
+- 这份文档只负责：
+  - 当前 active design
+  - 下一轮改动顺序
+  - 为什么先动这一层，而不是同时乱改几层
+
 目标不是把系统改复杂，而是把当前“保守但 edge 偏薄”的 5m futures 策略，收敛成一条更可解释、可验证、不会靠小样本乱调参的实现路径。
 
 补充说明：
@@ -44,6 +55,150 @@
   - `PYTHONPATH=src python3 -m unittest tests.test_strategy_optimization`
 - 下次复查必须把这轮代码和第一轮 `run_id >= 1175` 修复样本拆开
 
+再补一条基于 **`2026-05-15 19:30 CST` 最新 live 续查 + short precheck 窄修** 的修正：
+
+- 这轮不是再改 prompt / management / executor，而是直接修最近 live 里最频繁的 pre-AI 阻塞点：
+  - `short_setup_countertrend_drift`
+  - `short_setup_latest_bar_rebound`
+- 根因已经确认：
+  - 旧 `candidate_filter` 对 `1h short` 背景下的 short 候选是零容忍
+  - 只要 `5m return_24bars > 0` 或 `5m return_1bar > 0`，且本地 `sma` 比值刚翻正，就会在 AI 前直接 veto
+  - 这会把“高周期仍偏空，但本地只是轻微回抽”的 short 也一刀切挡掉
+- 本次窄修已经落地到：
+  - `src/qount/candidate_filter.py`
+  - `SHORT_REBOUND_1BAR_PCT = 0.0015`
+  - `SHORT_COUNTERTREND_24BAR_PCT = 0.0025`
+- 这次修正后的现场 WSL 证据：
+  - 新阈值已从生产节点真实 import 读回
+  - `run_id=1563` 仍然拦住明显 countertrend + 低量能 short
+  - `run_id=1564` 里 `SOL` 已经不再被 `countertrend/rebound` 一票否决，只剩 `low_volatility_soft_penalty + low_volume`
+  - `XRP` 同轮仍然保留 `short_setup_countertrend_drift`
+- 当前主线判断也随之更新：
+  - short precheck 仍保留“明显反抽不要追空”的保护
+  - 但“1h 偏空里的轻微 5m pullback”不再零容忍
+  - 下次如果继续 `filtered_hold`，优先排查 `low_volume / low_volatility` 或 AI / risk 的 post-cost edge，不要再默认把锅先甩给 short precheck
+
+再补一条基于 **`2026-05-16 13:10 CST` 最新 live 复盘 + `1495+` 重查** 的修正：
+
+- 当前不要先全局放松 `QOUNT_MIN_EXPECTED_EDGE_PCT`
+- 这轮现场证据已经拆成两类：
+  - `expected_edge_below_minimum`
+    - 主要还是 `1h short` 背景下、`5m` 低波动的薄边际 continuation short
+    - 它们大多不是“明显该放却被错拦”的 clean 好单
+  - 最新坏单 `run_id=1762`
+    - 根因不是 `expected_edge` 太严
+    - 而是 `1h flat` 背景下去追一个已经过度下杀、超低 RSI、超高量能的 short flush
+- 这意味着当前最优先的窄修顺序应改成：
+  1. 先补 `flat-bias short flush` blocker，专门挡掉像 `1762` 这种坏单
+  2. 再把 `risk_debug` 落到真实 run 里，直接记录 `expected_edge` 组成、shadow open-signal、entry archetype
+  3. 只有在这两步上线后，仍确认 `expected_edge_below_minimum` 长期错拦了太多 clean short，才考虑动全局 `threshold`
+- `1638` 这类样本当前不要和 `1762` 混为一谈：
+  - 它更像“方向基本对，但 `3-bar` 评价窗太短、成本刚好吃掉优势”
+  - 不是当前第一优先级要修掉的坏单
+
+再补一条基于 **`2026-05-16 14:45 CST` 远端 WSL 同步与实盘验证** 的修正：
+
+- `阶段 0` 这轮改动已经同步到生产 WSL
+- 远端已完成：
+  - `./.venv/bin/python -m pip install -e .`
+  - `PYTHONPATH=src ./.venv/bin/python -m unittest tests.test_strategy_optimization`
+  - `71` 条全部通过
+- 远端 live 验证结果：
+  - 首次手动验证 `run_id=1783`
+    - `status=market_data_failed`
+    - `error=binance GET https://fapi.binance.com/fapi/v1/exchangeInfo`
+  - 根因不是这轮策略代码回归，而是 dedicated Binance 专线任务当场漂移
+  - 修复专线后再次验证：
+    - `preflight-live` 重新全绿
+    - 手动 `run-once`
+      - `run_id=1784`
+      - `status=completed`
+      - `symbol=SOL/USDT:USDT`
+      - `action=hold`
+      - `order_status=noop`
+    - `qount-runner.timer`
+      - 已恢复到 `active + waiting`
+- 这轮结论要单独记清：
+  - `阶段 0` 的代码已经上线并通过远端验证
+  - 当前剩余运行风险主要还是 Binance 专线任务/出口状态漂移
+  - 不是这轮 `flat_bias_short_flush` / `risk_debug` 改动把 live 链路打坏
+
+再补一条基于 **`2026-05-16 17:50 CST` 多币同轮 live 续查** 的修正：
+
+- 同一轮多币 sequential 决策链已经不只是本地 / backtest 逻辑，而是已经真实跑进生产 WSL
+- 现场验证结果：
+  - `preflight-live` 全绿
+  - `qount-runner.timer`
+    - `ActiveState=active`
+    - `SubState=running/waiting`
+  - 最近连续 real live runs 已经出现按同一根 bar 依次处理多个 symbol：
+    - `1840 -> SOL hold`
+    - `1841 -> BTC hold`
+    - `1842 -> ETH hold`
+    - `1843 -> SOL hold`
+    - `1844 -> ETH hold`
+    - `1845 -> BTC hold`
+- 这说明：
+  - `BTC/ETH` 已经不只是进候选层
+  - 而是已经拿到各自独立 `run_id`，真正进入执行链路
+- 截至这次复查时，账户真实持仓也已经变成：
+  - `BTC/USDT:USDT short`
+  - `ETH/USDT:USDT short`
+  - `SOL/USDT:USDT short`
+  - 与 `QOUNT_MAX_OPEN_POSITIONS=3` 完全一致
+- 因而当前口径要更新成：
+  - 多币同轮能力已上线并已实盘验证
+  - 现在不是“理论上可以多仓”
+  - 而是“生产里已经实际进入三币持仓状态”
+
+再补一条基于 **`2026-05-16 20:38 CST` 当前代码 + 远端 WSL 验证** 的修正：
+
+- 当前最优先级已经不再是“继续讨论要不要再放松 threshold”
+- 这轮最新落地的主线已经变成：
+  1. 先补组合层同向风险控制
+  2. 再收紧弱 `alt short fresh-entry`
+  3. `management` 继续后置，只做微调
+- 这轮已经落地到代码里的组合层约束是：
+  - `QOUNT_MAX_NET_DIRECTIONAL_EXPOSURE_PCT`
+  - `QOUNT_MAX_CORRELATED_DIRECTIONAL_EXPOSURE_PCT`
+  - `QOUNT_THIRD_SAME_DIRECTION_EDGE_BUFFER_PCT`
+- 它们对应的真实风控行为是：
+  - 同向净暴露过大时直接挡住新的同向仓
+  - 同主题 / 高相关同向仓位过多时直接挡住
+  - 第三笔同向仓不是一律禁止，而是要求更高 `edge`
+- 同一轮还补了弱 `alt short` 的窄收紧：
+  - `QOUNT_ALT_SHORT_EDGE_PENALTY_PCT`
+  - 当前只额外收紧 `SOL / XRP`
+  - 且只针对弱的：
+    - `plain_open`
+    - `flat_bias_short`
+  - 不误伤已经相对干净的：
+    - `aligned_short_continuation_short`
+    - `higher_timeframe_short_reclaim_short`
+    - `pre_break_continuation`
+- review 口径也已经同步升级：
+  - `aggregate.by_hold_path`
+    - 用来拆开：
+      - `candidate_ok 但 AI 最后 hold`
+      - `candidate_ok 进入 risk 后被挡`
+      - `candidate_penalty` 场景
+  - `aggregate.cycle_summary`
+    - 用来看：
+      - 同一根 bar 处理了几个 symbol
+      - 当时起止净多 / 净空名义暴露
+      - 哪些 symbol 真在贡献，哪些只是占仓位
+- 这轮 `2026-05-16 20:38 CST` 的远端 WSL 验证结果是：
+  - 重新 `pip install -e .`
+  - `PYTHONPATH=src ./.venv/bin/python -m unittest tests.test_strategy_optimization`
+    - `77` 条全部通过
+  - `preflight-live`
+    - 仍然全绿
+  - `qount-runner.timer`
+    - `active (waiting)`
+  - 这轮没有强行手动 `run-once`
+    - 因为这已经是实盘环境
+    - 当前文档需要记录的是“运行面正常 + 新口径已上线”，不是为了验证文档去额外触发真实订单
+
 这份文档现在的用途是：
 
 - 上半部分只保留**当前默认执行顺序**
@@ -63,6 +218,154 @@
 ## 2026-05-14 当前活跃计划
 
 这节是当前默认执行顺序。下文保留 `2026-05-12` 版的 edge-first 设计原则，作为历史 reasoning 和补充参考；但如果两边有顺序冲突，以这节为准。
+
+### 当前计划进度快照（按实际代码与生产状态）
+
+截至 `2026-05-16 20:38 CST`，当前更准确的阶段状态应当写成：
+
+1. `阶段 0`
+   - 状态：**已完成并已同步到生产 WSL**
+   - 代码现状：
+     - `flat_bias_short_flush` blocker 已在 `risk_engine` 落地
+     - `risk_debug` 已写入 `RiskVerdict` 和 run summary
+   - 生产状态：
+     - 远端测试 `77` 条通过
+     - `preflight-live` 全绿
+     - 手动 `run-once` 已重新回到 `completed`
+
+2. `阶段 1`
+   - 状态：**主链能力已落地，当前不再是待开发**
+   - 代码现状：
+     - `entry_quality` 里的 `late_breakdown / late_breakout`
+     - `high_rsi_long_chase`
+     - `candidate_filter` 的 short precheck 窄放松
+     - `risk_engine` 的 fresh-entry hard reject
+     都已经存在
+   - 当前任务：
+     - 不是继续泛改规则
+     - 而是观察这些已落地规则在真实 live 样本里如何命中
+
+3. `阶段 2`
+   - 状态：**进行中**
+   - 当前重点：
+     - 继续看 `fresh_entry / blocked_entry / management_hold`
+     - 但当前第一优先级已经升级成：
+       - 多币同轮之后的组合层同向堆仓风险
+     - 尤其是这轮新逻辑是否开始打出：
+       - `portfolio_net_directional_exposure_limit`
+       - `portfolio_correlated_directional_exposure_limit`
+       - `risk_debug.portfolio_context`
+       - `aggregate.by_hold_path`
+       - `aggregate.cycle_summary`
+     - 以及多币同轮之后：
+       - `BTC/ETH` 是继续停留在 `hold/noop`
+       - 还是开始长出新的 actionable / fresh_entry / management 分化
+   - 当前阻塞：
+     - Binance 专线任务/出口状态仍会漂移
+     - 运行面抖动会干扰策略样本增长
+   - 已经确认的新增事实：
+      - `BTC/ETH` 已经进入执行层
+      - 当前 live 已实际进入三币并存持仓阶段
+      - 当前代码已经开始对第三笔同向仓施加更高 `edge` 要求
+
+4. `阶段 3`
+   - 状态：**明确未开始**
+   - 约束：
+     - 在 `阶段 2` 还没有足够真实样本前
+     - 默认不动全局 `QOUNT_MIN_EXPECTED_EDGE_PCT`
+
+5. `阶段 4`
+   - 状态：**代码里已有能力，但不属于当前活跃下一步**
+   - 代码现状：
+     - `management_profitable_long_momentum_cooldown_close`
+     - partial / breakeven / trailing / protective refresh
+     都已存在
+   - 当前口径：
+     - 先不要因为它们“已经能改”就重新把主线拉回 management
+
+6. `阶段 5`
+   - 状态：**未开始**
+   - 当前仍不进入：
+     - `add_position`
+     - `reverse_entry`
+     - 更激进的放行
+     - 更复杂的 allocation
+
+### 阶段 0：先补 `flat-bias short flush` blocker 和 `risk_debug`
+
+这一步是 `2026-05-16` 之后新增的当前加急窄修，优先级高于继续讨论“是不是该直接放松 `expected_edge`”。
+
+原因已经足够明确：
+
+- 最近 `expected_edge_below_minimum` 样本大多是：
+  - `1h short`
+  - `5m low_volatility_soft_penalty`
+  - 薄边际 continuation short
+- 而最新明显坏单 `1762` 的问题却是：
+  - `1h flat`
+  - `5m return_24bars` 已经过深
+  - `RSI` 极低
+  - `volume_ratio` 极高
+  - 属于过度下杀后的 flush short
+
+所以当前默认执行顺序不再是“先全局放松 `expected_edge`”，而是：
+
+1. 在 `risk_engine` 增加 `flat_bias_short_flush` hard blocker。
+2. 给每次 open-action 风控评估补结构化 `risk_debug`。
+3. 用真实 run 验证：
+   - `1762` 类样本是否被挡掉
+   - `1495` 这类 clean short 是否仍能通过
+   - `1638` 这类慢速但不明显错误的 short 是否不会被误杀
+4. 只有这一步验证后，才继续讨论要不要动全局 `QOUNT_MIN_EXPECTED_EDGE_PCT`。
+
+这一步明确不做：
+
+- 不直接下调全局 `QOUNT_MIN_EXPECTED_EDGE_PCT`
+- 不继续放松 `candidate_filter` 的 short precheck
+- 不混改 prompt / management / executor
+- 不为了多出手，放掉明显的 flat-bias oversold short
+
+当前这一阶段建议直接落的 `risk_debug` 字段是：
+
+- `expected_edge_components`
+- `shadow_open_signal_reasons`
+- `entry_archetype`
+- `fresh_entry_context`
+
+当前这一步已经完成的现场验证状态：
+
+- 代码已同步到远端 WSL
+- 远端 `77` 条策略测试已通过
+- `preflight-live` 已重新验证全绿
+- 手动 `run-once`
+  - `run_id=1784`
+  - `completed`
+  - `hold/noop`
+- `timer` 已恢复为 `waiting`
+
+所以这一步现在不再是“待部署计划”，而是：
+
+- 已上线
+- 后续继续观察它是否开始改变真实 `fresh_entry` / `blocked_entry` 结构
+
+补一条基于 `2026-05-16 17:50 CST` 的更进一步验证：
+
+- 多币同轮 sequential 链路已经真实跑通：
+  - 不只是手动 `run-once` 返回 `cycle_completed`
+  - timer 驱动的真实 live run 也已经连续处理：
+    - `SOL`
+    - `BTC`
+    - `ETH`
+- 当前 live 持仓也已经同时存在：
+  - `BTC short`
+  - `ETH short`
+  - `SOL short`
+
+这意味着当前主线观察口径也要同步更新：
+
+- 多币同轮能力已经从“待证明”转成“已证明”
+- 接下来阶段 2 的重点不再是“它能不能同时处理多个 symbol”
+- 而是“多币同轮之后，真实策略质量会不会变好，还是只是把更多 symbol 送进 `hold`”
 
 ### 阶段 1：先修 fresh entry 质量，不动主执行链路
 
@@ -130,6 +433,14 @@
 ### 阶段 3：只有在真实阻塞点明确后，才决定是否动 `expected_edge_pct`
 
 `expected_edge_pct` 重构仍然值得做，但它现在不再是第一批。
+
+基于 `2026-05-16` 这轮复查，要再补一条更硬的默认约束：
+
+- 在 `flat-bias short flush blocker` 和 `risk_debug` 没有先上线前：
+  - 默认**不动**全局 `QOUNT_MIN_EXPECTED_EDGE_PCT`
+  - 也不把最近 `expected_edge_below_minimum` 直接解释成“系统太保守，应该先降门槛”
+
+先把“明显坏单为什么漏进来”和“薄边际 short 为什么被拦住”的两类问题拆开，再决定要不要动阈值。
 
 只有当：
 
@@ -755,3 +1066,287 @@ post-fix 口径下（`run_id >= 1175`）：
 - 没有破坏现有 live 安全链路
 
 如果只是“参数更多”“文档更多”“理由更复杂”，但这些指标没改善，那就是无用功。
+
+## 2026-05-15 最近成交 + 24 bar 回测驱动的窄优化
+
+这轮不是重新推翻前面的方向，而是把：
+
+- 最近真实 live 成交
+- 新增 `backtest` 命令跑出来的 `24 bar` 结果
+
+放到一起看之后，再补的一轮小修。
+
+### 优化前，24 bar 回测暴露的真实问题
+
+回测窗口：
+
+- `2026-05-14 22:00 CST -> 2026-05-15 02:00 CST`
+- `max-bars=24`
+
+优化前同窗摘要：
+
+- `final_equity_quote=200.98142796672056`
+- `total_return_pct=+0.4907%`
+- `closed_trades=2`
+- `wins=2`
+- `losses=0`
+
+但更关键的 review 口径其实不够好：
+
+- `actionable.avg_net_edge_pct=-0.0776%`
+- `fresh_entry.avg_net_edge_pct=-0.1663%`
+- `blocked_sell.reviewed=2`
+- `blocked_sell.missed_move=2`
+
+也就是说：
+
+- 这窗虽然账面是赚的
+- 但赚钱主要更像 management 和期末浮盈撑着
+- 新开仓本身并不稳
+
+#### 具体拖后腿的两类问题
+
+1. `XRP long fresh_entry`
+   - 回测里两笔代表样本：
+     - 一笔 `flat`
+     - 一笔 `bad`
+   - 其中坏样本的典型形态是：
+     - `higher_timeframe=long`
+     - `return_24bars` 已经不低
+     - `rsi_14` 很高
+     - 但又不是那种高量加速冲刺到足够容易被旧 `overextended_long_chase` 抓住的形态
+   - 本质上仍然是：
+     - **高位 chase long**
+
+2. `SOL short blocked_entry`
+   - 两笔都被：
+     - `open_signal_return_24bars_too_weak`
+   - 但它们真实结构其实是：
+     - `higher_timeframe_bias=short`
+     - 本地 `sma_fast_ratio / sma_slow_ratio` 已经转负
+     - `volume / volatility` 也不差
+     - 只是本地 `return_24bars` 还略正或刚回到零轴附近
+   - 本质更像：
+     - **高周期偏空下的轻微回抽 short**
+   - 不该和真正的 countertrend short 混成同一类一刀切挡掉
+
+### 这轮具体改了什么
+
+#### 1. 再补一层高 RSI 的 long chase 拦截
+
+落点：
+
+- `src/qount/entry_quality.py`
+
+新增一层更窄的 `high_rsi_long_chase`：
+
+- 只针对 `buy`
+- 要求：
+  - `return_24bars` 已经明显走出来
+  - `return_1bar` 仍在顺着上推
+  - `rsi_14` 很高
+  - `sma_fast / sma_slow` 仍在同向
+- 但不再像旧 `overextended_long_chase` 那样必须依赖很高的 volume 才拦
+
+目标：
+
+- 拦掉像回测坏样本那种：
+  - **不一定是爆量高潮**
+  - 但已经明显不便宜的追高 long
+
+#### 2. 给高周期偏空下的轻微回抽 short 一条窄通道
+
+落点：
+
+- `src/qount/risk_engine.py`
+
+新增 `higher_timeframe_short_reclaim`：
+
+- 只对 `sell` 生效
+- 只有在：
+  - `higher_timeframe_bias=short`
+  - 高周期 slow SMA 仍为负
+  - 本地 `sma_fast / sma_slow` 已经转负
+  - 本地 `return_24bars` 只是略正或刚回到零轴附近
+  - `rsi / volume / volatility` 仍支持 short
+
+才会：
+
+- 给一点小 edge bonus
+- 并放行 `open_signal_return_24bars_too_weak` 这道门
+
+目标：
+
+- 放掉回测里那类：
+  - **不是反趋势乱追空**
+  - 而是高周期偏空下的轻微回抽 short
+
+### 优化后，同窗 24 bar 回测结果
+
+这轮仍然用同一窗口、同一命令、同一 `7898` 公有出口重跑：
+
+- `final_equity_quote=201.10716543733963`
+- `total_return_pct=+0.5536%`
+- `closed_trades=3`
+- `wins=2`
+- `losses=1`
+
+更关键的是 review 指标方向变好了：
+
+- `actionable.avg_net_edge_pct`
+  - `-0.0776% -> +0.1006%`
+- `fresh_entry.avg_net_edge_pct`
+  - `-0.1663% -> +0.2431%`
+- `blocked_sell.reviewed`
+  - `2 -> 0`
+- `blocked_sell.missed_move`
+  - `2 -> 0`
+
+新增结构也更像我们想看到的：
+
+- `buy.reviewed=2`
+  - `2 good`
+- `sell.reviewed=1`
+  - `1 bad`
+- `by_candidate_reason.long_setup_late_breakout_soft_penalty.reviewed=2`
+  - 都变成了 `good_hold`
+
+这说明：
+
+1. 新加的 long chase 拦截开始工作了，而且没有把窗口里所有 long 都误杀掉。
+2. 那两笔之前会被 `blocked_sell` 挡掉的 short，至少不再继续以“该做没做”的形式拖分。
+3. 当前这版 24 bar 窗口里，fresh entry 已经从负边际翻回正边际。
+
+### 当前仍然不要做什么
+
+即使这轮结果变好，也先不要马上做：
+
+- 大改 management
+- 大幅继续放松 short
+- 继续泛化 long 容忍度
+
+原因很直接：
+
+- 当前 improvement 仍然只是单窗结果
+- `sell.reviewed=1` 里还有一笔 `bad`
+- management 里依然有 `missed_move`
+
+所以这轮之后更合理的下一步仍然是：
+
+1. 固定同一个 `backtest` 时间窗继续做前后版本对比
+2. 再补一个更长窗，例如：
+   - `48 bars`
+   - `96 bars`
+3. 只有当更长窗里：
+   - `actionable.avg_net_edge_pct`
+   - `fresh_entry.avg_net_edge_pct`
+   - `hold.missed_move`
+   同时没有明显回退，才继续动下一层
+
+## 2026-05-15 基于 48 bar 的 management 窄优化
+
+在上一轮之后，又继续拿同一个 `48 bar` 窗口做了更细一层的拆解。
+
+### 为什么这轮先动 management
+
+当时的 `48 bar` 结果虽然总收益为正，但关键问题很清楚：
+
+- `actionable.avg_net_edge_pct=-0.0350%`
+- `fresh_entry.avg_net_edge_pct=-0.0281%`
+- `management_hold.missed_move=7`
+
+进一步拆明细后，最扎眼的是一串 `SOL long management_hold -> missed_move`：
+
+- 这些样本不是刚开仓就错
+- 而是：
+  - 已经有一定浮盈
+  - 高周期仍是 `long`
+  - 本地 `24bar return` 还保持正值
+  - 但本地 `RSI` 已经从高位降下来
+  - `1bar` 推进也开始变弱
+
+也就是说：
+
+- 旧逻辑更像“继续刷新 trailing stop”
+- 但没有足够早地把一段**已经走过头、正在冷却的 long 盈利仓**直接收掉
+
+### 这轮具体改了什么
+
+落点：
+
+- `src/qount/risk_engine.py`
+
+新增一条只针对**盈利中的 long 持仓**的 management close 规则：
+
+- `management_profitable_long_momentum_cooldown_close`
+
+触发条件是窄的：
+
+- 当前仓位是 `long`
+- 当前持仓已经有一段可观盈利
+- `higher_timeframe_bias=long`
+- 高周期 RSI 仍然偏高
+- 本地 `24bar return` 仍然为正，说明这段上涨已经走出来
+- 但本地 RSI 已经降到中低位
+- 最新 `1bar` 的继续推进已经不强
+
+这条规则的本质不是：
+
+- “看空就乱平”
+
+而是：
+
+- **上涨盈利仓从过热转入冷却时，更主动地锁利润**
+
+### 验证结果
+
+继续使用同一窗口、同一 `48 bar` 命令重跑后，前后对比变成：
+
+- `final_equity_quote`
+  - `200.9941 -> 202.6604`
+- `total_return_pct`
+  - `+0.4971% -> +1.3302%`
+- `total_realized_pnl_quote`
+  - `+0.5331 -> +2.6604`
+- `max_drawdown_pct`
+  - `0.4152% -> 0.2060%`
+- `closed_trades`
+  - `3 -> 9`
+- `wins/losses`
+  - `2/1 -> 8/1`
+
+更关键的 review 指标也一起改善：
+
+- `overall.avg_net_edge_pct`
+  - `-0.0044% -> +0.0204%`
+- `actionable.avg_net_edge_pct`
+  - `-0.0350% -> +0.0698%`
+- `fresh_entry.avg_net_edge_pct`
+  - `-0.0281% -> +0.2325%`
+- `management_hold.missed_move`
+  - `7 -> 3`
+- `blocked_sell.reviewed`
+  - 仍然是 `0`
+
+这说明：
+
+1. 这轮 improvement 不是只靠“少做几笔单”换出来的。
+2. management 的漏保护确实被收住了一部分。
+3. 同窗 `48 bar` 下，`actionable` 和 `fresh_entry` 都从负边际翻回了正边际。
+
+### 当前结论
+
+到这一步，当前更合理的主线判断是：
+
+- 第一轮：
+  - 修掉高 RSI 追涨 long
+  - 放掉该做的高周期偏空回抽 short
+- 第二轮：
+  - 把盈利中的 long 仓在“高位冷却”阶段更主动地收掉
+
+在这个顺序下：
+
+- `24 bar` 好看
+- `48 bar` 也不再回到负边际
+
+所以这轮 management 窄优化值得保留。

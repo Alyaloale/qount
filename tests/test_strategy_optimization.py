@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+import json
 import sys
 import tempfile
 import types
@@ -17,6 +21,7 @@ if "ccxt" not in sys.modules:
     )
 
 from qount.candidate_filter import CandidateFilter
+from qount.backtest import BacktestService
 from qount.executor import Executor
 from qount.journal import Journal
 from qount.models import AccountSnapshot
@@ -75,6 +80,10 @@ def make_settings(project_root: Path, **overrides) -> Settings:
         max_effective_stop_loss_pct=0.03,
         candidate_trend_timeframe="1h",
         min_expected_edge_pct=0.0015,
+        max_net_directional_exposure_pct=0.40,
+        max_correlated_directional_exposure_pct=0.30,
+        third_same_direction_edge_buffer_pct=0.00075,
+        alt_short_edge_penalty_pct=0.00075,
         flip_cooldown_bars=2,
         min_hold_bars=2,
         same_symbol_reentry_cooldown_bars=3,
@@ -254,6 +263,47 @@ class FakeReviewService(ReviewService):
 
     def _exchange(self):
         return FakeExchange(self._candles_by_symbol)
+
+
+class FakeHistoricalExchange:
+    def __init__(self, candles_by_key: dict[tuple[str, str], list[list[float]]]) -> None:
+        self.candles_by_key = candles_by_key
+
+    def load_markets(self) -> dict[str, dict]:
+        markets: dict[str, dict] = {}
+        for symbol, _timeframe in self.candles_by_key:
+            if symbol in markets:
+                continue
+            base, quote_with_settle = symbol.split("/")
+            quote = quote_with_settle.split(":")[0]
+            amount_precision = 0.001 if base in {"BTC", "ETH"} else 0.1 if base == "XRP" else 0.01
+            min_cost = 50.0 if base == "BTC" else 20.0 if base == "ETH" else 5.0
+            markets[symbol] = {
+                "symbol": symbol,
+                "id": f"{base}{quote}",
+                "base": base,
+                "quote": quote,
+                "settle": quote,
+                "contract": True,
+                "linear": True,
+                "swap": True,
+                "limits": {
+                    "cost": {"min": min_cost},
+                    "amount": {"min": amount_precision},
+                },
+                "precision": {
+                    "amount": amount_precision,
+                    "price": 0.0001,
+                },
+            }
+        return markets
+
+    def fetch_ohlcv(self, symbol: str, timeframe: str, since: int | None = None, limit: int | None = None):
+        rows = self.candles_by_key[(symbol, timeframe)]
+        filtered = [row for row in rows if since is None or int(row[0]) >= since]
+        if limit is not None:
+            return filtered[:limit]
+        return filtered
 
 
 class FakeTradeExchange:
@@ -506,6 +556,73 @@ class StrategyOptimizationTests(unittest.TestCase):
             managed = filter_service.apply(managed_bundle)
             self.assertEqual(managed.summary["selected_symbols"], ["BTC/USDT"])
 
+    def test_orchestrator_run_once_processes_multiple_symbols_in_same_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                max_open_positions=2,
+                symbols=("SOL/USDT", "XRP/USDT"),
+            )
+            orchestrator = Orchestrator(settings)
+
+            strong_sol = make_symbol("SOL/USDT:USDT", 900_000, 90.0, atr_pct=0.0040, range_pct=0.0044, volume_ratio=1.40, higher_bias="short")
+            strong_sol.indicators["return_1bar"] = -0.0016
+            strong_sol.indicators["return_24bars"] = -0.0060
+            strong_sol.indicators["sma_fast_ratio"] = -0.0035
+            strong_sol.indicators["sma_slow_ratio"] = -0.0065
+            strong_sol.indicators["rsi_14"] = 31.0
+
+            strong_xrp = make_symbol("XRP/USDT:USDT", 900_000, 1.45, atr_pct=0.0038, range_pct=0.0041, volume_ratio=1.30, higher_bias="short")
+            strong_xrp.indicators["return_1bar"] = -0.0014
+            strong_xrp.indicators["return_24bars"] = -0.0052
+            strong_xrp.indicators["sma_fast_ratio"] = -0.0028
+            strong_xrp.indicators["sma_slow_ratio"] = -0.0059
+            strong_xrp.indicators["rsi_14"] = 33.0
+
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[strong_sol, strong_xrp],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            class _StubMarket:
+                def fetch_bundle(self, journal):
+                    return bundle
+
+            class _StubAIClient:
+                def request_decision(self, ai_bundle):
+                    symbol = ai_bundle.symbols[0].symbol
+                    payload = {
+                        "timestamp": utc_now().isoformat(),
+                        "symbol": symbol,
+                        "action": "sell",
+                        "size_pct": 0.10,
+                        "take_profit_pct": 0.02,
+                        "stop_loss_pct": 0.01,
+                        "ttl_minutes": 30,
+                        "confidence": 0.72,
+                        "reason": "multi_symbol_cycle_test",
+                        "prompt_version": "v1",
+                    }
+                    return {"stub": True}, json.dumps(payload), "stub-model"
+
+            orchestrator.market = _StubMarket()
+            orchestrator.ai_client = _StubAIClient()
+
+            result = orchestrator.run_once()
+
+            self.assertEqual(result["status"], "cycle_completed")
+            self.assertEqual(result["processed_runs"], 2)
+            self.assertEqual(result["processed_symbols"], ["SOL/USDT:USDT", "XRP/USDT:USDT"])
+            orders = orchestrator.journal.get_order_history(mode=settings.mode)
+            filled = [order for order in orders if order["status"] == "paper_filled"]
+            self.assertEqual(len(filled), 2)
+            symbols = [order["symbol"] for order in filled]
+            self.assertEqual(symbols, ["SOL/USDT:USDT", "XRP/USDT:USDT"])
+
     def test_candidate_filter_uses_open_position_headroom_and_softens_flat_bias(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -595,7 +712,7 @@ class StrategyOptimizationTests(unittest.TestCase):
             filter_service = CandidateFilter(settings, journal)
 
             symbol = make_symbol("XRP/USDT:USDT", 600_000, 1.5, atr_pct=0.0025, range_pct=0.0020, volume_ratio=1.30, higher_bias="short")
-            symbol.indicators["return_1bar"] = 0.0010
+            symbol.indicators["return_1bar"] = 0.0018
             symbol.indicators["return_24bars"] = 0.0040
             symbol.indicators["sma_fast_ratio"] = 0.0008
             symbol.indicators["sma_slow_ratio"] = 0.0005
@@ -611,6 +728,39 @@ class StrategyOptimizationTests(unittest.TestCase):
             xrp_summary = filtered.summary["symbols"][0]
             self.assertIn("short_setup_countertrend_drift", xrp_summary["reasons"])
             self.assertIn("short_setup_latest_bar_rebound", xrp_summary["reasons"])
+
+    def test_candidate_filter_allows_mild_short_pullback_inside_strong_higher_timeframe_downtrend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            symbol = make_symbol("SOL/USDT:USDT", 600_000, 91.42, atr_pct=0.0021, range_pct=0.0018, volume_ratio=0.72, higher_bias="short")
+            symbol.indicators["return_1bar"] = 0.0007
+            symbol.indicators["return_24bars"] = 0.0021
+            symbol.indicators["sma_fast_ratio"] = 0.0028
+            symbol.indicators["sma_slow_ratio"] = 0.0021
+            symbol.indicators["rsi_14"] = 62.0
+            bundle = make_bundle(
+                timestamp_ms=600_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "selected")
+            sol_summary = filtered.summary["symbols"][0]
+            self.assertTrue(sol_summary["eligible"])
+            self.assertNotIn("short_setup_countertrend_drift", sol_summary["reasons"])
+            self.assertNotIn("short_setup_latest_bar_rebound", sol_summary["reasons"])
 
     def test_candidate_filter_softens_moderately_low_volume_when_directional_bias_is_clear(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -764,6 +914,58 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertIn("low_volatility_soft_penalty", sol_summary["reasons"])
             self.assertIn("short_setup_pre_breakdown_watch", sol_summary["reasons"])
             self.assertNotIn("short_setup_late_breakdown_soft_penalty", sol_summary["reasons"])
+
+    def test_candidate_filter_demotes_low_volatility_fresh_entry_without_continuation_watch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT:USDT", "BTC/USDT:USDT"),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            weak_sol = make_symbol("SOL/USDT:USDT", 900_000, 91.2, atr_pct=0.00192, range_pct=0.00198, volume_ratio=1.80, higher_bias="short")
+            weak_sol.indicators["return_1bar"] = -0.0002
+            weak_sol.indicators["return_24bars"] = -0.0007
+            weak_sol.indicators["rsi_14"] = 48.0
+            weak_sol.indicators["sma_fast_ratio"] = -0.0007
+            weak_sol.indicators["sma_slow_ratio"] = -0.0009
+            weak_sol.recent_candles[-1].open = 91.28
+            weak_sol.recent_candles[-1].high = 91.31
+            weak_sol.recent_candles[-1].low = 91.12
+            weak_sol.recent_candles[-1].close = 91.2
+
+            clean_btc = make_symbol("BTC/USDT:USDT", 900_000, 103_000.0, atr_pct=0.00202, range_pct=0.00204, volume_ratio=1.60, higher_bias="short")
+            clean_btc.indicators["return_1bar"] = -0.0007
+            clean_btc.indicators["return_24bars"] = -0.0016
+            clean_btc.indicators["rsi_14"] = 46.0
+            clean_btc.indicators["sma_fast_ratio"] = -0.0011
+            clean_btc.indicators["sma_slow_ratio"] = -0.0014
+            clean_btc.recent_candles[-1].open = 103_080.0
+            clean_btc.recent_candles[-1].high = 103_110.0
+            clean_btc.recent_candles[-1].low = 102_940.0
+            clean_btc.recent_candles[-1].close = 103_000.0
+
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[weak_sol, clean_btc],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "selected")
+            sol_summary = next(item for item in filtered.summary["symbols"] if item["symbol"] == "SOL/USDT:USDT")
+            btc_summary = next(item for item in filtered.summary["symbols"] if item["symbol"] == "BTC/USDT:USDT")
+            self.assertTrue(sol_summary["eligible"])
+            self.assertTrue(btc_summary["eligible"])
+            self.assertIn("low_volatility_soft_penalty", sol_summary["reasons"])
+            self.assertNotIn("short_setup_pre_breakdown_watch", sol_summary["reasons"])
+            self.assertGreater(btc_summary["score"], sol_summary["score"])
 
     def test_candidate_filter_still_blocks_hard_low_volume_and_hard_low_volatility(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1143,6 +1345,131 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertNotIn("open_signal_sma_fast_conflict", verdict.reasons)
             self.assertNotIn("open_signal_sma_slow_conflict", verdict.reasons)
 
+    def test_risk_engine_allows_live_xrp_long_reversal_sample_despite_local_fast_sma_lag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            reversal_long = make_symbol("XRP/USDT:USDT", 900_000, 1.4846, atr_pct=0.0023815938877234685, range_pct=0.0017513134851137922, volume_ratio=1.2023982381742457, higher_bias="long")
+            reversal_long.indicators["return_1bar"] = 0.0014165261382799166
+            reversal_long.indicators["return_24bars"] = -0.008349475652929095
+            reversal_long.indicators["sma_fast_ratio"] = -0.004175540388711041
+            reversal_long.indicators["sma_slow_ratio"] = -0.00944120100083412
+            reversal_long.indicators["rsi_14"] = 24.725274725274602
+            reversal_long.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.036734408827432175,
+                "sma_fast_ratio": -0.001647668045327677,
+                "sma_slow_ratio": 0.017512594674252036,
+                "rsi_14": 65.22689994532527,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[reversal_long],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("XRP/USDT:USDT", "buy", confidence=0.61, take_profit_pct=0.022), bundle)
+
+            self.assertEqual(verdict.final_action, "buy")
+            self.assertNotIn("open_signal_return_24bars_too_weak", verdict.reasons)
+            self.assertNotIn("open_signal_sma_fast_conflict", verdict.reasons)
+            self.assertNotIn("open_signal_sma_slow_conflict", verdict.reasons)
+
+    def test_risk_engine_allows_live_xrp_early_reclaim_signal_despite_local_slow_sma_lag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+                min_expected_edge_pct=0.0015,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            reclaim_long = make_symbol("XRP/USDT:USDT", 900_000, 1.4849, atr_pct=0.0034031865329677575, range_pct=0.004831566232720355, volume_ratio=2.7280960654881743, higher_bias="long")
+            reclaim_long.indicators["return_1bar"] = 0.0035016835016834502
+            reclaim_long.indicators["return_24bars"] = -0.0023431746669344555
+            reclaim_long.indicators["sma_fast_ratio"] = 0.004555847044878547
+            reclaim_long.indicators["sma_slow_ratio"] = -0.00015795160530551744
+            reclaim_long.indicators["rsi_14"] = 45.628415300546315
+            reclaim_long.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.029340362072553194,
+                "sma_fast_ratio": -0.006942701798410722,
+                "sma_slow_ratio": 0.013822785963154338,
+                "rsi_14": 63.61735493988499,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[reclaim_long],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(
+                make_decision("XRP/USDT:USDT", "buy", confidence=0.73, take_profit_pct=0.024),
+                bundle,
+            )
+
+            self.assertEqual(verdict.final_action, "buy")
+            self.assertNotIn("open_signal_return_24bars_too_weak", verdict.reasons)
+            self.assertNotIn("open_signal_sma_slow_conflict", verdict.reasons)
+
+    def test_risk_engine_allows_live_xrp_early_reclaim_sample_to_clear_edge_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+                min_expected_edge_pct=0.0015,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            reclaim_long = make_symbol("XRP/USDT:USDT", 900_000, 1.4826, atr_pct=0.002725475518704054, range_pct=0.0017466075507189022, volume_ratio=0.5926134888525437, higher_bias="long")
+            reclaim_long.indicators["return_1bar"] = 0.0001343724805160651
+            reclaim_long.indicators["return_24bars"] = -0.0051460268662701925
+            reclaim_long.indicators["sma_fast_ratio"] = 0.002322997677002281
+            reclaim_long.indicators["sma_slow_ratio"] = -0.0008110663004750052
+            reclaim_long.indicators["rsi_14"] = 55.98455598455584
+            reclaim_long.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.012987896096831264,
+                "sma_fast_ratio": -0.004189041645312974,
+                "sma_slow_ratio": 0.01585750127149832,
+                "rsi_14": 61.631753031973524,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[reclaim_long],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(
+                make_decision("XRP/USDT:USDT", "buy", confidence=0.63, take_profit_pct=0.022),
+                bundle,
+            )
+
+            self.assertEqual(verdict.final_action, "buy")
+            self.assertNotIn("expected_edge_below_minimum", " ".join(verdict.reasons))
+
     def test_risk_engine_allows_higher_timeframe_long_fast_pullback_even_if_fast_sma_lags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1181,6 +1508,325 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertEqual(verdict.final_action, "buy")
             self.assertNotIn("open_signal_sma_fast_conflict", verdict.reasons)
 
+    def test_risk_engine_keeps_borderline_xrp_reversal_blocked_when_slow_and_trend_return_are_still_too_weak(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            borderline_reversal = make_symbol("XRP/USDT:USDT", 900_000, 1.4806, atr_pct=0.0033866579186044078, range_pct=0.004187491557476688, volume_ratio=1.0373471830645344, higher_bias="long")
+            borderline_reversal.indicators["return_1bar"] = 0.002505247477825101
+            borderline_reversal.indicators["return_24bars"] = -0.010426413581072103
+            borderline_reversal.indicators["sma_fast_ratio"] = -0.0024759562749491204
+            borderline_reversal.indicators["sma_slow_ratio"] = -0.007220715869230898
+            borderline_reversal.indicators["rsi_14"] = 33.235294117646845
+            borderline_reversal.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.029340362072553194,
+                "sma_fast_ratio": -0.006942701798410722,
+                "sma_slow_ratio": 0.013822785963154338,
+                "rsi_14": 63.61735493988499,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[borderline_reversal],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("XRP/USDT:USDT", "buy", confidence=0.57, take_profit_pct=0.02), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertIn("open_signal_return_24bars_too_weak", verdict.reasons)
+            self.assertIn("open_signal_sma_fast_conflict", verdict.reasons)
+            self.assertIn("open_signal_sma_slow_conflict", verdict.reasons)
+
+    def test_risk_engine_allows_higher_timeframe_short_reclaim_when_higher_timeframe_short_is_strong(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            reclaim_short = make_symbol("SOL/USDT:USDT", 900_000, 91.0, atr_pct=0.00296, range_pct=0.00407, volume_ratio=1.64, higher_bias="short")
+            reclaim_short.indicators["return_1bar"] = -0.00055
+            reclaim_short.indicators["return_24bars"] = 0.00066
+            reclaim_short.indicators["sma_fast_ratio"] = -0.00232
+            reclaim_short.indicators["sma_slow_ratio"] = -0.00090
+            reclaim_short.indicators["rsi_14"] = 41.28
+            reclaim_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.0213,
+                "sma_fast_ratio": -0.0232,
+                "sma_slow_ratio": -0.0086,
+                "rsi_14": 46.4,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[reclaim_short],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("SOL/USDT:USDT", "sell", confidence=0.66), bundle)
+
+            self.assertEqual(verdict.final_action, "sell")
+            self.assertNotIn("open_signal_return_24bars_too_weak", verdict.reasons)
+
+    def test_risk_engine_allows_live_recovery_xrp_short_entry_without_old_risk_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+                min_expected_edge_pct=0.0015,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            live_short = make_symbol("XRP/USDT:USDT", 900_000, 1.4634, atr_pct=0.00380, range_pct=0.00444, volume_ratio=0.83, higher_bias="short")
+            live_short.indicators["return_1bar"] = 0.00274
+            live_short.indicators["return_24bars"] = -0.01514
+            live_short.indicators["sma_fast_ratio"] = -0.00032
+            live_short.indicators["sma_slow_ratio"] = -0.01046
+            live_short.indicators["rsi_14"] = 34.5
+            live_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.0213,
+                "sma_fast_ratio": -0.0232,
+                "sma_slow_ratio": -0.0086,
+                "rsi_14": 46.4,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[live_short],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(
+                make_decision("XRP/USDT:USDT", "sell", confidence=0.57, take_profit_pct=0.022),
+                bundle,
+            )
+
+            self.assertEqual(verdict.final_action, "sell")
+            self.assertNotIn("expected_edge_below_minimum", " ".join(verdict.reasons))
+            self.assertNotIn("open_signal_return_24bars_too_weak", verdict.reasons)
+            self.assertNotIn("open_signal_sma_fast_conflict", verdict.reasons)
+            self.assertNotIn("open_signal_sma_slow_conflict", verdict.reasons)
+
+    def test_risk_engine_allows_live_sol_short_continuation_sample_to_clear_edge_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT:USDT",),
+                min_expected_edge_pct=0.0015,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            continuation_short = make_symbol("SOL/USDT:USDT", 900_000, 90.71, atr_pct=0.0016556551215455202, range_pct=0.003625178512578252, volume_ratio=3.5673327420468857, higher_bias="short")
+            continuation_short.indicators["return_1bar"] = -0.0004392225760403434
+            continuation_short.indicators["return_24bars"] = -0.0014260640631855726
+            continuation_short.indicators["sma_fast_ratio"] = -0.0022833969639953766
+            continuation_short.indicators["sma_slow_ratio"] = -0.0018457939655330824
+            continuation_short.indicators["rsi_14"] = 29.896907216494498
+            continuation_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.009770926066659524,
+                "sma_fast_ratio": -0.002860630796421515,
+                "sma_slow_ratio": -0.008330955001970564,
+                "rsi_14": 37.41379310344829,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[continuation_short],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(
+                make_decision("SOL/USDT:USDT", "sell", confidence=0.70, take_profit_pct=0.025),
+                bundle,
+            )
+
+            self.assertEqual(verdict.final_action, "sell")
+            self.assertNotIn("expected_edge_below_minimum", " ".join(verdict.reasons))
+
+    def test_risk_engine_keeps_weak_live_xrp_short_continuation_below_edge_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+                min_expected_edge_pct=0.0015,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            weak_short = make_symbol("XRP/USDT:USDT", 900_000, 1.4666, atr_pct=0.001484647286746225, range_pct=0.0019762845849801707, volume_ratio=1.916471726589227, higher_bias="short")
+            weak_short.indicators["return_1bar"] = -0.000885136515285545
+            weak_short.indicators["return_24bars"] = 0.0023224043715848186
+            weak_short.indicators["sma_fast_ratio"] = -0.0020346052922407543
+            weak_short.indicators["sma_slow_ratio"] = -0.00020723976505243602
+            weak_short.indicators["rsi_14"] = 36.423841059602374
+            weak_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.011585612286137636,
+                "sma_fast_ratio": -0.005180644614558805,
+                "sma_slow_ratio": -0.009182984469952804,
+                "rsi_14": 36.26271970397775,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[weak_short],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(
+                make_decision("XRP/USDT:USDT", "sell", confidence=0.69, take_profit_pct=0.022),
+                bundle,
+            )
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertTrue(any(reason.startswith("expected_edge_below_minimum") for reason in verdict.reasons))
+
+    def test_risk_engine_allows_live_xrp_long_fresh_entry_that_drove_overnight_profit_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            profitable_long = make_symbol("XRP/USDT:USDT", 900_000, 1.4789, atr_pct=0.00445, range_pct=0.00514, volume_ratio=0.66, higher_bias="long")
+            profitable_long.indicators["return_1bar"] = 0.00366
+            profitable_long.indicators["return_24bars"] = 0.00949
+            profitable_long.indicators["sma_fast_ratio"] = 0.00108
+            profitable_long.indicators["sma_slow_ratio"] = 0.00881
+            profitable_long.indicators["rsi_14"] = 56.69
+            profitable_long.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.0348,
+                "sma_fast_ratio": 0.0238,
+                "sma_slow_ratio": 0.0310,
+                "rsi_14": 77.4,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[profitable_long],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(
+                make_decision("XRP/USDT:USDT", "buy", confidence=0.63, take_profit_pct=0.022),
+                bundle,
+            )
+
+            self.assertEqual(verdict.final_action, "buy")
+            self.assertNotIn("fresh_entry_late_breakout", verdict.reasons)
+            self.assertNotIn("expected_edge_below_minimum", " ".join(verdict.reasons))
+
+    def test_risk_engine_keeps_live_recovery_xrp_short_management_hold_when_structure_stays_short(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            open_symbol = make_symbol("XRP/USDT:USDT", 300_000, 1.4634, atr_pct=0.00380, range_pct=0.00444, volume_ratio=0.83, higher_bias="short")
+            open_symbol.indicators["return_1bar"] = 0.00274
+            open_symbol.indicators["return_24bars"] = -0.01514
+            open_symbol.indicators["sma_fast_ratio"] = -0.00032
+            open_symbol.indicators["sma_slow_ratio"] = -0.01046
+            record_run(
+                journal,
+                settings,
+                bundle=make_bundle(
+                    timestamp_ms=300_000,
+                    symbols=[open_symbol],
+                    equity_quote=200.0,
+                    free_quote=200.0,
+                ),
+                decision_action="sell",
+                final_action="sell",
+                symbol="XRP/USDT:USDT",
+                confidence=0.57,
+            )
+
+            managed_short = make_symbol("XRP/USDT:USDT", 900_000, 1.4716, atr_pct=0.00243, range_pct=0.00197, volume_ratio=0.67, higher_bias="short")
+            managed_short.indicators["return_1bar"] = 0.00157
+            managed_short.indicators["return_24bars"] = -0.00325
+            managed_short.indicators["sma_fast_ratio"] = 0.00459
+            managed_short.indicators["sma_slow_ratio"] = -0.00246
+            managed_short.indicators["rsi_14"] = 69.75
+            managed_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.0213,
+                "sma_fast_ratio": -0.0232,
+                "sma_slow_ratio": -0.0086,
+                "rsi_14": 46.4,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[managed_short],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="XRP/USDT:USDT",
+                        quantity=33.4,
+                        mark_price=1.4716,
+                        market_value_quote=49.15294,
+                        side="short",
+                        average_entry_price=1.464,
+                        notional_quote=49.15294,
+                    )
+                ],
+                equity_quote=162.8,
+                free_quote=146.7,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("XRP/USDT:USDT", "hold", confidence=0.66), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertEqual(verdict.reasons, ["ok"])
+            self.assertNotIn("management_adverse_hold_to_close", verdict.reasons)
+
     def test_risk_engine_blocks_terminal_short_extension_even_when_other_signals_align(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1214,6 +1860,48 @@ class StrategyOptimizationTests(unittest.TestCase):
 
             self.assertEqual(verdict.final_action, "hold")
             self.assertIn("fresh_entry_late_breakdown", verdict.reasons)
+
+    def test_risk_engine_blocks_flat_bias_short_flush_and_records_debug(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            flat_flush = make_symbol("XRP/USDT:USDT", 900_000, 1.4181, atr_pct=0.00201, range_pct=0.00480, volume_ratio=9.45, higher_bias="flat")
+            flat_flush.indicators["return_1bar"] = -0.00274
+            flat_flush.indicators["return_24bars"] = -0.01240
+            flat_flush.indicators["sma_fast_ratio"] = -0.00935
+            flat_flush.indicators["sma_slow_ratio"] = -0.01129
+            flat_flush.indicators["rsi_14"] = 14.05
+            flat_flush.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "flat",
+                "return_12bars": 0.00028,
+                "sma_fast_ratio": -0.00115,
+                "sma_slow_ratio": -0.00894,
+                "rsi_14": 53.37,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[flat_flush],
+                equity_quote=157.0,
+                free_quote=157.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("XRP/USDT:USDT", "sell", confidence=0.64), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertIn("fresh_entry_flat_bias_short_flush", verdict.reasons)
+            self.assertIsNotNone(verdict.risk_debug)
+            self.assertEqual(verdict.risk_debug["entry_archetype"], "flat_bias_short_flush")
+            self.assertEqual(verdict.risk_debug["shadow_open_signal_reasons"], [])
+            self.assertGreater(verdict.risk_debug["expected_edge_components"]["final_expected_edge_pct"], settings.min_expected_edge_pct)
 
     def test_risk_engine_blocks_terminal_long_extension_even_when_other_signals_align(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1385,6 +2073,348 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertEqual(verdict.final_action, "hold")
             self.assertIn("fresh_entry_late_breakout", verdict.reasons)
 
+    def test_risk_engine_blocks_high_rsi_long_chase_even_without_climactic_volume(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            hot_long = make_symbol("XRP/USDT:USDT", 900_000, 1.4696, atr_pct=0.00356, range_pct=0.00265, volume_ratio=0.79, higher_bias="long")
+            hot_long.indicators["return_1bar"] = 0.00136
+            hot_long.indicators["return_24bars"] = 0.01212
+            hot_long.indicators["rsi_14"] = 78.06
+            hot_long.indicators["sma_fast_ratio"] = 0.00376
+            hot_long.indicators["sma_slow_ratio"] = 0.01460
+            hot_long.recent_candles[-1].open = 1.4676
+            hot_long.recent_candles[-1].high = 1.4702
+            hot_long.recent_candles[-1].low = 1.4663
+            hot_long.recent_candles[-1].close = 1.4696
+            hot_long.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.03171,
+                "sma_fast_ratio": 0.02344,
+                "sma_slow_ratio": 0.02813,
+                "rsi_14": 70.41,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[hot_long],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("XRP/USDT:USDT", "buy", confidence=0.64), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertIn("fresh_entry_late_breakout", verdict.reasons)
+
+    def test_risk_engine_records_shadow_open_signal_reasons_when_expected_edge_blocks_first(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            thin_short = make_symbol("XRP/USDT:USDT", 900_000, 1.4674, atr_pct=0.00148, range_pct=0.00198, volume_ratio=1.92, higher_bias="short")
+            thin_short.indicators["return_1bar"] = -0.00089
+            thin_short.indicators["return_24bars"] = 0.00232
+            thin_short.indicators["sma_fast_ratio"] = -0.00203
+            thin_short.indicators["sma_slow_ratio"] = -0.00021
+            thin_short.indicators["rsi_14"] = 36.42
+            thin_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.01159,
+                "sma_fast_ratio": -0.00518,
+                "sma_slow_ratio": -0.00918,
+                "rsi_14": 36.26,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[thin_short],
+                equity_quote=157.0,
+                free_quote=157.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("XRP/USDT:USDT", "sell", confidence=0.69), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertTrue(any(reason.startswith("expected_edge_below_minimum") for reason in verdict.reasons))
+            self.assertIsNotNone(verdict.risk_debug)
+            self.assertEqual(verdict.risk_debug["entry_archetype"], "plain_open")
+            self.assertIn("open_signal_return_24bars_too_weak", verdict.risk_debug["shadow_open_signal_reasons"])
+            self.assertLess(
+                verdict.risk_debug["expected_edge_components"]["final_expected_edge_pct"],
+                settings.min_expected_edge_pct,
+            )
+
+    def test_risk_engine_tightens_plain_alt_short_edge_requirement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("BTC/USDT:USDT", "SOL/USDT:USDT"),
+                min_expected_edge_pct=0.0010,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            btc_short = make_symbol("BTC/USDT:USDT", 900_000, 103_000.0, atr_pct=0.0019, range_pct=0.0021, volume_ratio=0.80, higher_bias="short")
+            btc_short.indicators["return_1bar"] = -0.00055
+            btc_short.indicators["return_24bars"] = -0.00197
+            btc_short.indicators["sma_fast_ratio"] = -0.00093
+            btc_short.indicators["sma_slow_ratio"] = -0.00142
+            btc_short.indicators["rsi_14"] = 46.9
+            btc_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.01159,
+                "sma_fast_ratio": -0.00518,
+                "sma_slow_ratio": -0.00918,
+                "rsi_14": 36.26,
+            }
+            btc_short.recent_candles[-1].open = 103_050.0
+            btc_short.recent_candles[-1].high = 103_070.0
+            btc_short.recent_candles[-1].low = 102_960.0
+            btc_short.recent_candles[-1].close = 103_000.0
+            sol_short = make_symbol("SOL/USDT:USDT", 900_000, 89.20, atr_pct=0.0019, range_pct=0.0021, volume_ratio=0.80, higher_bias="short")
+            sol_short.indicators["return_1bar"] = -0.0007
+            sol_short.indicators["return_24bars"] = -0.0008
+            sol_short.indicators["sma_fast_ratio"] = -0.0010
+            sol_short.indicators["sma_slow_ratio"] = -0.0012
+            sol_short.indicators["rsi_14"] = 44.5
+            sol_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.0060,
+                "sma_fast_ratio": -0.0040,
+                "sma_slow_ratio": -0.0050,
+                "rsi_14": 43.0,
+            }
+            bundle_btc = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[btc_short],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+            bundle_sol = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[sol_short],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            btc_verdict = risk_engine.evaluate(make_decision("BTC/USDT:USDT", "sell", confidence=0.68), bundle_btc)
+            sol_verdict = risk_engine.evaluate(make_decision("SOL/USDT:USDT", "sell", confidence=0.68), bundle_sol)
+
+            self.assertEqual(btc_verdict.final_action, "sell")
+            self.assertEqual(sol_verdict.final_action, "hold")
+            self.assertTrue(any(reason.startswith("expected_edge_below_minimum") for reason in sol_verdict.reasons))
+
+    def test_risk_engine_rejects_correlated_third_short_when_group_exposure_would_breach_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"),
+                max_open_positions=3,
+                max_correlated_directional_exposure_pct=0.25,
+                max_net_directional_exposure_pct=0.40,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            sol_short = make_symbol("SOL/USDT:USDT", 900_000, 89.20, atr_pct=0.0044, range_pct=0.0041, volume_ratio=1.65, higher_bias="short")
+            sol_short.indicators["return_1bar"] = -0.0012
+            sol_short.indicators["return_24bars"] = -0.0064
+            sol_short.indicators["sma_fast_ratio"] = -0.0032
+            sol_short.indicators["sma_slow_ratio"] = -0.0062
+            sol_short.indicators["rsi_14"] = 35.4
+            sol_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.0190,
+                "sma_fast_ratio": -0.0080,
+                "sma_slow_ratio": -0.0120,
+                "rsi_14": 37.1,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[sol_short],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="BTC/USDT:USDT",
+                        quantity=0.001,
+                        mark_price=100_000.0,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=101_000.0,
+                        notional_quote=60.0,
+                    ),
+                    PositionSnapshot(
+                        symbol="ETH/USDT:USDT",
+                        quantity=0.02,
+                        mark_price=3_000.0,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=3_050.0,
+                        notional_quote=60.0,
+                    ),
+                ],
+                equity_quote=200.0,
+                free_quote=160.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("SOL/USDT:USDT", "sell", confidence=0.73), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertTrue(any(reason.startswith("portfolio_correlated_directional_exposure_limit") for reason in verdict.reasons))
+            self.assertIsNotNone(verdict.risk_debug)
+            portfolio_context = verdict.risk_debug["portfolio_context"]
+            self.assertEqual(portfolio_context["target_group"], "crypto_beta")
+            self.assertGreater(float(portfolio_context["projected_correlated_exposure_pct"]), 0.25)
+
+    def test_risk_engine_requires_extra_edge_for_third_same_direction_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"),
+                max_open_positions=3,
+                min_expected_edge_pct=0.0010,
+                max_correlated_directional_exposure_pct=0.35,
+                max_net_directional_exposure_pct=0.40,
+                third_same_direction_edge_buffer_pct=0.00075,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            btc_short = make_symbol("BTC/USDT:USDT", 900_000, 103_000.0, atr_pct=0.0019, range_pct=0.0021, volume_ratio=0.80, higher_bias="short")
+            btc_short.indicators["return_1bar"] = -0.0007
+            btc_short.indicators["return_24bars"] = -0.0008
+            btc_short.indicators["sma_fast_ratio"] = -0.0010
+            btc_short.indicators["sma_slow_ratio"] = -0.0012
+            btc_short.indicators["rsi_14"] = 44.5
+            btc_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.0060,
+                "sma_fast_ratio": -0.0040,
+                "sma_slow_ratio": -0.0050,
+                "rsi_14": 43.0,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[btc_short],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="ETH/USDT:USDT",
+                        quantity=0.02,
+                        mark_price=3_000.0,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=3_050.0,
+                        notional_quote=60.0,
+                    ),
+                    PositionSnapshot(
+                        symbol="SOL/USDT:USDT",
+                        quantity=0.67,
+                        mark_price=89.5,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=90.2,
+                        notional_quote=60.0,
+                    ),
+                ],
+                equity_quote=200.0,
+                free_quote=160.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("BTC/USDT:USDT", "sell", confidence=0.66), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertTrue(any(reason.startswith("expected_edge_below_minimum") for reason in verdict.reasons))
+            self.assertIsNotNone(verdict.risk_debug)
+            components = verdict.risk_debug["expected_edge_components"]
+            self.assertAlmostEqual(components["required_threshold_pct"], 0.00225, places=6)
+            self.assertAlmostEqual(components["weak_same_direction_edge_buffer_pct"], 0.0005, places=6)
+            self.assertAlmostEqual(verdict.risk_debug["portfolio_context"]["third_same_direction_edge_buffer_pct"], 0.00075, places=6)
+
+    def test_risk_engine_requires_extra_edge_for_second_same_direction_weak_short(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("BTC/USDT:USDT", "ETH/USDT:USDT"),
+                max_open_positions=3,
+                min_expected_edge_pct=0.0010,
+                max_correlated_directional_exposure_pct=0.35,
+                max_net_directional_exposure_pct=0.40,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            btc_short = make_symbol("BTC/USDT:USDT", 900_000, 103_000.0, atr_pct=0.0019, range_pct=0.0021, volume_ratio=0.80, higher_bias="short")
+            btc_short.indicators["return_1bar"] = -0.0007
+            btc_short.indicators["return_24bars"] = -0.0008
+            btc_short.indicators["sma_fast_ratio"] = -0.0010
+            btc_short.indicators["sma_slow_ratio"] = -0.0012
+            btc_short.indicators["rsi_14"] = 44.5
+            btc_short.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "short",
+                "return_12bars": -0.0060,
+                "sma_fast_ratio": -0.0040,
+                "sma_slow_ratio": -0.0050,
+                "rsi_14": 43.0,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[btc_short],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="ETH/USDT:USDT",
+                        quantity=0.02,
+                        mark_price=3_000.0,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=3_050.0,
+                        notional_quote=60.0,
+                    ),
+                ],
+                equity_quote=200.0,
+                free_quote=160.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("BTC/USDT:USDT", "sell", confidence=0.68), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertTrue(any(reason.startswith("expected_edge_below_minimum") for reason in verdict.reasons))
+            self.assertIsNotNone(verdict.risk_debug)
+            components = verdict.risk_debug["expected_edge_components"]
+            self.assertAlmostEqual(components["required_threshold_pct"], 0.0015, places=6)
+            self.assertAlmostEqual(components["weak_same_direction_edge_buffer_pct"], 0.0005, places=6)
+
     def test_risk_engine_keeps_pre_breakdown_short_available_despite_soft_low_volatility(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1431,15 +2461,15 @@ class StrategyOptimizationTests(unittest.TestCase):
             journal.ensure_schema()
             risk_engine = RiskEngine(settings, journal)
 
-            flat_bias_short = make_symbol("SOL/USDT:USDT", 900_000, 100.0, atr_pct=0.0040, range_pct=0.0045, volume_ratio=1.20, higher_bias="flat")
-            flat_bias_short.indicators["return_1bar"] = -0.0010
-            flat_bias_short.indicators["return_24bars"] = -0.0030
-            flat_bias_short.indicators["rsi_14"] = 41.0
-            flat_bias_short.indicators["sma_fast_ratio"] = -0.0015
-            flat_bias_short.indicators["sma_slow_ratio"] = -0.0012
-            flat_bias_short.recent_candles[-1].open = 100.55
-            flat_bias_short.recent_candles[-1].high = 100.60
-            flat_bias_short.recent_candles[-1].low = 99.95
+            flat_bias_short = make_symbol("SOL/USDT:USDT", 900_000, 100.0, atr_pct=0.0044, range_pct=0.0048, volume_ratio=1.45, higher_bias="flat")
+            flat_bias_short.indicators["return_1bar"] = -0.0013
+            flat_bias_short.indicators["return_24bars"] = -0.0042
+            flat_bias_short.indicators["rsi_14"] = 39.5
+            flat_bias_short.indicators["sma_fast_ratio"] = -0.0019
+            flat_bias_short.indicators["sma_slow_ratio"] = -0.0016
+            flat_bias_short.recent_candles[-1].open = 100.48
+            flat_bias_short.recent_candles[-1].high = 100.52
+            flat_bias_short.recent_candles[-1].low = 99.88
             flat_bias_short.recent_candles[-1].close = 100.0
             bundle = make_bundle(
                 timestamp_ms=900_000,
@@ -1563,6 +2593,104 @@ class StrategyOptimizationTests(unittest.TestCase):
             verdict = risk_engine.evaluate(make_decision("XRP/USDT:USDT", "hold"), bundle)
             self.assertEqual(verdict.final_action, "hold")
             self.assertNotIn("management_adverse_hold_to_close", verdict.reasons)
+
+    def test_risk_engine_closes_profitable_long_when_local_momentum_cools_after_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            cooled_long = make_symbol("SOL/USDT:USDT", 900_000, 93.12, atr_pct=0.00405, range_pct=0.00289, volume_ratio=0.98, higher_bias="long")
+            cooled_long.indicators["return_1bar"] = 0.00269
+            cooled_long.indicators["return_24bars"] = 0.00583
+            cooled_long.indicators["sma_fast_ratio"] = 0.00324
+            cooled_long.indicators["sma_slow_ratio"] = 0.00791
+            cooled_long.indicators["rsi_14"] = 50.45
+            cooled_long.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.0314,
+                "sma_fast_ratio": 0.0200,
+                "sma_slow_ratio": 0.0234,
+                "rsi_14": 69.3,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[cooled_long],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="SOL/USDT:USDT",
+                        quantity=0.78,
+                        mark_price=93.12,
+                        market_value_quote=72.63,
+                        side="long",
+                        average_entry_price=92.39,
+                        notional_quote=72.63,
+                    )
+                ],
+                equity_quote=201.0,
+                free_quote=176.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("SOL/USDT:USDT", "hold", confidence=0.78), bundle)
+
+            self.assertEqual(verdict.final_action, "close")
+            self.assertIn("management_profitable_long_momentum_cooldown_close", verdict.reasons)
+
+    def test_risk_engine_keeps_profitable_long_open_while_local_rsi_remains_hot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            risk_engine = RiskEngine(settings, journal)
+
+            still_hot_long = make_symbol("SOL/USDT:USDT", 900_000, 93.10, atr_pct=0.00328, range_pct=0.00471, volume_ratio=1.01, higher_bias="long")
+            still_hot_long.indicators["return_1bar"] = -0.00064
+            still_hot_long.indicators["return_24bars"] = 0.02612
+            still_hot_long.indicators["sma_fast_ratio"] = 0.00691
+            still_hot_long.indicators["sma_slow_ratio"] = 0.01737
+            still_hot_long.indicators["rsi_14"] = 73.16
+            still_hot_long.higher_timeframe = {
+                "timeframe": "1h",
+                "trend_bias": "long",
+                "return_12bars": 0.0357,
+                "sma_fast_ratio": 0.0208,
+                "sma_slow_ratio": 0.0227,
+                "rsi_14": 63.2,
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[still_hot_long],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="SOL/USDT:USDT",
+                        quantity=0.78,
+                        mark_price=93.10,
+                        market_value_quote=72.61,
+                        side="long",
+                        average_entry_price=92.39,
+                        notional_quote=72.61,
+                    )
+                ],
+                equity_quote=201.0,
+                free_quote=176.0,
+            )
+
+            verdict = risk_engine.evaluate(make_decision("SOL/USDT:USDT", "hold", confidence=0.78), bundle)
+
+            self.assertEqual(verdict.final_action, "hold")
+            self.assertNotIn("management_profitable_long_momentum_cooldown_close", verdict.reasons)
 
     def test_risk_engine_management_close_can_be_rejected_when_position_still_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2973,6 +4101,192 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertEqual(by_candidate_reason["position_management"]["reviewed"], 2)
             self.assertTrue(any(item["decision_context"] == "management" for item in report["reviews"] if item.get("status") == "reviewed"))
 
+    def test_signal_review_separates_candidate_ok_ai_hold_and_reports_cycle_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT", "XRP/USDT:USDT"),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+
+            sol_entry_bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[make_symbol("SOL/USDT:USDT", 300_000, 90.0, atr_pct=0.0042, range_pct=0.0040, volume_ratio=1.20, higher_bias="short")],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="BTC/USDT:USDT",
+                        quantity=0.001,
+                        mark_price=100_000.0,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=101_000.0,
+                        notional_quote=60.0,
+                    )
+                ],
+                equity_quote=200.0,
+                free_quote=180.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=sol_entry_bundle,
+                decision_action="sell",
+                final_action="sell",
+                symbol="SOL/USDT:USDT",
+                confidence=0.84,
+                raw_payload_extra={
+                    "candidate_filter": {
+                        "symbols": [
+                            {
+                                "symbol": "SOL/USDT:USDT",
+                                "eligible": True,
+                                "manage_only": False,
+                                "reasons": ["candidate_ok"],
+                            }
+                        ]
+                    }
+                },
+            )
+
+            eth_entry_bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[make_symbol("ETH/USDT:USDT", 300_000, 200.0, atr_pct=0.0040, range_pct=0.0038, volume_ratio=1.10, higher_bias="short")],
+                open_positions=[
+                    PositionSnapshot(
+                        symbol="BTC/USDT:USDT",
+                        quantity=0.001,
+                        mark_price=100_000.0,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=101_000.0,
+                        notional_quote=60.0,
+                    ),
+                    PositionSnapshot(
+                        symbol="SOL/USDT:USDT",
+                        quantity=0.67,
+                        mark_price=90.0,
+                        market_value_quote=60.0,
+                        side="short",
+                        average_entry_price=91.0,
+                        notional_quote=60.0,
+                    ),
+                ],
+                equity_quote=200.0,
+                free_quote=160.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=eth_entry_bundle,
+                decision_action="sell",
+                final_action="sell",
+                symbol="ETH/USDT:USDT",
+                confidence=0.72,
+                raw_payload_extra={
+                    "candidate_filter": {
+                        "symbols": [
+                            {
+                                "symbol": "ETH/USDT:USDT",
+                                "eligible": True,
+                                "manage_only": False,
+                                "reasons": ["candidate_ok"],
+                            }
+                        ]
+                    }
+                },
+            )
+
+            xrp_hold_bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[make_symbol("XRP/USDT:USDT", 300_000, 1.50, atr_pct=0.0030, range_pct=0.0030, volume_ratio=1.00, higher_bias="short")],
+                equity_quote=200.0,
+                free_quote=160.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=xrp_hold_bundle,
+                decision_action="hold",
+                final_action="hold",
+                symbol="XRP/USDT:USDT",
+                confidence=0.28,
+                raw_payload_extra={
+                    "candidate_filter": {
+                        "symbols": [
+                            {
+                                "symbol": "XRP/USDT:USDT",
+                                "eligible": True,
+                                "manage_only": False,
+                                "reasons": ["candidate_ok"],
+                            }
+                        ]
+                    }
+                },
+            )
+
+            xrp_penalty_hold_bundle = make_bundle(
+                timestamp_ms=600_000,
+                symbols=[make_symbol("XRP/USDT:USDT", 600_000, 1.50, atr_pct=0.0022, range_pct=0.0021, volume_ratio=0.58, higher_bias="short")],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=xrp_penalty_hold_bundle,
+                decision_action="hold",
+                final_action="hold",
+                symbol="XRP/USDT:USDT",
+                confidence=0.20,
+                raw_payload_extra={
+                    "candidate_filter": {
+                        "symbols": [
+                            {
+                                "symbol": "XRP/USDT:USDT",
+                                "eligible": True,
+                                "manage_only": False,
+                                "reasons": ["low_volume_soft_penalty"],
+                            }
+                        ]
+                    }
+                },
+            )
+
+            service = FakeReviewService(
+                settings,
+                journal,
+                candles_by_symbol={
+                    "SOL/USDT:USDT": [
+                        [300_000, 90.0, 90.3, 89.7, 90.0, 1200.0],
+                        [600_000, 90.0, 90.1, 87.8, 88.0, 1500.0],
+                    ],
+                    "ETH/USDT:USDT": [
+                        [300_000, 200.0, 200.4, 199.6, 200.0, 1200.0],
+                        [600_000, 200.0, 204.2, 199.8, 204.0, 1500.0],
+                    ],
+                    "XRP/USDT:USDT": [
+                        [300_000, 1.50, 1.503, 1.497, 1.50, 900.0],
+                        [600_000, 1.50, 1.501, 1.499, 1.50, 900.0],
+                        [900_000, 1.50, 1.501, 1.499, 1.50, 900.0],
+                    ],
+                },
+            )
+            report = service.signal_review(limit=10, horizon_bars=1, threshold_pct=0.003)
+
+            self.assertEqual(report["aggregate"]["by_hold_path"]["candidate_ok_ai_hold"]["reviewed"], 1)
+            self.assertEqual(report["aggregate"]["by_hold_path"]["candidate_penalty_ai_hold"]["reviewed"], 1)
+            cycle_summary = report["aggregate"]["cycle_summary"]
+            self.assertEqual(cycle_summary["cycles_reviewed"], 2)
+            first_cycle = cycle_summary["cycles"][0]
+            self.assertEqual(first_cycle["processed_count"], 3)
+            self.assertEqual(first_cycle["start_short_notional_quote"], 60.0)
+            self.assertEqual(first_cycle["end_short_notional_quote"], 180.0)
+            self.assertIn("SOL/USDT:USDT", first_cycle["contributors"])
+            self.assertIn("ETH/USDT:USDT", first_cycle["capacity_symbols"])
+
     def test_signal_review_treats_favorable_management_hold_as_good_hold(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -3094,6 +4408,283 @@ class StrategyOptimizationTests(unittest.TestCase):
             blocked_summary = report["aggregate"]["blocked_sell"]
             self.assertEqual(blocked_summary["reviewed"], 1)
             self.assertEqual(blocked_summary["by_reason"]["expected_edge_below_minimum"], 1)
+
+    def test_executor_paper_future_supports_short_open_and_partial_close(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            executor = Executor(settings, journal)
+
+            open_bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[make_symbol("XRP/USDT:USDT", 900_000, 1.50, atr_pct=0.0040, range_pct=0.0040, volume_ratio=1.20, higher_bias="short")],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+            open_verdict = RiskVerdict(
+                status="approved",
+                final_action="sell",
+                symbol="XRP/USDT:USDT",
+                final_size_pct=0.10,
+                take_profit_pct=0.02,
+                stop_loss_pct=0.01,
+                ttl_minutes=30,
+                reasons=["ok"],
+                confidence=0.70,
+                approved=True,
+            )
+
+            open_result = executor.execute(open_verdict, open_bundle)
+
+            self.assertEqual(open_result.status, "paper_filled")
+            self.assertEqual(open_result.side, "sell")
+            portfolio = journal.get_runtime_state("paper_portfolio", {})
+            position = portfolio["positions"]["XRP/USDT:USDT"]
+            self.assertEqual(position["side"], "short")
+            self.assertAlmostEqual(position["margin_quote"], 20.0, places=6)
+            self.assertAlmostEqual(float(portfolio["free_quote"]), 180.0, places=6)
+
+            close_bundle = make_bundle(
+                timestamp_ms=1_200_000,
+                symbols=[make_symbol("XRP/USDT:USDT", 1_200_000, 1.45, atr_pct=0.0040, range_pct=0.0040, volume_ratio=1.20, higher_bias="short")],
+                equity_quote=199.0,
+                free_quote=180.0,
+            )
+            close_verdict = RiskVerdict(
+                status="modified",
+                final_action="close",
+                symbol="XRP/USDT:USDT",
+                final_size_pct=0.0,
+                take_profit_pct=0.0,
+                stop_loss_pct=0.0,
+                ttl_minutes=0,
+                reasons=["partial_take_profit:test"],
+                confidence=0.75,
+                approved=True,
+                close_fraction=0.5,
+            )
+
+            close_result = executor.execute(close_verdict, close_bundle)
+
+            self.assertEqual(close_result.status, "paper_closed")
+            self.assertEqual(close_result.side, "buy")
+            self.assertGreater(float(close_result.pnl_quote or 0.0), 0.0)
+            self.assertTrue(close_result.raw["partial_close"])
+            self.assertAlmostEqual(float(close_result.raw["remaining_quantity"] or 0.0), 20.0, places=6)
+            self.assertAlmostEqual(float(close_result.raw["released_margin_quote"] or 0.0), 10.0, places=6)
+            updated_portfolio = journal.get_runtime_state("paper_portfolio", {})
+            updated_position = updated_portfolio["positions"]["XRP/USDT:USDT"]
+            self.assertEqual(updated_position["side"], "short")
+            self.assertAlmostEqual(float(updated_position["margin_quote"]), 10.0, places=6)
+            self.assertAlmostEqual(float(updated_portfolio["free_quote"]), 191.0, places=6)
+
+    def test_backtest_service_runs_isolated_historical_futures_paper_backtest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("XRP/USDT",),
+                candidate_trend_timeframe="",
+            )
+
+            base_ts = 1_735_689_600_000  # 2025-01-01 00:00:00 UTC
+            timeframe_ms = 5 * 60_000
+            rows_5m: list[list[float]] = []
+            close = 1.60
+            for idx in range(70):
+                previous_close = close
+                if idx < 55:
+                    close = previous_close * 0.9994
+                elif idx < 60:
+                    close = previous_close * 0.9960
+                else:
+                    close = previous_close * 1.0005
+                open_price = previous_close
+                high = max(open_price, close) * 1.0015
+                low = min(open_price, close) * 0.9985
+                rows_5m.append(
+                    [
+                        base_ts + (idx * timeframe_ms),
+                        round(open_price, 6),
+                        round(high, 6),
+                        round(low, 6),
+                        round(close, 6),
+                        1000.0,
+                    ]
+                )
+
+            fake_exchange = FakeHistoricalExchange(
+                {
+                    ("XRP/USDT:USDT", "5m"): rows_5m,
+                }
+            )
+
+            class _StubAIClient:
+                def request_decision(self, bundle):
+                    symbol = bundle.symbols[0].symbol
+                    if bundle.account.open_positions:
+                        payload = {
+                            "timestamp": utc_now().isoformat(),
+                            "symbol": symbol,
+                            "action": "hold",
+                            "size_pct": 0.0,
+                            "take_profit_pct": 0.0,
+                            "stop_loss_pct": 0.0,
+                            "ttl_minutes": 30,
+                            "confidence": 0.40,
+                            "reason": "paper_manage_hold",
+                            "prompt_version": "v1",
+                        }
+                    else:
+                        payload = {
+                            "timestamp": utc_now().isoformat(),
+                            "symbol": symbol,
+                            "action": "sell",
+                            "size_pct": 0.10,
+                            "take_profit_pct": 0.02,
+                            "stop_loss_pct": 0.01,
+                            "ttl_minutes": 30,
+                            "confidence": 0.70,
+                            "reason": "paper_backtest_short_entry",
+                            "prompt_version": "v1",
+                        }
+                    return {"stub": True}, json.dumps(payload), "stub-model"
+
+            def _orchestrator_factory(backtest_settings: Settings) -> Orchestrator:
+                orchestrator = Orchestrator(backtest_settings)
+                orchestrator.ai_client = _StubAIClient()
+                return orchestrator
+
+            service = BacktestService(
+                settings,
+                public_exchange=fake_exchange,
+                orchestrator_factory=_orchestrator_factory,
+            )
+
+            result = service.run(
+                start=datetime.fromtimestamp(rows_5m[48][0] / 1000, tz=timezone.utc),
+                end=datetime.fromtimestamp(rows_5m[64][0] / 1000, tz=timezone.utc),
+                review_horizon_bars=3,
+                review_threshold_pct=0.003,
+            )
+
+            self.assertEqual(result["mode"], "backtest")
+            self.assertGreaterEqual(result["runs_completed"], 10)
+            self.assertGreaterEqual(result["order_stats"]["paper_filled"], 1)
+            self.assertGreater(result["performance"]["final_equity_quote"], settings.paper_starting_quote)
+            self.assertIn("aggregate", result["review"])
+            self.assertGreater(result["review"]["aggregate"]["reviewed"], 0)
+            self.assertTrue(Path(result["artifact_dir"], "summary.json").exists())
+            self.assertTrue(Path(result["artifact_dir"], "review.json").exists())
+
+    def test_backtest_service_supports_multi_symbol_same_cycle_processing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT", "XRP/USDT"),
+                max_open_positions=2,
+                candidate_trend_timeframe="",
+            )
+
+            base_ts = 1_735_689_600_000
+            timeframe_ms = 5 * 60_000
+
+            def build_rows(start_price: float) -> list[list[float]]:
+                rows = []
+                close = start_price
+                for idx in range(72):
+                    previous_close = close
+                    if idx < 56:
+                        close = previous_close * 0.9992
+                    elif idx < 62:
+                        close = previous_close * 0.9970
+                    else:
+                        close = previous_close * 0.9995
+                    open_price = previous_close
+                    high = max(open_price, close) * 1.0015
+                    low = min(open_price, close) * 0.9985
+                    rows.append(
+                        [
+                            base_ts + (idx * timeframe_ms),
+                            round(open_price, 6),
+                            round(high, 6),
+                            round(low, 6),
+                            round(close, 6),
+                            1000.0,
+                        ]
+                    )
+                return rows
+
+            fake_exchange = FakeHistoricalExchange(
+                {
+                    ("SOL/USDT:USDT", "5m"): build_rows(90.0),
+                    ("XRP/USDT:USDT", "5m"): build_rows(1.45),
+                }
+            )
+
+            class _StubAIClient:
+                def request_decision(self, bundle):
+                    symbol = bundle.symbols[0].symbol
+                    if any(position.symbol == symbol for position in bundle.account.open_positions):
+                        payload = {
+                            "timestamp": utc_now().isoformat(),
+                            "symbol": symbol,
+                            "action": "hold",
+                            "size_pct": 0.0,
+                            "take_profit_pct": 0.0,
+                            "stop_loss_pct": 0.0,
+                            "ttl_minutes": 30,
+                            "confidence": 0.40,
+                            "reason": "paper_manage_hold",
+                            "prompt_version": "v1",
+                        }
+                    else:
+                        payload = {
+                            "timestamp": utc_now().isoformat(),
+                            "symbol": symbol,
+                            "action": "sell",
+                            "size_pct": 0.10,
+                            "take_profit_pct": 0.02,
+                            "stop_loss_pct": 0.01,
+                            "ttl_minutes": 30,
+                            "confidence": 0.70,
+                            "reason": "paper_backtest_multi_symbol_entry",
+                            "prompt_version": "v1",
+                        }
+                    return {"stub": True}, json.dumps(payload), "stub-model"
+
+            def _orchestrator_factory(backtest_settings: Settings) -> Orchestrator:
+                orchestrator = Orchestrator(backtest_settings)
+                orchestrator.ai_client = _StubAIClient()
+                return orchestrator
+
+            service = BacktestService(
+                settings,
+                public_exchange=fake_exchange,
+                orchestrator_factory=_orchestrator_factory,
+            )
+
+            result = service.run(
+                start=datetime.fromtimestamp(base_ts / 1000, tz=timezone.utc) + timedelta(minutes=48 * 5),
+                end=datetime.fromtimestamp(base_ts / 1000, tz=timezone.utc) + timedelta(minutes=64 * 5),
+                review_horizon_bars=3,
+                review_threshold_pct=0.003,
+            )
+
+            self.assertEqual(result["mode"], "backtest")
+            self.assertGreater(result["runs_completed"], result["bars_requested"])
+            self.assertGreaterEqual(result["order_stats"]["paper_filled"], 2)
+            self.assertIn("aggregate", result["review"])
+            self.assertGreater(result["review"]["aggregate"]["reviewed"], 0)
 
 
 if __name__ == "__main__":

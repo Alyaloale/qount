@@ -9,6 +9,9 @@
 
 当前归档内容：
 
+- [live-strategy-and-tuning-2026-05-13.md](live-strategy-and-tuning-2026-05-13.md)
+  - 原先放在 `docs/` 根目录下的 live 调参与策略说明
+  - 现在只保留历史记录用途，不再代表当前生产基线
 - [fresh-entry-tuning-plan-2026-05-14.md](fresh-entry-tuning-plan-2026-05-14.md)
   - `2026-05-14` 首批 fresh-entry 修复的详细设计推导
 - [position-management-sizing-review-2026-05-13.md](position-management-sizing-review-2026-05-13.md)

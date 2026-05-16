@@ -51,6 +51,7 @@ python -m qount.main clear-halt
 python -m qount.main paper-status
 python -m qount.main signal-review --limit 20 --horizon-bars 3
 python -m qount.main paper-replay
+python -m qount.main backtest --start 2026-05-14T22:00:00+08:00 --end 2026-05-14T23:30:00+08:00 --max-bars 8 --review-horizon-bars 3 --review-threshold-pct 0.003
 ```
 
 如果你在 `Mac` 上不想盯 CLI，可以直接开本机浏览器面板：
@@ -192,6 +193,47 @@ python -m qount.main clear-halt
 - `paper-replay`
   - 根据已记录的 `paper` 订单历史重放组合现金和持仓变化
   - 输出当前 paper equity、已实现盈亏和时间线
+- `backtest`
+  - 基于历史 OHLCV 跑一套**隔离的 paper 回测**
+  - 复用当前 `candidate -> AI -> validate -> risk -> execute` 链路
+  - 输出独立 `db / summary.json / review.json`
+  - 适合做“策略调完后，再跑同一时间窗验证效果”
+
+注意：
+
+- `signal-review` 是**历史真实决策复盘**
+  - 依赖已记录的 `runs / snapshots / validated decisions / risk actions`
+  - 再对照后续 OHLCV 计算 `net_edge_pct / missed_move / good_hold`
+  - 适合判断“最近这套 live/paper 决策质量有没有改善”
+- `paper-replay` 是**历史 paper 订单权益回放**
+  - 依赖已存在的 `paper` 订单历史
+  - 不会重新生成历史信号
+- `backtest` 是**真正的历史 paper 回测命令**
+  - 给定一段历史 OHLCV
+  - 从头重跑 `candidate -> AI -> risk -> execute`
+  - 输出 final equity、drawdown、order stats、review 聚合
+  - 默认写到 `state/backtests/<timestamp>-<window>/`
+
+如果你要问“历史数据回测是否盈利”，先明确是在问：
+
+- 决策复盘口径：用 `signal-review`
+- 已执行 paper 订单口径：用 `paper-replay`
+- 纯历史 full backtest：用 `backtest`
+
+当前已验证过的 WSL smoke-run 示例：
+
+```bash
+ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .env && set +a && PYTHONPATH=src ./.venv/bin/python -m qount.main backtest --start 2026-05-14T22:00:00+08:00 --end 2026-05-14T23:30:00+08:00 --max-bars 8 --review-horizon-bars 3 --review-threshold-pct 0.003'"
+```
+
+这次验证结果里：
+
+- `runs_completed=8`
+- `paper_filled=1`
+- `final_equity_quote=200.57048367093842`
+- `total_return_pct=0.28524183546920767`
+
+如果当前 `Mac` 本机的 `7907` 公有接口代理不通，优先在 WSL 节点上跑这条命令，不要先怀疑回测逻辑本身。
 
 ## 当前策略优化已落地部分
 
@@ -208,7 +250,7 @@ python -m qount.main clear-halt
   - 会拦截过快反手、过早平仓、同 symbol 过快重进
   - 如果持仓已经积累到一定浮盈，后续又发生超过阈值的利润回撤，management 层会强制 `close` 锁住一部分利润
   - futures 持仓浮盈达到阈值后，risk 层会触发单次 `partial_take_profit`，通过 `close_fraction` 平掉一部分仓位
-  - futures `sell` 现在额外收紧：明显 countertrend 的 short 候选会更早在 `candidate filter` / `risk gate` 被挡掉
+  - futures `sell` 现在仍会更早挡掉**明显** countertrend 的 short 候选；但 `1h` 偏空结构里的轻微 `5m` pullback 不再零容忍，会继续交给 `AI` / `risk gate` 判断
   - futures live 开仓现在会按通过风控后的 `take_profit_pct / stop_loss_pct` 立刻下交易所侧 `reduceOnly` 保护单；部分减仓后会取消旧保护单并给剩余仓位重挂保护单
   - 对 Binance futures 来说，这些 TP/SL 保护单属于 `conditional/algo` 单，不一定会出现在普通 `fetch_open_orders()` 结果里；现场排查要优先走 `trigger=true` / conditional 查询，而不是只看普通 open orders
 - `review`
@@ -245,6 +287,10 @@ python -m qount.main clear-halt
 
 ## 设计文档
 
+- 当前 live 基线、持仓与策略现状：
+  - [docs/live-baseline-and-strategy-current.md](docs/live-baseline-and-strategy-current.md)
+- 当前按阶段执行的实施计划：
+  - [docs/strategy-implementation-plan-2026-05-17.md](docs/strategy-implementation-plan-2026-05-17.md)
 - 当前唯一主设计入口：
   - [docs/strategy-optimization-design.md](docs/strategy-optimization-design.md)
   - 这份文档已经吸收当前 active plan、首批已落地变更、后续未启用能力和归档入口
@@ -255,10 +301,9 @@ python -m qount.main clear-halt
 - 2026-05-13 生产故障段、Binance 专线修复与白名单恢复记录：
   - [docs/live-recovery-2026-05-13.md](docs/live-recovery-2026-05-13.md)
   - 当前白名单 IP、固定专线叶子、默认恢复检查命令，也继续维护在这份文档的 `2026-05-14 当前基线` 一节
-- 2026-05-13 当前 live 策略、收益相关调参与执行层变化：
-  - [docs/live-strategy-and-tuning-2026-05-13.md](docs/live-strategy-and-tuning-2026-05-13.md)
 - 归档的旧计划 / 细节推导：
   - [docs/archive/README.md](docs/archive/README.md)
+  - 历史 live tuning 记录也已转入 archive
 
 ## 目录
 

@@ -242,6 +242,128 @@ def _candidate_reason_counts(items: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _hold_path(*, decision_action: str, review_action: str, candidate_filter_primary_reason: str) -> str | None:
+    if review_action != "hold":
+        return None
+    if decision_action == "hold":
+        if candidate_filter_primary_reason == "candidate_ok":
+            return "candidate_ok_ai_hold"
+        if candidate_filter_primary_reason == "position_management":
+            return "management_ai_hold"
+        return "candidate_penalty_ai_hold"
+    if candidate_filter_primary_reason == "candidate_ok":
+        return "candidate_ok_risk_hold"
+    if candidate_filter_primary_reason == "position_management":
+        return "management_risk_hold"
+    return "candidate_penalty_risk_hold"
+
+
+def _snapshot_directional_notional(account_positions: list[dict[str, Any]]) -> tuple[float, float]:
+    long_notional_quote = 0.0
+    short_notional_quote = 0.0
+    for position in account_positions:
+        notional_quote = abs(float(position.get("notional_quote") or position.get("market_value_quote") or 0.0))
+        side = str(position.get("side") or "")
+        if side == "long":
+            long_notional_quote += notional_quote
+        elif side == "short":
+            short_notional_quote += notional_quote
+    return long_notional_quote, short_notional_quote
+
+
+def _action_notional_quote(item: dict[str, Any], *, contract_market: bool, leverage: float) -> float:
+    review_action = str(item.get("review_action") or "hold")
+    if is_open_action(review_action, contract_market):
+        return max(float(item.get("equity_quote_before_action") or 0.0) * float(item.get("final_size_pct") or 0.0) * leverage, 0.0)
+    if review_action == "close":
+        return max(float(item.get("position_notional_before_action") or 0.0) * float(item.get("close_fraction") or 1.0), 0.0)
+    return 0.0
+
+
+def _cycle_summary(items: list[dict[str, Any]], *, contract_market: bool, leverage: float) -> dict[str, Any]:
+    grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for item in items:
+        grouped[int(item["entry_ts"])].append(item)
+
+    cycles: list[dict[str, Any]] = []
+    for entry_ts, cycle_items in sorted(grouped.items()):
+        ordered = sorted(cycle_items, key=lambda item: int(item["run_id"]))
+        first_item = ordered[0]
+        start_long_notional_quote = float(first_item.get("snapshot_long_notional_quote") or 0.0)
+        start_short_notional_quote = float(first_item.get("snapshot_short_notional_quote") or 0.0)
+        delta_long_notional_quote = 0.0
+        delta_short_notional_quote = 0.0
+        symbol_details: list[dict[str, Any]] = []
+
+        for item in ordered:
+            action_notional_quote = _action_notional_quote(item, contract_market=contract_market, leverage=leverage)
+            occupied_notional_quote = action_notional_quote
+            if occupied_notional_quote <= 0.0:
+                occupied_notional_quote = float(item.get("position_notional_before_action") or 0.0)
+
+            review_action = str(item.get("review_action") or "hold")
+            if review_action == "buy":
+                delta_long_notional_quote += action_notional_quote
+            elif review_action == "sell" and contract_market:
+                delta_short_notional_quote += action_notional_quote
+            elif review_action == "close":
+                position_side_before_action = str(item.get("position_side_before_action") or "")
+                if position_side_before_action == "long":
+                    delta_long_notional_quote -= action_notional_quote
+                elif position_side_before_action == "short":
+                    delta_short_notional_quote -= action_notional_quote
+
+            edge_metric_pct = item.get("exposure_future_return_pct")
+            if edge_metric_pct is None:
+                edge_metric_pct = item.get("net_edge_pct")
+            symbol_details.append(
+                {
+                    "symbol": item["symbol"],
+                    "review_action": review_action,
+                    "outcome": item["outcome"],
+                    "occupied_notional_quote": occupied_notional_quote,
+                    "edge_metric_pct": edge_metric_pct,
+                }
+            )
+
+        contributors = [
+            detail["symbol"]
+            for detail in symbol_details
+            if float(detail.get("edge_metric_pct") or 0.0) > 0.0
+        ]
+        capacity_symbols = [
+            detail["symbol"]
+            for detail in symbol_details
+            if float(detail.get("occupied_notional_quote") or 0.0) > 0.0
+            and float(detail.get("edge_metric_pct") or 0.0) <= 0.0
+        ]
+        cycles.append(
+            {
+                "entry_ts": entry_ts,
+                "processed_count": len(ordered),
+                "processed_symbols": [item["symbol"] for item in ordered],
+                "start_long_notional_quote": start_long_notional_quote,
+                "start_short_notional_quote": start_short_notional_quote,
+                "end_long_notional_quote": max(start_long_notional_quote + delta_long_notional_quote, 0.0),
+                "end_short_notional_quote": max(start_short_notional_quote + delta_short_notional_quote, 0.0),
+                "contributors": contributors,
+                "capacity_symbols": capacity_symbols,
+                "symbols": symbol_details,
+            }
+        )
+
+    return {
+        "cycles_reviewed": len(cycles),
+        "avg_processed_symbols": _mean_or_none([float(cycle["processed_count"]) for cycle in cycles]),
+        "max_processed_symbols": max((int(cycle["processed_count"]) for cycle in cycles), default=0),
+        "avg_start_long_notional_quote": _mean_or_none([float(cycle["start_long_notional_quote"]) for cycle in cycles]),
+        "avg_start_short_notional_quote": _mean_or_none([float(cycle["start_short_notional_quote"]) for cycle in cycles]),
+        "avg_end_long_notional_quote": _mean_or_none([float(cycle["end_long_notional_quote"]) for cycle in cycles]),
+        "avg_end_short_notional_quote": _mean_or_none([float(cycle["end_short_notional_quote"]) for cycle in cycles]),
+        "cycles": cycles,
+    }
+
+
 def _candidate_filter_details(candidate_summary: dict[str, Any] | None, symbol: str) -> tuple[list[str], str, bool | None]:
     if not isinstance(candidate_summary, dict):
         return [], "unknown", None
@@ -331,9 +453,14 @@ class ReviewService:
                 continue
 
             account_positions = (snapshot.get("account") or {}).get("open_positions") or []
+            snapshot_long_notional_quote, snapshot_short_notional_quote = _snapshot_directional_notional(account_positions)
             position_entry = next((item for item in account_positions if item.get("symbol") == symbol), None)
             position_side = None if position_entry is None else position_entry.get("side")
+            position_notional_before_action = 0.0 if position_entry is None else abs(
+                float(position_entry.get("notional_quote") or position_entry.get("market_value_quote") or 0.0)
+            )
             risk_reasons = [str(reason) for reason in (verdict.get("reasons") or [])]
+            risk_debug = verdict.get("risk_debug") or {}
             raw_payload = candidate["payload_json"].get("raw_payload") or {}
             candidate_summary = raw_payload.get("candidate_filter")
             opened_position = is_open_action(review_action, self.settings.contract_market)
@@ -358,6 +485,11 @@ class ReviewService:
             candidate_filter_reasons, candidate_filter_primary_reason, candidate_filter_manage_only = _candidate_filter_details(
                 candidate_summary,
                 symbol,
+            )
+            hold_path = _hold_path(
+                decision_action=str(decision["action"]),
+                review_action=review_action,
+                candidate_filter_primary_reason=candidate_filter_primary_reason,
             )
             future_close = float(future_candle[4])
             market_future_return_pct = ((future_close / entry_price) - 1.0) * 100.0
@@ -460,7 +592,10 @@ class ReviewService:
                     "opportunity_edge_pct": opportunity_edge_pct,
                     "confidence": float(decision["confidence"]),
                     "confidence_bucket": confidence_bucket(float(decision["confidence"])),
+                    "equity_quote_before_action": float((snapshot.get("account") or {}).get("equity_quote") or 0.0),
+                    "final_size_pct": final_size_pct,
                     "position_side_before_action": position_side,
+                    "position_notional_before_action": position_notional_before_action,
                     "position_future_return_pct": position_future_return_pct,
                     "opened_position": opened_position,
                     "close_fraction": close_fraction,
@@ -468,12 +603,16 @@ class ReviewService:
                     "decision_lifecycle": decision_lifecycle,
                     "exit_source": exit_source,
                     "blocked_group": blocked_group,
+                    "hold_path": hold_path,
                     "planned_risk_pct_of_equity": planned_risk_pct_of_equity,
                     "future_R": future_r,
                     "exposure_future_return_pct": exposure_future_return_pct,
                     "mfe_pct": mfe_pct,
                     "mae_pct": mae_pct,
                     "giveback_pct": giveback_pct,
+                    "snapshot_long_notional_quote": snapshot_long_notional_quote,
+                    "snapshot_short_notional_quote": snapshot_short_notional_quote,
+                    "portfolio_context": risk_debug.get("portfolio_context"),
                     "candidate_filter_reasons": candidate_filter_reasons,
                     "candidate_filter_primary_reason": candidate_filter_primary_reason,
                     "candidate_filter_manage_only": candidate_filter_manage_only,
@@ -591,6 +730,23 @@ class ReviewService:
                 for reason in sorted({str(item["candidate_filter_primary_reason"]) for item in reviewed})
             }).items()
         }
+        by_hold_path = {
+            hold_path: _summarize_reviews(
+                hold_reviews_for_path,
+                contract_market=self.settings.contract_market,
+                reentry_window_bars=horizon_bars,
+                timeframe_ms=timeframe_ms,
+            )
+            for hold_path, hold_reviews_for_path in defaultdict(list, {
+                hold_path: [item for item in reviewed if item.get("hold_path") == hold_path]
+                for hold_path in sorted({str(item["hold_path"]) for item in reviewed if item.get("hold_path") is not None})
+            }).items()
+        }
+        cycle_summary = _cycle_summary(
+            reviewed,
+            contract_market=self.settings.contract_market,
+            leverage=float(self.settings.contract_leverage) if self.settings.contract_market else 1.0,
+        )
         aggregate = {
             "reviewed": len(reviewed),
             "incomplete": len(reviews) - len(reviewed),
@@ -635,6 +791,8 @@ class ReviewService:
                 }
                 | {"counts": _candidate_reason_counts(reviewed)}
             ),
+            "by_hold_path": by_hold_path,
+            "cycle_summary": cycle_summary,
         }
         return {
             "exchange_id": self.settings.exchange_id,

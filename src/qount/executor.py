@@ -90,6 +90,76 @@ class Executor:
         portfolio = self._load_paper_portfolio()
         price = self._find_price(bundle, verdict.symbol)
 
+        if self.settings.contract_market and verdict.final_action in {"buy", "sell"}:
+            desired_side = "long" if verdict.final_action == "buy" else "short"
+            current_position = portfolio["positions"].get(verdict.symbol)
+            reversed_from: str | None = None
+            if current_position and str(current_position.get("side") or "long") != desired_side:
+                reversed_from = str(current_position.get("side") or "long")
+                existing_quantity = float(current_position["quantity"])
+                existing_entry_price = float(current_position["average_entry_price"])
+                existing_margin_quote = float(current_position.get("margin_quote") or 0.0)
+                realized_pnl_quote = (
+                    (price - existing_entry_price) * existing_quantity
+                    if reversed_from == "long"
+                    else (existing_entry_price - price) * existing_quantity
+                )
+                portfolio["free_quote"] = float(portfolio["free_quote"]) + existing_margin_quote + realized_pnl_quote
+                portfolio["positions"].pop(verdict.symbol, None)
+                current_position = None
+
+            margin_quote = min(bundle.account.equity_quote * verdict.final_size_pct, float(portfolio["free_quote"]))
+            if margin_quote <= 0.0:
+                return ExecutionResult(
+                    status="paper_rejected",
+                    mode=self.settings.mode,
+                    symbol=verdict.symbol,
+                    action=verdict.final_action,
+                    side=verdict.final_action,
+                    quantity=None,
+                    notional_quote=None,
+                    pnl_quote=None,
+                    external_order_id=None,
+                    raw={"reason": "insufficient_paper_free_quote"},
+                )
+            quantity = (margin_quote * float(self.settings.contract_leverage)) / price
+            portfolio["free_quote"] = float(portfolio["free_quote"]) - margin_quote
+            if current_position:
+                old_qty = float(current_position["quantity"])
+                old_entry = float(current_position["average_entry_price"])
+                old_margin_quote = float(current_position.get("margin_quote") or 0.0)
+                new_qty = old_qty + quantity
+                avg_entry = ((old_qty * old_entry) + (quantity * price)) / new_qty
+                new_margin_quote = old_margin_quote + margin_quote
+            else:
+                new_qty = quantity
+                avg_entry = price
+                new_margin_quote = margin_quote
+            portfolio["positions"][verdict.symbol] = {
+                "quantity": new_qty,
+                "average_entry_price": avg_entry,
+                "side": desired_side,
+                "margin_quote": new_margin_quote,
+            }
+            self._save_paper_portfolio(portfolio)
+            return ExecutionResult(
+                status="paper_filled",
+                mode=self.settings.mode,
+                symbol=verdict.symbol,
+                action=verdict.final_action,
+                side=verdict.final_action,
+                quantity=quantity,
+                notional_quote=quantity * price,
+                pnl_quote=None,
+                external_order_id=None,
+                raw={
+                    "paper_portfolio": portfolio,
+                    "margin_quote": margin_quote,
+                    "position_side": desired_side,
+                    "reversed_from": reversed_from,
+                },
+            )
+
         if verdict.final_action == "buy":
             spend = min(bundle.account.equity_quote * verdict.final_size_pct, float(portfolio["free_quote"]))
             quantity = spend / price
@@ -152,12 +222,26 @@ class Executor:
         position_quantity = float(current_position["quantity"])
         quantity = position_quantity * close_fraction
         entry_price = float(current_position["average_entry_price"])
+        position_side = str(current_position.get("side") or "long")
         proceeds = quantity * price
-        pnl_quote = proceeds - (quantity * entry_price)
-        portfolio["free_quote"] = float(portfolio["free_quote"]) + proceeds
+        if self.settings.contract_market:
+            margin_quote = float(current_position.get("margin_quote") or 0.0)
+            released_margin_quote = margin_quote * close_fraction
+            pnl_quote = (
+                (price - entry_price) * quantity
+                if position_side == "long"
+                else (entry_price - price) * quantity
+            )
+            portfolio["free_quote"] = float(portfolio["free_quote"]) + released_margin_quote + pnl_quote
+        else:
+            released_margin_quote = None
+            pnl_quote = proceeds - (quantity * entry_price)
+            portfolio["free_quote"] = float(portfolio["free_quote"]) + proceeds
         remaining_quantity = max(position_quantity - quantity, 0.0)
         if remaining_quantity > 1e-12:
             current_position["quantity"] = remaining_quantity
+            if self.settings.contract_market:
+                current_position["margin_quote"] = max(float(current_position.get("margin_quote") or 0.0) - float(released_margin_quote or 0.0), 0.0)
             portfolio["positions"][verdict.symbol] = current_position
         else:
             portfolio["positions"].pop(verdict.symbol, None)
@@ -167,7 +251,7 @@ class Executor:
             mode=self.settings.mode,
             symbol=verdict.symbol,
             action="close",
-            side="sell",
+            side="buy" if self.settings.contract_market and position_side == "short" else "sell",
             quantity=quantity,
             notional_quote=proceeds,
             pnl_quote=pnl_quote,
@@ -177,6 +261,8 @@ class Executor:
                 "close_fraction": close_fraction,
                 "partial_close": remaining_quantity > 1e-12,
                 "remaining_quantity": remaining_quantity,
+                "released_margin_quote": released_margin_quote,
+                "position_side": position_side,
             },
         )
 

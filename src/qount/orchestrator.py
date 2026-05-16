@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
@@ -12,6 +13,7 @@ from .decision_schema import validate_decision
 from .exchange_utils import ExchangePool
 from .executor import Executor
 from .journal import Journal
+from .market import build_paper_account_snapshot
 from .market import MarketGateway
 from .models import AIDecision, ValidatedDecision, to_jsonable, utc_now
 from .notifier import Notifier
@@ -45,11 +47,31 @@ class Orchestrator:
             return bundle.symbols[0].symbol
         return self.settings.symbols[0]
 
+    def _latest_prices_from_bundle(self, bundle) -> dict[str, float]:
+        return {snapshot.symbol: snapshot.last_price for snapshot in bundle.symbols}
+
+    def _refresh_bundle_account(self, bundle):
+        latest_prices = self._latest_prices_from_bundle(bundle)
+        if self.settings.paper_mode:
+            account = build_paper_account_snapshot(
+                settings=self.settings,
+                journal=self.journal,
+                latest_prices=latest_prices,
+            )
+        else:
+            account = self.market.refresh_live_account(latest_prices)
+        return replace(bundle, account=account)
+
+    def _apply_candidate_filter(self, bundle, *, exclude_symbols: set[str]):
+        if not exclude_symbols:
+            return self.candidate_filter.apply(bundle)
+        return self.candidate_filter.apply(bundle, exclude_symbols=exclude_symbols)
+
     def run_once(self) -> dict:
-        run_id = self.journal.start_run(self.settings.mode)
         if self.settings.live_mode:
             active_backoff = self._active_exchange_backoff()
             if active_backoff is not None:
+                run_id = self.journal.start_run(self.settings.mode)
                 summary = {
                     "run_id": run_id,
                     "mode": self.settings.mode,
@@ -60,6 +82,7 @@ class Orchestrator:
                 return summary
             guard = self.safety_checks.live_guard_status()
             if not guard.get("ok"):
+                run_id = self.journal.start_run(self.settings.mode)
                 summary = {
                     "run_id": run_id,
                     "mode": self.settings.mode,
@@ -71,6 +94,7 @@ class Orchestrator:
         try:
             bundle = self.market.fetch_bundle(self.journal)
         except Exception as exc:
+            run_id = self.journal.start_run(self.settings.mode)
             self.safety_checks.invalidate_cached_preflight()
             self._sync_exchange_backoff({"error": str(exc)})
             summary = {
@@ -101,9 +125,88 @@ class Orchestrator:
             orphan_cleanup = self.executor.cleanup_orphan_managed_orders(bundle)
         else:
             orphan_cleanup = {"canceled": [], "errors": []}
+        return self._process_cycle(bundle, orphan_cleanup=orphan_cleanup)
+
+    def _process_cycle(self, bundle, *, orphan_cleanup: dict[str, Any]) -> dict:
+        if self.settings.live_mode:
+            bar_state_key = self._live_bar_state_key()
+            bar_fingerprint = bundle.latest_closed_bar_fingerprint()
+            last_bar_state = self.journal.get_runtime_state(bar_state_key, None)
+            if last_bar_state and last_bar_state.get("fingerprint") == bar_fingerprint:
+                run_id = self.journal.start_run(self.settings.mode)
+                summary = {
+                    "run_id": run_id,
+                    "mode": self.settings.mode,
+                    "status": "duplicate_bar_skipped",
+                    "fingerprint": bar_fingerprint,
+                    "previous": last_bar_state,
+                }
+                if orphan_cleanup.get("canceled") or orphan_cleanup.get("errors"):
+                    summary["orphan_cleanup"] = orphan_cleanup
+                self.journal.finish_run(run_id, "skipped", summary)
+                return summary
+
+        processed_symbols: set[str] = set()
+        cycle_summaries: list[dict[str, Any]] = []
+        current_bundle = bundle
+        pending_orphan_cleanup = orphan_cleanup
+
+        while True:
+            candidate_result = self._apply_candidate_filter(
+                current_bundle,
+                exclude_symbols=processed_symbols,
+            )
+            if candidate_result.status == "filtered_hold" and cycle_summaries:
+                break
+
+            run_id = self.journal.start_run(self.settings.mode)
+            summary = self._process_bundle(
+                run_id,
+                current_bundle,
+                orphan_cleanup=pending_orphan_cleanup,
+                candidate_result=candidate_result,
+                skip_duplicate_guard=True,
+            )
+            cycle_summaries.append(summary)
+            pending_orphan_cleanup = {"canceled": [], "errors": []}
+
+            if summary.get("symbol"):
+                processed_symbols.add(str(summary["symbol"]))
+
+            if candidate_result.status == "filtered_hold":
+                break
+
+            if summary.get("status") not in {None, "completed", "skipped"}:
+                break
+
+            if len(processed_symbols) >= len({snapshot.symbol for snapshot in current_bundle.symbols}):
+                break
+
+            current_bundle = self._refresh_bundle_account(current_bundle)
+
+        if len(cycle_summaries) == 1:
+            return cycle_summaries[0]
+        return {
+            "mode": self.settings.mode,
+            "status": "cycle_completed",
+            "generated_at": bundle.generated_at.isoformat(),
+            "processed_runs": len(cycle_summaries),
+            "processed_symbols": [item.get("symbol") for item in cycle_summaries if item.get("symbol")],
+            "sub_runs": cycle_summaries,
+        }
+
+    def _process_bundle(
+        self,
+        run_id: int,
+        bundle,
+        *,
+        orphan_cleanup: dict[str, Any],
+        candidate_result=None,
+        skip_duplicate_guard: bool = False,
+    ) -> dict:
         self.journal.record_snapshot(run_id, bundle)
         self._write_json_artifact(self.settings.snapshot_dir / f"run-{run_id}.json", to_jsonable(bundle))
-        if self.settings.live_mode:
+        if self.settings.live_mode and not skip_duplicate_guard:
             bar_state_key = self._live_bar_state_key()
             bar_fingerprint = bundle.latest_closed_bar_fingerprint()
             last_bar_state = self.journal.get_runtime_state(bar_state_key, None)
@@ -120,7 +223,8 @@ class Orchestrator:
                 self.journal.finish_run(run_id, "skipped", summary)
                 return summary
 
-        candidate_result = self.candidate_filter.apply(bundle)
+        if candidate_result is None:
+            candidate_result = self.candidate_filter.apply(bundle)
         candidate_summary = candidate_result.summary
         ai_bundle = candidate_result.filtered_bundle or bundle
         ai_failure_streak = int(self.journal.get_runtime_state("ai_failure_streak", 0))
@@ -241,7 +345,10 @@ class Orchestrator:
             "order_status": result.status,
             "equity_quote": bundle.account.equity_quote,
             "candidate_filter": candidate_summary,
+            "generated_at": bundle.generated_at.isoformat(),
         }
+        if verdict.risk_debug is not None:
+            summary["risk_debug"] = verdict.risk_debug
         if orphan_cleanup.get("canceled") or orphan_cleanup.get("errors"):
             summary["orphan_cleanup"] = orphan_cleanup
         if verdict.close_fraction < 1.0:

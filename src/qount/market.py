@@ -74,6 +74,144 @@ def _trend_bias(returns_12bars: float, sma_fast_ratio: float, sma_slow_ratio: fl
     return "flat"
 
 
+def build_symbol_snapshot(
+    *,
+    symbol: str,
+    timeframe: str,
+    completed_candles: list[Candle],
+    exchange_min_cost_quote: float | None,
+    exchange_min_amount: float | None,
+    exchange_amount_step: float | None,
+    higher_timeframe: dict[str, Any] | None = None,
+) -> SymbolSnapshot:
+    closes = [candle.close for candle in completed_candles]
+    volumes = [candle.volume for candle in completed_candles]
+    last_price = closes[-1]
+    indicators = {
+        "return_1bar": (closes[-1] / closes[-2]) - 1.0,
+        "return_24bars": (closes[-1] / closes[-25]) - 1.0,
+        "sma_fast_ratio": (closes[-1] / _sma(closes, 12)) - 1.0,
+        "sma_slow_ratio": (closes[-1] / _sma(closes, 48)) - 1.0,
+        "rsi_14": _rsi(closes, 14),
+        "atr_14_pct": _atr(completed_candles, 14) / closes[-1],
+        "volume_ratio_20": volumes[-1] / mean(volumes[-20:-1]),
+        "range_pct": (completed_candles[-1].high - completed_candles[-1].low) / closes[-1],
+    }
+    return SymbolSnapshot(
+        symbol=symbol,
+        timeframe=timeframe,
+        last_price=last_price,
+        indicators=indicators,
+        recent_candles=completed_candles[-24:],
+        exchange_min_cost_quote=exchange_min_cost_quote,
+        exchange_min_amount=exchange_min_amount,
+        exchange_amount_step=exchange_amount_step,
+        higher_timeframe=higher_timeframe,
+    )
+
+
+def build_higher_timeframe_context_from_completed_candles(
+    *,
+    timeframe: str,
+    completed_candles: list[Candle],
+) -> dict[str, Any]:
+    closes = [candle.close for candle in completed_candles]
+    returns_12bars = (closes[-1] / closes[-13]) - 1.0
+    sma_fast_ratio = (closes[-1] / _sma(closes, 12)) - 1.0
+    sma_slow_ratio = (closes[-1] / _sma(closes, 24)) - 1.0
+    rsi_14 = _rsi(closes, 14)
+    return {
+        "timeframe": timeframe,
+        "return_12bars": returns_12bars,
+        "sma_fast_ratio": sma_fast_ratio,
+        "sma_slow_ratio": sma_slow_ratio,
+        "rsi_14": rsi_14,
+        "trend_bias": _trend_bias(returns_12bars, sma_fast_ratio, sma_slow_ratio, rsi_14),
+    }
+
+
+def build_paper_account_snapshot(
+    *,
+    settings: Settings,
+    journal: Journal,
+    latest_prices: dict[str, float],
+) -> AccountSnapshot:
+    portfolio = journal.get_runtime_state(
+        "paper_portfolio",
+        {
+            "free_quote": settings.paper_starting_quote,
+            "positions": {},
+        },
+    )
+    open_positions: list[PositionSnapshot] = []
+    free_quote = float(portfolio["free_quote"])
+
+    if not settings.contract_market:
+        equity_quote = free_quote
+        for symbol, position in portfolio["positions"].items():
+            quantity = float(position["quantity"])
+            mark_price = latest_prices[symbol]
+            market_value_quote = quantity * mark_price
+            equity_quote += market_value_quote
+            open_positions.append(
+                PositionSnapshot(
+                    symbol=symbol,
+                    quantity=quantity,
+                    mark_price=mark_price,
+                    market_value_quote=market_value_quote,
+                    side="long",
+                    average_entry_price=float(position["average_entry_price"]),
+                    notional_quote=market_value_quote,
+                )
+            )
+        return AccountSnapshot(
+            quote_currency=settings.quote_currency,
+            equity_quote=equity_quote,
+            free_quote=free_quote,
+            open_positions=open_positions,
+            mode=settings.mode,
+            market_type=settings.market_type,
+        )
+
+    equity_quote = free_quote
+    leverage = float(settings.contract_leverage)
+    for symbol, position in portfolio["positions"].items():
+        quantity = float(position["quantity"])
+        mark_price = latest_prices[symbol]
+        average_entry_price = float(position["average_entry_price"])
+        side = str(position.get("side") or "long")
+        margin_quote = float(position.get("margin_quote") or 0.0)
+        notional_quote = quantity * mark_price
+        unrealized_pnl_quote = (
+            (mark_price - average_entry_price) * quantity
+            if side == "long"
+            else (average_entry_price - mark_price) * quantity
+        )
+        equity_quote += margin_quote + unrealized_pnl_quote
+        open_positions.append(
+            PositionSnapshot(
+                symbol=symbol,
+                quantity=quantity,
+                mark_price=mark_price,
+                market_value_quote=notional_quote,
+                side=side,
+                average_entry_price=average_entry_price,
+                notional_quote=notional_quote,
+                unrealized_pnl_quote=unrealized_pnl_quote,
+                leverage=leverage,
+                margin_mode=settings.contract_margin_mode,
+            )
+        )
+    return AccountSnapshot(
+        quote_currency=settings.quote_currency,
+        equity_quote=equity_quote,
+        free_quote=free_quote,
+        open_positions=open_positions,
+        mode=settings.mode,
+        market_type=settings.market_type,
+    )
+
+
 class MarketGateway:
     def __init__(self, settings: Settings, exchange_pool: ExchangePool | None = None) -> None:
         self.settings = settings
@@ -138,40 +276,24 @@ class MarketGateway:
                 for row in ohlcv
             ]
             completed_candles = _latest_completed_candles(candles, timeframe_ms, now_ms)
-            closes = [candle.close for candle in completed_candles]
-            volumes = [candle.volume for candle in completed_candles]
-            last_price = closes[-1]
-            latest_prices[symbol] = last_price
-            indicators = {
-                "return_1bar": (closes[-1] / closes[-2]) - 1.0,
-                "return_24bars": (closes[-1] / closes[-25]) - 1.0,
-                "sma_fast_ratio": (closes[-1] / _sma(closes, 12)) - 1.0,
-                "sma_slow_ratio": (closes[-1] / _sma(closes, 48)) - 1.0,
-                "rsi_14": _rsi(closes, 14),
-                "atr_14_pct": _atr(completed_candles, 14) / closes[-1],
-                "volume_ratio_20": volumes[-1] / mean(volumes[-20:-1]),
-                "range_pct": (completed_candles[-1].high - completed_candles[-1].low) / closes[-1],
-            }
             higher_timeframe = None
             try:
                 higher_timeframe = self._build_higher_timeframe_context(public_exchange, symbol, now_ms)
             except Exception:
                 higher_timeframe = None
-            symbol_snapshots.append(
-                SymbolSnapshot(
-                    symbol=symbol,
-                    timeframe=self.settings.timeframe,
-                    last_price=last_price,
-                    indicators=indicators,
-                    recent_candles=completed_candles[-24:],
-                    exchange_min_cost_quote=float((((market.get("limits") or {}).get("cost") or {}).get("min")) or 0.0) or None,
-                    exchange_min_amount=float((((market.get("limits") or {}).get("amount") or {}).get("min")) or 0.0) or None,
-                    exchange_amount_step=market_amount_step(market),
-                    higher_timeframe=higher_timeframe,
-                )
+            snapshot = build_symbol_snapshot(
+                symbol=symbol,
+                timeframe=self.settings.timeframe,
+                completed_candles=completed_candles,
+                exchange_min_cost_quote=float((((market.get("limits") or {}).get("cost") or {}).get("min")) or 0.0) or None,
+                exchange_min_amount=float((((market.get("limits") or {}).get("amount") or {}).get("min")) or 0.0) or None,
+                exchange_amount_step=market_amount_step(market),
+                higher_timeframe=higher_timeframe,
             )
+            latest_prices[symbol] = snapshot.last_price
+            symbol_snapshots.append(snapshot)
 
-        account = self._build_paper_account(journal, latest_prices) if self.settings.paper_mode else self._fetch_live_account(markets, latest_prices)
+        account = build_paper_account_snapshot(settings=self.settings, journal=journal, latest_prices=latest_prices) if self.settings.paper_mode else self._fetch_live_account(markets, latest_prices)
         return MarketSnapshotBundle(
             generated_at=utc_now(),
             timeframe=self.settings.timeframe,
@@ -179,41 +301,12 @@ class MarketGateway:
             account=account,
         )
 
-    def _build_paper_account(self, journal: Journal, latest_prices: dict[str, float]) -> AccountSnapshot:
-        portfolio = journal.get_runtime_state(
-            "paper_portfolio",
-            {
-                "free_quote": self.settings.paper_starting_quote,
-                "positions": {},
-            },
-        )
-        open_positions: list[PositionSnapshot] = []
-        equity_quote = float(portfolio["free_quote"])
-        for symbol, position in portfolio["positions"].items():
-            quantity = float(position["quantity"])
-            mark_price = latest_prices[symbol]
-            market_value_quote = quantity * mark_price
-            equity_quote += market_value_quote
-            open_positions.append(
-                PositionSnapshot(
-                    symbol=symbol,
-                    quantity=quantity,
-                    mark_price=mark_price,
-                    market_value_quote=market_value_quote,
-                    side="long",
-                    average_entry_price=float(position["average_entry_price"]),
-                    notional_quote=market_value_quote,
-                )
-            )
-
-        return AccountSnapshot(
-            quote_currency=self.settings.quote_currency,
-            equity_quote=equity_quote,
-            free_quote=float(portfolio["free_quote"]),
-            open_positions=open_positions,
-            mode=self.settings.mode,
-            market_type=self.settings.market_type,
-        )
+    def refresh_live_account(self, latest_prices: dict[str, float]) -> AccountSnapshot:
+        if self.settings.paper_mode:
+            raise RuntimeError("refresh_live_account is only valid in live mode")
+        public_exchange = self.exchange_pool.public()
+        markets = public_exchange.load_markets()
+        return self._fetch_live_account(markets, latest_prices)
 
     def _fetch_live_account(self, markets: dict[str, dict[str, Any]], latest_prices: dict[str, float]) -> AccountSnapshot:
         private_exchange = self.exchange_pool.private()

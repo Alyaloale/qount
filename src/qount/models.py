@@ -157,6 +157,7 @@ class RiskVerdict:
     remaining_stop_price: float | None = None
     protective_refresh_only: bool = False
     protective_refresh_reason: str | None = None
+    risk_debug: dict[str, Any] | None = None
 
 
 @dataclass

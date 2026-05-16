@@ -4,8 +4,67 @@
 
 补充说明：
 
-- 如果你关心的是这次修复之后“当前 live 策略是什么、收益相关调参做了哪些、这些改动是否有效”，优先去看：
-  - [docs/live-strategy-and-tuning-2026-05-13.md](live-strategy-and-tuning-2026-05-13.md)
+- 如果你关心的是这次修复之后“当前 live 基线是什么、现在持什么仓、当前策略状态如何”，优先去看：
+  - [docs/live-baseline-and-strategy-current.md](live-baseline-and-strategy-current.md)
+
+## 2026-05-16 当前基线更新
+
+`2026-05-14` 那节基线现在已经不够新，至少有两处不能继续直接复用：
+
+- 旧固定叶子：
+  - `🇯🇵日本高速03|BGP|流媒体`
+  - 当前已经不在新的 `clash-verge.yaml` 里
+- 旧出口 IP：
+  - `18.163.116.238`
+  - 也不再是这次验证时的当前出口
+
+`2026-05-16 14:45 CST` 现场重新验证后的当前口径是：
+
+- 当前 dedicated Binance 叶子：
+  - `🇯🇵日本高速02|BGP|CUCM`
+- Windows `status -Probe` 曾经返回过的出口 IP：
+  - `203.10.99.12`
+- WSL 默认 Binance 专线仍然是：
+  - `http://192.168.128.1:7907`
+
+这次还要额外记一条经验：
+
+- Windows `QountBinanceProxy` 计划任务状态
+- `status -Probe`
+- WSL `curl --proxy`
+
+三者在抖动时可能互相打架。
+
+这次现场就出现过：
+
+- `status -Probe` / ScheduledTask 看起来不健康
+- 但 WSL `7907 -> Binance time` 已经先恢复
+- 随后 `preflight-live` 重新全绿
+- 再跑出一条新的 `completed` live run
+
+所以从这次开始，当前生产真相的优先级应该明确成：
+
+1. `WSL -> 192.168.128.1:7907` 实测是否能通
+2. `preflight-live` 是否全绿
+3. 最新真实 `run` 是否重新回到 `completed`
+4. 最后才拿 Windows `status -Probe` / ScheduledTask 当辅助证据
+
+这次 `2026-05-16` 的部署验证收尾结果是：
+
+- 第一次手动 `run-once`
+  - `run_id=1783`
+  - `status=market_data_failed`
+  - `error=binance GET https://fapi.binance.com/fapi/v1/exchangeInfo`
+- 专线按当前真实叶子重建并复证后：
+  - `preflight-live` 重新全绿
+  - 第二次手动 `run-once`
+    - `run_id=1784`
+    - `status=completed`
+    - `symbol=SOL/USDT:USDT`
+    - `action=hold`
+    - `order_status=noop`
+  - `qount-runner.timer`
+    - 已恢复为 `active + waiting`
 
 ## 2026-05-14 当前基线
 
@@ -392,8 +451,140 @@ Windows 侧脚本：
   - `preflight-live.position_mode.ok=true`
   - `preflight-live.balance_guard.ok=true`
   - `run-once` 成功 completed
+- `runtime-status.halted=false`
+- `runtime-status.ai_failure_streak=0`
+
+## 2026-05-15 13:20-14:05 CST 专线恢复续补
+
+这段补记的是 `2026-05-15` 这次新的 live 故障和恢复过程。
+
+这次最容易搞混的点，不是“代理坏了”这么简单，而是：
+
+- relay / AI 路径和 Binance 专线路径是两条不同的出口
+- Windows `status -Probe` 看到的结果，不一定等于 WSL 真正走到的 `7907` 出口
+
+### 当时的真实拓扑
+
+- AI / relay 路径：
+  - Mac `127.0.0.1:8317`
+  - `ssh home-tunnel`
+  - Windows `127.0.0.1:8317` CLIProxyAPI
+  - Windows `127.0.0.1:7897` Clash Verge mixed-port
+- Binance 专线路径：
+  - WSL `HTTP_PROXY` / `HTTPS_PROXY=http://192.168.128.1:7907`
+  - Windows `QountBinanceProxy`
+
+当时已经现场确认：
+
+- relay / AI 这条出口还是 `203.10.97.121`
+- 但 `qount` 的 `7907` 专线并没有正常工作
+
+### 2026-05-15 13:20 CST 当时的故障真相
+
+故障面上看到的是：
+
+- `run_id=1486`
+- `status=market_data_failed`
+- 报错：
+  - `binance GET https://fapi.binance.com/fapi/v1/exchangeInfo`
+
+继续往下查后，真正的问题分成两层：
+
+1. `QountBinanceProxy` 的 watchdog 任务参数已经漂到一个不存在的旧节点名：
+   - `🇯🇵日本高速03|BGP|流媒体`
+   - `task.log` 会反复刷：
+     - `candidate proxy not found in source config`
+2. Windows 上还残留了一个旧的 `SYSTEM` listener 长时间占着 `7907`
+   - 导致“你以为已经切了 dedicated candidate”
+   - 但 WSL 实际打到的还是那个旧 listener
+
+这一步是这次最关键的新经验：
+
+- **不要只看 Windows `status -Probe`**
+- 必须再从 WSL 真实跑：
+  - `curl --proxy http://192.168.128.1:7907 https://api.ipify.org`
+  - `curl --proxy http://192.168.128.1:7907 https://fapi.binance.com/fapi/v1/time`
+
+如果 Windows 说切好了，但 WSL 看到的出口 IP 还是旧的，就优先怀疑：
+
+- `7907` 上有旧 listener 残留
+- 当前切换没有真正落到 WSL 实际链路
+
+### 这次恢复是怎么做通的
+
+这次最后真正跑通的 dedicated candidate 是：
+
+- `🇸🇬新加坡专线01|BGP|流媒体`
+
+恢复步骤是：
+
+1. 清掉占着 `7907` 的旧 listener
+2. 重新用 dedicated `binance-proxy.yaml` 启动 `QountBinanceProxy`
+3. 从 WSL 重复验证 `7907` 的真实出口，而不是只看 Windows 单次 probe
+
+现场最终确认：
+
+- WSL 经 `192.168.128.1:7907` 的真实出口稳定为：
+  - `47.129.194.36`
+- `fapi.binance.com/fapi/v1/time` 正常返回 `serverTime`
+
+也就是说：
+
+- 旧出口 `203.10.97.121` 那条是会触发 Binance `restricted location` 的旧路
+- 恢复后的 dedicated 出口 `47.129.194.36` 可以正常访问 Binance 公有接口
+
+### 白名单补完后的恢复结果
+
+在把 `47.129.194.36` 加进 Binance API key 白名单之后，现场再次验证：
+
+- `healthcheck.binance_ok=true`
+- `preflight-live` 全绿
+  - `credentials.ok=true`
+  - `position_mode.ok=true`
+  - `balance_guard.ok=true`
+  - `live_guard.ok=true`
+- `clear-halt` 之后：
   - `runtime-status.halted=false`
   - `runtime-status.ai_failure_streak=0`
+
+最后没有强行手动 `run-once`，而是等真实 timer tick 收尾：
+
+- `2026-05-15 14:05 CST`
+- `run_id=1495`
+- `status=completed`
+- `symbol=XRP/USDT:USDT`
+- `action=sell`
+- `order_status=closed`
+
+这说明到这一步：
+
+- 不是只把 public path 修通了
+- 而是 private API、live guard、真实下单链路也一起恢复了
+
+### 这次要额外记住的判断分界
+
+以后再看到类似故障，先把这两类错误分开，不要混成一句“Binance 不通”：
+
+- `restricted location`
+  - 说明当前出口 IP 本身属于 Binance 地区限制路径
+- `-2015 Invalid API-key, IP, or permissions for action`
+  - 说明当前出口已经能到 Binance
+  - 但 API key 白名单或权限还没放行
+
+这次两种错误都真实出现过，而且发生在**不同出口**上：
+
+- `203.10.97.121`
+  - `restricted location`
+- `47.129.194.36`
+  - 公有接口正常
+  - 白名单补完前是 `-2015`
+  - 白名单补完后恢复正常
+
+所以以后如果你问“现在是地区受限还是白名单问题”，必须先先证：
+
+1. WSL 真实 `7907` 出口 IP 是多少
+2. 这个 IP 打 Binance 公有接口是 `serverTime` 还是 `restricted location`
+3. 再看 private API 是不是 `-2015`
 
 ## 下次最快排查顺序
 
@@ -484,3 +675,140 @@ python -m qount.main runtime-status
 
 - `timer 正常 != 实盘正常`
 - 先证 `QountBinanceProxy`，再证 `WSL -> 7907`，再证 `preflight-live`，最后用 `run-once` 收尾
+
+## 2026-05-15 18:35 CST 再恢复：专线坏了不是白名单坏了
+
+这轮必须单独记，因为它和前面的 `-2015` 不是同一种故障。
+
+### 当时现场状态
+
+`2026-05-15 18:15 CST` 左右的真实现象是：
+
+- `qount-runner.timer`
+  - 仍然是 `active (waiting)`
+- `runtime-status`
+  - `halted=false`
+  - `ai_failure_streak=0`
+- 但 `preflight-live` 全红
+  - `public_api.ok=false`
+  - `symbols_ok.ok=false`
+  - `credentials.ok=false`
+- `run-once`
+  - `status=market_data_failed`
+  - `error=binance GET https://fapi.binance.com/fapi/v1/exchangeInfo`
+
+也就是说：
+
+- 不是策略不交易
+- 不是 API key 又被白名单卡住
+- 而是 **`7907` 自己先坏了**
+
+### 根因不是“mihomo 没起”，而是 watchdog 绑错叶子
+
+这次真正的根因有两层：
+
+1. Windows 计划任务 `QountBinanceProxy`
+   - 仍然硬编码：
+     - `-CandidateProxyName "🇸🇬新加坡专线01|BGP|流媒体"`
+2. 手动 `status/start` 虽然口头显示：
+   - `ruleTarget=🇯🇵日本高速02|BGP|CUCM`
+   - 但实际落到 `C:\ProgramData\qount-binance-proxy\binance-proxy.yaml` 里的末尾规则还是：
+     - `MATCH,🇸🇬新加坡专线01|BGP|流媒体`
+
+所以现场会出现这种很容易误判的分叉：
+
+- `profiles.yaml`
+  - 已选中 `🇯🇵日本高速02|BGP|CUCM`
+- `status -Probe`
+  - 看起来在用 `日本02`
+- 但真正被 `7907` 用于出站的 `MATCH` 规则
+  - 仍然是旧的 `🇸🇬新加坡专线01|BGP|流媒体`
+
+这就是为什么：
+
+- `process` 还活着
+- `port 7907` 还在听
+- 但从 `2026-05-15 16:50 CST` 开始，`stderr.log` 里已经持续出现：
+  - `context deadline exceeded`
+
+### 这次修复动作
+
+这轮现场做掉的是：
+
+1. 重新安装 Windows 计划任务：
+   - `QountBinanceProxy`
+   - 固定为：
+     - `-CandidateProxyName "🇯🇵日本高速02|BGP|CUCM"`
+2. 停掉当前 `7907` 相关 mihomo 进程
+3. 用同一候选重新 `start`
+4. 再用 `status -Probe` / WSL `curl --proxy` / `preflight-live` / `run-once` 逐层复证
+
+### 恢复后的新基线
+
+`2026-05-15 18:39 CST` 左右现场复核结果：
+
+- Windows `status -Probe`
+  - `running=true`
+  - `listening=true`
+  - `ruleTarget=🇯🇵日本高速02|BGP|CUCM`
+  - `ip=203.10.99.12`
+  - `binanceTime` 正常返回
+- WSL `7907`
+  - `curl --proxy http://192.168.128.1:7907 https://fapi.binance.com/fapi/v1/time`
+  - 已恢复 `serverTime`
+- `preflight-live`
+  - 重新全绿
+  - `credentials.ok=true`
+  - `position_mode.ok=true`
+  - `balance_guard.ok=true`
+  - `live_guard.ok=true`
+- 真实 `run-once`
+  - `run_id=1553`
+  - `status=completed`
+  - `symbol=SOL/USDT:USDT`
+  - `action=hold`
+  - `order_status=noop`
+
+### 这次必须记住的判断分界
+
+这次非常值得记住的一点是：
+
+- 用 `7898` 临时覆写后，`preflight-live` 已经能证明：
+  - 白名单 / API 权限是对的
+- 但默认 `7907` 仍然会全红
+
+所以以后如果用户说：
+
+- “我已经认证成功了，为什么还是不行”
+
+不要先怀疑认证没生效。  
+先证明：
+
+1. 用 `7898` 临时覆写是不是全绿
+2. 如果 `7898` 绿、`7907` 红
+   - 说明是 dedicated route 故障
+   - 不是 API 权限故障
+
+### 下次如果再出现同类故障，先查这个
+
+先看 Windows 计划任务里真正写的是哪个 `CandidateProxyName`：
+
+```bash
+ssh home "powershell -NoProfile -Command \"Export-ScheduledTask -TaskName 'QountBinanceProxy'\""
+```
+
+重点不要只看：
+
+- `profiles.yaml` 里当前选中的 leaf
+
+还要看：
+
+- 计划任务参数
+- `binance-proxy.yaml` 末尾 `rules:` 里的 `MATCH,...`
+
+如果：
+
+- 任务参数还是旧叶子
+- 或 `MATCH` 规则还是旧叶子
+
+那就不是继续猜白名单，也不是继续猜策略，先把 watchdog 绑定的候选修对。

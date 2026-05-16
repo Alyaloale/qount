@@ -22,6 +22,11 @@ OVEREXTENDED_LONG_CHASE_MIN_DIRECTIONAL_1BAR_PCT = 0.0015
 OVEREXTENDED_LONG_CHASE_MIN_VOLUME_RATIO = 1.50
 OVEREXTENDED_LONG_CHASE_MIN_RSI = 68.0
 OVEREXTENDED_LONG_CHASE_MIN_BODY_TO_RANGE_RATIO = 0.50
+HIGH_RSI_LONG_CHASE_MIN_DIRECTIONAL_24BAR_PCT = 0.0100
+HIGH_RSI_LONG_CHASE_MIN_DIRECTIONAL_1BAR_PCT = 0.0010
+HIGH_RSI_LONG_CHASE_MIN_VOLUME_RATIO = 0.75
+HIGH_RSI_LONG_CHASE_MIN_RSI = 74.0
+HIGH_RSI_LONG_CHASE_MIN_BODY_TO_RANGE_RATIO = 0.35
 
 PRE_BREAK_CONTINUATION_MIN_DIRECTIONAL_24BAR_PCT = 0.0012
 PRE_BREAK_CONTINUATION_MAX_DIRECTIONAL_1BAR_PCT = 0.0008
@@ -148,7 +153,16 @@ def assess_fresh_entry(symbol: SymbolSnapshot, *, action: str | None = None) -> 
         and body_to_range_ratio >= OVEREXTENDED_LONG_CHASE_MIN_BODY_TO_RANGE_RATIO
         and sma_direction_ok
     )
-    if low_participation_terminal or climactic_terminal or overextended_long_chase:
+    high_rsi_long_chase = (
+        resolved_action == "buy"
+        and directional_24bars >= HIGH_RSI_LONG_CHASE_MIN_DIRECTIONAL_24BAR_PCT
+        and directional_1bar >= HIGH_RSI_LONG_CHASE_MIN_DIRECTIONAL_1BAR_PCT
+        and volume_ratio >= HIGH_RSI_LONG_CHASE_MIN_VOLUME_RATIO
+        and rsi_14 >= HIGH_RSI_LONG_CHASE_MIN_RSI
+        and body_to_range_ratio >= HIGH_RSI_LONG_CHASE_MIN_BODY_TO_RANGE_RATIO
+        and sma_direction_ok
+    )
+    if low_participation_terminal or climactic_terminal or overextended_long_chase or high_rsi_long_chase:
         return FreshEntryAssessment(
             action=resolved_action,
             bias=bias,

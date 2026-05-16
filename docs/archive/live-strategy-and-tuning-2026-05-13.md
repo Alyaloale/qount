@@ -1,4 +1,4 @@
-# qount 当前 Live 策略与本次调参记录（2026-05-13）
+# qount 当前 Live 策略与本次调参记录（2026-05-13，历史归档）
 
 这份文档记录 `2026-05-13` 这次 live 修复之后，`qount` 当前实际在跑的策略口径、已落地的执行与风控调整、它们能解决什么问题，以及它们解决不了什么问题。
 
@@ -8,14 +8,19 @@
 - 本次为什么要调开仓规模、TP 下限、浮盈回撤保护
 - 这些改动对“赚了不平、最后回吐”到底有没有用
 
-优先看这份文档。  
+这份文档现在已经**不是当前主入口**。  
+如果你想看当前生产真实基线，先看：
+
+- [../live-baseline-and-strategy-current.md](../live-baseline-and-strategy-current.md)
+
+如果你想看这次历史调参与当时 reasoning，再继续看本页。  
 如果你关心的是 `2026-05-14` 基于最新 `signal-review` 得出的**下一轮具体改动方案**，看：
 
-- [strategy-optimization-design.md](strategy-optimization-design.md)
+- [../strategy-optimization-design.md](../strategy-optimization-design.md)
 
 如果你关心的是当天专线代理 / 白名单 / WSL 断链怎么恢复的，去看：
 
-- [live-recovery-2026-05-13.md](live-recovery-2026-05-13.md)
+- [../live-recovery-2026-05-13.md](../live-recovery-2026-05-13.md)
 
 ## 当前 live 运行基线
 
@@ -89,7 +94,7 @@
 
 入口：
 
-- [src/qount/candidate_filter.py](../src/qount/candidate_filter.py)
+- [src/qount/candidate_filter.py](../../src/qount/candidate_filter.py)
 
 当前逻辑：
 
@@ -102,9 +107,9 @@
 
 入口：
 
-- [src/qount/ai_client.py](../src/qount/ai_client.py)
-- [prompts/system_prompt_v1.txt](../prompts/system_prompt_v1.txt)
-- [prompts/decision_prompt_v1.txt](../prompts/decision_prompt_v1.txt)
+- [src/qount/ai_client.py](../../src/qount/ai_client.py)
+- [prompts/system_prompt_v1.txt](../../prompts/system_prompt_v1.txt)
+- [prompts/decision_prompt_v1.txt](../../prompts/decision_prompt_v1.txt)
 
 当前口径：
 
@@ -129,7 +134,7 @@
 
 入口：
 
-- [src/qount/risk_engine.py](../src/qount/risk_engine.py)
+- [src/qount/risk_engine.py](../../src/qount/risk_engine.py)
 
 当前风控会做这些事：
 
@@ -149,7 +154,7 @@
 
 入口：
 
-- [src/qount/executor.py](../src/qount/executor.py)
+- [src/qount/executor.py](../../src/qount/executor.py)
 
 当前 futures live 执行已经不是“只下进场单然后等下个 bar 再说”了，而是：
 
@@ -193,7 +198,7 @@
 
 代码：
 
-- [src/qount/risk_engine.py](../src/qount/risk_engine.py)
+- [src/qount/risk_engine.py](../../src/qount/risk_engine.py)
 
 目的：
 
@@ -214,7 +219,7 @@
 
 代码：
 
-- [src/qount/risk_engine.py](../src/qount/risk_engine.py)
+- [src/qount/risk_engine.py](../../src/qount/risk_engine.py)
 
 目的：
 
@@ -236,7 +241,7 @@
 
 代码：
 
-- [src/qount/risk_engine.py](../src/qount/risk_engine.py)
+- [src/qount/risk_engine.py](../../src/qount/risk_engine.py)
 
 目的：
 

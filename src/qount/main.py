@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 
+from .backtest import BacktestService
+from .backtest import parse_backtest_datetime
 from .orchestrator import Orchestrator
 from .settings import Settings
 
@@ -24,6 +26,14 @@ def build_parser() -> argparse.ArgumentParser:
     signal_review.add_argument("--threshold-pct", type=float, default=0.003)
     paper_replay = subparsers.add_parser("paper-replay", help="Replay recorded paper orders into an equity timeline.")
     paper_replay.add_argument("--include-noop", action="store_true")
+    backtest = subparsers.add_parser("backtest", help="Run an isolated historical paper backtest with the current candidate/AI/risk pipeline.")
+    backtest.add_argument("--start", required=True, help="Inclusive start time in ISO 8601. Include an explicit timezone offset when possible.")
+    backtest.add_argument("--end", required=True, help="Inclusive end time in ISO 8601. Include an explicit timezone offset when possible.")
+    backtest.add_argument("--starting-quote", type=float, default=None, help="Optional paper starting equity override.")
+    backtest.add_argument("--max-bars", type=int, default=None, help="Optional cap on processed bars for quicker iteration.")
+    backtest.add_argument("--review-horizon-bars", type=int, default=3)
+    backtest.add_argument("--review-threshold-pct", type=float, default=0.003)
+    backtest.add_argument("--artifact-dir", default=None, help="Optional output directory for the isolated backtest database and reports.")
     dashboard = subparsers.add_parser("dashboard-snapshot", help="Return a single aggregated monitoring snapshot.")
     dashboard.add_argument("--review-limit", type=int, default=10)
     dashboard.add_argument("--review-horizon-bars", type=int, default=1)
@@ -57,6 +67,16 @@ def main() -> None:
         result = orchestrator.signal_review(limit=args.limit, horizon_bars=args.horizon_bars, threshold_pct=args.threshold_pct)
     elif args.command == "paper-replay":
         result = orchestrator.paper_replay(include_noop=args.include_noop)
+    elif args.command == "backtest":
+        result = BacktestService(settings).run(
+            start=parse_backtest_datetime(args.start),
+            end=parse_backtest_datetime(args.end),
+            review_horizon_bars=args.review_horizon_bars,
+            review_threshold_pct=args.review_threshold_pct,
+            starting_quote=args.starting_quote,
+            max_bars=args.max_bars,
+            artifact_dir=args.artifact_dir,
+        )
     elif args.command == "dashboard-snapshot":
         result = orchestrator.dashboard_snapshot(
             review_limit=args.review_limit,

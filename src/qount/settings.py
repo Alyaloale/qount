@@ -94,6 +94,10 @@ class Settings:
     max_effective_stop_loss_pct: float
     candidate_trend_timeframe: str | None
     min_expected_edge_pct: float
+    max_net_directional_exposure_pct: float
+    max_correlated_directional_exposure_pct: float
+    third_same_direction_edge_buffer_pct: float
+    alt_short_edge_penalty_pct: float
     flip_cooldown_bars: int
     min_hold_bars: int
     same_symbol_reentry_cooldown_bars: int
@@ -157,7 +161,7 @@ class Settings:
             live_confirmation=_env("QOUNT_LIVE_CONFIRMATION"),
             openai_base_url=_env("QOUNT_OPENAI_BASE_URL", "http://192.168.128.1:8318/v1") or "http://192.168.128.1:8318/v1",
             openai_api_key=_env("QOUNT_OPENAI_API_KEY", "my-local-key") or "my-local-key",
-            ai_model=_env("QOUNT_AI_MODEL", "gpt-5.4-mini") or "gpt-5.4-mini",
+            ai_model=_env("QOUNT_AI_MODEL", "gpt-5.4") or "gpt-5.4",
             ai_timeout_seconds=_env_int("QOUNT_AI_TIMEOUT_SECONDS", 40),
             symbols=_env_list("QOUNT_SYMBOLS", ["BTC/USDT", "ETH/USDT"]),
             timeframe=_env("QOUNT_TIMEFRAME", "1h") or "1h",
@@ -180,6 +184,10 @@ class Settings:
             max_effective_stop_loss_pct=_env_float("QOUNT_MAX_EFFECTIVE_STOP_LOSS_PCT", 0.03),
             candidate_trend_timeframe=_env("QOUNT_CANDIDATE_TREND_TIMEFRAME", "1h"),
             min_expected_edge_pct=_env_float("QOUNT_MIN_EXPECTED_EDGE_PCT", 0.0025),
+            max_net_directional_exposure_pct=_env_float("QOUNT_MAX_NET_DIRECTIONAL_EXPOSURE_PCT", 0.40),
+            max_correlated_directional_exposure_pct=_env_float("QOUNT_MAX_CORRELATED_DIRECTIONAL_EXPOSURE_PCT", 0.30),
+            third_same_direction_edge_buffer_pct=_env_float("QOUNT_THIRD_SAME_DIRECTION_EDGE_BUFFER_PCT", 0.00075),
+            alt_short_edge_penalty_pct=_env_float("QOUNT_ALT_SHORT_EDGE_PENALTY_PCT", 0.00075),
             flip_cooldown_bars=_env_int("QOUNT_FLIP_COOLDOWN_BARS", 2),
             min_hold_bars=_env_int("QOUNT_MIN_HOLD_BARS", 2),
             same_symbol_reentry_cooldown_bars=_env_int("QOUNT_SAME_SYMBOL_REENTRY_COOLDOWN_BARS", 3),

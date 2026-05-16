@@ -19,8 +19,11 @@ MAX_CANDIDATE_SYMBOLS = 2
 FLAT_TREND_SCORE_PENALTY = 0.75
 FRESH_ENTRY_EXHAUSTION_SCORE_PENALTY = 1.25
 PRE_BREAK_CONTINUATION_SCORE_BONUS = 0.75
-SHORT_REBOUND_1BAR_PCT = 0.0
-SHORT_COUNTERTREND_24BAR_PCT = 0.0
+WEAK_LOW_VOLATILITY_FRESH_ENTRY_SCORE_PENALTY = 0.60
+# Only veto clearly countertrend short candidates. A tiny green 5m bar inside a
+# still-bearish 1h structure should be allowed through to AI/risk review.
+SHORT_REBOUND_1BAR_PCT = 0.0015
+SHORT_COUNTERTREND_24BAR_PCT = 0.0025
 
 
 @dataclass
@@ -95,13 +98,32 @@ def _candidate_quality_gate(
     return eligible, reasons
 
 
+def _should_penalize_soft_low_volatility_fresh_entry(
+    *,
+    reasons: list[str],
+    fresh_entry_assessment,
+    manage_only: bool,
+) -> bool:
+    if manage_only or fresh_entry_assessment is None:
+        return False
+    if fresh_entry_assessment.continuation_watch:
+        return False
+    return "low_volatility_soft_penalty" in reasons
+
+
 class CandidateFilter:
     def __init__(self, settings: Settings, journal: Journal) -> None:
         self.settings = settings
         self.journal = journal
 
-    def apply(self, bundle: MarketSnapshotBundle) -> CandidateFilterResult:
+    def apply(
+        self,
+        bundle: MarketSnapshotBundle,
+        *,
+        exclude_symbols: set[str] | None = None,
+    ) -> CandidateFilterResult:
         timeframe_ms = timeframe_to_ms(self.settings.timeframe)
+        excluded = exclude_symbols or set()
         recent_actions = self.journal.get_recent_signal_actions(limit=80)
         latest_action_by_symbol = {
             item["symbol"]: item
@@ -115,6 +137,8 @@ class CandidateFilter:
         supplemental_candidates: list[tuple[str, float]] = []
 
         for symbol in bundle.symbols:
+            if symbol.symbol in excluded:
+                continue
             entry_ts = symbol.recent_candles[-1].timestamp_ms
             latest_action = latest_action_by_symbol.get(symbol.symbol)
             latest_action_ts = None if latest_action is None else int(latest_action["bar_timestamp_ms"])
@@ -184,6 +208,14 @@ class CandidateFilter:
                         elif fresh_entry_assessment.continuation_watch:
                             reasons.extend(fresh_entry_assessment.candidate_reasons)
                             score += PRE_BREAK_CONTINUATION_SCORE_BONUS
+                        elif _should_penalize_soft_low_volatility_fresh_entry(
+                            reasons=reasons,
+                            fresh_entry_assessment=fresh_entry_assessment,
+                            manage_only=manage_only,
+                        ):
+                            # Low-volatility fresh entries can still be reviewed,
+                            # but they should rank below cleaner continuation setups.
+                            score -= WEAK_LOW_VOLATILITY_FRESH_ENTRY_SCORE_PENALTY
                         short_precheck_reasons = _short_candidate_precheck(symbol)
                         if short_precheck_reasons:
                             eligible = False
@@ -235,6 +267,14 @@ class CandidateFilter:
                     elif fresh_entry_assessment.continuation_watch:
                         reasons.extend(fresh_entry_assessment.candidate_reasons)
                         score += PRE_BREAK_CONTINUATION_SCORE_BONUS
+                    elif _should_penalize_soft_low_volatility_fresh_entry(
+                        reasons=reasons,
+                        fresh_entry_assessment=fresh_entry_assessment,
+                        manage_only=manage_only,
+                    ):
+                        # Keep weak low-volatility fresh entries available, but
+                        # let cleaner setups win the candidate slots first.
+                        score -= WEAK_LOW_VOLATILITY_FRESH_ENTRY_SCORE_PENALTY
                     short_precheck_reasons = _short_candidate_precheck(symbol)
                     if short_precheck_reasons:
                         eligible = False
@@ -268,7 +308,11 @@ class CandidateFilter:
         summary = {
             "status": "selected" if selected_symbols else "filtered_hold",
             "selected_symbols": selected_symbols,
-            "symbols": [contexts[symbol.symbol] | {"symbol": symbol.symbol} for symbol in bundle.symbols],
+            "symbols": [
+                contexts[symbol.symbol] | {"symbol": symbol.symbol}
+                for symbol in bundle.symbols
+                if symbol.symbol in contexts
+            ],
         }
         if not selected_symbols:
             return CandidateFilterResult(status="filtered_hold", filtered_bundle=None, summary=summary)
