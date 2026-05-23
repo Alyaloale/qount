@@ -54,6 +54,13 @@ def _normalize_margin_mode(raw: str | None) -> str:
     return "isolated"
 
 
+def _normalize_rule_mode(raw: str | None) -> str:
+    value = (raw or "strict").strip().lower()
+    if value in {"bottom_line", "bottom-line", "bottomline", "ai_first", "aifirst"}:
+        return "bottom_line"
+    return "strict"
+
+
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
@@ -73,6 +80,7 @@ class Settings:
     openai_api_key: str
     ai_model: str
     ai_timeout_seconds: int
+    rule_mode: str
     symbols: tuple[str, ...]
     timeframe: str
     lookback_bars: int
@@ -93,6 +101,10 @@ class Settings:
     min_effective_stop_loss_pct: float
     max_effective_stop_loss_pct: float
     candidate_trend_timeframe: str | None
+    hourly_model_enable: bool
+    hourly_model_path: Path
+    setup_model_enable: bool
+    setup_model_path: Path
     min_expected_edge_pct: float
     max_net_directional_exposure_pct: float
     max_correlated_directional_exposure_pct: float
@@ -133,6 +145,10 @@ class Settings:
         return self.market_type == "future"
 
     @property
+    def bottom_line_rules(self) -> bool:
+        return self.rule_mode == "bottom_line"
+
+    @property
     def ccxt_default_type(self) -> str:
         return "future" if self.contract_market else "spot"
 
@@ -163,6 +179,7 @@ class Settings:
             openai_api_key=_env("QOUNT_OPENAI_API_KEY", "my-local-key") or "my-local-key",
             ai_model=_env("QOUNT_AI_MODEL", "gpt-5.4") or "gpt-5.4",
             ai_timeout_seconds=_env_int("QOUNT_AI_TIMEOUT_SECONDS", 40),
+            rule_mode=_normalize_rule_mode(_env("QOUNT_RULE_MODE", "strict")),
             symbols=_env_list("QOUNT_SYMBOLS", ["BTC/USDT", "ETH/USDT"]),
             timeframe=_env("QOUNT_TIMEFRAME", "1h") or "1h",
             lookback_bars=_env_int("QOUNT_LOOKBACK_BARS", 200),
@@ -183,6 +200,16 @@ class Settings:
             min_effective_stop_loss_pct=_env_float("QOUNT_MIN_EFFECTIVE_STOP_LOSS_PCT", 0.005),
             max_effective_stop_loss_pct=_env_float("QOUNT_MAX_EFFECTIVE_STOP_LOSS_PCT", 0.03),
             candidate_trend_timeframe=_env("QOUNT_CANDIDATE_TREND_TIMEFRAME", "1h"),
+            hourly_model_enable=_env_bool("QOUNT_HOURLY_MODEL_ENABLE", True),
+            hourly_model_path=Path(
+                _env("QOUNT_HOURLY_MODEL_PATH", str(state_dir / "models" / "hourly_return_model.json"))
+                or str(state_dir / "models" / "hourly_return_model.json")
+            ).expanduser(),
+            setup_model_enable=_env_bool("QOUNT_SETUP_MODEL_ENABLE", True),
+            setup_model_path=Path(
+                _env("QOUNT_SETUP_MODEL_PATH", str(state_dir / "models" / "setup_edge_model.json"))
+                or str(state_dir / "models" / "setup_edge_model.json")
+            ).expanduser(),
             min_expected_edge_pct=_env_float("QOUNT_MIN_EXPECTED_EDGE_PCT", 0.0025),
             max_net_directional_exposure_pct=_env_float("QOUNT_MAX_NET_DIRECTIONAL_EXPOSURE_PCT", 0.40),
             max_correlated_directional_exposure_pct=_env_float("QOUNT_MAX_CORRELATED_DIRECTIONAL_EXPOSURE_PCT", 0.30),
@@ -191,8 +218,8 @@ class Settings:
             flip_cooldown_bars=_env_int("QOUNT_FLIP_COOLDOWN_BARS", 2),
             min_hold_bars=_env_int("QOUNT_MIN_HOLD_BARS", 2),
             same_symbol_reentry_cooldown_bars=_env_int("QOUNT_SAME_SYMBOL_REENTRY_COOLDOWN_BARS", 3),
-            trailing_profit_arm_pct=_env_float("QOUNT_TRAILING_PROFIT_ARM_PCT", 0.01),
-            trailing_profit_retrace_pct=_env_float("QOUNT_TRAILING_PROFIT_RETRACE_PCT", 0.005),
+            trailing_profit_arm_pct=_env_float("QOUNT_TRAILING_PROFIT_ARM_PCT", 0.0025),
+            trailing_profit_retrace_pct=_env_float("QOUNT_TRAILING_PROFIT_RETRACE_PCT", 0.0015),
             partial_take_profit_enable=_env_bool("QOUNT_PARTIAL_TAKE_PROFIT_ENABLE", True),
             partial_take_profit_trigger_pct=_env_float("QOUNT_PARTIAL_TAKE_PROFIT_TRIGGER_PCT", 0.012),
             partial_take_profit_step_pct=_env_float("QOUNT_PARTIAL_TAKE_PROFIT_STEP_PCT", 0.012),
@@ -214,3 +241,5 @@ class Settings:
     def ensure_directories(self) -> None:
         for path in (self.state_dir, self.snapshot_dir, self.decision_dir, self.log_dir):
             path.mkdir(parents=True, exist_ok=True)
+        self.hourly_model_path.parent.mkdir(parents=True, exist_ok=True)
+        self.setup_model_path.parent.mkdir(parents=True, exist_ok=True)

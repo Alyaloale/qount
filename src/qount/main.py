@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from .backtest import BacktestService
 from .backtest import parse_backtest_datetime
+from .hourly_model import HourlySignalModelService
 from .orchestrator import Orchestrator
+from .setup_model import SetupEdgeModelService
 from .settings import Settings
 
 
@@ -24,6 +27,17 @@ def build_parser() -> argparse.ArgumentParser:
     signal_review.add_argument("--limit", type=int, default=20)
     signal_review.add_argument("--horizon-bars", type=int, default=3)
     signal_review.add_argument("--threshold-pct", type=float, default=0.003)
+    signal_review.add_argument("--replay-current-risk", action="store_true", help="Re-evaluate recorded snapshots and validated decisions with the current risk engine before scoring.")
+    signal_review.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example BTC/USDT:USDT ETH/USDT:USDT.")
+    signal_review_study = subparsers.add_parser("signal-review-study", help="Compare the same recorded signal window across multiple review horizons and edge buckets.")
+    signal_review_study.add_argument("--limit", type=int, default=160)
+    signal_review_study.add_argument("--horizons", nargs="+", type=int, default=[3, 6, 12, 24])
+    signal_review_study.add_argument("--threshold-pct", type=float, default=0.003)
+    signal_review_study.add_argument("--replay-current-risk", action="store_true", help="Re-evaluate recorded snapshots and validated decisions with the current risk engine before scoring.")
+    signal_review_study.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example BTC/USDT:USDT ETH/USDT:USDT.")
+    execution_cost_audit = subparsers.add_parser("execution-cost-audit", help="Audit live execution fee/slippage samples plus current exposure geometry.")
+    execution_cost_audit.add_argument("--limit", type=int, default=100)
+    execution_cost_audit.add_argument("--mode", default=None, help="Optional order mode filter, for example live or paper.")
     paper_replay = subparsers.add_parser("paper-replay", help="Replay recorded paper orders into an equity timeline.")
     paper_replay.add_argument("--include-noop", action="store_true")
     backtest = subparsers.add_parser("backtest", help="Run an isolated historical paper backtest with the current candidate/AI/risk pipeline.")
@@ -34,6 +48,28 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--review-horizon-bars", type=int, default=3)
     backtest.add_argument("--review-threshold-pct", type=float, default=0.003)
     backtest.add_argument("--artifact-dir", default=None, help="Optional output directory for the isolated backtest database and reports.")
+    hourly_model = subparsers.add_parser("train-hourly-model", help="Train a lightweight 1h ridge model per symbol and save it to a JSON artifact.")
+    hourly_model.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example SOL/USDT:USDT XRP/USDT:USDT.")
+    hourly_model.add_argument("--lookback-days", type=int, default=90)
+    hourly_model.add_argument("--horizon-bars", type=int, default=3, help="Prediction horizon in completed 1h bars.")
+    hourly_model.add_argument("--ridge-alpha", type=float, default=0.0005)
+    hourly_model.add_argument("--artifact-path", default=None, help="Optional output path for the trained model JSON.")
+    setup_model = subparsers.add_parser("train-setup-model", help="Train symbol+setup 5m edge models for narrow setup phases and save them to a JSON artifact.")
+    setup_model.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example SOL/USDT:USDT XRP/USDT:USDT.")
+    setup_model.add_argument("--setup-phases", nargs="+", default=None, help="Optional setup-phase filter.")
+    setup_model.add_argument("--lookback-days", type=int, default=90)
+    setup_model.add_argument("--horizon-bars", type=int, default=3, help="Prediction horizon in completed 5m bars.")
+    setup_model.add_argument("--min-samples", type=int, default=60)
+    setup_model.add_argument("--ridge-alpha", type=float, default=0.0005)
+    setup_model.add_argument("--split-higher-phase", action="store_true", help="Train nested models per higher_timeframe phase when enough samples exist.")
+    setup_model.add_argument("--artifact-path", default=None, help="Optional output path for the trained setup-model JSON.")
+    setup_study = subparsers.add_parser("setup-edge-study", help="Study historical post-cost edge by symbol, setup phase, and traditional pattern.")
+    setup_study.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter.")
+    setup_study.add_argument("--setup-phases", nargs="+", default=None, help="Optional setup-phase filter.")
+    setup_study.add_argument("--lookback-days", type=int, default=120)
+    setup_study.add_argument("--horizon-bars", type=int, default=3)
+    setup_study.add_argument("--min-samples", type=int, default=20)
+    setup_study.add_argument("--top-k", type=int, default=12)
     dashboard = subparsers.add_parser("dashboard-snapshot", help="Return a single aggregated monitoring snapshot.")
     dashboard.add_argument("--review-limit", type=int, default=10)
     dashboard.add_argument("--review-horizon-bars", type=int, default=1)
@@ -64,7 +100,23 @@ def main() -> None:
     elif args.command == "paper-status":
         result = orchestrator.paper_status()
     elif args.command == "signal-review":
-        result = orchestrator.signal_review(limit=args.limit, horizon_bars=args.horizon_bars, threshold_pct=args.threshold_pct)
+        result = orchestrator.signal_review(
+            limit=args.limit,
+            horizon_bars=args.horizon_bars,
+            threshold_pct=args.threshold_pct,
+            replay_current_risk=args.replay_current_risk,
+            symbols_filter=args.symbols,
+        )
+    elif args.command == "signal-review-study":
+        result = orchestrator.signal_review_study(
+            limit=args.limit,
+            horizons=args.horizons,
+            threshold_pct=args.threshold_pct,
+            replay_current_risk=args.replay_current_risk,
+            symbols_filter=args.symbols,
+        )
+    elif args.command == "execution-cost-audit":
+        result = orchestrator.execution_cost_audit(limit=args.limit, mode=args.mode)
     elif args.command == "paper-replay":
         result = orchestrator.paper_replay(include_noop=args.include_noop)
     elif args.command == "backtest":
@@ -76,6 +128,40 @@ def main() -> None:
             starting_quote=args.starting_quote,
             max_bars=args.max_bars,
             artifact_dir=args.artifact_dir,
+        )
+    elif args.command == "train-hourly-model":
+        artifact_path = None if args.artifact_path is None else Path(args.artifact_path).expanduser()
+        if artifact_path is not None and not artifact_path.is_absolute():
+            artifact_path = settings.project_root / artifact_path
+        result = HourlySignalModelService(settings).train(
+            symbols_filter=args.symbols,
+            lookback_days=args.lookback_days,
+            horizon_bars=args.horizon_bars,
+            ridge_alpha=args.ridge_alpha,
+            artifact_path=artifact_path,
+        )
+    elif args.command == "train-setup-model":
+        artifact_path = None if args.artifact_path is None else Path(args.artifact_path).expanduser()
+        if artifact_path is not None and not artifact_path.is_absolute():
+            artifact_path = settings.project_root / artifact_path
+        result = SetupEdgeModelService(settings).train(
+            symbols_filter=args.symbols,
+            setup_phases=args.setup_phases,
+            lookback_days=args.lookback_days,
+            horizon_bars=args.horizon_bars,
+            min_samples=args.min_samples,
+            ridge_alpha=args.ridge_alpha,
+            artifact_path=artifact_path,
+            split_higher_phase=args.split_higher_phase,
+        )
+    elif args.command == "setup-edge-study":
+        result = SetupEdgeModelService(settings).study(
+            symbols_filter=args.symbols,
+            setup_phases=args.setup_phases,
+            lookback_days=args.lookback_days,
+            horizon_bars=args.horizon_bars,
+            min_samples=args.min_samples,
+            top_k=args.top_k,
         )
     elif args.command == "dashboard-snapshot":
         result = orchestrator.dashboard_snapshot(

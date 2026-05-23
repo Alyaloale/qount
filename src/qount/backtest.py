@@ -6,9 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .exchange_utils import call_with_time_sync_retry
 from .exchange_utils import build_exchange
 from .exchange_utils import market_amount_step
 from .exchange_utils import resolve_market_symbols
+from .hourly_model import load_hourly_model_bundle
+from .hourly_model import score_hourly_return_model_signal
 from .journal import Journal
 from .market import MIN_COMPLETED_CANDLES
 from .market import _latest_completed_candles
@@ -100,9 +103,17 @@ class HistoricalMarketGateway:
         self.review_horizon_bars = max(review_horizon_bars, 0)
         self.max_bars = max_bars
         self.public_exchange = public_exchange or build_exchange(settings, private=False)
-        self.markets = self.public_exchange.load_markets()
+        self.markets = call_with_time_sync_retry(
+            self.public_exchange,
+            self.public_exchange.load_markets,
+        )
         self.resolved_symbols = resolve_market_symbols(self.markets, settings.symbols, settings)
         self.timeframe_ms = timeframe_to_ms(settings.timeframe)
+        self.hourly_model_bundle = (
+            load_hourly_model_bundle(settings.hourly_model_path)
+            if settings.hourly_model_enable
+            else None
+        )
         self.base_candles_by_symbol: dict[str, list[Candle]] = {}
         self.base_rows_by_symbol: dict[str, list[list[float]]] = {}
         self.base_index_by_timestamp: dict[str, dict[int, int]] = {}
@@ -125,7 +136,14 @@ class HistoricalMarketGateway:
         last_timestamp: int | None = None
         timeframe_ms = timeframe_to_ms(timeframe)
         while cursor <= end_ms:
-            batch = self.public_exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=cursor, limit=1000)
+            batch = call_with_time_sync_retry(
+                self.public_exchange,
+                self.public_exchange.fetch_ohlcv,
+                symbol,
+                timeframe=timeframe,
+                since=cursor,
+                limit=1000,
+            )
             if not batch:
                 break
             added = 0
@@ -248,10 +266,18 @@ class HistoricalMarketGateway:
         completed = [candle for candle in candles if candle.timestamp_ms + trend_timeframe_ms <= now_ms]
         if len(completed) < MIN_COMPLETED_CANDLES:
             return None
-        return build_higher_timeframe_context_from_completed_candles(
+        context = build_higher_timeframe_context_from_completed_candles(
             timeframe=trend_timeframe,
             completed_candles=completed,
         )
+        model_signal = score_hourly_return_model_signal(
+            symbol=symbol,
+            completed_candles=completed,
+            model_bundle=self.hourly_model_bundle,
+        )
+        if model_signal is not None:
+            context["model_signal"] = model_signal
+        return context
 
     def next_bundle(self) -> MarketSnapshotBundle:
         if not self.has_next():

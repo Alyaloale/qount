@@ -329,6 +329,45 @@ class Journal:
             result.append(item)
         return result
 
+    def get_execution_audit_rows(self, limit: int = 100, mode: str | None = None) -> list[dict[str, Any]]:
+        sql = """
+            SELECT
+                orders.run_id,
+                orders.created_at,
+                orders.mode,
+                orders.status,
+                orders.symbol,
+                orders.action,
+                orders.side,
+                orders.quantity,
+                orders.notional_quote,
+                orders.raw_json,
+                snapshots.snapshot_json,
+                risk_actions.verdict_json,
+                ai_decisions_validated.payload_json
+            FROM orders
+            JOIN snapshots ON snapshots.run_id = orders.run_id
+            JOIN risk_actions ON risk_actions.run_id = orders.run_id
+            JOIN ai_decisions_validated ON ai_decisions_validated.run_id = orders.run_id
+        """
+        params: list[Any] = []
+        if mode is not None:
+            sql += " WHERE orders.mode = ?"
+            params.append(mode)
+        sql += " ORDER BY orders.id DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["raw_json"] = json.loads(item["raw_json"])
+            item["snapshot_json"] = json.loads(item["snapshot_json"])
+            item["verdict_json"] = json.loads(item["verdict_json"])
+            item["payload_json"] = json.loads(item["payload_json"])
+            result.append(item)
+        return result
+
     def get_latest_snapshot_prices(self) -> dict[str, float]:
         with self.connect() as conn:
             row = conn.execute(
@@ -420,6 +459,27 @@ class Journal:
                 continue
 
             symbol_entry = next((item for item in snapshot.get("symbols", []) if item.get("symbol") == entry_symbol), None)
+            candidate_filter_summary = raw_payload.get("candidate_filter") or {}
+            candidate_filter_symbols = (
+                candidate_filter_summary.get("symbols")
+                if isinstance(candidate_filter_summary, dict)
+                else []
+            )
+            candidate_filter_match = (
+                next(
+                    (
+                        item
+                        for item in candidate_filter_symbols
+                        if isinstance(item, dict) and str(item.get("symbol")) == entry_symbol
+                    ),
+                    None,
+                )
+                if isinstance(candidate_filter_symbols, list)
+                else None
+            )
+            risk_debug = verdict.get("risk_debug") or {}
+            fresh_entry_context = risk_debug.get("fresh_entry_context") or {}
+            entry_thesis = risk_debug.get("entry_thesis") or {}
             recent_candles = (symbol_entry or {}).get("recent_candles") or []
             bar_timestamp_ms = int(recent_candles[-1]["timestamp_ms"]) if recent_candles else None
             position_entry = next(
@@ -442,6 +502,42 @@ class Journal:
                     "bar_timestamp_ms": bar_timestamp_ms,
                     "position_side_before_action": None if position_entry is None else position_entry.get("side"),
                     "risk_reasons": [str(reason) for reason in (verdict.get("reasons") or [])],
+                    "entry_thesis": entry_thesis if isinstance(entry_thesis, dict) and entry_thesis else None,
+                    "entry_setup_phase": (
+                        None
+                        if not isinstance(entry_thesis, dict) or entry_thesis.get("setup_phase") is None
+                        else str(entry_thesis.get("setup_phase"))
+                    ) or (
+                        None
+                        if not isinstance(fresh_entry_context, dict) or fresh_entry_context.get("setup_phase") is None
+                        else str(fresh_entry_context.get("setup_phase"))
+                    ) or (
+                        None
+                        if not isinstance(candidate_filter_match, dict) or candidate_filter_match.get("setup_phase") is None
+                        else str(candidate_filter_match.get("setup_phase"))
+                    ),
+                    "entry_setup_confirmed": (
+                        None
+                        if not isinstance(entry_thesis, dict) or entry_thesis.get("setup_confirmed") is None
+                        else bool(entry_thesis.get("setup_confirmed"))
+                    ) if isinstance(entry_thesis, dict) and entry_thesis else (
+                        None
+                        if not isinstance(fresh_entry_context, dict) or fresh_entry_context.get("setup_confirmed") is None
+                        else bool(fresh_entry_context.get("setup_confirmed"))
+                    ),
+                    "entry_higher_timeframe_phase": (
+                        None
+                        if not isinstance(entry_thesis, dict) or entry_thesis.get("higher_timeframe_phase") is None
+                        else str(entry_thesis.get("higher_timeframe_phase"))
+                    ) or (
+                        None
+                        if not isinstance(fresh_entry_context, dict) or fresh_entry_context.get("higher_timeframe_phase") is None
+                        else str(fresh_entry_context.get("higher_timeframe_phase"))
+                    ) or (
+                        None
+                        if not isinstance(candidate_filter_match, dict) or candidate_filter_match.get("higher_timeframe_phase") is None
+                        else str(candidate_filter_match.get("higher_timeframe_phase"))
+                    ),
                 }
             )
         return result

@@ -86,6 +86,11 @@ class Executor:
                 return snapshot.last_price
         raise KeyError(f"missing price for {symbol}")
 
+    def _entry_thesis_payload(self, verdict: RiskVerdict) -> dict[str, Any] | None:
+        risk_debug = verdict.risk_debug or {}
+        entry_thesis = risk_debug.get("entry_thesis")
+        return entry_thesis if isinstance(entry_thesis, dict) and entry_thesis else None
+
     def _execute_paper(self, verdict: RiskVerdict, bundle: MarketSnapshotBundle) -> ExecutionResult:
         portfolio = self._load_paper_portfolio()
         price = self._find_price(bundle, verdict.symbol)
@@ -157,6 +162,7 @@ class Executor:
                     "margin_quote": margin_quote,
                     "position_side": desired_side,
                     "reversed_from": reversed_from,
+                    "entry_thesis": self._entry_thesis_payload(verdict),
                 },
             )
 
@@ -188,7 +194,10 @@ class Executor:
                 notional_quote=spend,
                 pnl_quote=None,
                 external_order_id=None,
-                raw={"paper_portfolio": portfolio},
+                raw={
+                    "paper_portfolio": portfolio,
+                    "entry_thesis": self._entry_thesis_payload(verdict),
+                },
             )
 
         current_position = portfolio["positions"].get(verdict.symbol)
@@ -907,6 +916,7 @@ class Executor:
                         "entry_cleanup": cleanup,
                         "entry_price": entry_price,
                         "protective_orders": protective_orders,
+                        "entry_thesis": self._entry_thesis_payload(verdict),
                     },
                 )
 
@@ -1157,7 +1167,10 @@ class Executor:
                 notional_quote=quantity * price,
                 pnl_quote=None,
                 external_order_id=str(order.get("id")),
-                raw=order,
+                raw={
+                    "entry_order": order,
+                    "entry_thesis": self._entry_thesis_payload(verdict),
+                },
             )
 
         position = next((item for item in bundle.account.open_positions if item.symbol == verdict.symbol), None)

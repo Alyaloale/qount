@@ -19,6 +19,7 @@ if "ccxt" not in sys.modules:
 from qount.exchange_utils import ExchangePool
 from qount.journal import Journal
 from qount.analytics import LiveAnalyticsService
+from qount.exchange_utils import call_with_time_sync_retry
 from qount.market import MarketGateway
 from qount.models import AccountSnapshot
 from qount.models import MarketSnapshotBundle
@@ -48,6 +49,7 @@ def make_settings(project_root: Path, **overrides) -> Settings:
         openai_api_key="test",
         ai_model="gpt-5.4-mini",
         ai_timeout_seconds=30,
+        rule_mode="strict",
         symbols=("SOL/USDT", "XRP/USDT"),
         timeframe="5m",
         lookback_bars=200,
@@ -68,7 +70,15 @@ def make_settings(project_root: Path, **overrides) -> Settings:
         min_effective_stop_loss_pct=0.005,
         max_effective_stop_loss_pct=0.03,
         candidate_trend_timeframe="1h",
+        hourly_model_enable=False,
+        hourly_model_path=project_root / "state" / "models" / "hourly_return_model.json",
+        setup_model_enable=False,
+        setup_model_path=project_root / "state" / "models" / "setup_edge_model.json",
         min_expected_edge_pct=0.0015,
+        max_net_directional_exposure_pct=0.40,
+        max_correlated_directional_exposure_pct=0.30,
+        third_same_direction_edge_buffer_pct=0.00075,
+        alt_short_edge_penalty_pct=0.00075,
         flip_cooldown_bars=2,
         min_hold_bars=2,
         same_symbol_reentry_cooldown_bars=3,
@@ -345,7 +355,35 @@ class PositionDetailsPool(ExchangePool):
         return self.private_exchange
 
 
+class TransientNetworkExchange:
+    def __init__(self) -> None:
+        self.load_markets_calls = 0
+
+    def load_markets(self):
+        self.load_markets_calls += 1
+        if self.load_markets_calls == 1:
+            raise Exception("HTTPSConnectionPool Max retries exceeded with url: /fapi/v1/exchangeInfo (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol')))")
+        return {
+            "ETH/USDT:USDT": {
+                "symbol": "ETH/USDT:USDT",
+            }
+        }
+
+
 class ExchangeThrottlingTests(unittest.TestCase):
+    def test_call_with_time_sync_retry_retries_transient_ssl_network_errors(self) -> None:
+        exchange = TransientNetworkExchange()
+
+        markets = call_with_time_sync_retry(
+            exchange,
+            exchange.load_markets,
+            retry_attempts=3,
+            retry_delay_seconds=0.0,
+        )
+
+        self.assertEqual(exchange.load_markets_calls, 2)
+        self.assertIn("ETH/USDT:USDT", markets)
+
     def test_full_preflight_uses_cache_on_second_call(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -67,6 +67,29 @@ class Orchestrator:
             return self.candidate_filter.apply(bundle)
         return self.candidate_filter.apply(bundle, exclude_symbols=exclude_symbols)
 
+    def _annotate_candidate_entry_viability(self, bundle, candidate_result) -> None:
+        ai_bundle = candidate_result.filtered_bundle
+        if ai_bundle is None:
+            return
+        summary_symbols = {
+            str(item.get("symbol") or ""): item
+            for item in candidate_result.summary.get("symbols", [])
+            if isinstance(item, dict) and item.get("symbol")
+        }
+        for symbol_snapshot in ai_bundle.symbols:
+            candidate_context = symbol_snapshot.candidate_context
+            if not isinstance(candidate_context, dict):
+                continue
+            preview = self.risk_engine.entry_viability_preview(
+                bundle=bundle,
+                symbol_snapshot=symbol_snapshot,
+                candidate_context=candidate_context,
+            )
+            candidate_context["entry_viability_preview"] = preview
+            summary_symbol = summary_symbols.get(symbol_snapshot.symbol)
+            if isinstance(summary_symbol, dict):
+                summary_symbol["entry_viability_preview"] = preview
+
     def run_once(self) -> dict:
         if self.settings.live_mode:
             active_backoff = self._active_exchange_backoff()
@@ -225,6 +248,8 @@ class Orchestrator:
 
         if candidate_result is None:
             candidate_result = self.candidate_filter.apply(bundle)
+        if candidate_result.status != "filtered_hold":
+            self._annotate_candidate_entry_viability(bundle, candidate_result)
         candidate_summary = candidate_result.summary
         ai_bundle = candidate_result.filtered_bundle or bundle
         ai_failure_streak = int(self.journal.get_runtime_state("ai_failure_streak", 0))
@@ -300,8 +325,12 @@ class Orchestrator:
             )
             self.journal.record_ai_raw(run_id, self.settings.ai_model, "v1", {"error": True}, str(exc))
 
-        self.journal.record_validated_decision(run_id, validated)
         verdict = self.risk_engine.evaluate(validated, bundle)
+        if validated.raw_payload is not None and verdict.risk_debug is not None:
+            entry_thesis = verdict.risk_debug.get("entry_thesis")
+            if isinstance(entry_thesis, dict) and entry_thesis:
+                validated.raw_payload["entry_thesis"] = entry_thesis
+        self.journal.record_validated_decision(run_id, validated)
         self.journal.record_risk(run_id, verdict)
         try:
             result = self.executor.execute(verdict, bundle)
@@ -638,8 +667,42 @@ class Orchestrator:
             "recent_orders": self.journal.get_recent_orders(limit=10, mode="live"),
         }
 
-    def signal_review(self, limit: int, horizon_bars: int, threshold_pct: float) -> dict:
-        return self.review_service.signal_review(limit=limit, horizon_bars=horizon_bars, threshold_pct=threshold_pct)
+    def signal_review(
+        self,
+        limit: int,
+        horizon_bars: int,
+        threshold_pct: float,
+        *,
+        replay_current_risk: bool = False,
+        symbols_filter: list[str] | None = None,
+    ) -> dict:
+        return self.review_service.signal_review(
+            limit=limit,
+            horizon_bars=horizon_bars,
+            threshold_pct=threshold_pct,
+            replay_current_risk=replay_current_risk,
+            symbols_filter=symbols_filter,
+        )
+
+    def signal_review_study(
+        self,
+        *,
+        limit: int,
+        horizons: list[int],
+        threshold_pct: float,
+        replay_current_risk: bool = False,
+        symbols_filter: list[str] | None = None,
+    ) -> dict:
+        return self.review_service.signal_review_study(
+            limit=limit,
+            horizons=horizons,
+            threshold_pct=threshold_pct,
+            replay_current_risk=replay_current_risk,
+            symbols_filter=symbols_filter,
+        )
+
+    def execution_cost_audit(self, *, limit: int, mode: str | None = None) -> dict:
+        return self.review_service.execution_cost_audit(limit=limit, mode=mode)
 
     def paper_replay(self, include_noop: bool = False) -> dict:
         return self.review_service.paper_replay(include_noop=include_noop)

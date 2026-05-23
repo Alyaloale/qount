@@ -235,39 +235,76 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
 
 如果当前 `Mac` 本机的 `7907` 公有接口代理不通，优先在 WSL 节点上跑这条命令，不要先怀疑回测逻辑本身。
 
-## 当前策略优化已落地部分
+## 当前文档
 
-- `candidate filter`
-  - 在 `AI` 前先过滤低波动、低成交量候选
-  - 如果已有持仓，优先保留持仓 symbol 做管理决策，但仍会按 `max_open_positions - 当前持仓数` 放行少量非持仓候选
-  - snapshot 会附带可选的高周期方向上下文，默认读 `QOUNT_CANDIDATE_TREND_TIMEFRAME=1h`
-  - futures 下 `1h flat` 现在只做降分，不再直接把候选硬拒绝
-- `risk gate`
-  - 新开仓会检查 `min_expected_edge_pct`
-  - futures 新开仓现在会把过小的 `size_pct` 抬到最小默认开仓比例，并把过低的 `take_profit_pct` 抬到最低止盈下限
-  - futures 新开仓现在会按 `stop_loss_pct + estimated_cost_pct` 反推仓位，`QOUNT_MAX_RISK_PER_TRADE_PCT` 已经变成真实 sizing 约束
-  - 如果交易所最小名义仓位要求会突破单笔风险预算，risk gate 会拒单并记录 `risk_budget_below_exchange_minimum`，不再为了成交强行抬仓
-  - 会拦截过快反手、过早平仓、同 symbol 过快重进
-  - 如果持仓已经积累到一定浮盈，后续又发生超过阈值的利润回撤，management 层会强制 `close` 锁住一部分利润
-  - futures 持仓浮盈达到阈值后，risk 层会触发单次 `partial_take_profit`，通过 `close_fraction` 平掉一部分仓位
-  - futures `sell` 现在仍会更早挡掉**明显** countertrend 的 short 候选；但 `1h` 偏空结构里的轻微 `5m` pullback 不再零容忍，会继续交给 `AI` / `risk gate` 判断
-  - futures live 开仓现在会按通过风控后的 `take_profit_pct / stop_loss_pct` 立刻下交易所侧 `reduceOnly` 保护单；部分减仓后会取消旧保护单并给剩余仓位重挂保护单
-  - 对 Binance futures 来说，这些 TP/SL 保护单属于 `conditional/algo` 单，不一定会出现在普通 `fetch_open_orders()` 结果里；现场排查要优先走 `trigger=true` / conditional 查询，而不是只看普通 open orders
-- `review`
-  - 不再只看方向对错，而是尽量贴近 post-cost 结果
-  - 已增加 `decision_lifecycle / exit_source / blocked_group` 切片
-  - 已增加 `planned_risk_pct_of_equity / future_R / mfe_pct / mae_pct / giveback_pct`，用于判断仓位风险、早平/晚平和回吐
-  - 当前这轮 fresh-entry 复查不要只盯 `blocked_sell`
-  - 应优先一起看：`by_lifecycle.fresh_entry`、`by_blocked_group.blocked_entry`、`by_symbol`，再用 `blocked_sell` 辅助判断 short 侧有没有被误伤
+- 当前仓库内只保留一份当前文档：
+  - [docs/current.md](docs/current.md)
+- 不再在仓库里保留：
+  - 旧计划
+  - 旧复盘
+  - archive 文档入口
+- 历史事实以后直接看：
+  - `git log / git diff`
+  - `WSL /home/alyaloale/Code/qount/state/qount.db`
+  - 远端 `systemd` 和运行命令结果
 
-最新一次继续放松后，当前 live 节点已经出现新的真实 `sell` 开仓，不再只是 `hold/noop`。这说明当前主瓶颈已经从“太少出手”开始往“新放行样本质量如何”转移。
+## 当前 live 基线
 
-当前默认阈值都偏保守，建议先用 review 看真实 `net_edge_pct / flip_rate / same_symbol_reentry_rate`，再回调参数，不要直接继续加复杂规则。
+- 生产节点：
+  - `WSL /home/alyaloale/Code/qount`
+- 调度：
+  - `systemd --user qount-runner.timer`
+- 交易模式：
+  - `QOUNT_MODE=live`
+  - `QOUNT_EXCHANGE_ID=binance`
+  - `QOUNT_MARKET_TYPE=future`
+- 当前交易对：
+  - `SOL/USDT`
+  - `XRP/USDT`
+  - `BTC/USDT`
+  - `ETH/USDT`
+- 当前周期：
+  - `QOUNT_TIMEFRAME=5m`
+  - `QOUNT_CANDIDATE_TREND_TIMEFRAME=1h`
+- 当前模型：
+  - `QOUNT_AI_MODEL=gpt-5.4`
+- 当前规则模式：
+  - `QOUNT_RULE_MODE=bottom_line`
+
+## 当前流程
+
+1. closed `5m` bar -> `snapshot`
+2. `candidate_filter` 做排序和标注
+3. `AI` 选择 symbol 和 `buy/sell/hold/close`
+4. `validate_decision` 只做 JSON / 字段规范化
+5. `risk_engine` 在 `bottom_line` 下只保留底线约束：
+   - 日亏损停机
+   - 系统 halt
+   - 风险仓位上限
+   - 交易所最小名义
+   - 最大持仓数
+   - 方向暴露
+   - 基本止损合法性
+6. `executor` 执行并写入 `journal`
+7. `review` / `signal-review` 负责复盘
+
+## 当前判断
+
+- `run_id>=2300` 是当前 `bottom_line` live 样本起点
+- 最近样本已经证明：
+  - `candidate_filter` 会把弱样本继续送进 AI
+  - risk 不再用旧的启发式 veto 把 AI 意图压回 `hold`
+  - 最近 `hold/noop` 主要先按 “AI 没看到足够 setup” 理解，而不是先怀疑 rule 层还在挡
+- 如果你在复现 `docs/current.md` 里的窄 `ETH` 管理退出实验：
+  - 不要只继承远端 `.env`
+  - 要显式设置 `QOUNT_RULE_MODE=strict`
+  - 否则你跑出来的会是 `bottom_line` 口径，只能看收益，不足以验证那些 `AI close` 窄规则是否生效
 
 ## 相关参数
 
 - `QOUNT_ESTIMATED_FEE_PCT`
 - `QOUNT_ESTIMATED_SLIPPAGE_PCT`
+- `QOUNT_RULE_MODE`
 - `QOUNT_CANDIDATE_TREND_TIMEFRAME`
 - `QOUNT_MIN_EXPECTED_EDGE_PCT`
 - `QOUNT_MIN_OPEN_SIZE_PCT`
@@ -285,25 +322,9 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
 - `QOUNT_BREAKEVEN_STOP_BUFFER_PCT`
 - `QOUNT_DYNAMIC_PROTECTIVE_REFRESH_ENABLE`
 
-## 设计文档
+## 当前文档入口
 
-- 当前 live 基线、持仓与策略现状：
-  - [docs/live-baseline-and-strategy-current.md](docs/live-baseline-and-strategy-current.md)
-- 当前按阶段执行的实施计划：
-  - [docs/strategy-implementation-plan-2026-05-17.md](docs/strategy-implementation-plan-2026-05-17.md)
-- 当前唯一主设计入口：
-  - [docs/strategy-optimization-design.md](docs/strategy-optimization-design.md)
-  - 这份文档已经吸收当前 active plan、首批已落地变更、后续未启用能力和归档入口
-- 当前 post-fix 复查入口：
-  - [docs/fresh-entry-effect-check-2026-05-14.md](docs/fresh-entry-effect-check-2026-05-14.md)
-- 2026-05-12 生产运行、决策历史与收益复盘：
-  - [docs/live-review-2026-05-12.md](docs/live-review-2026-05-12.md)
-- 2026-05-13 生产故障段、Binance 专线修复与白名单恢复记录：
-  - [docs/live-recovery-2026-05-13.md](docs/live-recovery-2026-05-13.md)
-  - 当前白名单 IP、固定专线叶子、默认恢复检查命令，也继续维护在这份文档的 `2026-05-14 当前基线` 一节
-- 归档的旧计划 / 细节推导：
-  - [docs/archive/README.md](docs/archive/README.md)
-  - 历史 live tuning 记录也已转入 archive
+- [docs/current.md](docs/current.md)
 
 ## 目录
 
@@ -318,9 +339,14 @@ systemd examples: deploy/systemd/
 
 ## 下一步
 
-这版已经把最小可用的 `candidate filter + cost-aware risk + review` 主链路接进来了，并补上了 futures 持仓详情、SL sizing、更细 review 切片、多次 partial take profit、breakeven stop，以及动态保护单刷新。下一步只应推进仍未启用的仓位管理执行层：
+下一步默认不再写阶段计划文档，直接在：
 
-1. 加仓独立规则
-2. 反手拆单执行
+- [docs/current.md](docs/current.md)
 
-不要把这几类执行规则一次性上线；继续按 [docs/strategy-optimization-design.md](docs/strategy-optimization-design.md) 里的“后续未启用能力”顺序走；需要看旧详细推导时再查 [docs/archive/position-management-sizing-review-2026-05-13.md](docs/archive/position-management-sizing-review-2026-05-13.md)。
+更新当前结论；
+
+如果要判断“系统没下单到底是 AI 保守还是市场没 setup”，直接查：
+
+- `state/qount.db`
+- `signal-review`
+- 最新 `run_id`

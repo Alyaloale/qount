@@ -10,6 +10,8 @@ from .exchange_utils import extract_quote_balance
 from .exchange_utils import fetch_futures_position_snapshots
 from .exchange_utils import market_amount_step
 from .exchange_utils import resolve_market_symbols
+from .hourly_model import load_hourly_model_bundle
+from .hourly_model import score_hourly_return_model_signal
 from .journal import Journal
 from .models import AccountSnapshot, Candle, MarketSnapshotBundle, PositionSnapshot, SymbolSnapshot, utc_now
 from .settings import Settings
@@ -17,6 +19,11 @@ from .trade_policy import timeframe_to_ms
 
 
 MIN_COMPLETED_CANDLES = 48
+TREND_PHASE_PULLBACK_DISTANCE_TO_FAST_SMA_PCT = 0.0010
+TREND_PHASE_EXHAUSTION_DISTANCE_TO_FAST_SMA_PCT = 0.0040
+TREND_PHASE_EXHAUSTION_DISTANCE_FROM_EXTREME_PCT = -0.0020
+TREND_PHASE_EXHAUSTION_LONG_RSI = 68.0
+TREND_PHASE_EXHAUSTION_SHORT_RSI = 32.0
 
 
 def _sma(values: list[float], period: int) -> float:
@@ -74,6 +81,154 @@ def _trend_bias(returns_12bars: float, sma_fast_ratio: float, sma_slow_ratio: fl
     return "flat"
 
 
+def _signed_distance_from_12bar_extreme(direction: str, closes: list[float], lows: list[float], highs: list[float]) -> float | None:
+    if direction == "long":
+        recent_high = max(highs[-12:])
+        return (closes[-1] / recent_high) - 1.0 if recent_high > 0.0 else None
+    if direction == "short":
+        recent_low = min(lows[-12:])
+        return (recent_low / closes[-1]) - 1.0 if closes[-1] > 0.0 else None
+    return None
+
+
+def _trend_strength(
+    *,
+    direction: str,
+    returns_12bars: float,
+    sma_fast_ratio: float,
+    sma_slow_ratio: float,
+    rsi_14: float,
+    fast_sma_slope: float,
+    slow_sma_slope: float,
+) -> float:
+    if direction == "flat":
+        return 0.0
+    directional_rsi = max((rsi_14 - 50.0) / 20.0, 0.0) if direction == "long" else max((50.0 - rsi_14) / 20.0, 0.0)
+    directional_return = max(returns_12bars, 0.0) if direction == "long" else max(-returns_12bars, 0.0)
+    directional_fast = max(sma_fast_ratio, 0.0) if direction == "long" else max(-sma_fast_ratio, 0.0)
+    directional_slow = max(sma_slow_ratio, 0.0) if direction == "long" else max(-sma_slow_ratio, 0.0)
+    directional_fast_slope = max(fast_sma_slope, 0.0) if direction == "long" else max(-fast_sma_slope, 0.0)
+    directional_slow_slope = max(slow_sma_slope, 0.0) if direction == "long" else max(-slow_sma_slope, 0.0)
+    return round(
+        min(
+            3.0,
+            (directional_return * 120.0)
+            + (directional_fast * 90.0)
+            + (directional_slow * 70.0)
+            + (directional_fast_slope * 600.0)
+            + (directional_slow_slope * 450.0)
+            + directional_rsi,
+        ),
+        6,
+    )
+
+
+def _trend_phase(
+    *,
+    direction: str,
+    rsi_14: float,
+    distance_to_fast_sma: float,
+    distance_to_slow_sma: float,
+    previous_distance_to_fast_sma: float,
+    fast_sma_slope: float,
+    slow_sma_slope: float,
+    distance_from_12bar_extreme: float | None,
+) -> str:
+    if direction == "flat":
+        return "range"
+
+    if direction == "long":
+        if (
+            distance_from_12bar_extreme is not None
+            and distance_from_12bar_extreme >= TREND_PHASE_EXHAUSTION_DISTANCE_FROM_EXTREME_PCT
+            and distance_to_fast_sma >= TREND_PHASE_EXHAUSTION_DISTANCE_TO_FAST_SMA_PCT
+            and rsi_14 >= TREND_PHASE_EXHAUSTION_LONG_RSI
+            and fast_sma_slope > 0.0
+        ):
+            return "exhaustion"
+        if distance_to_fast_sma < -TREND_PHASE_PULLBACK_DISTANCE_TO_FAST_SMA_PCT and distance_to_slow_sma >= 0.0:
+            return "pullback"
+        if previous_distance_to_fast_sma < -TREND_PHASE_PULLBACK_DISTANCE_TO_FAST_SMA_PCT and distance_to_fast_sma >= 0.0:
+            return "reclaim"
+        if fast_sma_slope > 0.0 and slow_sma_slope > 0.0 and distance_to_slow_sma >= 0.0:
+            return "trend"
+        return "range"
+
+    if (
+        distance_from_12bar_extreme is not None
+        and distance_from_12bar_extreme >= TREND_PHASE_EXHAUSTION_DISTANCE_FROM_EXTREME_PCT
+        and distance_to_fast_sma <= -TREND_PHASE_EXHAUSTION_DISTANCE_TO_FAST_SMA_PCT
+        and rsi_14 <= TREND_PHASE_EXHAUSTION_SHORT_RSI
+        and fast_sma_slope < 0.0
+    ):
+        return "exhaustion"
+    if distance_to_fast_sma > TREND_PHASE_PULLBACK_DISTANCE_TO_FAST_SMA_PCT and distance_to_slow_sma <= 0.0:
+        return "pullback"
+    if previous_distance_to_fast_sma > TREND_PHASE_PULLBACK_DISTANCE_TO_FAST_SMA_PCT and distance_to_fast_sma <= 0.0:
+        return "reclaim"
+    if fast_sma_slope < 0.0 and slow_sma_slope < 0.0 and distance_to_slow_sma <= 0.0:
+        return "trend"
+    return "range"
+
+
+def _build_higher_timeframe_context_payload(*, timeframe: str, completed_candles: list[Candle]) -> dict[str, Any]:
+    closes = [candle.close for candle in completed_candles]
+    highs = [candle.high for candle in completed_candles]
+    lows = [candle.low for candle in completed_candles]
+    returns_12bars = (closes[-1] / closes[-13]) - 1.0
+    sma_fast = _sma(closes, 12)
+    sma_slow = _sma(closes, 24)
+    previous_sma_fast = _sma(closes[:-1], 12)
+    previous_sma_slow = _sma(closes[:-1], 24)
+    sma_fast_ratio = (closes[-1] / sma_fast) - 1.0
+    sma_slow_ratio = (closes[-1] / sma_slow) - 1.0
+    previous_distance_to_fast_sma = (closes[-2] / previous_sma_fast) - 1.0
+    fast_sma_slope = (sma_fast / previous_sma_fast) - 1.0
+    slow_sma_slope = (sma_slow / previous_sma_slow) - 1.0
+    rsi_14 = _rsi(closes, 14)
+    trend_direction = _trend_bias(returns_12bars, sma_fast_ratio, sma_slow_ratio, rsi_14)
+    distance_from_12bar_extreme = _signed_distance_from_12bar_extreme(
+        trend_direction,
+        closes,
+        lows,
+        highs,
+    )
+    trend_phase = _trend_phase(
+        direction=trend_direction,
+        rsi_14=rsi_14,
+        distance_to_fast_sma=sma_fast_ratio,
+        distance_to_slow_sma=sma_slow_ratio,
+        previous_distance_to_fast_sma=previous_distance_to_fast_sma,
+        fast_sma_slope=fast_sma_slope,
+        slow_sma_slope=slow_sma_slope,
+        distance_from_12bar_extreme=distance_from_12bar_extreme,
+    )
+    return {
+        "timeframe": timeframe,
+        "return_12bars": returns_12bars,
+        "sma_fast_ratio": sma_fast_ratio,
+        "sma_slow_ratio": sma_slow_ratio,
+        "rsi_14": rsi_14,
+        "trend_bias": trend_direction,
+        "trend_direction": trend_direction,
+        "trend_phase": trend_phase,
+        "trend_strength": _trend_strength(
+            direction=trend_direction,
+            returns_12bars=returns_12bars,
+            sma_fast_ratio=sma_fast_ratio,
+            sma_slow_ratio=sma_slow_ratio,
+            rsi_14=rsi_14,
+            fast_sma_slope=fast_sma_slope,
+            slow_sma_slope=slow_sma_slope,
+        ),
+        "fast_sma_slope": fast_sma_slope,
+        "slow_sma_slope": slow_sma_slope,
+        "distance_to_fast_sma": sma_fast_ratio,
+        "distance_to_slow_sma": sma_slow_ratio,
+        "distance_from_12bar_extreme": distance_from_12bar_extreme,
+    }
+
+
 def build_symbol_snapshot(
     *,
     symbol: str,
@@ -115,19 +270,10 @@ def build_higher_timeframe_context_from_completed_candles(
     timeframe: str,
     completed_candles: list[Candle],
 ) -> dict[str, Any]:
-    closes = [candle.close for candle in completed_candles]
-    returns_12bars = (closes[-1] / closes[-13]) - 1.0
-    sma_fast_ratio = (closes[-1] / _sma(closes, 12)) - 1.0
-    sma_slow_ratio = (closes[-1] / _sma(closes, 24)) - 1.0
-    rsi_14 = _rsi(closes, 14)
-    return {
-        "timeframe": timeframe,
-        "return_12bars": returns_12bars,
-        "sma_fast_ratio": sma_fast_ratio,
-        "sma_slow_ratio": sma_slow_ratio,
-        "rsi_14": rsi_14,
-        "trend_bias": _trend_bias(returns_12bars, sma_fast_ratio, sma_slow_ratio, rsi_14),
-    }
+    return _build_higher_timeframe_context_payload(
+        timeframe=timeframe,
+        completed_candles=completed_candles,
+    )
 
 
 def build_paper_account_snapshot(
@@ -216,6 +362,11 @@ class MarketGateway:
     def __init__(self, settings: Settings, exchange_pool: ExchangePool | None = None) -> None:
         self.settings = settings
         self.exchange_pool = exchange_pool or ExchangePool(settings)
+        self.hourly_model_bundle = (
+            load_hourly_model_bundle(settings.hourly_model_path)
+            if settings.hourly_model_enable
+            else None
+        )
 
     def _build_higher_timeframe_context(self, exchange: Any, symbol: str, now_ms: int) -> dict[str, Any] | None:
         trend_timeframe = (self.settings.candidate_trend_timeframe or "").strip()
@@ -237,19 +388,18 @@ class MarketGateway:
             for row in ohlcv
         ]
         completed = _latest_completed_candles(candles, trend_timeframe_ms, now_ms)
-        closes = [candle.close for candle in completed]
-        returns_12bars = (closes[-1] / closes[-13]) - 1.0
-        sma_fast_ratio = (closes[-1] / _sma(closes, 12)) - 1.0
-        sma_slow_ratio = (closes[-1] / _sma(closes, 24)) - 1.0
-        rsi_14 = _rsi(closes, 14)
-        return {
-            "timeframe": trend_timeframe,
-            "return_12bars": returns_12bars,
-            "sma_fast_ratio": sma_fast_ratio,
-            "sma_slow_ratio": sma_slow_ratio,
-            "rsi_14": rsi_14,
-            "trend_bias": _trend_bias(returns_12bars, sma_fast_ratio, sma_slow_ratio, rsi_14),
-        }
+        context = _build_higher_timeframe_context_payload(
+            timeframe=trend_timeframe,
+            completed_candles=completed,
+        )
+        model_signal = score_hourly_return_model_signal(
+            symbol=symbol,
+            completed_candles=completed,
+            model_bundle=self.hourly_model_bundle,
+        )
+        if model_signal is not None:
+            context["model_signal"] = model_signal
+        return context
 
     def fetch_bundle(self, journal: Journal) -> MarketSnapshotBundle:
         public_exchange = self.exchange_pool.public()

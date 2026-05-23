@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from decimal import ROUND_CEILING
+import time
 from typing import Any
 
 import ccxt
@@ -21,22 +22,58 @@ def is_timestamp_ahead_error(exc: Exception) -> bool:
     return "-1021" in message or "Timestamp for this request was" in message
 
 
+def is_transient_network_error(exc: Exception) -> bool:
+    network_error_type = getattr(ccxt, "NetworkError", None)
+    if network_error_type is not None and isinstance(exc, network_error_type):
+        return True
+    message = str(exc)
+    return any(
+        token in message
+        for token in (
+            "SSLError",
+            "SSL:",
+            "UNEXPECTED_EOF_WHILE_READING",
+            "EOF occurred in violation of protocol",
+            "Max retries exceeded",
+            "ProxyError",
+            "Connection reset by peer",
+            "timed out",
+            "Temporary failure in name resolution",
+            "RemoteDisconnected",
+            "NetworkError",
+        )
+    )
+
+
 def call_with_time_sync_retry(
     exchange: Any,
     operation,
     *args: Any,
     sync_before: bool = False,
+    retry_attempts: int = 4,
+    retry_delay_seconds: float = 1.0,
     **kwargs: Any,
 ):
     if sync_before:
         sync_exchange_clock(exchange)
-    try:
-        return operation(*args, **kwargs)
-    except Exception as exc:
-        if not is_timestamp_ahead_error(exc):
-            raise
-        sync_exchange_clock(exchange)
-        return operation(*args, **kwargs)
+    attempts_remaining = max(int(retry_attempts), 1)
+    attempt = 0
+    while True:
+        try:
+            return operation(*args, **kwargs)
+        except Exception as exc:
+            attempt += 1
+            timestamp_retry = is_timestamp_ahead_error(exc)
+            network_retry = is_transient_network_error(exc)
+            if not timestamp_retry and not network_retry:
+                raise
+            if attempt >= attempts_remaining:
+                raise
+            if timestamp_retry:
+                sync_exchange_clock(exchange)
+            delay_seconds = max(float(retry_delay_seconds), 0.0) * (2 ** (attempt - 1))
+            if delay_seconds > 0.0:
+                time.sleep(delay_seconds)
 
 
 def build_exchange(settings: Settings, private: bool = False):
