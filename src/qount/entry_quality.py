@@ -72,6 +72,10 @@ PRE_BREAK_CONTINUATION_LONG_RSI_MAX = 60.0
 TRADITIONAL_SIGNAL_LOOKBACK_BARS = 4
 TRADITIONAL_SIGNAL_TERMINAL_VOLUME_RATIO = 1.75
 TRADITIONAL_SIGNAL_TERMINAL_EXPANSION_RATIO = 1.35
+STRUCTURAL_RANGE_NOISE_SHORT_MIN_CONVICTION_SCORE = 0.60
+STRUCTURAL_RANGE_NOISE_SHORT_MIN_REBOUND_FAILURE_PCT = 0.0075
+STRUCTURAL_RANGE_NOISE_SHORT_MIN_SUPPORT_BREAK_PCT = 0.0018
+STRUCTURAL_RANGE_NOISE_SHORT_MIN_RANGE_EXPANSION_RATIO = 0.90
 
 
 @dataclass(frozen=True)
@@ -92,7 +96,9 @@ def build_entry_thesis_candidate(
 ) -> dict[str, object] | None:
     if assessment is None or assessment.action not in {"buy", "sell"}:
         return None
-    if assessment.setup_phase == "range_noise" or assessment.terminal_extension:
+    if assessment.setup_phase == "range_noise":
+        return _build_structural_range_noise_short_thesis(symbol, assessment)
+    if assessment.terminal_extension:
         return None
 
     higher = symbol.higher_timeframe or {}
@@ -125,6 +131,53 @@ def build_entry_thesis_candidate(
         "setup_confirmed": bool(assessment.setup_confirmed),
         "invalidation_type": invalidation_type,
         "follow_through_bars": follow_through_bars,
+    }
+
+
+def _build_structural_range_noise_short_thesis(
+    symbol: SymbolSnapshot,
+    assessment: FreshEntryAssessment,
+) -> dict[str, object] | None:
+    if symbol.symbol != "ETH/USDT:USDT" or assessment.action != "sell":
+        return None
+    if assessment.terminal_extension or assessment.setup_phase != "range_noise":
+        return None
+    higher = symbol.higher_timeframe or {}
+    if str(higher.get("trend_bias") or "") != "short":
+        return None
+    higher_phase = str(higher.get("trend_phase") or "")
+    if higher_phase not in {"trend", "reclaim", "exhaustion"}:
+        return None
+    traditional_context = build_traditional_signal_context(symbol, assessment)
+    if not isinstance(traditional_context, dict):
+        return None
+    if bool(traditional_context.get("terminal_risk")):
+        return None
+    if str(traditional_context.get("pattern_family") or "") != "short":
+        return None
+    if float(traditional_context.get("conviction_score") or 0.0) < STRUCTURAL_RANGE_NOISE_SHORT_MIN_CONVICTION_SCORE:
+        return None
+    if float(traditional_context.get("rebound_failure_pct") or 0.0) < STRUCTURAL_RANGE_NOISE_SHORT_MIN_REBOUND_FAILURE_PCT:
+        return None
+    if float(traditional_context.get("support_break_pct") or 0.0) < STRUCTURAL_RANGE_NOISE_SHORT_MIN_SUPPORT_BREAK_PCT:
+        return None
+    if float(traditional_context.get("range_expansion_ratio") or 0.0) < STRUCTURAL_RANGE_NOISE_SHORT_MIN_RANGE_EXPANSION_RATIO:
+        return None
+
+    return {
+        "version": 2,
+        "direction": "short",
+        "higher_timeframe_direction": higher.get("trend_direction") or higher.get("trend_bias"),
+        "higher_timeframe_phase": higher_phase,
+        "setup_phase": "eth_structural_range_noise_short",
+        "setup_confirmed": True,
+        "invalidation_type": "structural_breakdown_reclaimed",
+        "follow_through_bars": 2,
+        "traditional_pattern_label": traditional_context.get("pattern_label"),
+        "traditional_conviction_score": traditional_context.get("conviction_score"),
+        "rebound_failure_pct": traditional_context.get("rebound_failure_pct"),
+        "support_break_pct": traditional_context.get("support_break_pct"),
+        "range_expansion_ratio": traditional_context.get("range_expansion_ratio"),
     }
 
 

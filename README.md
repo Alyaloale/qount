@@ -52,7 +52,17 @@ python -m qount.main paper-status
 python -m qount.main signal-review --limit 20 --horizon-bars 3
 python -m qount.main paper-replay
 python -m qount.main backtest --start 2026-05-14T22:00:00+08:00 --end 2026-05-14T23:30:00+08:00 --max-bars 8 --review-horizon-bars 3 --review-threshold-pct 0.003
+python -m qount.main backtest --research-profile eth-only --start 2026-05-14T22:00:00+08:00 --end 2026-05-14T23:30:00+08:00 --max-bars 8 --review-horizon-bars 3 --review-threshold-pct 0.003
 ```
+
+如果要验证训练窗口和验证窗口是否严格分离，再跑：
+
+```bash
+python -m qount.main train-setup-model --research-profile eth-only
+python -m qount.main walk-forward --research-profile eth-only --window demo=2026-05-23T00:00:00+00:00,2026-05-23T03:00:00+00:00 --setup-phases range_noise
+```
+
+`--research-profile eth-only` 会把 setup-model 训练默认值对齐当前 phase6 口径：`horizon_bars=6`、`split_higher_phase=true`。显式传 `--horizon-bars` 或 `--split-higher-phase` 时，以命令行参数为准。
 
 如果你在 `Mac` 上不想盯 CLI，可以直接开本机浏览器面板：
 
@@ -109,7 +119,7 @@ QOUNT_SYMBOLS=BTC/USDT,ETH/USDT
 
 ## 交易所选择
 
-仓库示例配置默认仍然保留 `binance`。  
+仓库示例配置默认仍然保留 `binance`。
 如果你的运行环境对 `api.binance.com` 有区域限制，不要机械地直接切成 `binanceus`；先确认你实际使用的是哪类账户和 API。
 
 当前这套 Windows/WSL live 文档里，已经验证通过的路径仍然是：
@@ -237,12 +247,11 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
 
 ## 当前文档
 
-- 当前仓库内只保留一份当前文档：
+- 当前决策状态只看：
   - [docs/current.md](docs/current.md)
-- 不再在仓库里保留：
-  - 旧计划
-  - 旧复盘
-  - archive 文档入口
+- 接手命令、WSL/PowerShell 坑点、artifact 读法看：
+  - [docs/quick-handoff.md](docs/quick-handoff.md)
+- 不再把旧计划、旧复盘、archive 入口塞进 `docs/current.md`
 - 历史事实以后直接看：
   - `git log / git diff`
   - `WSL /home/alyaloale/Code/qount/state/qount.db`
@@ -250,26 +259,12 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
 
 ## 当前 live 基线
 
-- 生产节点：
-  - `WSL /home/alyaloale/Code/qount`
-- 调度：
-  - `systemd --user qount-runner.timer`
-- 交易模式：
-  - `QOUNT_MODE=live`
-  - `QOUNT_EXCHANGE_ID=binance`
-  - `QOUNT_MARKET_TYPE=future`
-- 当前交易对：
-  - `SOL/USDT`
-  - `XRP/USDT`
-  - `BTC/USDT`
-  - `ETH/USDT`
-- 当前周期：
-  - `QOUNT_TIMEFRAME=5m`
-  - `QOUNT_CANDIDATE_TREND_TIMEFRAME=1h`
-- 当前模型：
-  - `QOUNT_AI_MODEL=gpt-5.4`
-- 当前规则模式：
-  - `QOUNT_RULE_MODE=bottom_line`
+- 生产节点：`WSL /home/alyaloale/Code/qount`
+- 调度：`systemd --user qount-runner.timer`
+- 当前 live 仍关闭：`QOUNT_LIVE_ENABLE=false`
+- 当前 `.env` 仍是旧 4-symbol live 形状；研究回测不要直接继承它。
+- ETH-only 研究统一使用：`--research-profile eth-only`
+- 详细状态、最新 artifact、promotion 判断看 [docs/current.md](docs/current.md)
 
 ## 当前流程
 
@@ -290,15 +285,10 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
 
 ## 当前判断
 
-- `run_id>=2300` 是当前 `bottom_line` live 样本起点
-- 最近样本已经证明：
-  - `candidate_filter` 会把弱样本继续送进 AI
-  - risk 不再用旧的启发式 veto 把 AI 意图压回 `hold`
-  - 最近 `hold/noop` 主要先按 “AI 没看到足够 setup” 理解，而不是先怀疑 rule 层还在挡
-- 如果你在复现 `docs/current.md` 里的窄 `ETH` 管理退出实验：
-  - 不要只继承远端 `.env`
-  - 要显式设置 `QOUNT_RULE_MODE=strict`
-  - 否则你跑出来的会是 `bottom_line` 口径，只能看收益，不足以验证那些 `AI close` 窄规则是否生效
+- 当前不是上线阶段；live / forward paper 都不应打开。
+- 最新 6-window 只做到局部正收益，未过 promotion gate。
+- 如果接手继续研究，先读 [docs/current.md](docs/current.md) 和 [docs/quick-handoff.md](docs/quick-handoff.md)，再查 WSL runtime。
+- 不要用旧 after2 / after4 / hard-reclaim 文档口径覆盖当前结论。
 
 ## 相关参数
 
@@ -325,6 +315,7 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
 ## 当前文档入口
 
 - [docs/current.md](docs/current.md)
+- [docs/quick-handoff.md](docs/quick-handoff.md)
 
 ## 目录
 
@@ -342,6 +333,7 @@ systemd examples: deploy/systemd/
 下一步默认不再写阶段计划文档，直接在：
 
 - [docs/current.md](docs/current.md)
+- [docs/quick-handoff.md](docs/quick-handoff.md)
 
 更新当前结论；
 

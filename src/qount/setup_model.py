@@ -5,6 +5,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from .entry_quality import FreshEntryAssessment
 from .entry_quality import assess_fresh_entry
@@ -104,6 +105,56 @@ def _summarize_edges(items: list[dict[str, object]]) -> dict[str, object]:
         "avg_negative_edge_pct": _mean(negative) if negative else None,
         "avg_conviction_score": _mean([float(item["conviction_score"]) for item in items]),
         "terminal_risk_rate": _mean([1.0 if bool(item["terminal_risk"]) else 0.0 for item in items]),
+    }
+
+
+def build_setup_model_bundle_metadata(
+    model_bundle: dict[str, object] | None,
+    *,
+    setup_model_path: Path | None = None,
+) -> dict[str, object] | None:
+    if not isinstance(model_bundle, dict):
+        return None
+    training_window = model_bundle.get("training_window")
+    training_window = training_window if isinstance(training_window, dict) else None
+    metadata = {
+        "version": model_bundle.get("version"),
+        "timeframe": model_bundle.get("timeframe"),
+        "higher_timeframe": model_bundle.get("higher_timeframe"),
+        "horizon_bars": model_bundle.get("horizon_bars"),
+        "split_higher_phase": model_bundle.get("split_higher_phase"),
+        "trained_at": model_bundle.get("trained_at"),
+        "training_cutoff_utc": model_bundle.get("training_cutoff_utc")
+        or (None if training_window is None else training_window.get("training_cutoff_utc")),
+        "training_window": training_window,
+    }
+    if setup_model_path is not None:
+        metadata["path"] = str(setup_model_path)
+    return metadata
+
+
+def _split_example_batch(
+    collected: object,
+    *,
+    lookback_days: int,
+    horizon_bars: int,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    if isinstance(collected, tuple) and len(collected) == 2:
+        examples, training_window = collected
+        if isinstance(examples, list) and isinstance(training_window, dict):
+            return examples, training_window
+    examples = list(collected or [])
+    now = datetime.now(timezone.utc)
+    training_cutoff_utc = now + timedelta(milliseconds=horizon_bars * timeframe_to_ms(SETUP_EDGE_MODEL_TIMEFRAME))
+    return examples, {
+        "sample_window_start_utc": (now - timedelta(days=max(lookback_days, 1))).isoformat(),
+        "sample_window_end_utc": now.isoformat(),
+        "training_cutoff_utc": training_cutoff_utc.isoformat(),
+        "lookback_days": lookback_days,
+        "horizon_bars": horizon_bars,
+        "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
+        "higher_timeframe": SETUP_EDGE_MODEL_HIGHER_TIMEFRAME,
+        "example_count": len(examples),
     }
 
 
@@ -230,6 +281,7 @@ def score_setup_edge_model_signal(
                 if isinstance(aggregate_payload, dict):
                     model_payload = aggregate_payload
 
+    model_metadata = build_setup_model_bundle_metadata(model_bundle)
     feature_map = build_setup_model_feature_map(symbol, assessment, traditional_signal_context)
     raw_vector = _feature_vector(feature_map)
     standardized_vector = [
@@ -276,6 +328,9 @@ def score_setup_edge_model_signal(
         "positive_edge_rate": positive_edge_rate,
         "avg_target_edge_pct": avg_target_edge_pct,
         "higher_timeframe_phase": higher_phase,
+        "trained_at": None if model_metadata is None else model_metadata.get("trained_at"),
+        "training_cutoff_utc": None if model_metadata is None else model_metadata.get("training_cutoff_utc"),
+        "training_window": None if model_metadata is None else model_metadata.get("training_window"),
     }
 
 
@@ -289,6 +344,7 @@ def load_setup_model_bundle(path: Path | None) -> dict[str, object] | None:
 @dataclass
 class SetupEdgeModelService:
     settings: Settings
+    public_exchange: Any | None = None
 
     def _fetch_ohlcv_range(
         self,
@@ -345,15 +401,16 @@ class SetupEdgeModelService:
         setup_phases: tuple[str, ...],
         lookback_days: int,
         horizon_bars: int,
-    ) -> list[dict[str, object]]:
-        exchange = build_exchange(self.settings, private=False)
+        training_end: datetime | None = None,
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
+        exchange = self.public_exchange or build_exchange(self.settings, private=False)
         markets = call_with_time_sync_retry(
             exchange,
             exchange.load_markets,
         )
         configured_symbols = tuple(symbols_filter) if symbols_filter else self.settings.symbols
         resolved_symbols = resolve_market_symbols(markets, configured_symbols, self.settings)
-        end = datetime.now(timezone.utc)
+        end = (training_end or datetime.now(timezone.utc)).astimezone(timezone.utc)
         start = end - timedelta(days=max(lookback_days, 1))
         base_timeframe_ms = timeframe_to_ms(SETUP_EDGE_MODEL_TIMEFRAME)
         higher_timeframe_ms = timeframe_to_ms(SETUP_EDGE_MODEL_HIGHER_TIMEFRAME)
@@ -476,7 +533,17 @@ class SetupEdgeModelService:
                         "feature_vector": _feature_vector(feature_map),
                     }
                 )
-        return examples
+        training_cutoff_utc = end + timedelta(milliseconds=horizon_bars * base_timeframe_ms)
+        return examples, {
+            "sample_window_start_utc": start.isoformat(),
+            "sample_window_end_utc": end.isoformat(),
+            "training_cutoff_utc": training_cutoff_utc.isoformat(),
+            "lookback_days": lookback_days,
+            "horizon_bars": horizon_bars,
+            "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
+            "higher_timeframe": SETUP_EDGE_MODEL_HIGHER_TIMEFRAME,
+            "example_count": len(examples),
+        }
 
     def train(
         self,
@@ -489,11 +556,18 @@ class SetupEdgeModelService:
         ridge_alpha: float,
         artifact_path: Path | None,
         split_higher_phase: bool = False,
+        training_end: datetime | None = None,
     ) -> dict[str, object]:
         active_setup_phases = tuple(setup_phases) if setup_phases else DEFAULT_SETUP_PHASES
-        examples = self._collect_examples(
+        collected = self._collect_examples(
             symbols_filter=symbols_filter,
             setup_phases=active_setup_phases,
+            lookback_days=lookback_days,
+            horizon_bars=horizon_bars,
+            training_end=training_end,
+        )
+        examples, training_window = _split_example_batch(
+            collected,
             lookback_days=lookback_days,
             horizon_bars=horizon_bars,
         )
@@ -594,6 +668,8 @@ class SetupEdgeModelService:
             "horizon_bars": horizon_bars,
             "split_higher_phase": split_higher_phase,
             "trained_at": datetime.now(timezone.utc).isoformat(),
+            "training_cutoff_utc": training_window["training_cutoff_utc"],
+            "training_window": training_window,
             "symbols": symbol_models,
         }
         target_path = artifact_path or self.settings.setup_model_path
@@ -605,6 +681,8 @@ class SetupEdgeModelService:
             "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
             "higher_timeframe": SETUP_EDGE_MODEL_HIGHER_TIMEFRAME,
             "horizon_bars": horizon_bars,
+            "training_cutoff_utc": training_window["training_cutoff_utc"],
+            "training_window": training_window,
             "symbols": training_summary,
         }
 
@@ -619,9 +697,14 @@ class SetupEdgeModelService:
         top_k: int,
     ) -> dict[str, object]:
         active_setup_phases = tuple(setup_phases) if setup_phases else DEFAULT_SETUP_PHASES
-        examples = self._collect_examples(
+        collected = self._collect_examples(
             symbols_filter=symbols_filter,
             setup_phases=active_setup_phases,
+            lookback_days=lookback_days,
+            horizon_bars=horizon_bars,
+        )
+        examples, _ = _split_example_batch(
+            collected,
             lookback_days=lookback_days,
             horizon_bars=horizon_bars,
         )

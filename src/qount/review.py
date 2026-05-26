@@ -163,6 +163,72 @@ def _setup_phase_from_candidate_reason(primary_reason: str | None) -> str | None
     return None
 
 
+def _direction_from_label(raw: object) -> int | None:
+    value = str(raw or "").strip().lower()
+    if value == "long":
+        return 1
+    if value == "short":
+        return -1
+    return None
+
+
+def _direction_label(direction: int | None) -> str | None:
+    if direction == 1:
+        return "long"
+    if direction == -1:
+        return "short"
+    return None
+
+
+def _setup_phase_direction(setup_phase: str | None) -> int | None:
+    if setup_phase is None:
+        return None
+    value = str(setup_phase)
+    if value.startswith("short_") or value == "eth_structural_range_noise_short":
+        return -1
+    if value.startswith("long_"):
+        return 1
+    return None
+
+
+def _candidate_direction(
+    *,
+    decision_action: str,
+    contract_market: bool,
+    position_side_before_action: str | None,
+    candidate_context: dict[str, Any],
+    candidate_summary_for_symbol: dict[str, Any],
+    entry_thesis: dict[str, Any],
+    setup_phase: str | None,
+    candidate_filter_primary_reason: str | None,
+) -> int | None:
+    if position_side_before_action is not None:
+        return None
+
+    decision_direction = action_direction(
+        decision_action,
+        contract_market=contract_market,
+        position_side=position_side_before_action,
+    )
+    if decision_direction is not None:
+        return decision_direction
+
+    for thesis in (
+        entry_thesis,
+        candidate_context.get("entry_thesis_candidate"),
+        candidate_summary_for_symbol.get("entry_thesis_candidate"),
+    ):
+        if isinstance(thesis, dict):
+            thesis_direction = _direction_from_label(thesis.get("direction"))
+            if thesis_direction is not None:
+                return thesis_direction
+
+    phase_direction = _setup_phase_direction(setup_phase)
+    if phase_direction is not None:
+        return phase_direction
+    return _setup_phase_direction(_setup_phase_from_candidate_reason(candidate_filter_primary_reason))
+
+
 def _mean_or_none(values: list[float]) -> float | None:
     return mean(values) if values else None
 
@@ -377,6 +443,14 @@ def _summarize_reviews(
         "avg_net_edge_pct": _mean_or_none(_numeric_values(items, "net_edge_pct")),
         "avg_realized_post_cost_pct": _mean_or_none(_numeric_values(items, "net_edge_pct")),
         "avg_opportunity_edge_pct": _mean_or_none(_numeric_values(items, "opportunity_edge_pct")),
+        "avg_candidate_aligned_future_return_pct": _mean_or_none(_numeric_values(items, "candidate_aligned_future_return_pct")),
+        "avg_candidate_opportunity_edge_pct": _mean_or_none(_numeric_values(items, "candidate_opportunity_edge_pct")),
+        "missed_candidate_move": sum(1 for item in items if bool(item.get("missed_candidate_move"))),
+        "missed_move_not_candidate_aligned": sum(
+            1
+            for item in items
+            if item.get("outcome") == "missed_move" and not bool(item.get("missed_candidate_move"))
+        ),
         "avg_planned_risk_pct_of_equity": _mean_or_none(_numeric_values(items, "planned_risk_pct_of_equity")),
         "avg_future_R": _mean_or_none(_numeric_values(items, "future_R")),
         "avg_mfe_pct": _mean_or_none(_numeric_values(items, "mfe_pct")),
@@ -1049,6 +1123,9 @@ class ReviewService:
             setup_confirmed = candidate_context.get("setup_confirmed")
             if setup_confirmed is None:
                 setup_confirmed = candidate_summary_for_symbol.get("setup_confirmed")
+            setup_model_signal = candidate_context.get("setup_model_signal")
+            if setup_model_signal is None:
+                setup_model_signal = candidate_summary_for_symbol.get("setup_model_signal")
             hold_path = _hold_path(
                 decision_action=str(decision["action"]),
                 review_action=review_action,
@@ -1107,19 +1184,13 @@ class ReviewService:
                 if mfe_pct is None or exposure_future_return_pct is None
                 else max(mfe_pct - max(exposure_future_return_pct, 0.0), 0.0)
             )
-            opportunity_edge_pct = max(
-                abs(market_future_return_pct)
-                - (
-                    estimated_action_cost_pct(
-                        "buy",
-                        contract_market=self.settings.contract_market,
-                        fee_pct=self.settings.estimated_fee_pct,
-                        slippage_pct=self.settings.estimated_slippage_pct,
-                    )
-                    * 100.0
-                ),
-                0.0,
-            )
+            open_cost_pct = estimated_action_cost_pct(
+                "buy",
+                contract_market=self.settings.contract_market,
+                fee_pct=self.settings.estimated_fee_pct,
+                slippage_pct=self.settings.estimated_slippage_pct,
+            ) * 100.0
+            opportunity_edge_pct = max(abs(market_future_return_pct) - open_cost_pct, 0.0)
             close_cost_pct = estimated_action_cost_pct(
                 "close",
                 contract_market=self.settings.contract_market,
@@ -1127,6 +1198,30 @@ class ReviewService:
                 slippage_pct=self.settings.estimated_slippage_pct,
             ) * 100.0
             threshold_pct_value = threshold_pct * 100.0
+            candidate_direction = _candidate_direction(
+                decision_action=str(decision["action"]),
+                contract_market=self.settings.contract_market,
+                position_side_before_action=position_side,
+                candidate_context=candidate_context,
+                candidate_summary_for_symbol=candidate_summary_for_symbol,
+                entry_thesis=entry_thesis,
+                setup_phase=None if setup_phase is None else str(setup_phase),
+                candidate_filter_primary_reason=candidate_filter_primary_reason,
+            )
+            candidate_aligned_future_return_pct = (
+                None if candidate_direction is None else market_future_return_pct * candidate_direction
+            )
+            candidate_opportunity_edge_pct = (
+                None
+                if candidate_aligned_future_return_pct is None
+                else max(candidate_aligned_future_return_pct - open_cost_pct, 0.0)
+            )
+            missed_candidate_move = (
+                review_action == "hold"
+                and position_future_return_pct is None
+                and candidate_opportunity_edge_pct is not None
+                and candidate_opportunity_edge_pct > threshold_pct_value
+            )
             expected_edge_components = risk_debug.get("expected_edge_components")
             expected_edge_components = expected_edge_components if isinstance(expected_edge_components, dict) else {}
             shadow_open_signal_reasons = [
@@ -1164,6 +1259,10 @@ class ReviewService:
                     "estimated_cost_pct": estimated_cost_pct,
                     "net_edge_pct": net_edge_pct,
                     "opportunity_edge_pct": opportunity_edge_pct,
+                    "candidate_direction": _direction_label(candidate_direction),
+                    "candidate_aligned_future_return_pct": candidate_aligned_future_return_pct,
+                    "candidate_opportunity_edge_pct": candidate_opportunity_edge_pct,
+                    "missed_candidate_move": missed_candidate_move,
                     "confidence": float(decision["confidence"]),
                     "confidence_bucket": confidence_bucket(float(decision["confidence"])),
                     "equity_quote_before_action": float((snapshot.get("account") or {}).get("equity_quote") or 0.0),
@@ -1203,6 +1302,7 @@ class ReviewService:
                     "higher_timeframe_phase": higher_timeframe_phase,
                     "setup_phase": setup_phase,
                     "setup_confirmed": setup_confirmed,
+                    "setup_model_signal": setup_model_signal,
                     "phase_match_score": (
                         candidate_context.get("phase_match_score")
                         if candidate_context.get("phase_match_score") is not None

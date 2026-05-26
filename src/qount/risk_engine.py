@@ -135,6 +135,12 @@ ETH_RECLAIM_SHORT_HOLD_MIN_SUPPORT_BREAK_PCT = 0.0008
 ETH_RECLAIM_SHORT_STRONG_REVERSAL_MIN_1BAR_PCT = 0.0015
 ETH_RECLAIM_SHORT_STRONG_REVERSAL_MIN_VOLUME_RATIO = 1.4
 ETH_RECLAIM_SHORT_STRONG_REVERSAL_MIN_RSI = 52.0
+ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MIN_1BAR_PCT = 0.0015
+ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MIN_VOLUME_RATIO = 2.5
+ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MIN_VOLATILITY_PCT = 0.0025
+ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MAX_LOCAL_RSI = 42.0
+ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MAX_24BAR_RETURN_PCT = 0.0
+ETH_RECLAIM_SHORT_TRAILING_PROFIT_RETRACE_PCT = 0.0008
 ETH_CONTINUATION_SHORT_WEAK_REBOUND_MAX_24BAR_RETURN_PCT = 0.0025
 ETH_CONTINUATION_SHORT_WEAK_REBOUND_MAX_FAST_SMA_RATIO = 0.0010
 ETH_CONTINUATION_SHORT_WEAK_REBOUND_MAX_LOCAL_RSI = 50.0
@@ -304,12 +310,18 @@ class RiskEngine:
         position_side: str | None,
         entry_price: float,
         peak_return_pct: float,
+        trailing_profit_retrace_pct: float | None = None,
     ) -> float | None:
         if position_side not in {"long", "short"} or entry_price <= 0.0:
             return None
         if peak_return_pct < self.settings.trailing_profit_arm_pct:
             return None
-        protected_return_pct = peak_return_pct - self.settings.trailing_profit_retrace_pct
+        retrace_pct = (
+            self.settings.trailing_profit_retrace_pct
+            if trailing_profit_retrace_pct is None
+            else max(float(trailing_profit_retrace_pct), 0.0)
+        )
+        protected_return_pct = peak_return_pct - retrace_pct
         if protected_return_pct <= 0.0:
             return None
         if position_side == "long":
@@ -371,6 +383,10 @@ class RiskEngine:
             position_side=position_side,
             entry_price=entry_price,
             peak_return_pct=peak_return_pct,
+            trailing_profit_retrace_pct=self._effective_trailing_profit_retrace_pct(
+                symbol=symbol,
+                last_open=last_open,
+            ),
         )
         if trailing_stop_price is not None:
             if position_side == "long":
@@ -996,6 +1012,75 @@ class RiskEngine:
             return "position_add_or_reverse"
         return "plain_open"
 
+    def _eth_short_research_blocks_fresh_long_open(
+        self,
+        action: str,
+        symbol_snapshot,
+        *,
+        has_position: bool,
+    ) -> bool:
+        if has_position or action != "buy" or symbol_snapshot is None:
+            return False
+        if symbol_snapshot.symbol != "ETH/USDT:USDT":
+            return False
+        return "short_rebound" in self.settings.setup_model_path.name.lower()
+
+    def _eth_short_research_blocks_fresh_reclaim_short_open(
+        self,
+        action: str,
+        symbol_snapshot,
+        *,
+        has_position: bool,
+        fresh_entry_assessment,
+    ) -> bool:
+        if has_position or action != "sell" or symbol_snapshot is None or fresh_entry_assessment is None:
+            return False
+        if symbol_snapshot.symbol != "ETH/USDT:USDT":
+            return False
+        if fresh_entry_assessment.setup_phase != "short_rebound_fail_confirmed":
+            return False
+        higher_timeframe = symbol_snapshot.higher_timeframe or {}
+        if str(higher_timeframe.get("trend_bias") or "") != "short":
+            return False
+        if str(higher_timeframe.get("trend_phase") or "") != "reclaim":
+            return False
+        # Reclaim-phase ETH shorts need a stronger higher-timeframe structure.
+        # Otherwise they tend to come through as a plain open with only weak edge.
+        if self._higher_timeframe_short_reclaim_bonus_pct(action, symbol_snapshot) > 0.0:
+            return False
+        if self._eth_short_reclaim_has_local_breakdown_pressure(symbol_snapshot):
+            return False
+        return float(higher_timeframe.get("trend_strength") or 0.0) < 2.0
+
+    def _eth_short_reclaim_has_local_breakdown_pressure(self, symbol_snapshot) -> bool:
+        if symbol_snapshot is None or symbol_snapshot.symbol != "ETH/USDT:USDT":
+            return False
+        higher_timeframe = symbol_snapshot.higher_timeframe or {}
+        if str(higher_timeframe.get("trend_bias") or "") != "short":
+            return False
+        if str(higher_timeframe.get("trend_phase") or "") != "reclaim":
+            return False
+        indicators = symbol_snapshot.indicators
+        return_1bar = float(indicators.get("return_1bar") or 0.0)
+        return_24bars = float(indicators.get("return_24bars") or 0.0)
+        sma_fast_ratio = float(indicators.get("sma_fast_ratio") or 0.0)
+        sma_slow_ratio = float(indicators.get("sma_slow_ratio") or 0.0)
+        rsi_14 = float(indicators.get("rsi_14") or 50.0)
+        volume_ratio = float(indicators.get("volume_ratio_20") or 0.0)
+        volatility_pct = max(
+            float(indicators.get("atr_14_pct") or 0.0),
+            float(indicators.get("range_pct") or 0.0),
+        )
+        return (
+            return_1bar <= -ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MIN_1BAR_PCT
+            and return_24bars <= ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MAX_24BAR_RETURN_PCT
+            and sma_fast_ratio < 0.0
+            and sma_slow_ratio < 0.0
+            and rsi_14 <= ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MAX_LOCAL_RSI
+            and volume_ratio >= ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MIN_VOLUME_RATIO
+            and volatility_pct >= ETH_RECLAIM_SHORT_LOCAL_BREAKDOWN_MIN_VOLATILITY_PCT
+        )
+
     def _expected_edge_breakdown(
         self,
         decision: ValidatedDecision,
@@ -1327,6 +1412,7 @@ class RiskEngine:
         indicators = symbol_snapshot.indicators
         higher = symbol_snapshot.higher_timeframe or {}
         trend_bias = str(higher.get("trend_bias") or "")
+        return_1bar = float(indicators.get("return_1bar") or 0.0)
         return_24bars = float(indicators.get("return_24bars") or 0.0)
         sma_fast_ratio = float(indicators.get("sma_fast_ratio") or 0.0)
         sma_slow_ratio = float(indicators.get("sma_slow_ratio") or 0.0)
@@ -1437,6 +1523,77 @@ class RiskEngine:
                     invalidation_reason = "short_rebound_fail_reclaimed"
                 else:
                     still_supported = True
+            elif setup_phase == "eth_structural_range_noise_short":
+                current_short_assessment = assess_fresh_entry(symbol_snapshot, action="sell")
+                current_traditional_context = build_traditional_signal_context(
+                    symbol_snapshot,
+                    current_short_assessment,
+                )
+                volume_ratio = float(indicators.get("volume_ratio_20") or 0.0)
+                strong_reversal = (
+                    (
+                        sma_fast_ratio >= 0.0
+                        and rsi_14 >= ETH_RECLAIM_SHORT_STRONG_REVERSAL_MIN_RSI
+                    )
+                    or (
+                        return_1bar >= ETH_RECLAIM_SHORT_STRONG_REVERSAL_MIN_1BAR_PCT
+                        and volume_ratio >= ETH_RECLAIM_SHORT_STRONG_REVERSAL_MIN_VOLUME_RATIO
+                        and rsi_14 >= 45.0
+                    )
+                )
+                if strong_reversal:
+                    invalidation_reason = "structural_range_noise_reversal_confirmed"
+                elif (
+                    bars_since_open is not None
+                    and bars_since_open >= follow_through_bars
+                    and weak_pnl
+                    and sma_fast_ratio >= 0.0
+                ):
+                    invalidation_reason = "no_follow_through_after_structural_range_noise_short"
+                else:
+                    current_pattern_family = (
+                        None
+                        if not isinstance(current_traditional_context, dict)
+                        else str(current_traditional_context.get("pattern_family") or "")
+                    )
+                    current_conviction_score = (
+                        0.0
+                        if not isinstance(current_traditional_context, dict)
+                        else float(current_traditional_context.get("conviction_score") or 0.0)
+                    )
+                    current_terminal_risk = (
+                        False
+                        if not isinstance(current_traditional_context, dict)
+                        else bool(current_traditional_context.get("terminal_risk"))
+                    )
+                    flush_still_expanding = (
+                        return_1bar <= -ETH_SHORT_AI_CLOSE_EXHAUSTION_FLUSH_MIN_1BAR_PCT
+                        and volume_ratio >= ETH_SHORT_CLOSE_REJECT_MIN_VOLUME_RATIO
+                        and rsi_14 <= ETH_SHORT_AI_CLOSE_EXHAUSTION_FLUSH_MAX_LOCAL_RSI
+                    )
+                    range_noise_still_supported = (
+                        return_24bars <= -ETH_SHORT_AI_CLOSE_EXHAUSTION_RANGE_NOISE_MIN_DIRECTIONAL_24BAR_PCT
+                        and return_1bar <= ETH_SHORT_AI_CLOSE_EXHAUSTION_RANGE_NOISE_MAX_REBOUND_1BAR_PCT
+                        and sma_fast_ratio <= ETH_SHORT_AI_CLOSE_EXHAUSTION_RANGE_NOISE_MAX_FAST_SMA_RATIO
+                        and rsi_14 <= ETH_SHORT_AI_CLOSE_EXHAUSTION_RANGE_NOISE_MAX_LOCAL_RSI
+                    )
+                    traditional_structure_still_supported = (
+                        current_pattern_family == "short"
+                        and current_conviction_score >= ETH_RECLAIM_SHORT_HOLD_MIN_CONVICTION_SCORE
+                        and (not current_terminal_risk or return_1bar < 0.0)
+                    )
+                    if (
+                        current_position_return_pct is not None
+                        and current_position_return_pct > 0.0
+                        and trend_bias == "short"
+                        and sma_slow_ratio < 0.0
+                        and (
+                            flush_still_expanding
+                            or range_noise_still_supported
+                            or traditional_structure_still_supported
+                        )
+                    ):
+                        still_supported = True
             else:
                 still_supported = self._higher_timeframe_supports_position(current_position.side, symbol_snapshot)
 
@@ -1779,16 +1936,41 @@ class RiskEngine:
         if open_run_id <= 0:
             return False, None, None
         peak_key = self._trailing_profit_peak_key(symbol, open_run_id)
-        previous_peak = float(self.journal.get_runtime_state(peak_key, current_position_return_pct) or current_position_return_pct)
+        stored_peak = self.journal.get_runtime_state(peak_key, None)
+        previous_peak = current_position_return_pct if stored_peak is None else float(stored_peak)
         peak_return_pct = max(previous_peak, current_position_return_pct)
-        if peak_return_pct != previous_peak:
+        if stored_peak is None:
+            if peak_return_pct >= self.settings.trailing_profit_arm_pct:
+                self.journal.set_runtime_state(peak_key, peak_return_pct)
+        elif peak_return_pct != previous_peak:
             self.journal.set_runtime_state(peak_key, peak_return_pct)
         if peak_return_pct < self.settings.trailing_profit_arm_pct:
             return False, peak_return_pct, None
+        effective_retrace_pct = self._effective_trailing_profit_retrace_pct(symbol=symbol, last_open=last_open)
         retrace_pct = peak_return_pct - current_position_return_pct
-        if retrace_pct < self.settings.trailing_profit_retrace_pct:
+        if retrace_pct < effective_retrace_pct:
             return False, peak_return_pct, retrace_pct
         return True, peak_return_pct, retrace_pct
+
+    def _effective_trailing_profit_retrace_pct(
+        self,
+        *,
+        symbol: str,
+        last_open: dict | None,
+    ) -> float:
+        default_retrace_pct = max(float(self.settings.trailing_profit_retrace_pct), 0.0)
+        if symbol != "ETH/USDT:USDT" or not isinstance(last_open, dict):
+            return default_retrace_pct
+        entry_thesis = last_open.get("entry_thesis")
+        if not isinstance(entry_thesis, dict):
+            return default_retrace_pct
+        if str(entry_thesis.get("direction") or "") != "short":
+            return default_retrace_pct
+        if str(entry_thesis.get("higher_timeframe_phase") or "") != "reclaim":
+            return default_retrace_pct
+        if str(entry_thesis.get("setup_phase") or "") != "short_rebound_fail_confirmed":
+            return default_retrace_pct
+        return min(default_retrace_pct, ETH_RECLAIM_SHORT_TRAILING_PROFIT_RETRACE_PCT)
 
     def _should_close_profitable_long_on_cooling_momentum(
         self,
@@ -2242,6 +2424,34 @@ class RiskEngine:
                 "portfolio_context": None,
             }
 
+        if (
+            approved
+            and is_open_action(final_action, self.settings.contract_market)
+            and self._eth_short_research_blocks_fresh_long_open(
+                final_action,
+                symbol_snapshot,
+                has_position=has_position,
+            )
+        ):
+            reasons.append("eth_short_research_blocks_fresh_long_open")
+            approved = False
+            final_action = "hold"
+            final_size_pct = 0.0
+        if (
+            approved
+            and is_open_action(final_action, self.settings.contract_market)
+            and self._eth_short_research_blocks_fresh_reclaim_short_open(
+                final_action,
+                symbol_snapshot,
+                has_position=has_position,
+                fresh_entry_assessment=fresh_entry_assessment,
+            )
+        ):
+            reasons.append("eth_short_research_blocks_fresh_reclaim_short_open")
+            approved = False
+            final_action = "hold"
+            final_size_pct = 0.0
+
         desired_direction = action_direction(
             final_action,
             contract_market=self.settings.contract_market,
@@ -2285,12 +2495,22 @@ class RiskEngine:
                     )
                     risk_debug["expected_edge_components"] = expected_edge_components
 
+        allow_partial_take_profit_on_close = False
+        if final_action == "close" and current_position is not None and last_open is not None and current_position.side == "short":
+            entry_thesis_for_partial = last_open.get("entry_thesis")
+            if isinstance(entry_thesis_for_partial, dict):
+                allow_partial_take_profit_on_close = str(entry_thesis_for_partial.get("setup_phase") or "") in {
+                    "eth_structural_range_noise_short",
+                    "short_rebound_fail_confirmed",
+                    "short_continuation_confirmed",
+                }
+
         if (
             approved
             and has_position
             and current_position_return_pct is not None
             and last_open is not None
-            and final_action != "close"
+            and (final_action != "close" or allow_partial_take_profit_on_close)
         ):
             take_profit_threshold = max(float(last_open.get("take_profit_pct") or 0.0), 0.0)
             stop_loss_threshold = max(float(last_open.get("stop_loss_pct") or 0.0), 0.0)
@@ -2552,6 +2772,18 @@ class RiskEngine:
             final_action = "close"
             final_size_pct = 0.0
             forced_management_exit = True
+
+        if approved and has_position and final_action == "close" and not forced_management_exit:
+            should_close_for_trail, peak_return_pct, retrace_pct = self._should_force_trailing_profit_close(
+                symbol=decision.symbol,
+                last_open=last_open,
+                current_position_return_pct=current_position_return_pct,
+            )
+            if should_close_for_trail:
+                reasons.append(
+                    f"management_trailing_profit_retrace:{current_position_return_pct:.6f}|peak={peak_return_pct:.6f}|retrace={retrace_pct:.6f}"
+                )
+                forced_management_exit = True
 
         if (
             approved

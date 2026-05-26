@@ -24,6 +24,8 @@ from .models import utc_now
 from .orchestrator import Orchestrator
 from .review import ReviewService
 from .settings import Settings
+from .setup_model import build_setup_model_bundle_metadata
+from .setup_model import load_setup_model_bundle
 from .trade_policy import timeframe_to_ms
 
 
@@ -389,6 +391,7 @@ class BacktestService:
         starting_quote: float | None = None,
         max_bars: int | None = None,
         artifact_dir: str | None = None,
+        research_profile: str | None = None,
     ) -> dict[str, Any]:
         if end <= start:
             raise ValueError("backtest_end_must_be_after_start")
@@ -434,6 +437,42 @@ class BacktestService:
             horizon_bars=review_horizon_bars,
             threshold_pct=review_threshold_pct,
         )
+        setup_model_bundle = (
+            load_setup_model_bundle(isolated_settings.setup_model_path)
+            if isolated_settings.setup_model_enable
+            else None
+        )
+        setup_model = build_setup_model_bundle_metadata(
+            setup_model_bundle,
+            setup_model_path=isolated_settings.setup_model_path,
+        )
+        if setup_model is not None:
+            training_cutoff_raw = setup_model.get("training_cutoff_utc")
+            training_cutoff = None
+            if training_cutoff_raw is not None:
+                training_cutoff = parse_backtest_datetime(str(training_cutoff_raw))
+            review_report["setup_model"] = {
+                **setup_model,
+                "backtest_window": {
+                    "start_utc": start.astimezone(timezone.utc).isoformat(),
+                    "end_utc": end.astimezone(timezone.utc).isoformat(),
+                    "oos_safe": None if training_cutoff is None else start.astimezone(timezone.utc) >= training_cutoff,
+                },
+            }
+
+        audit_context = {
+            "mode": isolated_settings.mode,
+            "rule_mode": isolated_settings.rule_mode,
+            "market_type": isolated_settings.market_type,
+            "symbols": list(isolated_settings.symbols),
+            "hourly_model_enable": isolated_settings.hourly_model_enable,
+            "setup_model_enable": isolated_settings.setup_model_enable,
+            "estimated_fee_pct": isolated_settings.estimated_fee_pct,
+            "estimated_slippage_pct": isolated_settings.estimated_slippage_pct,
+            "paper_starting_quote": isolated_settings.paper_starting_quote,
+            "starting_quote_override": starting_quote,
+            "research_profile": research_profile,
+        }
 
         orders = historical_orchestrator.journal.get_order_history(mode=isolated_settings.mode)
         equity_curve = historical_orchestrator.journal.get_equity_series(mode=isolated_settings.mode, limit=max(len(run_summaries), 1_000_000))
@@ -455,7 +494,18 @@ class BacktestService:
         losses = sum(1 for order in closed_orders if float(order.get("pnl_quote") or 0.0) < 0.0)
         total_realized_pnl_quote = sum(float(order.get("pnl_quote") or 0.0) for order in closed_orders)
         final_equity_quote = None if final_account is None else float(final_account["equity_quote"])
+        final_open_positions = [] if final_account is None else list(final_account.get("open_positions") or [])
+        open_unrealized_pnl_quote = sum(
+            float(position.get("unrealized_pnl_quote") or 0.0)
+            for position in final_open_positions
+            if isinstance(position, dict)
+        )
+        realized_return_pct = None
+        unrealized_return_pct = None
         total_return_pct = None
+        if isolated_settings.paper_starting_quote > 0.0:
+            realized_return_pct = total_realized_pnl_quote / isolated_settings.paper_starting_quote * 100.0
+            unrealized_return_pct = open_unrealized_pnl_quote / isolated_settings.paper_starting_quote * 100.0
         if final_equity_quote is not None and isolated_settings.paper_starting_quote > 0.0:
             total_return_pct = (
                 (final_equity_quote - isolated_settings.paper_starting_quote)
@@ -480,11 +530,15 @@ class BacktestService:
             "performance": {
                 "final_equity_quote": final_equity_quote,
                 "total_realized_pnl_quote": total_realized_pnl_quote,
+                "open_unrealized_pnl_quote": open_unrealized_pnl_quote,
+                "realized_return_pct": realized_return_pct,
+                "unrealized_return_pct": unrealized_return_pct,
                 "total_return_pct": total_return_pct,
                 "max_drawdown_pct": _max_drawdown_pct(equity_curve),
                 "closed_trades": len(closed_orders),
                 "wins": wins,
                 "losses": losses,
+                "open_positions": len(final_open_positions),
             },
             "order_stats": {
                 "paper_filled": sum(1 for order in orders if order["status"] == "paper_filled"),
@@ -496,6 +550,8 @@ class BacktestService:
                 "count": review_report.get("count"),
                 "aggregate": review_report.get("aggregate"),
             },
+            "setup_model": review_report.get("setup_model"),
+            "audit_context": audit_context,
         }
 
         (out_dir / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

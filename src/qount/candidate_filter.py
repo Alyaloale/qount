@@ -41,11 +41,13 @@ HOURLY_MODEL_CONFLICT_SCORE_MULTIPLIER = 0.25
 SETUP_MODEL_EDGE_SCALE_PCT = 0.0012
 SETUP_MODEL_FAVORABLE_SCORE_MULTIPLIER = 0.55
 SETUP_MODEL_UNFAVORABLE_SCORE_MULTIPLIER = 0.70
+ETH_PULLBACK_WEAK_SETUP_MODEL_MIN_SAMPLES = 8
 ETH_RECLAIM_SHORT_REENTRY_COOLDOWN_BARS = 6
 ETH_RANGE_NOISE_SHORT_MIN_CONVICTION_SCORE = 0.60
 ETH_RANGE_NOISE_SHORT_MIN_REBOUND_FAILURE_PCT = 0.0075
 ETH_RANGE_NOISE_SHORT_MIN_SUPPORT_BREAK_PCT = 0.0018
 ETH_RANGE_NOISE_SHORT_MIN_RANGE_EXPANSION_RATIO = 0.90
+ETH_SHORT_REBOUND_FAIL_TREND_MIN_SCORE = 8.0
 HARD_BOTTOM_LINE_REASONS = (
     "low_volatility",
     "low_volume",
@@ -57,7 +59,12 @@ HARD_BOTTOM_LINE_REASONS = (
     "short_setup_latest_bar_rebound",
     "setup_model_unfavorable_short_rebound_fail",
     "setup_model_weak_pullback_short_rebound_fail",
+    "setup_model_weak_reclaim_short_rebound_fail",
+    "eth_short_rebound_fail_trend_low_score",
+    "eth_short_rebound_fail_trend_terminal_flush",
+    "eth_short_research_blocks_short_continuation_open",
     "eth_short_range_noise_requires_breakdown_structure",
+    "eth_short_research_blocks_fresh_outside_short_trend_family_open",
     "max_open_positions_reached",
 )
 
@@ -318,20 +325,31 @@ def _setup_model_entry_block_reason(
     fresh_entry_assessment,
     manage_only: bool,
 ) -> str | None:
-    if manage_only or fresh_entry_assessment is None or not isinstance(setup_model_signal, dict):
+    if manage_only or fresh_entry_assessment is None:
         return None
-    if fresh_entry_assessment.setup_phase != "short_rebound_fail_confirmed":
+    if not isinstance(setup_model_signal, dict):
         return None
     sample_count = int(setup_model_signal.get("sample_count") or 0)
-    if sample_count < 20:
-        return None
     label = str(setup_model_signal.get("label") or "neutral")
-    if label == "unfavorable":
+    if (
+        symbol.symbol == "ETH/USDT:USDT"
+        and fresh_entry_assessment.action == "buy"
+        and fresh_entry_assessment.setup_phase == "range_noise"
+        and sample_count >= 20
+        and label == "unfavorable"
+        and float(setup_model_signal.get("predicted_edge_pct") or 0.0) <= 0.0
+        and float(setup_model_signal.get("avg_target_edge_pct") or 0.0) <= 0.0
+    ):
+        return "setup_model_unfavorable_eth_range_noise_long"
+    if fresh_entry_assessment.setup_phase != "short_rebound_fail_confirmed":
+        return None
+    if label == "unfavorable" and sample_count >= 20:
         return "setup_model_unfavorable_short_rebound_fail"
     if (
         symbol.symbol == "ETH/USDT:USDT"
         and fresh_entry_assessment.action == "sell"
         and _higher_timeframe_phase(symbol) == "pullback"
+        and sample_count >= ETH_PULLBACK_WEAK_SETUP_MODEL_MIN_SAMPLES
         and label == "favorable"
         and str(setup_model_signal.get("quality") or "neutral") == "weak_favorable"
         and (
@@ -340,6 +358,16 @@ def _setup_model_entry_block_reason(
         )
     ):
         return "setup_model_weak_pullback_short_rebound_fail"
+    if (
+        symbol.symbol == "ETH/USDT:USDT"
+        and fresh_entry_assessment.action == "sell"
+        and _higher_timeframe_phase(symbol) == "reclaim"
+        and label == "favorable"
+        and str(setup_model_signal.get("quality") or "neutral") == "weak_favorable"
+        and float(setup_model_signal.get("confidence_ratio") or 0.0) < 1.0
+        and float(setup_model_signal.get("predicted_edge_pct") or 0.0) < 0.0020
+    ):
+        return "setup_model_weak_reclaim_short_rebound_fail"
     return None
 
 
@@ -376,6 +404,84 @@ def _eth_structural_short_range_noise_allowed(
         and support_break_pct >= ETH_RANGE_NOISE_SHORT_MIN_SUPPORT_BREAK_PCT
         and range_expansion_ratio >= ETH_RANGE_NOISE_SHORT_MIN_RANGE_EXPANSION_RATIO
     )
+
+
+def _eth_short_research_blocks_fresh_outside_short_trend_family_open(
+    symbol: SymbolSnapshot,
+    *,
+    fresh_entry_assessment,
+    setup_model_path: Path,
+    higher_timeframe_phase: str | None,
+    trend_bias: str | None,
+    manage_only: bool,
+) -> bool:
+    if manage_only or fresh_entry_assessment is None:
+        return False
+    if symbol.symbol != "ETH/USDT:USDT":
+        return False
+    if trend_bias == "short" and higher_timeframe_phase in {"trend", "reclaim", "exhaustion"}:
+        return False
+    # Keep the current ETH-only short research window pure: while the active
+    # setup model family is the short rebound line, fresh entries should only
+    # survive when the higher timeframe still sits in the short trend family.
+    return "short_rebound" in setup_model_path.name.lower()
+
+
+def _eth_short_research_blocks_short_continuation_open(
+    symbol: SymbolSnapshot,
+    *,
+    fresh_entry_assessment,
+    setup_model_path: Path,
+    manage_only: bool,
+) -> bool:
+    if manage_only or fresh_entry_assessment is None:
+        return False
+    if symbol.symbol != "ETH/USDT:USDT":
+        return False
+    if fresh_entry_assessment.action != "sell":
+        return False
+    if fresh_entry_assessment.setup_phase != "short_continuation_confirmed":
+        return False
+    return "short_rebound" in setup_model_path.name.lower()
+
+
+def _eth_short_rebound_fail_trend_block_reason(
+    symbol: SymbolSnapshot,
+    *,
+    fresh_entry_assessment,
+    traditional_signal_context: dict[str, object] | None,
+    higher_timeframe_phase: str | None,
+    trend_bias: str | None,
+    score: float,
+) -> str | None:
+    if fresh_entry_assessment is None:
+        return None
+    if symbol.symbol != "ETH/USDT:USDT":
+        return None
+    if fresh_entry_assessment.action != "sell":
+        return None
+    if fresh_entry_assessment.setup_phase != "short_rebound_fail_confirmed":
+        return None
+    if higher_timeframe_phase != "trend" or trend_bias != "short":
+        return None
+    if score < ETH_SHORT_REBOUND_FAIL_TREND_MIN_SCORE:
+        return "eth_short_rebound_fail_trend_low_score"
+    if not isinstance(traditional_signal_context, dict):
+        return None
+    return_24bars = float(symbol.indicators.get("return_24bars") or 0.0)
+    rsi_14 = float(symbol.indicators.get("rsi_14") or 0.0)
+    volume_ratio_20 = float(symbol.indicators.get("volume_ratio_20") or 0.0)
+    conviction_score = float(traditional_signal_context.get("conviction_score") or 0.0)
+    rebound_failure_pct = float(traditional_signal_context.get("rebound_failure_pct") or 0.0)
+    if (
+        conviction_score >= 0.90
+        and return_24bars < 0.0
+        and rsi_14 < 30.0
+        and volume_ratio_20 >= 5.0
+        and rebound_failure_pct >= 0.0080
+    ):
+        return "eth_short_rebound_fail_trend_terminal_flush"
+    return None
 
 
 class CandidateFilter:
@@ -573,10 +679,39 @@ class CandidateFilter:
                         ):
                             eligible = False
                             reasons.append("eth_short_range_noise_requires_breakdown_structure")
+                        if _eth_short_research_blocks_fresh_outside_short_trend_family_open(
+                            symbol,
+                            fresh_entry_assessment=fresh_entry_assessment,
+                            setup_model_path=self.settings.setup_model_path,
+                            higher_timeframe_phase=higher_timeframe_phase,
+                            trend_bias=trend_bias,
+                            manage_only=manage_only,
+                        ):
+                            eligible = False
+                            reasons.append("eth_short_research_blocks_fresh_outside_short_trend_family_open")
+                        if _eth_short_research_blocks_short_continuation_open(
+                            symbol,
+                            fresh_entry_assessment=fresh_entry_assessment,
+                            setup_model_path=self.settings.setup_model_path,
+                            manage_only=manage_only,
+                        ):
+                            eligible = False
+                            reasons.append("eth_short_research_blocks_short_continuation_open")
                         short_precheck_reasons = _short_candidate_precheck(symbol)
                         if short_precheck_reasons:
                             eligible = False
                             reasons.extend(short_precheck_reasons)
+                        trend_block_reason = _eth_short_rebound_fail_trend_block_reason(
+                            symbol,
+                            fresh_entry_assessment=fresh_entry_assessment,
+                            traditional_signal_context=traditional_signal_context,
+                            higher_timeframe_phase=higher_timeframe_phase,
+                            trend_bias=trend_bias,
+                            score=score,
+                        )
+                        if trend_block_reason is not None:
+                            eligible = False
+                            reasons.append(trend_block_reason)
                     if open_position_slots_remaining <= 0:
                         eligible = False
                         reasons.append("max_open_positions_reached")
@@ -684,10 +819,39 @@ class CandidateFilter:
                     ):
                         eligible = False
                         reasons.append("eth_short_range_noise_requires_breakdown_structure")
+                    if _eth_short_research_blocks_fresh_outside_short_trend_family_open(
+                        symbol,
+                        fresh_entry_assessment=fresh_entry_assessment,
+                        setup_model_path=self.settings.setup_model_path,
+                        higher_timeframe_phase=higher_timeframe_phase,
+                        trend_bias=trend_bias,
+                        manage_only=manage_only,
+                    ):
+                        eligible = False
+                        reasons.append("eth_short_research_blocks_fresh_outside_short_trend_family_open")
+                    if _eth_short_research_blocks_short_continuation_open(
+                        symbol,
+                        fresh_entry_assessment=fresh_entry_assessment,
+                        setup_model_path=self.settings.setup_model_path,
+                        manage_only=manage_only,
+                    ):
+                        eligible = False
+                        reasons.append("eth_short_research_blocks_short_continuation_open")
                     short_precheck_reasons = _short_candidate_precheck(symbol)
                     if short_precheck_reasons:
                         eligible = False
                         reasons.extend(short_precheck_reasons)
+                    trend_block_reason = _eth_short_rebound_fail_trend_block_reason(
+                        symbol,
+                        fresh_entry_assessment=fresh_entry_assessment,
+                        traditional_signal_context=traditional_signal_context,
+                        higher_timeframe_phase=higher_timeframe_phase,
+                        trend_bias=trend_bias,
+                        score=score,
+                    )
+                    if trend_block_reason is not None:
+                        eligible = False
+                        reasons.append(trend_block_reason)
                 if eligible or (bottom_line_rules and _bottom_line_candidate_allowed(reasons)):
                     selected_symbols.append(symbol.symbol)
 
