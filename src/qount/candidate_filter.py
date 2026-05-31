@@ -5,6 +5,7 @@ from typing import Any
 
 from .entry_quality import assess_fresh_entry
 from .entry_quality import build_entry_thesis_candidate
+from .entry_quality import build_research_slice_tags
 from .entry_quality import build_traditional_signal_context
 from .journal import Journal
 from .models import MarketSnapshotBundle, SymbolSnapshot
@@ -42,6 +43,15 @@ SETUP_MODEL_EDGE_SCALE_PCT = 0.0012
 SETUP_MODEL_FAVORABLE_SCORE_MULTIPLIER = 0.55
 SETUP_MODEL_UNFAVORABLE_SCORE_MULTIPLIER = 0.70
 ETH_PULLBACK_WEAK_SETUP_MODEL_MIN_SAMPLES = 8
+ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MIN_SAMPLES = 20
+ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MAX_CONFIDENCE_RATIO = 0.25
+ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MAX_EDGE_PCT = 0.0005
+ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MAX_POSITIVE_RATE = 0.30
+ETH_TREND_WEAK_SETUP_MODEL_MIN_SAMPLES = 20
+ETH_TREND_WEAK_SETUP_MODEL_MAX_CONFIDENCE_RATIO = 0.25
+ETH_TREND_WEAK_SETUP_MODEL_MAX_EDGE_PCT = 0.0005
+ETH_TREND_WEAK_SETUP_MODEL_MAX_POSITIVE_RATE = 0.25
+ETH_TREND_WEAK_SETUP_MODEL_MAX_SUPPORT_BREAK_PCT = 0.0002
 ETH_RECLAIM_SHORT_REENTRY_COOLDOWN_BARS = 6
 ETH_RANGE_NOISE_SHORT_MIN_CONVICTION_SCORE = 0.60
 ETH_RANGE_NOISE_SHORT_MIN_REBOUND_FAILURE_PCT = 0.0075
@@ -60,11 +70,25 @@ HARD_BOTTOM_LINE_REASONS = (
     "setup_model_unfavorable_short_rebound_fail",
     "setup_model_weak_pullback_short_rebound_fail",
     "setup_model_weak_reclaim_short_rebound_fail",
+    "setup_model_neutral_reclaim_short_rebound_fail",
+    "setup_model_weak_trend_shallow_short_rebound_fail",
     "eth_short_rebound_fail_trend_low_score",
     "eth_short_rebound_fail_trend_terminal_flush",
     "eth_short_research_blocks_short_continuation_open",
     "eth_short_range_noise_requires_breakdown_structure",
     "eth_short_research_blocks_fresh_outside_short_trend_family_open",
+    "research_shadow_candidate_tag_mismatch",
+    "research_shadow_candidate_tag_blocked_by_operational_guard",
+    "max_open_positions_reached",
+)
+RESEARCH_SHADOW_CANDIDATE_SCORE_BONUS = 6.0
+RESEARCH_SHADOW_PRESERVED_BLOCK_REASONS = (
+    "low_volatility",
+    "low_volume",
+    "higher_timeframe_unavailable",
+    "same_symbol_reentry_cooldown_active",
+    "loss_reentry_cooldown_active",
+    "recent_action_cooldown_active",
     "max_open_positions_reached",
 )
 
@@ -237,6 +261,46 @@ def _bottom_line_candidate_allowed(reasons: list[str]) -> bool:
     )
 
 
+def _active_research_shadow_candidate_tags(settings: Settings) -> set[str]:
+    if settings.live_mode or settings.live_enable:
+        return set()
+    return {
+        str(tag).strip()
+        for tag in settings.research_shadow_candidate_tags
+        if str(tag).strip()
+    }
+
+
+def _reason_matches_any(reason: str, prefixes: tuple[str, ...]) -> bool:
+    return any(reason == prefix or reason.startswith(f"{prefix}:") for prefix in prefixes)
+
+
+def _apply_research_shadow_candidate_mode(
+    *,
+    active_tags: set[str],
+    research_slice_tags: list[str],
+    reasons: list[str],
+    eligible: bool,
+    manage_only: bool,
+) -> tuple[bool, list[str], str | None]:
+    if not active_tags:
+        return eligible, [], None
+    if manage_only:
+        return eligible, [], "management"
+
+    matched_tags = sorted(active_tags.intersection(research_slice_tags))
+    if not matched_tags:
+        reasons.append("research_shadow_candidate_tag_mismatch")
+        return False, [], "mismatch"
+
+    if any(_reason_matches_any(reason, RESEARCH_SHADOW_PRESERVED_BLOCK_REASONS) for reason in reasons):
+        reasons.append("research_shadow_candidate_tag_blocked_by_operational_guard")
+        return False, matched_tags, "blocked"
+
+    reasons.append(f"research_shadow_candidate_tag_match:{','.join(matched_tags)}")
+    return True, matched_tags, "matched"
+
+
 def _same_symbol_reentry_cooldown_bars(
     settings: Settings,
     *,
@@ -324,6 +388,7 @@ def _setup_model_entry_block_reason(
     *,
     fresh_entry_assessment,
     manage_only: bool,
+    traditional_signal_context: dict[str, object] | None,
 ) -> str | None:
     if manage_only or fresh_entry_assessment is None:
         return None
@@ -358,6 +423,34 @@ def _setup_model_entry_block_reason(
         )
     ):
         return "setup_model_weak_pullback_short_rebound_fail"
+    if (
+        symbol.symbol == "ETH/USDT:USDT"
+        and fresh_entry_assessment.action == "sell"
+        and _higher_timeframe_phase(symbol) == "reclaim"
+        and sample_count >= ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MIN_SAMPLES
+        and label == "neutral"
+        and float(setup_model_signal.get("confidence_ratio") or 0.0) < ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MAX_CONFIDENCE_RATIO
+        and float(setup_model_signal.get("predicted_edge_pct") or 0.0) < ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MAX_EDGE_PCT
+        and float(setup_model_signal.get("positive_edge_rate") or 0.0) < ETH_RECLAIM_NEUTRAL_SETUP_MODEL_MAX_POSITIVE_RATE
+        and float(setup_model_signal.get("avg_target_edge_pct") or 0.0) <= 0.0
+    ):
+        return "setup_model_neutral_reclaim_short_rebound_fail"
+    if (
+        symbol.symbol == "ETH/USDT:USDT"
+        and fresh_entry_assessment.action == "sell"
+        and _higher_timeframe_phase(symbol) == "trend"
+        and sample_count >= ETH_TREND_WEAK_SETUP_MODEL_MIN_SAMPLES
+        and label == "favorable"
+        and str(setup_model_signal.get("quality") or "neutral") == "weak_favorable"
+        and isinstance(traditional_signal_context, dict)
+        and float(traditional_signal_context.get("support_break_pct") or 0.0)
+        <= ETH_TREND_WEAK_SETUP_MODEL_MAX_SUPPORT_BREAK_PCT
+        and float(setup_model_signal.get("confidence_ratio") or 0.0) < ETH_TREND_WEAK_SETUP_MODEL_MAX_CONFIDENCE_RATIO
+        and float(setup_model_signal.get("predicted_edge_pct") or 0.0) < ETH_TREND_WEAK_SETUP_MODEL_MAX_EDGE_PCT
+        and float(setup_model_signal.get("positive_edge_rate") or 0.0) < ETH_TREND_WEAK_SETUP_MODEL_MAX_POSITIVE_RATE
+        and float(setup_model_signal.get("avg_target_edge_pct") or 0.0) <= 0.0
+    ):
+        return "setup_model_weak_trend_shallow_short_rebound_fail"
     if (
         symbol.symbol == "ETH/USDT:USDT"
         and fresh_entry_assessment.action == "sell"
@@ -501,6 +594,7 @@ class CandidateFilter:
         exclude_symbols: set[str] | None = None,
     ) -> CandidateFilterResult:
         bottom_line_rules = self.settings.bottom_line_rules
+        active_shadow_candidate_tags = _active_research_shadow_candidate_tags(self.settings)
         timeframe_ms = timeframe_to_ms(self.settings.timeframe)
         excluded = exclude_symbols or set()
         recent_actions = self.journal.get_recent_signal_actions(limit=80)
@@ -559,6 +653,11 @@ class CandidateFilter:
                     model_bundle=self.setup_model_bundle,
                 )
             )
+            research_slice_tags = (
+                []
+                if fresh_entry_assessment is None
+                else list(build_research_slice_tags(symbol, fresh_entry_assessment, manage_only=False))
+            )
             score = (
                 volatility_pct * 1000.0
                 + min(volume_ratio, 3.0)
@@ -571,6 +670,9 @@ class CandidateFilter:
             reasons: list[str] = []
             eligible = True
             manage_only = False
+            research_shadow_candidate_status: str | None = None
+            research_shadow_candidate_tags: list[str] = []
+            normal_candidate_eligible: bool | None = None
 
             if open_positions:
                 if symbol.symbol in open_positions:
@@ -667,6 +769,7 @@ class CandidateFilter:
                             setup_model_signal,
                             fresh_entry_assessment=fresh_entry_assessment,
                             manage_only=manage_only,
+                            traditional_signal_context=traditional_signal_context,
                         )
                         if setup_model_block_reason is not None:
                             eligible = False
@@ -715,7 +818,17 @@ class CandidateFilter:
                     if open_position_slots_remaining <= 0:
                         eligible = False
                         reasons.append("max_open_positions_reached")
-                    elif eligible or (bottom_line_rules and _bottom_line_candidate_allowed(reasons)):
+                    normal_candidate_eligible = eligible
+                    eligible, research_shadow_candidate_tags, research_shadow_candidate_status = _apply_research_shadow_candidate_mode(
+                        active_tags=active_shadow_candidate_tags,
+                        research_slice_tags=research_slice_tags,
+                        reasons=reasons,
+                        eligible=eligible,
+                        manage_only=manage_only,
+                    )
+                    if research_shadow_candidate_status == "matched":
+                        score += RESEARCH_SHADOW_CANDIDATE_SCORE_BONUS
+                    if eligible or (bottom_line_rules and _bottom_line_candidate_allowed(reasons)):
                         supplemental_candidates.append((symbol.symbol, score))
             else:
                 quality_ok, quality_reasons = _candidate_quality_gate(
@@ -807,6 +920,7 @@ class CandidateFilter:
                         setup_model_signal,
                         fresh_entry_assessment=fresh_entry_assessment,
                         manage_only=manage_only,
+                        traditional_signal_context=traditional_signal_context,
                     )
                     if setup_model_block_reason is not None:
                         eligible = False
@@ -852,10 +966,20 @@ class CandidateFilter:
                     if trend_block_reason is not None:
                         eligible = False
                         reasons.append(trend_block_reason)
+                normal_candidate_eligible = eligible
+                eligible, research_shadow_candidate_tags, research_shadow_candidate_status = _apply_research_shadow_candidate_mode(
+                    active_tags=active_shadow_candidate_tags,
+                    research_slice_tags=research_slice_tags,
+                    reasons=reasons,
+                    eligible=eligible,
+                    manage_only=manage_only,
+                )
+                if research_shadow_candidate_status == "matched":
+                    score += RESEARCH_SHADOW_CANDIDATE_SCORE_BONUS
                 if eligible or (bottom_line_rules and _bottom_line_candidate_allowed(reasons)):
                     selected_symbols.append(symbol.symbol)
 
-            contexts[symbol.symbol] = {
+            context = {
                 "eligible": eligible,
                 "manage_only": manage_only,
                 "score": round(score, 6),
@@ -865,6 +989,7 @@ class CandidateFilter:
                 "setup_phase": None if fresh_entry_assessment is None else fresh_entry_assessment.setup_phase,
                 "setup_confirmed": None if fresh_entry_assessment is None else fresh_entry_assessment.setup_confirmed,
                 "entry_thesis_candidate": None if fresh_entry_assessment is None else build_entry_thesis_candidate(symbol, fresh_entry_assessment),
+                "research_slice_tags": [] if manage_only else research_slice_tags,
                 "traditional_signal_context": traditional_signal_context,
                 "hourly_model_signal": (
                     None
@@ -881,6 +1006,16 @@ class CandidateFilter:
                     6,
                 ),
                 "reasons": reasons or ["candidate_ok"],
+            }
+            if active_shadow_candidate_tags:
+                context["research_shadow_candidate"] = {
+                    "status": research_shadow_candidate_status,
+                    "target_tags": sorted(active_shadow_candidate_tags),
+                    "matched_tags": research_shadow_candidate_tags,
+                    "normal_eligible": normal_candidate_eligible,
+                }
+            contexts[symbol.symbol] = {
+                **context,
             }
 
         if open_positions:

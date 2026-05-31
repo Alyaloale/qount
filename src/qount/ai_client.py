@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 from .models import MarketSnapshotBundle
+from .models import utc_now
 from .settings import Settings
 
 
@@ -31,6 +34,7 @@ def default_system_prompt(contract_market: bool, timeframe: str) -> str:
             "If that same short also has candidate_context.setup_model_signal.quality=strong_favorable, prefer trusting the setup over a generic RSI-already-low objection unless the bar is obviously terminal. "
             "If the same short only has candidate_context.setup_model_signal.quality=weak_favorable, treat that as insufficient by itself and prefer waiting for one more confirming bar or a cleaner break. "
             "If candidate_context.setup_phase is short_breakdown_confirmed, treat it as a real downside momentum setup rather than a terminal flush. A small starter short is acceptable when it is the clearest candidate and price still sits below the fast and slow 5m SMA context. "
+            "If candidate_context.setup_phase is short_breakdown_confirmed, candidate_context.higher_timeframe_phase is reclaim, candidate_context.entry_thesis_candidate.direction is short, and candidate_context.traditional_signal_context.pattern_label is failed_rebound_breakdown with terminal_risk=false, a starter short is acceptable even if local RSI is already low and the latest bar is still near the low. "
             "If candidate_context.reasons include short_setup_pre_breakdown_watch or long_setup_pre_breakout_watch, treat that as an early continuation watchlist signal rather than a veto; slightly sub-average 5m volatility alone is not enough reason to force hold. "
             "Do not immediately re-enter the same long after an adverse loss-cut unless several closed 5m bars have clearly rebuilt support. "
             "For fresh futures longs, avoid chasing a weak reclaim or late breakout when the latest closed 5m bar is already stretched, local RSI is elevated, and volume has already expanded; prefer waiting for a cleaner pullback or sturdier rebuild. "
@@ -86,6 +90,7 @@ def default_decision_prompt(contract_market: bool, timeframe: str) -> str:
             "If that same short also has candidate_context.setup_model_signal.quality=strong_favorable, prefer trusting the setup over a generic RSI-already-low objection unless the bar is obviously terminal. "
             "If the same short only has candidate_context.setup_model_signal.quality=weak_favorable, treat that as insufficient by itself and prefer waiting for one more confirming bar or a cleaner break. "
             "If candidate_context.setup_phase is short_breakdown_confirmed, treat it as a real downside momentum setup rather than a terminal flush. A small starter short is acceptable when it is the clearest candidate and price remains below the fast and slow 5m SMA context. "
+            "If candidate_context.setup_phase is short_breakdown_confirmed, candidate_context.higher_timeframe_phase is reclaim, candidate_context.entry_thesis_candidate.direction is short, and candidate_context.traditional_signal_context.pattern_label is failed_rebound_breakdown with terminal_risk=false, a starter short is acceptable even if local RSI is already low and the latest bar is still near the low. "
             "If candidate_context.reasons include short_setup_pre_breakdown_watch or long_setup_pre_breakout_watch, treat that as an early continuation watchlist signal; slightly sub-average 5m volatility alone is not enough reason to force hold. "
             "Do not immediately re-enter the same long after an adverse loss-cut unless several closed 5m bars have clearly rebuilt support. "
             "For fresh futures longs, avoid chasing a weak reclaim or late breakout when the latest closed 5m bar is already stretched, local RSI is elevated, and volume has already expanded; prefer waiting for a cleaner pullback or sturdier rebuild. "
@@ -127,6 +132,13 @@ class AIDecisionClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    def _cache_allowed(self) -> bool:
+        return (
+            self.settings.ai_decision_cache_enable
+            and self.settings.paper_mode
+            and not self.settings.live_enable
+        )
+
     def _render_prompt(self, prompt: str) -> str:
         return (
             prompt.replace("{{timeframe}}", self.settings.timeframe)
@@ -137,6 +149,65 @@ class AIDecisionClient:
         if path.exists():
             return self._render_prompt(path.read_text(encoding="utf-8").strip())
         return self._render_prompt(fallback)
+
+    def _cache_path(
+        self,
+        *,
+        system_prompt: str,
+        decision_prompt: str,
+        snapshot_summary: dict[str, Any],
+    ) -> tuple[str, Path]:
+        cache_payload = {
+            "prompt_version": "v1",
+            "model": self.settings.ai_model,
+            "temperature": self.settings.ai_temperature,
+            "response_format": {"type": "json_object"},
+            "system_prompt_sha256": hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
+            "decision_prompt_sha256": hashlib.sha256(decision_prompt.encode("utf-8")).hexdigest(),
+            "snapshot": snapshot_summary,
+        }
+        encoded = json.dumps(cache_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        cache_key = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        return cache_key, self.settings.ai_decision_cache_dir / f"{cache_key}.json"
+
+    def _read_cached_decision(self, cache_key: str, cache_path: Path) -> tuple[dict, str, str] | None:
+        if not cache_path.exists():
+            return None
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        request_payload = cached.get("request_payload")
+        raw_text = cached.get("raw_text")
+        model_name = cached.get("model_name")
+        if not (isinstance(request_payload, dict) and isinstance(raw_text, str) and isinstance(model_name, str)):
+            return None
+        request_payload = dict(request_payload)
+        request_payload["ai_decision_cache"] = {
+            "hit": True,
+            "key": cache_key,
+            "path": str(cache_path),
+        }
+        return request_payload, raw_text, model_name
+
+    def _write_cached_decision(
+        self,
+        *,
+        cache_key: str,
+        cache_path: Path,
+        request_payload: dict[str, Any],
+        raw_text: str,
+        model_name: str,
+    ) -> None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "cache_key": cache_key,
+            "created_at": utc_now().isoformat(),
+            "request_payload": request_payload,
+            "raw_text": raw_text,
+            "model_name": model_name,
+        }
+        cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def request_decision(self, bundle: MarketSnapshotBundle) -> tuple[dict, str, str]:
         try:
@@ -152,7 +223,8 @@ class AIDecisionClient:
             self.settings.decision_prompt_path,
             default_decision_prompt(self.settings.contract_market, self.settings.timeframe),
         )
-        snapshot_json = json.dumps(bundle.summary_for_prompt(), ensure_ascii=False)
+        snapshot_summary = bundle.summary_for_prompt()
+        snapshot_json = json.dumps(snapshot_summary, ensure_ascii=False)
         messages = [
             {"role": "system", "content": system_prompt},
             {
@@ -160,6 +232,24 @@ class AIDecisionClient:
                 "content": f"{decision_prompt}\n\nSnapshot JSON:\n{snapshot_json}",
             },
         ]
+        request_payload = {
+            "model": self.settings.ai_model,
+            "messages": messages,
+            "temperature": self.settings.ai_temperature,
+            "response_format": {"type": "json_object"},
+        }
+
+        cache_key: str | None = None
+        cache_path: Path | None = None
+        if self._cache_allowed():
+            cache_key, cache_path = self._cache_path(
+                system_prompt=system_prompt,
+                decision_prompt=decision_prompt,
+                snapshot_summary=snapshot_summary,
+            )
+            cached = self._read_cached_decision(cache_key, cache_path)
+            if cached is not None:
+                return cached
 
         client = OpenAI(
             base_url=self.settings.openai_base_url,
@@ -169,15 +259,22 @@ class AIDecisionClient:
         response = client.chat.completions.create(
             model=self.settings.ai_model,
             messages=messages,
-            temperature=0.2,
+            temperature=self.settings.ai_temperature,
             response_format={"type": "json_object"},
         )
         raw_text = response.choices[0].message.content or ""
-        request_payload = {
-            "model": self.settings.ai_model,
-            "messages": messages,
-            "temperature": 0.2,
-            "response_format": {"type": "json_object"},
-        }
         model_name = getattr(response, "model", self.settings.ai_model)
+        if cache_key is not None and cache_path is not None:
+            request_payload["ai_decision_cache"] = {
+                "hit": False,
+                "key": cache_key,
+                "path": str(cache_path),
+            }
+            self._write_cached_decision(
+                cache_key=cache_key,
+                cache_path=cache_path,
+                request_payload=request_payload,
+                raw_text=raw_text,
+                model_name=model_name,
+            )
         return request_payload, raw_text, model_name

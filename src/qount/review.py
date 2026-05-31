@@ -11,6 +11,7 @@ from typing import Any
 
 from .exchange_utils import build_exchange
 from .entry_quality import assess_fresh_entry
+from .entry_quality import build_research_slice_tags
 from .journal import Journal
 from .models import AccountSnapshot
 from .models import AIDecision
@@ -479,6 +480,14 @@ def _candidate_reason_counts(items: list[dict[str, Any]]) -> dict[str, int]:
     for item in items:
         key = str(item.get("candidate_filter_primary_reason") or "unknown")
         counts[key] += 1
+    return dict(sorted(counts.items()))
+
+
+def _research_slice_tag_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for item in items:
+        for tag in item.get("research_slice_tags") or []:
+            counts[str(tag)] += 1
     return dict(sorted(counts.items()))
 
 
@@ -1096,6 +1105,23 @@ class ReviewService:
                 candidate_summary,
                 symbol,
             )
+            research_slice_tags = candidate_context.get("research_slice_tags")
+            if not isinstance(research_slice_tags, list):
+                research_slice_tags = candidate_summary_for_symbol.get("research_slice_tags")
+            if not isinstance(research_slice_tags, list):
+                research_slice_tags = []
+            if not research_slice_tags and symbol_snapshot_for_assessment is not None:
+                assessment_for_research_tags = assess_fresh_entry(
+                    symbol_snapshot_for_assessment,
+                    action=str(decision["action"]),
+                )
+                research_slice_tags = list(
+                    build_research_slice_tags(
+                        symbol_snapshot_for_assessment,
+                        assessment_for_research_tags,
+                        manage_only=candidate_filter_manage_only is True,
+                    )
+                )
             if setup_phase is None:
                 setup_phase = _setup_phase_from_candidate_reason(candidate_filter_primary_reason)
             if setup_phase is None and symbol_snapshot_for_assessment is not None:
@@ -1299,6 +1325,7 @@ class ReviewService:
                     "candidate_filter_reasons": candidate_filter_reasons,
                     "candidate_filter_primary_reason": candidate_filter_primary_reason,
                     "candidate_filter_manage_only": candidate_filter_manage_only,
+                    "research_slice_tags": [str(tag) for tag in research_slice_tags],
                     "higher_timeframe_phase": higher_timeframe_phase,
                     "setup_phase": setup_phase,
                     "setup_confirmed": setup_confirmed,
@@ -1519,6 +1546,18 @@ class ReviewService:
                 )
             }).items()
         }
+        by_research_slice_tag = {
+            tag: _summarize_reviews(
+                tag_reviews,
+                contract_market=self.settings.contract_market,
+                reentry_window_bars=horizon_bars,
+                timeframe_ms=timeframe_ms,
+            )
+            for tag, tag_reviews in defaultdict(list, {
+                tag: [item for item in reviewed if tag in (item.get("research_slice_tags") or [])]
+                for tag in sorted({str(tag) for item in reviewed for tag in (item.get("research_slice_tags") or [])})
+            }).items()
+        }
         by_expected_edge_bucket = _bucket_summaries(
             reviewed,
             metric_key="final_expected_edge_pct",
@@ -1588,6 +1627,13 @@ class ReviewService:
             "by_entry_thesis": by_entry_thesis,
             "by_setup_phase": by_setup_phase,
             "by_higher_timeframe_phase": by_higher_timeframe_phase,
+            "by_research_slice_tag": (
+                {
+                    tag: summary
+                    for tag, summary in by_research_slice_tag.items()
+                }
+                | {"counts": _research_slice_tag_counts(reviewed)}
+            ),
             "by_expected_edge_bucket": by_expected_edge_bucket,
             "by_volatility_bucket": by_volatility_bucket,
             "decision_control": _decision_control_metrics(reviewed),

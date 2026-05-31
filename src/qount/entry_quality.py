@@ -39,6 +39,12 @@ SHORT_BREAKDOWN_CONFIRMED_MIN_CLOSE_FROM_EXTREME_RATIO = 0.18
 SHORT_BREAKDOWN_CONFIRMED_MAX_CLOSE_FROM_EXTREME_RATIO = 0.38
 SHORT_BREAKDOWN_CONFIRMED_MIN_FAST_SMA_RATIO = -0.0035
 SHORT_BREAKDOWN_CONFIRMED_MIN_SLOW_SMA_RATIO = -0.0060
+ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MIN_REBOUND_FAILURE_PCT = 0.0080
+ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MIN_SUPPORT_BREAK_PCT = 0.0020
+ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_RANGE_EXPANSION_RATIO = 0.90
+ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_LOCAL_RSI = 24.0
+ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_FAST_SMA_RATIO = -0.0050
+ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_SLOW_SMA_RATIO = -0.0050
 HIGH_RSI_LONG_CHASE_MIN_DIRECTIONAL_24BAR_PCT = 0.0100
 HIGH_RSI_LONG_CHASE_MIN_DIRECTIONAL_1BAR_PCT = 0.0010
 HIGH_RSI_LONG_CHASE_MIN_VOLUME_RATIO = 0.75
@@ -181,6 +187,126 @@ def _build_structural_range_noise_short_thesis(
     }
 
 
+def build_research_slice_tags(
+    symbol: SymbolSnapshot,
+    assessment: FreshEntryAssessment | None,
+    *,
+    manage_only: bool = False,
+) -> tuple[str, ...]:
+    if manage_only or assessment is None:
+        return ()
+
+    is_eth = symbol.symbol == "ETH/USDT:USDT"
+    higher_phase = _higher_timeframe_phase(symbol)
+    indicators = symbol.indicators
+    range_pct = float(indicators.get("range_pct") or 0.0)
+
+    if (
+        is_eth
+        and
+        assessment.action == "buy"
+        and assessment.setup_phase == "long_pullback_reclaim_confirmed"
+        and higher_phase in {"trend", "pullback", "reclaim"}
+    ):
+        traditional_context = build_traditional_signal_context(symbol, assessment)
+        if not isinstance(traditional_context, dict):
+            return ()
+        if traditional_context.get("pattern_label") != "failed_breakdown_reclaim":
+            return ()
+        return_1bar = float(indicators.get("return_1bar") or 0.0)
+        sma_slow_ratio = float(indicators.get("sma_slow_ratio") or 0.0)
+        tags = ["eth_reclaim_long_failed_breakdown_base"]
+        if sma_slow_ratio > 0.004:
+            tags.append("eth_reclaim_long_failed_breakdown_sma_slow_gt004")
+        if 0.0 < return_1bar <= 0.0004:
+            tags.append("eth_reclaim_long_failed_breakdown_return1bar_0004")
+        if sma_slow_ratio > 0.004 and 0.0 < return_1bar <= 0.0004:
+            tags.append("eth_reclaim_long_failed_breakdown_sma_slow_gt004_return1bar_0004")
+        if higher_phase == "trend" and sma_slow_ratio > 0.004:
+            tags.append("eth_reclaim_long_failed_breakdown_trend_sma_slow_gt004")
+        if higher_phase == "trend" and 0.0 < return_1bar <= 0.0004:
+            tags.append("eth_reclaim_long_failed_breakdown_trend_return1bar_0004")
+        return tuple(tags)
+
+    if assessment.action != "sell":
+        return ()
+
+    if is_eth and assessment.setup_phase == "short_breakdown_chase" and higher_phase == "trend":
+        rsi_14 = float(indicators.get("rsi_14") or 50.0)
+        volume_ratio_20 = float(indicators.get("volume_ratio_20") or 0.0)
+        tags = ["eth_trend_impulse_short_breakdown_chase"]
+        if range_pct > 0.012:
+            tags.append("eth_trend_impulse_short_breakdown_chase_range_gt012")
+        if assessment.terminal_extension and rsi_14 <= 35.0 and volume_ratio_20 > 3.0:
+            tags.append("eth_trend_impulse_short_breakdown_chase_terminal_volume_gt3")
+        return tuple(tags)
+
+    if (
+        is_eth
+        and
+        assessment.setup_phase == "range_noise"
+        and higher_phase == "trend"
+        and range_pct > 0.012
+    ):
+        rsi_14 = float(indicators.get("rsi_14") or 50.0)
+        volume_ratio_20 = float(indicators.get("volume_ratio_20") or 0.0)
+        sma_fast_ratio = float(indicators.get("sma_fast_ratio") or 0.0)
+        sma_slow_ratio = float(indicators.get("sma_slow_ratio") or 0.0)
+        tags = ["eth_trend_impulse_range_noise_range_gt012"]
+        if (
+            rsi_14 <= 25.0
+            and volume_ratio_20 > 3.0
+            and sma_fast_ratio <= -0.008
+            and sma_slow_ratio <= -0.008
+        ):
+            tags.append("eth_trend_impulse_range_noise_washout")
+        return tuple(tags)
+
+    if assessment.setup_phase != "range_noise":
+        return ()
+    if higher_phase not in {"pullback", "range"}:
+        return ()
+
+    rsi_14 = float(indicators.get("rsi_14") or 50.0)
+    return_24bars = float(indicators.get("return_24bars") or 0.0)
+    sma_fast_ratio = float(indicators.get("sma_fast_ratio") or 0.0)
+    sma_slow_ratio = float(indicators.get("sma_slow_ratio") or 0.0)
+
+    tags = ["multi_range_action_base", f"multi_range_action_{higher_phase}"]
+    if higher_phase == "pullback":
+        if sma_fast_ratio > 0.008:
+            tags.append("multi_range_action_pullback_sma_fast_gt008")
+    else:
+        if return_24bars > 0.012:
+            tags.append("multi_range_action_range_return24_gt012")
+        if sma_fast_ratio > 0.008:
+            tags.append("multi_range_action_range_sma_fast_gt008")
+        if sma_slow_ratio > 0.008:
+            tags.append("multi_range_action_range_sma_slow_gt008")
+
+    if not is_eth:
+        return tuple(tags)
+
+    tags.extend(["eth_range_action_base", f"eth_range_action_{higher_phase}"])
+    if higher_phase == "pullback":
+        if rsi_14 > 75.0:
+            tags.append("eth_range_action_pullback_rsi_gt75")
+        if sma_fast_ratio > 0.008:
+            tags.append("eth_range_action_pullback_sma_fast_gt008")
+        if 0.002 < sma_slow_ratio <= 0.004:
+            tags.append("eth_range_action_pullback_sma_slow_002_004")
+        if sma_slow_ratio > 0.008:
+            tags.append("eth_range_action_pullback_sma_slow_gt008")
+    else:
+        if return_24bars > 0.012:
+            tags.append("eth_range_action_range_return24_gt012")
+        if sma_fast_ratio > 0.008:
+            tags.append("eth_range_action_range_sma_fast_gt008")
+        if sma_slow_ratio > 0.008:
+            tags.append("eth_range_action_range_sma_slow_gt008")
+    return tuple(tags)
+
+
 def _clamp01(value: float) -> float:
     return max(0.0, min(value, 1.0))
 
@@ -189,6 +315,68 @@ def _range_pct(open_price: float, high_price: float, low_price: float, close_pri
     if close_price <= 0.0:
         return 0.0
     return max(high_price - low_price, 0.0) / close_price
+
+
+def _short_rebound_failure_pct(candles, last_close: float) -> float:
+    if last_close <= 0.0 or not candles:
+        return 0.0
+    return max((max(candle.high for candle in candles) - last_close) / last_close, 0.0)
+
+
+def _short_support_break_pct(candles, last_close: float) -> float:
+    if last_close <= 0.0 or not candles:
+        return 0.0
+    return max((min(candle.close for candle in candles) - last_close) / last_close, 0.0)
+
+
+def _range_expansion_ratio(candles, last_candle) -> float:
+    prior_range_pcts = [
+        _range_pct(candle.open, candle.high, candle.low, candle.close)
+        for candle in candles
+        if candle.close > 0.0
+    ]
+    if not prior_range_pcts:
+        return 0.0
+    avg_prior_range_pct = sum(prior_range_pcts) / len(prior_range_pcts)
+    if avg_prior_range_pct <= 0.0:
+        return 0.0
+    return _range_pct(last_candle.open, last_candle.high, last_candle.low, last_candle.close) / avg_prior_range_pct
+
+
+def _eth_reclaim_short_low_participation_breakdown_confirmed(
+    symbol: SymbolSnapshot,
+    *,
+    resolved_action: str | None,
+    bias: str | None,
+    higher_phase: str | None,
+    low_participation_terminal: bool,
+    climactic_terminal: bool,
+    overextended_short_chase: bool,
+    rsi_14: float,
+    sma_fast_ratio: float,
+    sma_slow_ratio: float,
+) -> bool:
+    if symbol.symbol != "ETH/USDT:USDT":
+        return False
+    if resolved_action != "sell" or bias != "short" or higher_phase != "reclaim":
+        return False
+    if not low_participation_terminal or climactic_terminal or overextended_short_chase:
+        return False
+    if len(symbol.recent_candles) < (TRADITIONAL_SIGNAL_LOOKBACK_BARS + 1):
+        return False
+    last_candle = symbol.recent_candles[-1]
+    prior_candles = symbol.recent_candles[-(TRADITIONAL_SIGNAL_LOOKBACK_BARS + 1):-1]
+    rebound_failure_pct = _short_rebound_failure_pct(prior_candles, last_candle.close)
+    support_break_pct = _short_support_break_pct(prior_candles, last_candle.close)
+    range_expansion_ratio = _range_expansion_ratio(prior_candles, last_candle)
+    return (
+        rebound_failure_pct >= ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MIN_REBOUND_FAILURE_PCT
+        and support_break_pct >= ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MIN_SUPPORT_BREAK_PCT
+        and range_expansion_ratio <= ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_RANGE_EXPANSION_RATIO
+        and rsi_14 <= ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_LOCAL_RSI
+        and sma_fast_ratio <= ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_FAST_SMA_RATIO
+        and sma_slow_ratio <= ETH_RECLAIM_SHORT_BREAKDOWN_CHASE_MAX_SLOW_SMA_RATIO
+    )
 
 
 def build_traditional_signal_context(
@@ -578,6 +766,29 @@ def assess_fresh_entry(symbol: SymbolSnapshot, *, action: str | None = None) -> 
         )
 
     if short_breakdown_confirmed:
+        return FreshEntryAssessment(
+            action=resolved_action,
+            bias=bias,
+            continuation_watch=False,
+            terminal_extension=False,
+            setup_phase="short_breakdown_confirmed",
+            setup_confirmed=True,
+            candidate_reasons=(breakdown_confirmed_reason,),
+            risk_reasons=(),
+        )
+
+    if _eth_reclaim_short_low_participation_breakdown_confirmed(
+        symbol,
+        resolved_action=resolved_action,
+        bias=bias,
+        higher_phase=higher_phase,
+        low_participation_terminal=low_participation_terminal,
+        climactic_terminal=climactic_terminal,
+        overextended_short_chase=overextended_short_chase,
+        rsi_14=rsi_14,
+        sma_fast_ratio=sma_fast_ratio,
+        sma_slow_ratio=sma_slow_ratio,
+    ):
         return FreshEntryAssessment(
             action=resolved_action,
             bias=bias,

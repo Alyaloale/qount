@@ -25,6 +25,20 @@ from .safety import extract_rate_limit_backoff_ms
 from .settings import Settings
 
 
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_MIN_REBOUND_FAILURE_PCT = 0.0080
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_MIN_SUPPORT_BREAK_PCT = 0.0020
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_MAX_RANGE_EXPANSION_RATIO = 0.90
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_SIZE_PCT = 0.10
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_TAKE_PROFIT_PCT = 0.022
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_STOP_LOSS_PCT = 0.0065
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_TTL_MINUTES = 15
+ETH_RECLAIM_BREAKDOWN_OVERRIDE_CONFIDENCE = 0.69
+
+
+def _base_symbol(symbol: str) -> str:
+    return symbol.split(":", 1)[0]
+
+
 class Orchestrator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -89,6 +103,113 @@ class Orchestrator:
             summary_symbol = summary_symbols.get(symbol_snapshot.symbol)
             if isinstance(summary_symbol, dict):
                 summary_symbol["entry_viability_preview"] = preview
+
+    def _deterministic_eth_reclaim_override_enabled(self) -> bool:
+        if not (self.settings.contract_market and self.settings.bottom_line_rules):
+            return False
+        if self.settings.live_enable or abs(self.settings.ai_temperature) > 1e-12:
+            return False
+        return (
+            len(self.settings.symbols) == 1
+            and _base_symbol(self.settings.symbols[0]) == "ETH/USDT"
+            and self.settings.max_open_positions == 1
+        )
+
+    def _maybe_override_ai_hold_for_deterministic_candidate(
+        self,
+        validated: ValidatedDecision,
+        candidate_summary: dict[str, Any],
+    ) -> ValidatedDecision:
+        if not self._deterministic_eth_reclaim_override_enabled():
+            return validated
+        if not validated.valid or validated.decision.action != "hold":
+            return validated
+        symbols = candidate_summary.get("symbols")
+        if not isinstance(symbols, list):
+            return validated
+        selected = [
+            item
+            for item in symbols
+            if isinstance(item, dict)
+            and item.get("symbol") == "ETH/USDT:USDT"
+            and not bool(item.get("manage_only"))
+            and item.get("setup_phase") == "short_breakdown_confirmed"
+            and item.get("higher_timeframe_phase") == "reclaim"
+        ]
+        if len(selected) != 1:
+            return validated
+        symbol_summary = selected[0]
+        thesis = symbol_summary.get("entry_thesis_candidate")
+        traditional = symbol_summary.get("traditional_signal_context")
+        preview = symbol_summary.get("entry_viability_preview")
+        if not (isinstance(thesis, dict) and isinstance(traditional, dict) and isinstance(preview, dict)):
+            return validated
+        expected_edge = preview.get("expected_edge")
+        if not isinstance(expected_edge, dict):
+            return validated
+        if thesis.get("direction") != "short" or thesis.get("setup_phase") != "short_breakdown_confirmed":
+            return validated
+        if traditional.get("pattern_label") != "failed_rebound_breakdown" or bool(traditional.get("terminal_risk")):
+            return validated
+        if float(traditional.get("rebound_failure_pct") or 0.0) < ETH_RECLAIM_BREAKDOWN_OVERRIDE_MIN_REBOUND_FAILURE_PCT:
+            return validated
+        if float(traditional.get("support_break_pct") or 0.0) < ETH_RECLAIM_BREAKDOWN_OVERRIDE_MIN_SUPPORT_BREAK_PCT:
+            return validated
+        if float(traditional.get("range_expansion_ratio") or 0.0) > ETH_RECLAIM_BREAKDOWN_OVERRIDE_MAX_RANGE_EXPANSION_RATIO:
+            return validated
+        if preview.get("preview_action") != "sell":
+            return validated
+        if float(expected_edge.get("required_threshold_gap_pct") or 0.0) > 0.0:
+            return validated
+        if float(expected_edge.get("final_expected_edge_pct") or 0.0) <= 0.0:
+            return validated
+
+        size_pct = min(
+            max(
+                float(preview.get("assumed_size_pct") or ETH_RECLAIM_BREAKDOWN_OVERRIDE_SIZE_PCT),
+                self.settings.min_open_size_pct,
+            ),
+            self.settings.max_entry_size_pct,
+        )
+        original_decision = to_jsonable(validated.decision)
+        override_reason = (
+            "deterministic_eth_reclaim_support_breakdown_override:"
+            "ai_hold_on_confirmed_failed_rebound_breakdown"
+        )
+        decision = replace(
+            validated.decision,
+            symbol="ETH/USDT:USDT",
+            action="sell",
+            size_pct=size_pct,
+            take_profit_pct=ETH_RECLAIM_BREAKDOWN_OVERRIDE_TAKE_PROFIT_PCT,
+            stop_loss_pct=ETH_RECLAIM_BREAKDOWN_OVERRIDE_STOP_LOSS_PCT,
+            ttl_minutes=ETH_RECLAIM_BREAKDOWN_OVERRIDE_TTL_MINUTES,
+            confidence=max(validated.decision.confidence, ETH_RECLAIM_BREAKDOWN_OVERRIDE_CONFIDENCE),
+            reason=override_reason,
+        )
+        raw_payload = dict(validated.raw_payload or {})
+        raw_payload.update(
+            {
+                "symbol": decision.symbol,
+                "action": decision.action,
+                "size_pct": decision.size_pct,
+                "take_profit_pct": decision.take_profit_pct,
+                "stop_loss_pct": decision.stop_loss_pct,
+                "ttl_minutes": decision.ttl_minutes,
+                "confidence": decision.confidence,
+                "reason": decision.reason,
+                "ai_original_decision": original_decision,
+                "deterministic_override": {
+                    "reason": override_reason,
+                    "source": "candidate_filter",
+                    "setup_phase": symbol_summary.get("setup_phase"),
+                    "higher_timeframe_phase": symbol_summary.get("higher_timeframe_phase"),
+                    "traditional_signal_context": traditional,
+                    "entry_viability_preview": preview,
+                },
+            }
+        )
+        return replace(validated, decision=decision, raw_payload=raw_payload)
 
     def run_once(self) -> dict:
         if self.settings.live_mode:
@@ -298,6 +419,10 @@ class Orchestrator:
                 )
                 if validated.raw_payload is not None:
                     validated.raw_payload["candidate_filter"] = candidate_summary
+                validated = self._maybe_override_ai_hold_for_deterministic_candidate(
+                    validated,
+                    candidate_summary,
+                )
             if candidate_result.status == "filtered_hold":
                 self.journal.set_runtime_state("ai_failure_streak", 0)
         except Exception as exc:

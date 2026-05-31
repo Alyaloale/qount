@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .artifacts import mirror_artifact_tree_if_external
 from .exchange_utils import call_with_time_sync_retry
 from .exchange_utils import build_exchange
 from .exchange_utils import market_amount_step
@@ -367,7 +368,13 @@ class BacktestService:
         label = f"{start.strftime('%Y%m%dT%H%M')}-{end.strftime('%Y%m%dT%H%M')}"
         return self.settings.project_root / "state" / "backtests" / f"{stamp}-{label}"
 
-    def _isolated_settings(self, artifact_dir: Path, starting_quote: float | None) -> Settings:
+    def _isolated_settings(
+        self,
+        artifact_dir: Path,
+        starting_quote: float | None,
+        *,
+        ai_decision_cache_enable: bool,
+    ) -> Settings:
         return replace(
             self.settings,
             mode="paper",
@@ -379,6 +386,8 @@ class BacktestService:
             log_dir=artifact_dir / "logs",
             db_path=artifact_dir / "qount.db",
             paper_starting_quote=self.settings.paper_starting_quote if starting_quote is None else starting_quote,
+            ai_decision_cache_enable=ai_decision_cache_enable,
+            ai_decision_cache_dir=self.settings.ai_decision_cache_dir,
         )
 
     def run(
@@ -392,12 +401,19 @@ class BacktestService:
         max_bars: int | None = None,
         artifact_dir: str | None = None,
         research_profile: str | None = None,
+        holdout_role: str = "unknown",
+        ai_decision_cache_enable: bool = False,
+        mirror_external_artifact_dir: bool = True,
     ) -> dict[str, Any]:
         if end <= start:
             raise ValueError("backtest_end_must_be_after_start")
 
         out_dir = self._artifact_dir(start, end, artifact_dir)
-        isolated_settings = self._isolated_settings(out_dir, starting_quote)
+        isolated_settings = self._isolated_settings(
+            out_dir,
+            starting_quote,
+            ai_decision_cache_enable=ai_decision_cache_enable,
+        )
         isolated_settings.ensure_directories()
 
         historical_orchestrator = self.orchestrator_factory(isolated_settings)
@@ -467,11 +483,18 @@ class BacktestService:
             "symbols": list(isolated_settings.symbols),
             "hourly_model_enable": isolated_settings.hourly_model_enable,
             "setup_model_enable": isolated_settings.setup_model_enable,
+            "ai_temperature": isolated_settings.ai_temperature,
+            "trailing_profit_arm_pct": isolated_settings.trailing_profit_arm_pct,
+            "trailing_profit_retrace_pct": isolated_settings.trailing_profit_retrace_pct,
+            "research_shadow_candidate_tags": list(isolated_settings.research_shadow_candidate_tags),
             "estimated_fee_pct": isolated_settings.estimated_fee_pct,
             "estimated_slippage_pct": isolated_settings.estimated_slippage_pct,
             "paper_starting_quote": isolated_settings.paper_starting_quote,
             "starting_quote_override": starting_quote,
             "research_profile": research_profile,
+            "holdout_role": holdout_role,
+            "ai_decision_cache_enable": isolated_settings.ai_decision_cache_enable,
+            "ai_decision_cache_dir": str(isolated_settings.ai_decision_cache_dir),
         }
 
         orders = historical_orchestrator.journal.get_order_history(mode=isolated_settings.mode)
@@ -515,6 +538,7 @@ class BacktestService:
 
         result = {
             "mode": "backtest",
+            "holdout_role": holdout_role,
             "exchange_id": isolated_settings.exchange_id,
             "market_type": isolated_settings.market_type,
             "timeframe": isolated_settings.timeframe,
@@ -556,4 +580,10 @@ class BacktestService:
 
         (out_dir / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         (out_dir / "review.json").write_text(json.dumps(review_report, ensure_ascii=False, indent=2), encoding="utf-8")
+        if mirror_external_artifact_dir:
+            persistent_root = mirror_artifact_tree_if_external(self.settings, out_dir, kind="backtest")
+            if persistent_root is not None:
+                result["persistent_artifact_dir"] = str(persistent_root)
+                (out_dir / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+                (persistent_root / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         return result

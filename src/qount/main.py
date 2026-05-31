@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
+from dataclasses import replace
 import json
 from pathlib import Path
 
+from .artifacts import write_research_json_artifact
 from .backtest import BacktestService
 from .backtest import parse_backtest_datetime
 from .hourly_model import HourlySignalModelService
@@ -12,7 +15,9 @@ from .research_profile import apply_research_profile
 from .research_profile import normalize_research_profile
 from .research_profile import setup_model_horizon_bars_for_profile
 from .research_profile import setup_model_split_higher_phase_for_profile
+from .research_slice_scan import research_slice_scan
 from .setup_model import SetupEdgeModelService
+from .setup_model import TARGET_SLICE_SETS
 from .settings import Settings
 from .walk_forward import parse_walk_forward_window
 from .walk_forward import WalkForwardService
@@ -21,9 +26,9 @@ from .walk_forward import WalkForwardService
 def _add_research_profile_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--research-profile",
-        choices=["eth-only"],
+        choices=["eth-only", "multi-symbol"],
         default=None,
-        help="Apply a canonical research profile without editing .env. Currently supports eth-only.",
+        help="Apply a canonical research profile without editing .env. Currently supports eth-only and multi-symbol.",
     )
 
 
@@ -33,6 +38,67 @@ def _symbols_filter_for_review(settings: Settings, research_profile: str | None,
     if research_profile is not None:
         return list(settings.symbols)
     return None
+
+
+def _add_research_exit_override_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--trailing-arm-pct",
+        type=float,
+        default=None,
+        help="Optional research-only trailing profit arm override, as a fraction such as 0.003.",
+    )
+    parser.add_argument(
+        "--trailing-retrace-pct",
+        type=float,
+        default=None,
+        help="Optional research-only trailing retrace override, as a fraction such as 0.005.",
+    )
+
+
+def _add_research_shadow_candidate_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--research-shadow-candidate-tags",
+        nargs="+",
+        default=None,
+        help=(
+            "Research-only isolated candidate exposure: only fresh-entry snapshots "
+            "matching one of these research_slice_tags are sent through AI/risk."
+        ),
+    )
+
+
+def _add_research_run_metadata_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--holdout-role",
+        choices=["discovery", "validation_v1", "unknown"],
+        default="unknown",
+        help="Machine-readable anti-overfit role for this research artifact.",
+    )
+    parser.add_argument(
+        "--ai-decision-cache",
+        action="store_true",
+        help="Enable research-only AI decision cache for historical backtest/walk-forward runs.",
+    )
+
+
+def apply_command_settings_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
+    updates: dict[str, Any] = {}
+    trailing_arm_pct = getattr(args, "trailing_arm_pct", None)
+    trailing_retrace_pct = getattr(args, "trailing_retrace_pct", None)
+    shadow_candidate_tags = getattr(args, "research_shadow_candidate_tags", None)
+    if trailing_arm_pct is not None:
+        updates["trailing_profit_arm_pct"] = trailing_arm_pct
+    if trailing_retrace_pct is not None:
+        updates["trailing_profit_retrace_pct"] = trailing_retrace_pct
+    if shadow_candidate_tags is not None:
+        updates["research_shadow_candidate_tags"] = tuple(
+            tag.strip()
+            for tag in shadow_candidate_tags
+            if str(tag).strip()
+        )
+    if not updates:
+        return settings
+    return replace(settings, **updates)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -73,6 +139,9 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--review-horizon-bars", type=int, default=3)
     backtest.add_argument("--review-threshold-pct", type=float, default=0.003)
     backtest.add_argument("--artifact-dir", default=None, help="Optional output directory for the isolated backtest database and reports.")
+    _add_research_exit_override_args(backtest)
+    _add_research_shadow_candidate_args(backtest)
+    _add_research_run_metadata_args(backtest)
     _add_research_profile_arg(backtest)
     walk_forward = subparsers.add_parser("walk-forward", help="Train setup models before each validation window, then run isolated historical backtests.")
     walk_forward.add_argument("--window", action="append", default=[], help="Validation window as label=START,END. May be repeated.")
@@ -89,7 +158,37 @@ def build_parser() -> argparse.ArgumentParser:
     walk_forward.add_argument("--starting-quote", type=float, default=None)
     walk_forward.add_argument("--max-bars-per-window", type=int, default=None, help="Optional cap on processed bars for each validation window.")
     walk_forward.add_argument("--artifact-dir", default=None, help="Optional output directory for the walk-forward run.")
+    _add_research_exit_override_args(walk_forward)
+    _add_research_shadow_candidate_args(walk_forward)
+    _add_research_run_metadata_args(walk_forward)
     _add_research_profile_arg(walk_forward)
+    setup_edge_wf = subparsers.add_parser("setup-edge-walk-forward", help="Train per-window setup models only; do not run AI, risk, or paper execution.")
+    setup_edge_wf.add_argument("--window", action="append", default=[], help="Validation window as label=START,END. May be repeated.")
+    setup_edge_wf.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example ETH/USDT.")
+    setup_edge_wf.add_argument("--setup-phases", nargs="+", default=None, help="Optional setup-phase filter.")
+    setup_edge_wf.add_argument("--train-lookback-days", type=int, default=90)
+    setup_edge_wf.add_argument("--horizon-bars", type=int, default=None)
+    setup_edge_wf.add_argument("--gap-bars", type=int, default=1, help="Completed 5m bars between the training label cutoff and validation start.")
+    setup_edge_wf.add_argument("--min-samples", type=int, default=60)
+    setup_edge_wf.add_argument("--ridge-alpha", type=float, default=0.0005)
+    setup_edge_wf.add_argument("--split-higher-phase", action="store_true", default=None)
+    setup_edge_wf.add_argument("--artifact-dir", default=None, help="Optional output directory for the setup-edge walk-forward run.")
+    setup_edge_wf.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="unknown")
+    _add_research_profile_arg(setup_edge_wf)
+    candidate_wf = subparsers.add_parser("candidate-walk-forward", help="Train per-window setup models and run candidate filter statistics only; do not call AI or execute.")
+    candidate_wf.add_argument("--window", action="append", default=[], help="Validation window as label=START,END. May be repeated.")
+    candidate_wf.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example ETH/USDT.")
+    candidate_wf.add_argument("--setup-phases", nargs="+", default=None, help="Optional setup-phase filter.")
+    candidate_wf.add_argument("--train-lookback-days", type=int, default=90)
+    candidate_wf.add_argument("--horizon-bars", type=int, default=None)
+    candidate_wf.add_argument("--gap-bars", type=int, default=1, help="Completed 5m bars between the training label cutoff and validation start.")
+    candidate_wf.add_argument("--min-samples", type=int, default=60)
+    candidate_wf.add_argument("--ridge-alpha", type=float, default=0.0005)
+    candidate_wf.add_argument("--split-higher-phase", action="store_true", default=None)
+    candidate_wf.add_argument("--max-bars-per-window", type=int, default=None, help="Optional cap on processed bars for each validation window.")
+    candidate_wf.add_argument("--artifact-dir", default=None, help="Optional output directory for the candidate walk-forward run.")
+    candidate_wf.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="unknown")
+    _add_research_profile_arg(candidate_wf)
     hourly_model = subparsers.add_parser("train-hourly-model", help="Train a lightweight 1h ridge model per symbol and save it to a JSON artifact.")
     hourly_model.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example SOL/USDT:USDT XRP/USDT:USDT.")
     hourly_model.add_argument("--lookback-days", type=int, default=90)
@@ -111,10 +210,21 @@ def build_parser() -> argparse.ArgumentParser:
     setup_study.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter.")
     setup_study.add_argument("--setup-phases", nargs="+", default=None, help="Optional setup-phase filter.")
     setup_study.add_argument("--lookback-days", type=int, default=120)
-    setup_study.add_argument("--horizon-bars", type=int, default=3)
+    setup_study.add_argument("--horizon-bars", type=int, default=None)
     setup_study.add_argument("--min-samples", type=int, default=20)
     setup_study.add_argument("--top-k", type=int, default=12)
+    setup_study.add_argument("--discover-slices", action="store_true", help="Add offline multi-feature edge slice discovery to the study output.")
+    setup_study.add_argument("--stability-splits", type=int, default=4, help="Chronological folds used to summarize discovered slice stability.")
+    setup_study.add_argument("--target-slice-set", choices=TARGET_SLICE_SETS, default=None, help="Add a named offline target-slice summary to the study output.")
+    setup_study.add_argument("--artifact-path", default=None, help="Optional output path for the setup edge study JSON.")
     _add_research_profile_arg(setup_study)
+    slice_scan = subparsers.add_parser("research-slice-scan", help="Scan existing backtest or walk-forward artifacts for offline research-slice tag coverage.")
+    slice_scan.add_argument("--artifact-dir", required=True, help="Existing backtest or walk-forward artifact directory to scan.")
+    slice_scan.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example ETH/USDT.")
+    slice_scan.add_argument("--target-tags", nargs="+", default=None, help="Optional research slice tags to highlight.")
+    slice_scan.add_argument("--horizon-bars", nargs="+", type=int, default=None, help="Future snapshot horizons used for offline tag edge summaries.")
+    slice_scan.add_argument("--output-path", default=None, help="Optional output path for the scan JSON.")
+    _add_research_profile_arg(slice_scan)
     dashboard = subparsers.add_parser("dashboard-snapshot", help="Return a single aggregated monitoring snapshot.")
     dashboard.add_argument("--review-limit", type=int, default=10)
     dashboard.add_argument("--review-horizon-bars", type=int, default=1)
@@ -133,6 +243,7 @@ def main() -> None:
         if getattr(args, "symbols", None):
             parser.error("--research-profile cannot be combined with --symbols; the profile owns the symbol universe.")
         settings = apply_research_profile(settings, research_profile)
+    settings = apply_command_settings_overrides(settings, args)
     orchestrator = Orchestrator(settings)
 
     if args.command == "run-once":
@@ -179,6 +290,8 @@ def main() -> None:
             max_bars=args.max_bars,
             artifact_dir=args.artifact_dir,
             research_profile=research_profile,
+            holdout_role=args.holdout_role,
+            ai_decision_cache_enable=args.ai_decision_cache,
         )
     elif args.command == "walk-forward":
         horizon_bars = setup_model_horizon_bars_for_profile(research_profile, args.horizon_bars)
@@ -199,6 +312,43 @@ def main() -> None:
             max_bars_per_window=args.max_bars_per_window,
             artifact_dir=args.artifact_dir,
             research_profile=research_profile,
+            holdout_role=args.holdout_role,
+            ai_decision_cache_enable=args.ai_decision_cache,
+        )
+    elif args.command == "setup-edge-walk-forward":
+        horizon_bars = setup_model_horizon_bars_for_profile(research_profile, args.horizon_bars)
+        split_higher_phase = setup_model_split_higher_phase_for_profile(research_profile, args.split_higher_phase)
+        result = WalkForwardService(settings).run_setup_edge(
+            windows=[parse_walk_forward_window(raw) for raw in args.window],
+            symbols_filter=args.symbols,
+            setup_phases=args.setup_phases,
+            train_lookback_days=args.train_lookback_days,
+            horizon_bars=horizon_bars,
+            gap_bars=args.gap_bars,
+            min_samples=args.min_samples,
+            ridge_alpha=args.ridge_alpha,
+            split_higher_phase=split_higher_phase,
+            artifact_dir=args.artifact_dir,
+            research_profile=research_profile,
+            holdout_role=args.holdout_role,
+        )
+    elif args.command == "candidate-walk-forward":
+        horizon_bars = setup_model_horizon_bars_for_profile(research_profile, args.horizon_bars)
+        split_higher_phase = setup_model_split_higher_phase_for_profile(research_profile, args.split_higher_phase)
+        result = WalkForwardService(settings).run_candidate(
+            windows=[parse_walk_forward_window(raw) for raw in args.window],
+            symbols_filter=args.symbols,
+            setup_phases=args.setup_phases,
+            train_lookback_days=args.train_lookback_days,
+            horizon_bars=horizon_bars,
+            gap_bars=args.gap_bars,
+            min_samples=args.min_samples,
+            ridge_alpha=args.ridge_alpha,
+            split_higher_phase=split_higher_phase,
+            max_bars_per_window=args.max_bars_per_window,
+            artifact_dir=args.artifact_dir,
+            research_profile=research_profile,
+            holdout_role=args.holdout_role,
         )
     elif args.command == "train-hourly-model":
         artifact_path = None if args.artifact_path is None else Path(args.artifact_path).expanduser()
@@ -228,13 +378,43 @@ def main() -> None:
             split_higher_phase=split_higher_phase,
         )
     elif args.command == "setup-edge-study":
+        horizon_bars = setup_model_horizon_bars_for_profile(research_profile, args.horizon_bars)
         result = SetupEdgeModelService(settings).study(
             symbols_filter=args.symbols,
             setup_phases=args.setup_phases,
             lookback_days=args.lookback_days,
-            horizon_bars=args.horizon_bars,
+            horizon_bars=horizon_bars,
             min_samples=args.min_samples,
             top_k=args.top_k,
+            discover_slices=args.discover_slices,
+            stability_splits=args.stability_splits,
+            target_slice_set=args.target_slice_set,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="setup-edge-study",
+            path_key="artifact_path",
+            default_filename="setup_edge_study.json",
+            explicit_path=args.artifact_path,
+        )
+    elif args.command == "research-slice-scan":
+        result = research_slice_scan(
+            Path(args.artifact_dir),
+            symbols_filter=_symbols_filter_for_review(settings, research_profile, args.symbols),
+            target_tags=args.target_tags,
+            horizon_bars=args.horizon_bars,
+            contract_market=settings.contract_market,
+            fee_pct=settings.estimated_fee_pct,
+            slippage_pct=settings.estimated_slippage_pct,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="research-slice-scan",
+            path_key="output_path",
+            default_filename="research_slice_scan.json",
+            explicit_path=args.output_path,
         )
     elif args.command == "dashboard-snapshot":
         result = orchestrator.dashboard_snapshot(

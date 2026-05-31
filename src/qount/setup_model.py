@@ -49,6 +49,22 @@ SETUP_EDGE_MODEL_FEATURE_NAMES = (
     "phase_reclaim",
     "phase_exhaustion",
 )
+TARGET_SLICE_SET_ETH_RANGE_ACTION = "eth-range-action"
+TARGET_SLICE_SET_MULTI_RECLAIM_SMA_ACTION = "multi-reclaim-sma-action"
+TARGET_SLICE_SET_MULTI_RANGE_ACTION = "multi-range-action"
+TARGET_SLICE_SET_ETH_RECLAIM_LONG_ACTION = "eth-reclaim-long-action"
+TARGET_SLICE_SETS = (
+    TARGET_SLICE_SET_ETH_RANGE_ACTION,
+    TARGET_SLICE_SET_MULTI_RECLAIM_SMA_ACTION,
+    TARGET_SLICE_SET_MULTI_RANGE_ACTION,
+    TARGET_SLICE_SET_ETH_RECLAIM_LONG_ACTION,
+)
+MULTI_RECLAIM_SMA_SYMBOLS = (
+    "SOL/USDT:USDT",
+    "XRP/USDT:USDT",
+    "BTC/USDT:USDT",
+    "ETH/USDT:USDT",
+)
 
 
 def _mean(values: list[float]) -> float:
@@ -105,6 +121,676 @@ def _summarize_edges(items: list[dict[str, object]]) -> dict[str, object]:
         "avg_negative_edge_pct": _mean(negative) if negative else None,
         "avg_conviction_score": _mean([float(item["conviction_score"]) for item in items]),
         "terminal_risk_rate": _mean([1.0 if bool(item["terminal_risk"]) else 0.0 for item in items]),
+    }
+
+
+def _first_float(*values: object) -> float | None:
+    for value in values:
+        if value is None:
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(parsed):
+            return parsed
+    return None
+
+
+def _bucket_value(value: float | None, cuts: tuple[float, ...]) -> str | None:
+    if value is None:
+        return None
+    if not cuts:
+        return None
+    if value <= cuts[0]:
+        return f"<= {cuts[0]:.4g}"
+    for lower, upper in zip(cuts, cuts[1:]):
+        if value <= upper:
+            return f"({lower:.4g}, {upper:.4g}]"
+    return f"> {cuts[-1]:.4g}"
+
+
+def _string_dimension(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "unknown":
+        return None
+    return text
+
+
+def _edge_discovery_dimensions(item: dict[str, object]) -> dict[str, str]:
+    feature_map = item.get("feature_map")
+    features = feature_map if isinstance(feature_map, dict) else {}
+    dimensions: dict[str, str] = {}
+
+    for name in (
+        "symbol",
+        "action",
+        "bias",
+        "setup_phase",
+        "higher_timeframe_phase",
+        "higher_timeframe_direction",
+        "traditional_pattern_family",
+        "traditional_pattern_label",
+    ):
+        value = _string_dimension(item.get(name))
+        if value is not None:
+            dimensions[name] = value
+
+    if "terminal_risk" in item:
+        dimensions["terminal_risk"] = "true" if bool(item.get("terminal_risk")) else "false"
+
+    rsi_centered = _first_float(features.get("rsi_centered"))
+    rsi_14 = _first_float(item.get("rsi_14"), None if rsi_centered is None else (rsi_centered * 50.0) + 50.0)
+    numeric_bins = {
+        "return_1bar_bin": (
+            _first_float(item.get("return_1bar"), features.get("return_1bar")),
+            (-0.0020, -0.0010, -0.0004, 0.0, 0.0004, 0.0010, 0.0020),
+        ),
+        "return_24bars_bin": (
+            _first_float(item.get("return_24bars"), features.get("return_24bars")),
+            (-0.0120, -0.0060, -0.0030, 0.0, 0.0030, 0.0060, 0.0120),
+        ),
+        "rsi_14_bin": (
+            rsi_14,
+            (25.0, 35.0, 45.0, 55.0, 65.0, 75.0),
+        ),
+        "volume_ratio_20_bin": (
+            _first_float(item.get("volume_ratio_20"), features.get("volume_ratio_20")),
+            (0.60, 0.90, 1.10, 1.50, 2.00, 3.00),
+        ),
+        "range_pct_bin": (
+            _first_float(item.get("range_pct"), features.get("range_pct")),
+            (0.0015, 0.0025, 0.0040, 0.0060, 0.0090, 0.0120),
+        ),
+        "sma_fast_ratio_bin": (
+            _first_float(item.get("sma_fast_ratio"), features.get("sma_fast_ratio")),
+            (-0.0080, -0.0040, -0.0020, 0.0, 0.0020, 0.0040, 0.0080),
+        ),
+        "sma_slow_ratio_bin": (
+            _first_float(item.get("sma_slow_ratio"), features.get("sma_slow_ratio")),
+            (-0.0080, -0.0040, -0.0020, 0.0, 0.0020, 0.0040, 0.0080),
+        ),
+        "higher_trend_strength_bin": (
+            _first_float(item.get("higher_trend_strength"), features.get("higher_trend_strength")),
+            (0.50, 1.00, 1.50, 2.50),
+        ),
+        "traditional_conviction_score_bin": (
+            _first_float(item.get("conviction_score"), features.get("traditional_conviction_score")),
+            (0.30, 0.45, 0.60, 0.75),
+        ),
+        "traditional_rebound_failure_pct_bin": (
+            _first_float(item.get("traditional_rebound_failure_pct")),
+            (0.0020, 0.0040, 0.0060, 0.0080, 0.0120),
+        ),
+        "traditional_support_break_pct_bin": (
+            _first_float(item.get("traditional_support_break_pct")),
+            (0.0005, 0.0010, 0.0020, 0.0030, 0.0050),
+        ),
+        "traditional_range_expansion_ratio_bin": (
+            _first_float(item.get("traditional_range_expansion_ratio")),
+            (0.70, 0.90, 1.10, 1.35, 1.75),
+        ),
+        "traditional_compression_score_bin": (
+            _first_float(item.get("traditional_compression_score")),
+            (0.10, 0.20, 0.35, 0.50, 0.70),
+        ),
+    }
+    for name, (value, cuts) in numeric_bins.items():
+        bucket = _bucket_value(value, cuts)
+        if bucket is not None:
+            dimensions[name] = bucket
+    return dimensions
+
+
+def _edge_discovery_combinations(dimensions: dict[str, str]) -> set[tuple[str, ...]]:
+    combinations: set[tuple[str, ...]] = set()
+    single_dimension_names = (
+        "action",
+        "setup_phase",
+        "higher_timeframe_phase",
+        "traditional_pattern_label",
+        "terminal_risk",
+        "return_1bar_bin",
+        "return_24bars_bin",
+        "rsi_14_bin",
+        "volume_ratio_20_bin",
+        "range_pct_bin",
+        "sma_fast_ratio_bin",
+        "sma_slow_ratio_bin",
+        "higher_trend_strength_bin",
+        "traditional_conviction_score_bin",
+        "traditional_rebound_failure_pct_bin",
+        "traditional_support_break_pct_bin",
+        "traditional_range_expansion_ratio_bin",
+        "traditional_compression_score_bin",
+    )
+    for name in single_dimension_names:
+        if name in dimensions:
+            combinations.add((name,))
+
+    fixed_combinations = (
+        ("symbol", "setup_phase"),
+        ("symbol", "setup_phase", "higher_timeframe_phase"),
+        ("symbol", "setup_phase", "traditional_pattern_label"),
+        ("symbol", "setup_phase", "higher_timeframe_phase", "traditional_pattern_label"),
+        ("symbol", "action", "setup_phase"),
+        ("symbol", "action", "setup_phase", "higher_timeframe_phase"),
+        ("symbol", "action", "setup_phase", "traditional_pattern_label"),
+        ("symbol", "action", "setup_phase", "higher_timeframe_phase", "traditional_pattern_label"),
+    )
+    for combo in fixed_combinations:
+        if all(name in dimensions for name in combo):
+            combinations.add(combo)
+
+    bucket_names = tuple(name for name in dimensions if name.endswith("_bin"))
+    prefixes = (
+        ("setup_phase",),
+        ("higher_timeframe_phase",),
+        ("traditional_pattern_label",),
+        ("setup_phase", "higher_timeframe_phase"),
+        ("setup_phase", "traditional_pattern_label"),
+        ("action", "setup_phase"),
+        ("action", "higher_timeframe_phase"),
+        ("action", "traditional_pattern_label"),
+        ("action", "setup_phase", "higher_timeframe_phase"),
+        ("action", "setup_phase", "traditional_pattern_label"),
+    )
+    for bucket_name in bucket_names:
+        for prefix in prefixes:
+            combo = (*prefix, bucket_name)
+            if all(name in dimensions for name in combo):
+                combinations.add(combo)
+    return combinations
+
+
+def _fold_index_by_item_id(examples: list[dict[str, object]], stability_splits: int) -> dict[int, int]:
+    if not examples:
+        return {}
+    splits = max(stability_splits, 1)
+    ordered = sorted(
+        enumerate(examples),
+        key=lambda pair: (int(pair[1].get("timestamp_ms") or 0), pair[0]),
+    )
+    denominator = max(len(ordered), 1)
+    folds: dict[int, int] = {}
+    for rank, (_, item) in enumerate(ordered):
+        folds[id(item)] = min(int(rank * splits / denominator), splits - 1)
+    return folds
+
+
+def _summarize_edge_slice_stability(
+    items: list[dict[str, object]],
+    *,
+    fold_by_item_id: dict[int, int],
+    stability_splits: int,
+) -> dict[str, object]:
+    folds: list[dict[str, object]] = []
+    positive_folds = 0
+    covered_folds = 0
+    fold_avgs: list[float] = []
+    for fold_index in range(max(stability_splits, 1)):
+        fold_items = [item for item in items if fold_by_item_id.get(id(item), 0) == fold_index]
+        if not fold_items:
+            folds.append(
+                {
+                    "fold": fold_index,
+                    "sample_count": 0,
+                    "positive_edge_rate": 0.0,
+                    "avg_target_edge_pct": 0.0,
+                }
+            )
+            continue
+        summary = _summarize_edges(fold_items)
+        avg_edge = float(summary["avg_target_edge_pct"])
+        covered_folds += 1
+        fold_avgs.append(avg_edge)
+        if avg_edge > 0.0:
+            positive_folds += 1
+        folds.append(
+            {
+                "fold": fold_index,
+                "sample_count": int(summary["sample_count"]),
+                "positive_edge_rate": float(summary["positive_edge_rate"]),
+                "avg_target_edge_pct": avg_edge,
+            }
+        )
+    return {
+        "folds": folds,
+        "covered_folds": covered_folds,
+        "positive_folds": positive_folds,
+        "min_fold_avg_target_edge_pct": min(fold_avgs) if fold_avgs else 0.0,
+        "max_fold_avg_target_edge_pct": max(fold_avgs) if fold_avgs else 0.0,
+    }
+
+
+def discover_edge_slices(
+    examples: list[dict[str, object]],
+    *,
+    min_samples: int,
+    top_k: int,
+    stability_splits: int,
+) -> dict[str, object]:
+    groups: dict[tuple[tuple[str, ...], tuple[str, ...]], list[dict[str, object]]] = {}
+    for item in examples:
+        dimensions = _edge_discovery_dimensions(item)
+        if not dimensions:
+            continue
+        for dimension_names in _edge_discovery_combinations(dimensions):
+            key_values = tuple(dimensions[name] for name in dimension_names)
+            groups.setdefault((dimension_names, key_values), []).append(item)
+
+    fold_by_item_id = _fold_index_by_item_id(examples, stability_splits)
+    rows: list[dict[str, object]] = []
+    for (dimension_names, key_values), items in groups.items():
+        if len(items) < max(min_samples, 1):
+            continue
+        summary = _summarize_edges(items)
+        stability = _summarize_edge_slice_stability(
+            items,
+            fold_by_item_id=fold_by_item_id,
+            stability_splits=stability_splits,
+        )
+        row = {
+            "dimension_names": list(dimension_names),
+            "dimensions": {name: value for name, value in zip(dimension_names, key_values)},
+            **summary,
+            "stability": stability,
+        }
+        rows.append(row)
+
+    rows.sort(
+        key=lambda row: (
+            float(row["avg_target_edge_pct"]),
+            int((row["stability"] or {}).get("positive_folds") or 0),
+            float(row["positive_edge_rate"]),
+            int(row["sample_count"]),
+        ),
+        reverse=True,
+    )
+    positive_rows = [row for row in rows if float(row["avg_target_edge_pct"]) > 0.0]
+    stable_positive_rows = [
+        row
+        for row in positive_rows
+        if int((row["stability"] or {}).get("covered_folds") or 0) >= 2
+        and int((row["stability"] or {}).get("positive_folds") or 0) >= 2
+    ]
+    consistently_positive_rows = [
+        row
+        for row in positive_rows
+        if int((row["stability"] or {}).get("covered_folds") or 0) >= 2
+        and int((row["stability"] or {}).get("positive_folds") or 0)
+        == int((row["stability"] or {}).get("covered_folds") or 0)
+        and float((row["stability"] or {}).get("min_fold_avg_target_edge_pct") or 0.0) > 0.0
+    ]
+    negative_rows = sorted(rows, key=lambda row: float(row["avg_target_edge_pct"]))
+    return {
+        "version": "edge_slice_discovery_v1",
+        "sample_count": len(examples),
+        "min_samples": min_samples,
+        "top_k": top_k,
+        "stability_splits": max(stability_splits, 1),
+        "eligible_slice_count": len(rows),
+        "positive_slice_count": len(positive_rows),
+        "stable_positive_slice_count": len(stable_positive_rows),
+        "consistently_positive_slice_count": len(consistently_positive_rows),
+        "top_consistently_positive_slices": consistently_positive_rows[:top_k],
+        "top_stable_positive_slices": stable_positive_rows[:top_k],
+        "top_positive_slices": positive_rows[:top_k],
+        "top_negative_slices": negative_rows[:top_k],
+        "promotion_note": "offline_discovery_only_not_promotion_proof",
+    }
+
+
+def _eth_sell_range_noise_base(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("symbol") or "") == "ETH/USDT:USDT"
+        and str(item.get("action") or "") == "sell"
+        and str(item.get("setup_phase") or "") == "range_noise"
+        and str(item.get("higher_timeframe_phase") or "") in {"pullback", "range"}
+    )
+
+
+def _multi_sell_range_noise_base(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("action") or "") == "sell"
+        and str(item.get("setup_phase") or "") == "range_noise"
+        and str(item.get("higher_timeframe_phase") or "") in {"pullback", "range"}
+    )
+
+
+def _multi_sell_pullback_sma_fast_gt008(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("action") or "") == "sell"
+        and str(item.get("higher_timeframe_phase") or "") == "pullback"
+        and (_first_float(item.get("sma_fast_ratio")) or 0.0) > 0.008
+    )
+
+
+def _multi_sell_range_return24_gt012(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("action") or "") == "sell"
+        and str(item.get("higher_timeframe_phase") or "") == "range"
+        and (_first_float(item.get("return_24bars")) or 0.0) > 0.012
+    )
+
+
+def _multi_sell_pullback_return24_gt012(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("action") or "") == "sell"
+        and str(item.get("higher_timeframe_phase") or "") == "pullback"
+        and (_first_float(item.get("return_24bars")) or 0.0) > 0.012
+    )
+
+
+def _multi_sell_pullback_rsi_gt75(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("action") or "") == "sell"
+        and str(item.get("higher_timeframe_phase") or "") == "pullback"
+        and (_first_float(item.get("rsi_14")) or 0.0) > 75.0
+    )
+
+
+def _multi_sell_range_return24_003_006(item: dict[str, object]) -> bool:
+    value = _first_float(item.get("return_24bars")) or 0.0
+    return (
+        str(item.get("action") or "") == "sell"
+        and str(item.get("higher_timeframe_phase") or "") == "range"
+        and 0.003 < value <= 0.006
+    )
+
+
+def _eth_buy_reclaim_failed_breakdown_base(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("symbol") or "") == "ETH/USDT:USDT"
+        and str(item.get("action") or "") == "buy"
+        and str(item.get("setup_phase") or "") == "long_pullback_reclaim_confirmed"
+        and str(item.get("traditional_pattern_label") or "") == "failed_breakdown_reclaim"
+    )
+
+
+def _eth_buy_reclaim_failed_breakdown_sma_slow_gt004(item: dict[str, object]) -> bool:
+    return _eth_buy_reclaim_failed_breakdown_base(item) and (_first_float(item.get("sma_slow_ratio")) or 0.0) > 0.004
+
+
+def _eth_buy_reclaim_failed_breakdown_return1bar_0004(item: dict[str, object]) -> bool:
+    return (
+        _eth_buy_reclaim_failed_breakdown_base(item)
+        and 0.0 < (_first_float(item.get("return_1bar")) or 0.0) <= 0.0004
+    )
+
+
+def _eth_buy_reclaim_failed_breakdown_trend(item: dict[str, object]) -> bool:
+    return _eth_buy_reclaim_failed_breakdown_base(item) and str(item.get("higher_timeframe_phase") or "") == "trend"
+
+
+def _multi_buy_reclaim_failed_breakdown_base(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("action") or "") == "buy"
+        and str(item.get("setup_phase") or "") == "long_pullback_reclaim_confirmed"
+        and str(item.get("traditional_pattern_label") or "") == "failed_breakdown_reclaim"
+    )
+
+
+def _multi_buy_reclaim_failed_breakdown_sma_slow_gt008(item: dict[str, object]) -> bool:
+    return _multi_buy_reclaim_failed_breakdown_base(item) and (_first_float(item.get("sma_slow_ratio")) or 0.0) > 0.008
+
+
+def _multi_buy_reclaim_failed_breakdown_symbol(item: dict[str, object], active_symbol: str) -> bool:
+    return str(item.get("symbol") or "") == active_symbol and _multi_buy_reclaim_failed_breakdown_base(item)
+
+
+def _multi_buy_reclaim_failed_breakdown_symbol_sma_slow_gt004(item: dict[str, object], active_symbol: str) -> bool:
+    return _multi_buy_reclaim_failed_breakdown_symbol(item, active_symbol) and (_first_float(item.get("sma_slow_ratio")) or 0.0) > 0.004
+
+
+def _multi_buy_reclaim_failed_breakdown_symbol_sma_slow_gt008(item: dict[str, object], active_symbol: str) -> bool:
+    return _multi_buy_reclaim_failed_breakdown_symbol(item, active_symbol) and (_first_float(item.get("sma_slow_ratio")) or 0.0) > 0.008
+
+
+def _target_slice_summary_row(
+    label: str,
+    description: str,
+    items: list[dict[str, object]],
+    *,
+    min_samples: int,
+    fold_by_item_id: dict[int, int],
+    stability_splits: int,
+) -> dict[str, object]:
+    return {
+        "label": label,
+        "description": description,
+        "meets_min_samples": len(items) >= max(min_samples, 1),
+        **_summarize_edges(items),
+        "stability": _summarize_edge_slice_stability(
+            items,
+            fold_by_item_id=fold_by_item_id,
+            stability_splits=stability_splits,
+        ),
+    }
+
+
+def summarize_target_slices(
+    examples: list[dict[str, object]],
+    *,
+    slice_set: str,
+    min_samples: int,
+    stability_splits: int,
+) -> dict[str, object]:
+    if slice_set == TARGET_SLICE_SET_ETH_RANGE_ACTION:
+        definitions = (
+            (
+                "sell_range_noise_pullback_or_range",
+                "ETH sell + range_noise + higher_timeframe_phase in {pullback, range}",
+                lambda item: _eth_sell_range_noise_base(item),
+            ),
+            (
+                "sell_range_noise_pullback_rsi_gt75",
+                "Base slice plus higher_timeframe_phase=pullback and rsi_14>75",
+                lambda item: _eth_sell_range_noise_base(item)
+                and str(item.get("higher_timeframe_phase") or "") == "pullback"
+                and (_first_float(item.get("rsi_14")) or 0.0) > 75.0,
+            ),
+            (
+                "sell_range_noise_pullback_sma_slow_002_004",
+                "Base slice plus higher_timeframe_phase=pullback and 0.002<sma_slow_ratio<=0.004",
+                lambda item: _eth_sell_range_noise_base(item)
+                and str(item.get("higher_timeframe_phase") or "") == "pullback"
+                and 0.002 < (_first_float(item.get("sma_slow_ratio")) or 0.0) <= 0.004,
+            ),
+            (
+                "sell_range_noise_pullback_sma_slow_gt008",
+                "Base slice plus higher_timeframe_phase=pullback and sma_slow_ratio>0.008",
+                lambda item: _eth_sell_range_noise_base(item)
+                and str(item.get("higher_timeframe_phase") or "") == "pullback"
+                and (_first_float(item.get("sma_slow_ratio")) or 0.0) > 0.008,
+            ),
+            (
+                "sell_range_noise_range_return24_gt012",
+                "Base slice plus higher_timeframe_phase=range and return_24bars>0.012",
+                lambda item: _eth_sell_range_noise_base(item)
+                and str(item.get("higher_timeframe_phase") or "") == "range"
+                and (_first_float(item.get("return_24bars")) or 0.0) > 0.012,
+            ),
+            (
+                "sell_range_noise_range_sma_fast_gt008",
+                "Base slice plus higher_timeframe_phase=range and sma_fast_ratio>0.008",
+                lambda item: _eth_sell_range_noise_base(item)
+                and str(item.get("higher_timeframe_phase") or "") == "range"
+                and (_first_float(item.get("sma_fast_ratio")) or 0.0) > 0.008,
+            ),
+            (
+                "sell_range_noise_range_sma_slow_gt008",
+                "Base slice plus higher_timeframe_phase=range and sma_slow_ratio>0.008",
+                lambda item: _eth_sell_range_noise_base(item)
+                and str(item.get("higher_timeframe_phase") or "") == "range"
+                and (_first_float(item.get("sma_slow_ratio")) or 0.0) > 0.008,
+            ),
+        )
+    elif slice_set == TARGET_SLICE_SET_MULTI_RECLAIM_SMA_ACTION:
+        definitions = (
+            (
+                "buy_reclaim_failed_breakdown_any_sma",
+                "Multi-symbol buy + long_pullback_reclaim_confirmed + failed_breakdown_reclaim",
+                lambda item: _multi_buy_reclaim_failed_breakdown_base(item),
+            ),
+            (
+                "buy_reclaim_failed_breakdown_sma_slow_gt004",
+                "Base slice plus sma_slow_ratio>0.004",
+                lambda item: _multi_buy_reclaim_failed_breakdown_base(item)
+                and (_first_float(item.get("sma_slow_ratio")) or 0.0) > 0.004,
+            ),
+            (
+                "buy_reclaim_failed_breakdown_sma_slow_gt008",
+                "Base slice plus sma_slow_ratio>0.008",
+                lambda item: _multi_buy_reclaim_failed_breakdown_sma_slow_gt008(item),
+            ),
+        )
+        symbol_definitions: tuple[tuple[str, str, object], ...] = tuple(
+            (
+                f"{symbol.split('/')[0].lower()}_buy_reclaim_failed_breakdown_any_sma",
+                f"{symbol} base slice",
+                lambda item, active_symbol=symbol: _multi_buy_reclaim_failed_breakdown_symbol(item, active_symbol),
+            )
+            for symbol in MULTI_RECLAIM_SMA_SYMBOLS
+        ) + tuple(
+            (
+                f"{symbol.split('/')[0].lower()}_buy_reclaim_failed_breakdown_sma_slow_gt004",
+                f"{symbol} base slice plus sma_slow_ratio>0.004",
+                lambda item, active_symbol=symbol: _multi_buy_reclaim_failed_breakdown_symbol_sma_slow_gt004(item, active_symbol),
+            )
+            for symbol in MULTI_RECLAIM_SMA_SYMBOLS
+        ) + tuple(
+            (
+                f"{symbol.split('/')[0].lower()}_buy_reclaim_failed_breakdown_sma_slow_gt008",
+                f"{symbol} base slice plus sma_slow_ratio>0.008",
+                lambda item, active_symbol=symbol: _multi_buy_reclaim_failed_breakdown_symbol_sma_slow_gt008(item, active_symbol),
+            )
+            for symbol in MULTI_RECLAIM_SMA_SYMBOLS
+        )
+        definitions = (*definitions, *symbol_definitions)
+    elif slice_set == TARGET_SLICE_SET_MULTI_RANGE_ACTION:
+        definitions = (
+            (
+                "sell_range_noise_pullback_or_range",
+                "Multi-symbol sell + range_noise + higher_timeframe_phase in {pullback, range}",
+                lambda item: _multi_sell_range_noise_base(item),
+            ),
+            (
+                "sell_pullback_sma_fast_gt008",
+                "Multi-symbol sell + higher_timeframe_phase=pullback + sma_fast_ratio>0.008",
+                lambda item: _multi_sell_pullback_sma_fast_gt008(item),
+            ),
+            (
+                "sell_range_noise_pullback_sma_fast_gt008",
+                "Range-noise subset of sell_pullback_sma_fast_gt008",
+                lambda item: _multi_sell_range_noise_base(item)
+                and _multi_sell_pullback_sma_fast_gt008(item),
+            ),
+            (
+                "sell_range_return24_gt012",
+                "Multi-symbol sell + higher_timeframe_phase=range + return_24bars>0.012",
+                lambda item: _multi_sell_range_return24_gt012(item),
+            ),
+            (
+                "sell_range_noise_range_return24_gt012",
+                "Range-noise subset of sell_range_return24_gt012",
+                lambda item: _multi_sell_range_noise_base(item)
+                and _multi_sell_range_return24_gt012(item),
+            ),
+            (
+                "sell_pullback_return24_gt012",
+                "Multi-symbol sell + higher_timeframe_phase=pullback + return_24bars>0.012",
+                lambda item: _multi_sell_pullback_return24_gt012(item),
+            ),
+            (
+                "sell_range_noise_pullback_return24_gt012",
+                "Range-noise subset of sell_pullback_return24_gt012",
+                lambda item: _multi_sell_range_noise_base(item)
+                and _multi_sell_pullback_return24_gt012(item),
+            ),
+            (
+                "sell_pullback_rsi_gt75",
+                "Multi-symbol sell + higher_timeframe_phase=pullback + rsi_14>75",
+                lambda item: _multi_sell_pullback_rsi_gt75(item),
+            ),
+            (
+                "sell_range_noise_pullback_rsi_gt75",
+                "Range-noise subset of sell_pullback_rsi_gt75",
+                lambda item: _multi_sell_range_noise_base(item)
+                and _multi_sell_pullback_rsi_gt75(item),
+            ),
+            (
+                "sell_range_return24_003_006",
+                "Multi-symbol sell + higher_timeframe_phase=range + 0.003<return_24bars<=0.006",
+                lambda item: _multi_sell_range_return24_003_006(item),
+            ),
+            (
+                "sell_range_noise_range_return24_003_006",
+                "Range-noise subset of sell_range_return24_003_006",
+                lambda item: _multi_sell_range_noise_base(item)
+                and _multi_sell_range_return24_003_006(item),
+            ),
+        )
+    elif slice_set == TARGET_SLICE_SET_ETH_RECLAIM_LONG_ACTION:
+        definitions = (
+            (
+                "eth_buy_reclaim_failed_breakdown_any_sma",
+                "ETH buy + long_pullback_reclaim_confirmed + failed_breakdown_reclaim",
+                lambda item: _eth_buy_reclaim_failed_breakdown_base(item),
+            ),
+            (
+                "eth_buy_reclaim_failed_breakdown_sma_slow_gt004",
+                "Base slice plus sma_slow_ratio>0.004",
+                lambda item: _eth_buy_reclaim_failed_breakdown_sma_slow_gt004(item),
+            ),
+            (
+                "eth_buy_reclaim_failed_breakdown_return1bar_0004",
+                "Base slice plus 0<return_1bar<=0.0004",
+                lambda item: _eth_buy_reclaim_failed_breakdown_return1bar_0004(item),
+            ),
+            (
+                "eth_buy_reclaim_failed_breakdown_sma_slow_gt004_return1bar_0004",
+                "Base slice plus sma_slow_ratio>0.004 and 0<return_1bar<=0.0004",
+                lambda item: _eth_buy_reclaim_failed_breakdown_sma_slow_gt004(item)
+                and _eth_buy_reclaim_failed_breakdown_return1bar_0004(item),
+            ),
+            (
+                "eth_buy_reclaim_failed_breakdown_trend_sma_slow_gt004",
+                "Base slice plus higher_timeframe_phase=trend and sma_slow_ratio>0.004",
+                lambda item: _eth_buy_reclaim_failed_breakdown_trend(item)
+                and _eth_buy_reclaim_failed_breakdown_sma_slow_gt004(item),
+            ),
+            (
+                "eth_buy_reclaim_failed_breakdown_trend_return1bar_0004",
+                "Base slice plus higher_timeframe_phase=trend and 0<return_1bar<=0.0004",
+                lambda item: _eth_buy_reclaim_failed_breakdown_trend(item)
+                and _eth_buy_reclaim_failed_breakdown_return1bar_0004(item),
+            ),
+        )
+    else:
+        raise ValueError(f"unsupported_target_slice_set:{slice_set}")
+    fold_by_item_id = _fold_index_by_item_id(examples, stability_splits)
+    rows = [
+        _target_slice_summary_row(
+            label,
+            description,
+            [item for item in examples if predicate(item)],
+            min_samples=min_samples,
+            fold_by_item_id=fold_by_item_id,
+            stability_splits=stability_splits,
+        )
+        for label, description, predicate in definitions
+    ]
+    return {
+        "version": "target_slice_summary_v1",
+        "slice_set": slice_set,
+        "sample_count": len(examples),
+        "min_samples": min_samples,
+        "stability_splits": max(stability_splits, 1),
+        "slices": rows,
+        "promotion_note": "offline_target_slice_only_not_candidate_gate",
     }
 
 
@@ -495,6 +1181,7 @@ class SetupEdgeModelService:
                     continue
                 traditional_signal_context = build_traditional_signal_context(snapshot, assessment)
                 feature_map = build_setup_model_feature_map(snapshot, assessment, traditional_signal_context)
+                higher = snapshot.higher_timeframe or {}
                 future_close = candles[index + horizon_bars].close
                 current_close = current.close
                 aligned_return_pct = (
@@ -502,23 +1189,35 @@ class SetupEdgeModelService:
                     if assessment.action == "buy"
                     else (current_close / future_close) - 1.0
                 )
-                post_cost_edge_pct = aligned_return_pct - estimated_action_cost_pct(
+                estimated_cost_pct = estimated_action_cost_pct(
                     assessment.action,
                     contract_market=self.settings.contract_market,
                     fee_pct=self.settings.estimated_fee_pct,
                     slippage_pct=self.settings.estimated_slippage_pct,
                 )
+                post_cost_edge_pct = aligned_return_pct - estimated_cost_pct
                 examples.append(
                     {
                         "symbol": symbol,
                         "timestamp_ms": current.timestamp_ms,
+                        "action": assessment.action,
+                        "bias": assessment.bias,
+                        "setup_confirmed": assessment.setup_confirmed,
                         "setup_phase": assessment.setup_phase,
                         "higher_timeframe_phase": None if higher_context is None else str(higher_context.get("trend_phase") or "unknown"),
+                        "higher_timeframe_direction": str(higher.get("trend_direction") or higher.get("trend_bias") or "unknown"),
                         "traditional_pattern_label": (
                             "unknown"
                             if not isinstance(traditional_signal_context, dict)
                             else str(traditional_signal_context.get("pattern_label") or "unknown")
                         ),
+                        "traditional_pattern_family": (
+                            "unknown"
+                            if not isinstance(traditional_signal_context, dict)
+                            else str(traditional_signal_context.get("pattern_family") or "unknown")
+                        ),
+                        "aligned_return_pct": aligned_return_pct,
+                        "estimated_action_cost_pct": estimated_cost_pct,
                         "target_edge_pct": post_cost_edge_pct,
                         "conviction_score": (
                             0.0
@@ -530,6 +1229,35 @@ class SetupEdgeModelService:
                             if not isinstance(traditional_signal_context, dict)
                             else bool(traditional_signal_context.get("terminal_risk"))
                         ),
+                        "return_1bar": float(snapshot.indicators.get("return_1bar") or 0.0),
+                        "return_24bars": float(snapshot.indicators.get("return_24bars") or 0.0),
+                        "sma_fast_ratio": float(snapshot.indicators.get("sma_fast_ratio") or 0.0),
+                        "sma_slow_ratio": float(snapshot.indicators.get("sma_slow_ratio") or 0.0),
+                        "rsi_14": float(snapshot.indicators.get("rsi_14") or 50.0),
+                        "volume_ratio_20": float(snapshot.indicators.get("volume_ratio_20") or 0.0),
+                        "range_pct": float(snapshot.indicators.get("range_pct") or 0.0),
+                        "higher_trend_strength": float(higher.get("trend_strength") or 0.0),
+                        "traditional_rebound_failure_pct": (
+                            None
+                            if not isinstance(traditional_signal_context, dict)
+                            else traditional_signal_context.get("rebound_failure_pct")
+                        ),
+                        "traditional_support_break_pct": (
+                            None
+                            if not isinstance(traditional_signal_context, dict)
+                            else traditional_signal_context.get("support_break_pct")
+                        ),
+                        "traditional_range_expansion_ratio": (
+                            None
+                            if not isinstance(traditional_signal_context, dict)
+                            else traditional_signal_context.get("range_expansion_ratio")
+                        ),
+                        "traditional_compression_score": (
+                            None
+                            if not isinstance(traditional_signal_context, dict)
+                            else traditional_signal_context.get("compression_score")
+                        ),
+                        "feature_map": feature_map,
                         "feature_vector": _feature_vector(feature_map),
                     }
                 )
@@ -695,6 +1423,9 @@ class SetupEdgeModelService:
         horizon_bars: int,
         min_samples: int,
         top_k: int,
+        discover_slices: bool = False,
+        stability_splits: int = 4,
+        target_slice_set: str | None = None,
     ) -> dict[str, object]:
         active_setup_phases = tuple(setup_phases) if setup_phases else DEFAULT_SETUP_PHASES
         collected = self._collect_examples(
@@ -736,7 +1467,7 @@ class SetupEdgeModelService:
         pattern_rows = summarize(by_pattern, ("symbol", "setup_phase", "traditional_pattern_label"))
         higher_phase_rows = summarize(by_higher_phase, ("symbol", "setup_phase", "higher_timeframe_phase"))
 
-        return {
+        report = {
             "version": SETUP_EDGE_MODEL_VERSION,
             "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
             "higher_timeframe": SETUP_EDGE_MODEL_HIGHER_TIMEFRAME,
@@ -753,3 +1484,18 @@ class SetupEdgeModelService:
                 key=lambda row: float(row["avg_target_edge_pct"])
             )[:top_k],
         }
+        if discover_slices:
+            report["discovered_slices"] = discover_edge_slices(
+                examples,
+                min_samples=min_samples,
+                top_k=top_k,
+                stability_splits=stability_splits,
+            )
+        if target_slice_set is not None:
+            report["target_slices"] = summarize_target_slices(
+                examples,
+                slice_set=target_slice_set,
+                min_samples=min_samples,
+                stability_splits=stability_splits,
+            )
+        return report

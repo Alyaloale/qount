@@ -60,9 +60,12 @@ python -m qount.main backtest --research-profile eth-only --start 2026-05-14T22:
 ```bash
 python -m qount.main train-setup-model --research-profile eth-only
 python -m qount.main walk-forward --research-profile eth-only --window demo=2026-05-23T00:00:00+00:00,2026-05-23T03:00:00+00:00 --setup-phases range_noise
+python -m qount.main setup-edge-walk-forward --research-profile eth-only --holdout-role discovery --window demo=2026-05-23T00:00:00+00:00,2026-05-23T03:00:00+00:00
+python -m qount.main candidate-walk-forward --research-profile eth-only --holdout-role discovery --window demo=2026-05-23T00:00:00+00:00,2026-05-23T03:00:00+00:00 --max-bars-per-window 20
 ```
 
 `--research-profile eth-only` 会把 setup-model 训练默认值对齐当前 phase6 口径：`horizon_bars=6`、`split_higher_phase=true`。显式传 `--horizon-bars` 或 `--split-higher-phase` 时，以命令行参数为准。
+`backtest` / `walk-forward` 支持 `--holdout-role discovery|validation_v1|unknown` 和研究专用 `--ai-decision-cache`；live / run-once 不使用该缓存。
 
 如果你在 `Mac` 上不想盯 CLI，可以直接开本机浏览器面板：
 
@@ -245,77 +248,32 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
 
 如果当前 `Mac` 本机的 `7907` 公有接口代理不通，优先在 WSL 节点上跑这条命令，不要先怀疑回测逻辑本身。
 
-## 当前文档
+## 当前文档入口
 
-- 当前决策状态只看：
-  - [docs/current.md](docs/current.md)
-- 接手命令、WSL/PowerShell 坑点、artifact 读法看：
-  - [docs/quick-handoff.md](docs/quick-handoff.md)
-- 不再把旧计划、旧复盘、archive 入口塞进 `docs/current.md`
-- 历史事实以后直接看：
-  - `git log / git diff`
-  - `WSL /home/alyaloale/Code/qount/state/qount.db`
-  - 远端 `systemd` 和运行命令结果
+- [docs/current.md](docs/current.md)：当前事实、能力边界、运行状态和下一步。
+- [docs/holdout.md](docs/holdout.md)：`discovery_pool` / `validation_pool_v1` 与
+  `G_paper` / `G_live`。
+- [docs/quick-handoff.md](docs/quick-handoff.md)：接手命令、WSL/PowerShell 坑点、
+  sync/test 脚本和 artifact 规则。
+- [docs/update-log.md](docs/update-log.md)：近期 artifact、验证结果和读法。
+- [docs/optimization-plan.md](docs/optimization-plan.md)：2026-05-31 架构评审与
+  T-A..T-J 路线。
+- [docs/profit-research-plan.md](docs/profit-research-plan.md)：盈利研究历史路线；
+  旧 promotion gate 已被 `holdout.md` 取代。
 
-## 当前 live 基线
-
-- 生产节点：`WSL /home/alyaloale/Code/qount`
-- 调度：`systemd --user qount-runner.timer`
-- 当前 live 仍关闭：`QOUNT_LIVE_ENABLE=false`
-- 当前 `.env` 仍是旧 4-symbol live 形状；研究回测不要直接继承它。
-- ETH-only 研究统一使用：`--research-profile eth-only`
-- 详细状态、最新 artifact、promotion 判断看 [docs/current.md](docs/current.md)
+当前基线：`ETH-only research-only`，live 和 forward paper 都关闭。生产真相在
+WSL `/home/alyaloale/Code/qount`，Mac `/Users/alyaloale/Code/qount` 是编辑和 git
+工作区。研究命令必须显式使用 `--research-profile eth-only` 或
+`--research-profile multi-symbol`，不要直接继承 WSL `.env` 的旧 4-symbol live 形状。
 
 ## 当前流程
 
-1. closed `5m` bar -> `snapshot`
-2. `candidate_filter` 做排序和标注
-3. `AI` 选择 symbol 和 `buy/sell/hold/close`
-4. `validate_decision` 只做 JSON / 字段规范化
-5. `risk_engine` 在 `bottom_line` 下只保留底线约束：
-   - 日亏损停机
-   - 系统 halt
-   - 风险仓位上限
-   - 交易所最小名义
-   - 最大持仓数
-   - 方向暴露
-   - 基本止损合法性
-6. `executor` 执行并写入 `journal`
-7. `review` / `signal-review` 负责复盘
+```text
+closed 5m bar -> snapshot -> candidate_filter -> AI -> validate -> risk -> executor -> journal -> review
+```
 
-## 当前判断
-
-- 当前不是上线阶段；live / forward paper 都不应打开。
-- 最新 6-window 只做到局部正收益，未过 promotion gate。
-- 如果接手继续研究，先读 [docs/current.md](docs/current.md) 和 [docs/quick-handoff.md](docs/quick-handoff.md)，再查 WSL runtime。
-- 不要用旧 after2 / after4 / hard-reclaim 文档口径覆盖当前结论。
-
-## 相关参数
-
-- `QOUNT_ESTIMATED_FEE_PCT`
-- `QOUNT_ESTIMATED_SLIPPAGE_PCT`
-- `QOUNT_RULE_MODE`
-- `QOUNT_CANDIDATE_TREND_TIMEFRAME`
-- `QOUNT_MIN_EXPECTED_EDGE_PCT`
-- `QOUNT_MIN_OPEN_SIZE_PCT`
-- `QOUNT_MIN_TAKE_PROFIT_PCT`
-- `QOUNT_FLIP_COOLDOWN_BARS`
-- `QOUNT_MIN_HOLD_BARS`
-- `QOUNT_SAME_SYMBOL_REENTRY_COOLDOWN_BARS`
-- `QOUNT_TRAILING_PROFIT_ARM_PCT`
-- `QOUNT_TRAILING_PROFIT_RETRACE_PCT`
-- `QOUNT_PARTIAL_TAKE_PROFIT_ENABLE`
-- `QOUNT_PARTIAL_TAKE_PROFIT_TRIGGER_PCT`
-- `QOUNT_PARTIAL_TAKE_PROFIT_STEP_PCT`
-- `QOUNT_PARTIAL_TAKE_PROFIT_FRACTION`
-- `QOUNT_PARTIAL_TAKE_PROFIT_MAX_TIMES`
-- `QOUNT_BREAKEVEN_STOP_BUFFER_PCT`
-- `QOUNT_DYNAMIC_PROTECTIVE_REFRESH_ENABLE`
-
-## 当前文档入口
-
-- [docs/current.md](docs/current.md)
-- [docs/quick-handoff.md](docs/quick-handoff.md)
+`risk_engine` 在 `bottom_line` 下只保留底线约束：日亏损停机、系统 halt、仓位上限、
+交易所最小名义、最大持仓数、方向暴露和基本止损合法性。
 
 ## 目录
 
@@ -324,21 +282,13 @@ app logic: src/qount/
 docs: docs/
 prompts: prompts/
 runtime state: state/
+research artifacts: state/research_runs/
 run scripts: scripts/
 systemd examples: deploy/systemd/
 ```
 
-## 下一步
+## 当前判断
 
-下一步默认不再写阶段计划文档，直接在：
-
-- [docs/current.md](docs/current.md)
-- [docs/quick-handoff.md](docs/quick-handoff.md)
-
-更新当前结论；
-
-如果要判断“系统没下单到底是 AI 保守还是市场没 setup”，直接查：
-
-- `state/qount.db`
-- `signal-review`
-- 最新 `run_id`
+有历史盈利样本，但没有稳定盈利或上线能力证明。已看过窗口只算 discovery，promotion
+必须从 `validation_pool_v1` 重新 once-only 验证。继续研究默认先读
+[docs/current.md](docs/current.md) 和 [docs/quick-handoff.md](docs/quick-handoff.md)。

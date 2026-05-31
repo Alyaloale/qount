@@ -22,8 +22,15 @@ if "ccxt" not in sys.modules:
 
 from qount.candidate_filter import CandidateFilter
 from qount.backtest import BacktestService
+from qount.ai_client import AIDecisionClient
+from qount.ai_client import default_decision_prompt
+from qount.ai_client import default_system_prompt
+from qount.artifacts import mirror_artifact_tree_if_external
+from qount.artifacts import write_research_json_artifact
 from qount.entry_quality import assess_fresh_entry
+from qount.entry_quality import build_research_slice_tags
 from qount.entry_quality import build_traditional_signal_context
+from qount.entry_quality import FreshEntryAssessment
 from qount.hourly_model import fit_symbol_hourly_return_model
 from qount.hourly_model import score_hourly_return_model_signal
 from qount.executor import Executor
@@ -39,11 +46,13 @@ from qount.models import RiskVerdict
 from qount.models import SymbolSnapshot
 from qount.models import ValidatedDecision
 from qount.models import utc_now
+from qount.main import apply_command_settings_overrides
 from qount.main import build_parser
 from qount.orchestrator import Orchestrator
 from qount.research_profile import apply_research_profile
 from qount.research_profile import setup_model_horizon_bars_for_profile
 from qount.research_profile import setup_model_split_higher_phase_for_profile
+from qount.research_slice_scan import research_slice_scan
 from qount.review import ReviewService
 from qount.risk_engine import RiskEngine
 from qount.settings import Settings
@@ -52,6 +61,7 @@ from qount.setup_model import fit_setup_edge_model
 from qount.setup_model import score_setup_edge_model_signal
 from qount.setup_model import SetupEdgeModelService
 from qount.walk_forward import parse_walk_forward_window
+from qount.walk_forward import _aggregate_rows
 from qount.walk_forward import _performance_summary
 from qount.walk_forward import WalkForwardService
 
@@ -75,6 +85,9 @@ def make_settings(project_root: Path, **overrides) -> Settings:
         openai_api_key="test",
         ai_model="gpt-5.4-mini",
         ai_timeout_seconds=30,
+        ai_temperature=0.2,
+        ai_decision_cache_enable=False,
+        ai_decision_cache_dir=project_root / "state" / "research_cache" / "ai_decisions",
         rule_mode="strict",
         symbols=("BTC/USDT", "ETH/USDT"),
         timeframe="5m",
@@ -100,6 +113,7 @@ def make_settings(project_root: Path, **overrides) -> Settings:
         hourly_model_path=project_root / "state" / "models" / "hourly_return_model.json",
         setup_model_enable=False,
         setup_model_path=project_root / "state" / "models" / "setup_edge_model.json",
+        research_shadow_candidate_tags=(),
         min_expected_edge_pct=0.0015,
         max_net_directional_exposure_pct=0.40,
         max_correlated_directional_exposure_pct=0.30,
@@ -472,6 +486,56 @@ class FakeTradeExchangePool:
 
 
 class StrategyOptimizationTests(unittest.TestCase):
+    @staticmethod
+    def _eth_reclaim_breakdown_candidate_summary(
+        *,
+        support_break_pct: float = 0.002616,
+        range_expansion_ratio: float = 0.68495,
+        rebound_failure_pct: float = 0.009539,
+        preview_action: str = "sell",
+        final_expected_edge_pct: float = 0.0021,
+        required_threshold_gap_pct: float = 0.0,
+    ) -> dict:
+        return {
+            "status": "selected",
+            "selected_symbols": ["ETH/USDT:USDT"],
+            "symbols": [
+                {
+                    "symbol": "ETH/USDT:USDT",
+                    "eligible": True,
+                    "manage_only": False,
+                    "setup_phase": "short_breakdown_confirmed",
+                    "higher_timeframe_phase": "reclaim",
+                    "setup_confirmed": True,
+                    "entry_thesis_candidate": {
+                        "version": 1,
+                        "direction": "short",
+                        "higher_timeframe_direction": "short",
+                        "higher_timeframe_phase": "reclaim",
+                        "setup_phase": "short_breakdown_confirmed",
+                        "setup_confirmed": True,
+                        "invalidation_type": "breakdown_reclaimed",
+                        "follow_through_bars": 1,
+                    },
+                    "traditional_signal_context": {
+                        "pattern_label": "failed_rebound_breakdown",
+                        "terminal_risk": False,
+                        "rebound_failure_pct": rebound_failure_pct,
+                        "support_break_pct": support_break_pct,
+                        "range_expansion_ratio": range_expansion_ratio,
+                    },
+                    "entry_viability_preview": {
+                        "preview_action": preview_action,
+                        "assumed_size_pct": 0.12,
+                        "expected_edge": {
+                            "final_expected_edge_pct": final_expected_edge_pct,
+                            "required_threshold_gap_pct": required_threshold_gap_pct,
+                        },
+                    },
+                }
+            ],
+        }
+
     def test_eth_only_research_profile_applies_canonical_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -501,6 +565,137 @@ class StrategyOptimizationTests(unittest.TestCase):
             )
             self.assertAlmostEqual(profiled.trailing_profit_arm_pct, 0.0018)
             self.assertAlmostEqual(profiled.trailing_profit_retrace_pct, 0.003)
+            self.assertAlmostEqual(profiled.ai_temperature, 0.0)
+
+    def test_ai_decision_cache_reuses_identical_research_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                mode="paper",
+                market_type="future",
+                live_enable=False,
+                ai_decision_cache_enable=True,
+                ai_decision_cache_dir=root / "state" / "research_cache" / "ai_decisions",
+            )
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[
+                    make_symbol(
+                        "ETH/USDT:USDT",
+                        900_000,
+                        2500.0,
+                        atr_pct=0.004,
+                        range_pct=0.004,
+                        volume_ratio=1.2,
+                        higher_bias="short",
+                        higher_phase="reclaim",
+                    )
+                ],
+            )
+            calls: list[dict] = []
+            payload = {
+                "timestamp": utc_now().isoformat(),
+                "symbol": "ETH/USDT:USDT",
+                "action": "hold",
+                "size_pct": 0.0,
+                "take_profit_pct": 0.0,
+                "stop_loss_pct": 0.0,
+                "ttl_minutes": 0,
+                "confidence": 0.42,
+                "reason": "cache_test",
+                "prompt_version": "v1",
+            }
+
+            class _FakeCompletions:
+                def create(self, **kwargs):
+                    calls.append(kwargs)
+                    message = types.SimpleNamespace(content=json.dumps(payload))
+                    choice = types.SimpleNamespace(message=message)
+                    return types.SimpleNamespace(choices=[choice], model="fake-model")
+
+            class _FakeOpenAI:
+                def __init__(self, **kwargs) -> None:
+                    self.chat = types.SimpleNamespace(completions=_FakeCompletions())
+
+            previous_openai = sys.modules.get("openai")
+            sys.modules["openai"] = types.SimpleNamespace(OpenAI=_FakeOpenAI)
+            try:
+                first_request, first_raw, first_model = AIDecisionClient(settings).request_decision(bundle)
+                second_request, second_raw, second_model = AIDecisionClient(settings).request_decision(bundle)
+            finally:
+                if previous_openai is None:
+                    sys.modules.pop("openai", None)
+                else:
+                    sys.modules["openai"] = previous_openai
+
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(first_raw, json.dumps(payload))
+            self.assertEqual(second_raw, first_raw)
+            self.assertEqual(first_model, "fake-model")
+            self.assertEqual(second_model, "fake-model")
+            self.assertFalse(first_request["ai_decision_cache"]["hit"])
+            self.assertTrue(second_request["ai_decision_cache"]["hit"])
+            self.assertTrue(Path(second_request["ai_decision_cache"]["path"]).exists())
+
+    def test_command_trailing_overrides_apply_after_eth_only_profile(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "walk-forward",
+                "--research-profile",
+                "eth-only",
+                "--trailing-arm-pct",
+                "0.003",
+                "--trailing-retrace-pct",
+                "0.005",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                trailing_profit_arm_pct=0.01,
+                trailing_profit_retrace_pct=0.005,
+            )
+
+            profiled = apply_research_profile(settings, "eth-only")
+            overridden = apply_command_settings_overrides(profiled, args)
+
+            self.assertAlmostEqual(profiled.trailing_profit_arm_pct, 0.0018)
+            self.assertAlmostEqual(profiled.trailing_profit_retrace_pct, 0.003)
+            self.assertAlmostEqual(overridden.trailing_profit_arm_pct, 0.003)
+            self.assertAlmostEqual(overridden.trailing_profit_retrace_pct, 0.005)
+
+    def test_multi_symbol_research_profile_opens_the_broader_research_universe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="spot",
+                live_enable=True,
+                rule_mode="strict",
+                symbols=("ETH/USDT",),
+                max_open_positions=1,
+                hourly_model_enable=True,
+                setup_model_enable=False,
+            )
+
+            profiled = apply_research_profile(settings, "multi-symbol")
+
+            self.assertEqual(profiled.market_type, "future")
+            self.assertFalse(profiled.live_enable)
+            self.assertEqual(profiled.rule_mode, "bottom_line")
+            self.assertEqual(profiled.symbols, ("SOL/USDT", "XRP/USDT", "BTC/USDT", "ETH/USDT"))
+            self.assertEqual(profiled.max_open_positions, 3)
+            self.assertFalse(profiled.hourly_model_enable)
+            self.assertTrue(profiled.setup_model_enable)
+            self.assertEqual(
+                profiled.setup_model_path,
+                root / "state" / "models" / "setup_edge_model_multi_symbol.json",
+            )
+            self.assertAlmostEqual(profiled.ai_temperature, 0.0)
 
     def test_eth_only_research_profile_defaults_match_phase6_setup_model(self) -> None:
         self.assertEqual(setup_model_horizon_bars_for_profile("eth-only", None), 6)
@@ -509,6 +704,10 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertFalse(setup_model_split_higher_phase_for_profile(None, None))
         self.assertEqual(setup_model_horizon_bars_for_profile("eth-only", 4), 4)
         self.assertFalse(setup_model_split_higher_phase_for_profile("eth-only", False))
+
+    def test_multi_symbol_research_profile_defaults_use_generic_setup_model_shape(self) -> None:
+        self.assertEqual(setup_model_horizon_bars_for_profile("multi-symbol", None), 3)
+        self.assertFalse(setup_model_split_higher_phase_for_profile("multi-symbol", None))
 
     def test_backtest_parser_accepts_eth_only_research_profile(self) -> None:
         parser = build_parser()
@@ -522,11 +721,109 @@ class StrategyOptimizationTests(unittest.TestCase):
                 "2026-03-06T01:00:00+00:00",
                 "--research-profile",
                 "eth-only",
+                "--trailing-arm-pct",
+                "0.003",
+                "--trailing-retrace-pct",
+                "0.005",
             ]
         )
 
         self.assertEqual(args.command, "backtest")
         self.assertEqual(args.research_profile, "eth-only")
+        self.assertAlmostEqual(args.trailing_arm_pct, 0.003)
+        self.assertAlmostEqual(args.trailing_retrace_pct, 0.005)
+
+    def test_backtest_parser_accepts_research_shadow_candidate_tags(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "backtest",
+                "--start",
+                "2026-03-06T00:00:00+00:00",
+                "--end",
+                "2026-03-06T01:00:00+00:00",
+                "--research-profile",
+                "multi-symbol",
+                "--research-shadow-candidate-tags",
+                "multi_range_action_pullback_sma_fast_gt008",
+            ]
+        )
+
+        self.assertEqual(args.command, "backtest")
+        self.assertEqual(args.research_profile, "multi-symbol")
+        self.assertEqual(args.research_shadow_candidate_tags, ["multi_range_action_pullback_sma_fast_gt008"])
+
+    def test_command_shadow_candidate_overrides_apply_after_profile(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "backtest",
+                "--start",
+                "2026-03-06T00:00:00+00:00",
+                "--end",
+                "2026-03-06T01:00:00+00:00",
+                "--research-profile",
+                "multi-symbol",
+                "--research-shadow-candidate-tags",
+                "multi_range_action_pullback_sma_fast_gt008",
+                "eth_range_action_pullback_sma_fast_gt008",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            profiled = apply_research_profile(settings, "multi-symbol")
+            overridden = apply_command_settings_overrides(profiled, args)
+
+        self.assertEqual(
+            overridden.research_shadow_candidate_tags,
+            ("multi_range_action_pullback_sma_fast_gt008", "eth_range_action_pullback_sma_fast_gt008"),
+        )
+
+    def test_walk_forward_parser_accepts_trailing_research_overrides(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "walk-forward",
+                "--window",
+                "demo=2026-03-06T00:00:00+00:00,2026-03-06T01:00:00+00:00",
+                "--research-profile",
+                "eth-only",
+                "--horizon-bars",
+                "12",
+                "--trailing-arm-pct",
+                "0.003",
+                "--trailing-retrace-pct",
+                "0.005",
+            ]
+        )
+
+        self.assertEqual(args.command, "walk-forward")
+        self.assertEqual(args.research_profile, "eth-only")
+        self.assertEqual(args.horizon_bars, 12)
+        self.assertAlmostEqual(args.trailing_arm_pct, 0.003)
+        self.assertAlmostEqual(args.trailing_retrace_pct, 0.005)
+
+    def test_backtest_parser_accepts_multi_symbol_research_profile(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "backtest",
+                "--start",
+                "2026-03-06T00:00:00+00:00",
+                "--end",
+                "2026-03-06T01:00:00+00:00",
+                "--research-profile",
+                "multi-symbol",
+            ]
+        )
+
+        self.assertEqual(args.command, "backtest")
+        self.assertEqual(args.research_profile, "multi-symbol")
 
     def test_train_setup_model_parser_accepts_eth_only_research_profile(self) -> None:
         parser = build_parser()
@@ -541,6 +838,196 @@ class StrategyOptimizationTests(unittest.TestCase):
 
         self.assertEqual(args.command, "train-setup-model")
         self.assertEqual(args.research_profile, "eth-only")
+
+    def test_setup_edge_study_parser_accepts_multi_symbol_research_profile(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "setup-edge-study",
+                "--research-profile",
+                "multi-symbol",
+                "--discover-slices",
+            ]
+        )
+
+        self.assertEqual(args.command, "setup-edge-study")
+        self.assertEqual(args.research_profile, "multi-symbol")
+        self.assertTrue(args.discover_slices)
+
+    def test_setup_edge_study_parser_accepts_multi_symbol_target_slice_set(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "setup-edge-study",
+                "--research-profile",
+                "multi-symbol",
+                "--target-slice-set",
+                "multi-reclaim-sma-action",
+            ]
+        )
+
+        self.assertEqual(args.command, "setup-edge-study")
+        self.assertEqual(args.research_profile, "multi-symbol")
+        self.assertEqual(args.target_slice_set, "multi-reclaim-sma-action")
+
+    def test_setup_edge_study_parser_accepts_multi_symbol_range_target_slice_set(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "setup-edge-study",
+                "--research-profile",
+                "multi-symbol",
+                "--target-slice-set",
+                "multi-range-action",
+            ]
+        )
+
+        self.assertEqual(args.command, "setup-edge-study")
+        self.assertEqual(args.research_profile, "multi-symbol")
+        self.assertEqual(args.target_slice_set, "multi-range-action")
+
+    def test_setup_edge_study_parser_accepts_eth_reclaim_long_target_slice_set(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "setup-edge-study",
+                "--research-profile",
+                "eth-only",
+                "--target-slice-set",
+                "eth-reclaim-long-action",
+            ]
+        )
+
+        self.assertEqual(args.command, "setup-edge-study")
+        self.assertEqual(args.research_profile, "eth-only")
+        self.assertEqual(args.target_slice_set, "eth-reclaim-long-action")
+
+    def test_setup_edge_study_parser_accepts_offline_discovery_flags(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "setup-edge-study",
+                "--research-profile",
+                "eth-only",
+                "--discover-slices",
+                "--stability-splits",
+                "3",
+                "--target-slice-set",
+                "eth-range-action",
+                "--artifact-path",
+                "/tmp/qount-edge-study.json",
+            ]
+        )
+
+        self.assertEqual(args.command, "setup-edge-study")
+        self.assertEqual(args.research_profile, "eth-only")
+        self.assertTrue(args.discover_slices)
+        self.assertEqual(args.stability_splits, 3)
+        self.assertEqual(args.target_slice_set, "eth-range-action")
+        self.assertIsNone(args.horizon_bars)
+
+    def test_research_slice_scan_parser_accepts_artifact_and_output_paths(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "research-slice-scan",
+                "--research-profile",
+                "eth-only",
+                "--artifact-dir",
+                "/tmp/qount-wf",
+                "--target-tags",
+                "eth_range_action_range_return24_gt012",
+                "--horizon-bars",
+                "3",
+                "6",
+                "12",
+                "--output-path",
+                "/tmp/qount-scan.json",
+            ]
+        )
+
+        self.assertEqual(args.command, "research-slice-scan")
+        self.assertEqual(args.research_profile, "eth-only")
+        self.assertEqual(args.artifact_dir, "/tmp/qount-wf")
+        self.assertEqual(args.target_tags, ["eth_range_action_range_return24_gt012"])
+        self.assertEqual(args.horizon_bars, [3, 6, 12])
+        self.assertEqual(args.output_path, "/tmp/qount-scan.json")
+
+    def test_research_json_artifact_defaults_to_persistent_state_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root)
+
+            result = write_research_json_artifact(
+                settings,
+                {"ok": True},
+                kind="setup-edge-study",
+                path_key="artifact_path",
+                default_filename="setup_edge_study.json",
+                explicit_path=None,
+            )
+
+            artifact_path = Path(result["artifact_path"])
+            self.assertTrue(artifact_path.exists())
+            self.assertEqual(result["persistent_artifact_path"], str(artifact_path))
+            artifact_path.relative_to(root / "state" / "research_runs")
+            payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["ok"])
+
+    def test_research_json_artifact_mirrors_external_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            settings = make_settings(root)
+            external_path = Path(tmp) / "tmp-output" / "scan.json"
+
+            result = write_research_json_artifact(
+                settings,
+                {"source_mode": "walk_forward"},
+                kind="research-slice-scan",
+                path_key="output_path",
+                default_filename="research_slice_scan.json",
+                explicit_path=str(external_path),
+            )
+
+            self.assertTrue(external_path.exists())
+            persistent_path = Path(result["persistent_artifact_path"])
+            self.assertTrue(persistent_path.exists())
+            persistent_path.relative_to(root / "state" / "research_runs")
+            payload = json.loads(persistent_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["output_path"], str(external_path))
+            self.assertEqual(payload["persistent_artifact_path"], str(persistent_path))
+
+    def test_external_walk_forward_tree_is_mirrored_to_persistent_state_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            settings = make_settings(root)
+            external_root = Path(tmp) / "tmp-walk-forward"
+            external_root.mkdir()
+            (external_root / "walk_forward.partial.json").write_text("{}", encoding="utf-8")
+
+            mirror_dir = mirror_artifact_tree_if_external(settings, external_root, kind="walk-forward")
+
+            self.assertIsNotNone(mirror_dir)
+            assert mirror_dir is not None
+            mirror_dir.relative_to(root / "state" / "research_runs")
+            self.assertTrue((mirror_dir / "walk_forward.partial.json").exists())
+
+    def test_ai_prompt_mentions_eth_reclaim_short_breakdown_confirmed_starter_short(self) -> None:
+        system_prompt = default_system_prompt(contract_market=True, timeframe="5m")
+        decision_prompt = default_decision_prompt(contract_market=True, timeframe="5m")
+
+        self.assertIn("short_breakdown_confirmed", system_prompt)
+        self.assertIn("short_breakdown_confirmed", decision_prompt)
+        self.assertIn("failed_rebound_breakdown with terminal_risk=false", system_prompt)
+        self.assertIn("failed_rebound_breakdown with terminal_risk=false", decision_prompt)
 
     def test_walk_forward_summary_reads_nested_review_overall_metrics(self) -> None:
         summary = _performance_summary(
@@ -557,6 +1044,18 @@ class StrategyOptimizationTests(unittest.TestCase):
                             "bad": 2,
                             "flat": 1,
                             "missed_move": 0,
+                            "missed_candidate_move": 1,
+                            "missed_move_not_candidate_aligned": 2,
+                            "avg_candidate_opportunity_edge_pct": 0.12,
+                        },
+                        "by_research_slice_tag": {
+                            "eth_range_action_range_return24_gt012": {
+                                "reviewed": 2,
+                                "avg_net_edge_pct": 0.08,
+                            },
+                            "counts": {
+                                "eth_range_action_range_return24_gt012": 2,
+                            },
                         },
                     }
                 },
@@ -570,6 +1069,120 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertEqual(summary["review_bad"], 2)
         self.assertEqual(summary["review_flat"], 1)
         self.assertEqual(summary["review_missed_move"], 0)
+        self.assertEqual(summary["review_missed_candidate_move"], 1)
+        self.assertEqual(summary["review_missed_move_not_candidate_aligned"], 2)
+        self.assertEqual(summary["review_avg_candidate_opportunity_edge_pct"], 0.12)
+        self.assertEqual(
+            summary["review_by_research_slice_tag"]["counts"]["eth_range_action_range_return24_gt012"],
+            2,
+        )
+
+    def test_walk_forward_aggregate_tracks_candidate_aligned_review_misses(self) -> None:
+        aggregate = _aggregate_rows(
+            [
+                {
+                    "backtest": {
+                        "setup_model_oos_safe": True,
+                        "realized_return_pct": 0.20,
+                        "open_positions": 0,
+                        "paper_filled": 1,
+                        "paper_closed": 1,
+                        "reviewed": 4,
+                        "review_missed_move": 3,
+                        "review_missed_candidate_move": 1,
+                        "review_missed_move_not_candidate_aligned": 2,
+                    }
+                },
+                {
+                    "backtest": {
+                        "setup_model_oos_safe": True,
+                        "realized_return_pct": 0.0,
+                        "open_positions": 0,
+                        "paper_filled": 0,
+                        "paper_closed": 0,
+                        "reviewed": 2,
+                        "review_missed_move": 1,
+                        "review_missed_candidate_move": 0,
+                        "review_missed_move_not_candidate_aligned": 1,
+                    }
+                },
+            ]
+        )
+
+        self.assertEqual(aggregate["total_reviewed"], 6)
+        self.assertEqual(aggregate["total_review_missed_move"], 4)
+        self.assertEqual(aggregate["total_review_missed_candidate_move"], 1)
+        self.assertEqual(aggregate["total_review_missed_move_not_candidate_aligned"], 3)
+        self.assertEqual(aggregate["windows_with_missed_candidate_move"], 1)
+
+    def test_walk_forward_aggregate_groups_research_slice_tags(self) -> None:
+        aggregate = _aggregate_rows(
+            [
+                {
+                    "backtest": {
+                        "setup_model_oos_safe": True,
+                        "realized_return_pct": 0.20,
+                        "open_positions": 0,
+                        "paper_filled": 1,
+                        "paper_closed": 1,
+                        "reviewed": 2,
+                        "review_by_research_slice_tag": {
+                            "eth_range_action_range_return24_gt012": {
+                                "reviewed": 2,
+                                "good": 1,
+                                "bad": 1,
+                                "actionable_reviewed": 2,
+                                "hold_reviewed": 0,
+                                "missed_candidate_move": 1,
+                                "avg_net_edge_pct": 0.10,
+                                "avg_candidate_aligned_future_return_pct": 0.20,
+                                "avg_candidate_opportunity_edge_pct": 0.15,
+                            },
+                            "counts": {"eth_range_action_range_return24_gt012": 2},
+                        },
+                    }
+                },
+                {
+                    "backtest": {
+                        "setup_model_oos_safe": True,
+                        "realized_return_pct": 0.0,
+                        "open_positions": 0,
+                        "paper_filled": 0,
+                        "paper_closed": 0,
+                        "reviewed": 3,
+                        "review_by_research_slice_tag": {
+                            "eth_range_action_range_return24_gt012": {
+                                "reviewed": 3,
+                                "good": 0,
+                                "bad": 2,
+                                "flat": 1,
+                                "actionable_reviewed": 2,
+                                "hold_reviewed": 1,
+                                "missed_candidate_move": 0,
+                                "avg_net_edge_pct": -0.20,
+                                "avg_candidate_aligned_future_return_pct": -0.30,
+                                "avg_candidate_opportunity_edge_pct": -0.05,
+                            },
+                            "counts": {"eth_range_action_range_return24_gt012": 3},
+                        },
+                    }
+                },
+            ]
+        )
+
+        by_tag = aggregate["by_research_slice_tag"]
+        row = by_tag["eth_range_action_range_return24_gt012"]
+        self.assertEqual(by_tag["counts"]["eth_range_action_range_return24_gt012"], 5)
+        self.assertEqual(row["windows_with_samples"], 2)
+        self.assertEqual(row["windows_with_positive_avg_net_edge"], 1)
+        self.assertEqual(row["windows_with_negative_avg_net_edge"], 1)
+        self.assertEqual(row["windows_with_missed_candidate_move"], 1)
+        self.assertEqual(row["reviewed"], 5)
+        self.assertEqual(row["good"], 1)
+        self.assertEqual(row["bad"], 3)
+        self.assertAlmostEqual(row["avg_net_edge_pct"], -0.08)
+        self.assertAlmostEqual(row["avg_candidate_aligned_future_return_pct"], -0.10)
+        self.assertAlmostEqual(row["avg_candidate_opportunity_edge_pct"], 0.03)
 
     def test_portfolio_filtered_hold_is_excluded_from_symbol_history_and_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -746,6 +1359,101 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertIn("expected_edge", preview)
             summary_preview = result["candidate_filter"]["symbols"][0]["entry_viability_preview"]
             self.assertEqual(summary_preview["preview_action"], "sell")
+
+    def test_orchestrator_overrides_eth_reclaim_support_breakdown_ai_hold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                rule_mode="bottom_line",
+                symbols=("ETH/USDT",),
+                max_open_positions=1,
+                ai_temperature=0.0,
+            )
+            orchestrator = Orchestrator(settings)
+            validated = make_decision("ETH/USDT:USDT", "hold", confidence=0.68)
+
+            overridden = orchestrator._maybe_override_ai_hold_for_deterministic_candidate(
+                validated,
+                self._eth_reclaim_breakdown_candidate_summary(),
+            )
+
+            self.assertEqual(overridden.decision.symbol, "ETH/USDT:USDT")
+            self.assertEqual(overridden.decision.action, "sell")
+            self.assertAlmostEqual(overridden.decision.size_pct, 0.12)
+            self.assertAlmostEqual(overridden.decision.take_profit_pct, 0.022)
+            self.assertAlmostEqual(overridden.decision.stop_loss_pct, 0.0065)
+            self.assertEqual(overridden.decision.ttl_minutes, 15)
+            self.assertAlmostEqual(overridden.decision.confidence, 0.69)
+            self.assertEqual(
+                overridden.decision.reason,
+                "deterministic_eth_reclaim_support_breakdown_override:"
+                "ai_hold_on_confirmed_failed_rebound_breakdown",
+            )
+            self.assertIsNotNone(overridden.raw_payload)
+            raw_payload = overridden.raw_payload or {}
+            self.assertEqual(raw_payload["action"], "sell")
+            self.assertEqual(raw_payload["ai_original_decision"]["action"], "hold")
+            self.assertEqual(
+                raw_payload["deterministic_override"]["setup_phase"],
+                "short_breakdown_confirmed",
+            )
+            self.assertEqual(
+                raw_payload["deterministic_override"]["higher_timeframe_phase"],
+                "reclaim",
+            )
+
+    def test_orchestrator_keeps_ai_hold_when_eth_reclaim_override_guard_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            eth_settings = make_settings(
+                root,
+                market_type="future",
+                rule_mode="bottom_line",
+                symbols=("ETH/USDT",),
+                max_open_positions=1,
+                ai_temperature=0.0,
+            )
+            multi_symbol_settings = make_settings(
+                root,
+                market_type="future",
+                rule_mode="bottom_line",
+                symbols=("BTC/USDT", "ETH/USDT"),
+                max_open_positions=1,
+                ai_temperature=0.0,
+            )
+            cases = [
+                (
+                    "support_not_broken",
+                    eth_settings,
+                    self._eth_reclaim_breakdown_candidate_summary(support_break_pct=0.0),
+                ),
+                (
+                    "range_expansion_too_wide",
+                    eth_settings,
+                    self._eth_reclaim_breakdown_candidate_summary(range_expansion_ratio=1.20),
+                ),
+                (
+                    "not_eth_only_profile",
+                    multi_symbol_settings,
+                    self._eth_reclaim_breakdown_candidate_summary(),
+                ),
+            ]
+
+            for label, settings, candidate_summary in cases:
+                with self.subTest(label=label):
+                    orchestrator = Orchestrator(settings)
+                    validated = make_decision("ETH/USDT:USDT", "hold", confidence=0.68)
+
+                    result = orchestrator._maybe_override_ai_hold_for_deterministic_candidate(
+                        validated,
+                        candidate_summary,
+                    )
+
+                    self.assertEqual(result.decision.action, "hold")
+                    self.assertIsNotNone(result.raw_payload)
+                    self.assertNotIn("deterministic_override", result.raw_payload or {})
 
     def test_candidate_filter_prefers_tradeable_symbol_and_respects_open_position(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1461,6 +2169,506 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertEqual(xrp_summary["setup_phase"], "short_breakdown_confirmed")
             self.assertIn("short_setup_breakdown_confirmed", xrp_summary["reasons"])
             self.assertTrue(xrp_summary["setup_confirmed"])
+
+    def test_candidate_filter_promotes_eth_reclaim_low_participation_support_breakdown_to_confirmed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2056.79,
+                atr_pct=0.0026546220080805073,
+                range_pct=0.002625450337661908,
+                volume_ratio=1.0159965107602116,
+                higher_bias="short",
+                higher_phase="reclaim",
+            )
+            symbol.indicators["return_1bar"] = -0.002608902272848601
+            symbol.indicators["return_24bars"] = -0.009820960046986627
+            symbol.indicators["rsi_14"] = 17.208470026842363
+            symbol.indicators["sma_fast_ratio"] = -0.007571837156646777
+            symbol.indicators["sma_slow_ratio"] = -0.007658622871172471
+            symbol.higher_timeframe["trend_strength"] = 2.367595
+            symbol.recent_candles = [
+                Candle(timestamp_ms=1, open=2070.0, high=2076.42, low=2067.20, close=2071.40, volume=9000.0),
+                Candle(timestamp_ms=2, open=2071.40, high=2074.70, low=2065.20, close=2066.80, volume=9200.0),
+                Candle(timestamp_ms=3, open=2066.80, high=2069.50, low=2061.00, close=2062.17, volume=8800.0),
+                Candle(timestamp_ms=4, open=2062.17, high=2064.60, low=2058.00, close=2062.17, volume=8600.0),
+                Candle(timestamp_ms=5, open=2062.17, high=2062.20, low=2056.40, close=2056.79, volume=9300.0),
+            ]
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "selected")
+            summary = filtered.summary["symbols"][0]
+            self.assertEqual(summary["setup_phase"], "short_breakdown_confirmed")
+            self.assertTrue(summary["setup_confirmed"])
+            self.assertIn("short_setup_breakdown_confirmed", summary["reasons"])
+            self.assertNotIn("short_setup_late_breakdown_soft_penalty", summary["reasons"])
+            self.assertFalse(summary["traditional_signal_context"]["terminal_risk"])
+            self.assertEqual(summary["traditional_signal_context"]["pattern_label"], "failed_rebound_breakdown")
+            self.assertEqual(summary["entry_thesis_candidate"]["setup_phase"], "short_breakdown_confirmed")
+
+    def test_candidate_filter_keeps_eth_trend_low_participation_breakdown_as_late_chase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2011.61,
+                atr_pct=0.003485125986505482,
+                range_pct=0.003604078325321509,
+                volume_ratio=5.5141865755332775,
+                higher_bias="short",
+                higher_phase="trend",
+            )
+            symbol.indicators["return_1bar"] = -0.0028008288470500187
+            symbol.indicators["return_24bars"] = -0.0072888599374254515
+            symbol.indicators["rsi_14"] = 38.704753597906446
+            symbol.indicators["sma_fast_ratio"] = 0.0006259269729755879
+            symbol.indicators["sma_slow_ratio"] = -0.005828156839350562
+            symbol.higher_timeframe["trend_strength"] = 3.0
+            symbol.recent_candles = [
+                Candle(timestamp_ms=1, open=2024.0, high=2025.8, low=2020.4, close=2023.0, volume=8000.0),
+                Candle(timestamp_ms=2, open=2023.0, high=2024.2, low=2018.9, close=2021.0, volume=8200.0),
+                Candle(timestamp_ms=3, open=2021.0, high=2022.0, low=2017.5, close=2019.0, volume=8100.0),
+                Candle(timestamp_ms=4, open=2019.0, high=2020.0, low=2015.9, close=2017.0, volume=8300.0),
+                Candle(timestamp_ms=5, open=2017.0, high=2018.0, low=2011.2, close=2011.61, volume=24000.0),
+            ]
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "selected")
+            summary = filtered.summary["symbols"][0]
+            self.assertEqual(summary["setup_phase"], "short_breakdown_chase")
+            self.assertFalse(summary["setup_confirmed"])
+            self.assertIn("short_setup_late_breakdown_soft_penalty", summary["reasons"])
+            self.assertIsNone(summary["entry_thesis_candidate"])
+
+    def test_candidate_filter_surfaces_eth_range_action_research_slice_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2050.0,
+                atr_pct=0.0035,
+                range_pct=0.0040,
+                volume_ratio=1.20,
+                higher_bias="short",
+                higher_phase="range",
+            )
+            symbol.indicators["return_24bars"] = 0.0135
+            symbol.indicators["sma_fast_ratio"] = 0.0095
+            symbol.indicators["sma_slow_ratio"] = 0.0101
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            summary = filtered.summary["symbols"][0]
+            tags = summary["research_slice_tags"]
+            self.assertIn("eth_range_action_base", tags)
+            self.assertIn("eth_range_action_range", tags)
+            self.assertIn("eth_range_action_range_return24_gt012", tags)
+            self.assertIn("eth_range_action_range_sma_fast_gt008", tags)
+            self.assertIn("eth_range_action_range_sma_slow_gt008", tags)
+
+    def test_research_slice_tags_surface_multi_pullback_sma_fast_hypothesis(self) -> None:
+        symbol = make_symbol(
+            "SOL/USDT:USDT",
+            900_000,
+            160.0,
+            atr_pct=0.0035,
+            range_pct=0.0040,
+            volume_ratio=1.20,
+            higher_bias="short",
+            higher_phase="pullback",
+        )
+        symbol.indicators["sma_fast_ratio"] = 0.0095
+        assessment = FreshEntryAssessment(
+            action="sell",
+            bias="short",
+            continuation_watch=False,
+            terminal_extension=False,
+            setup_phase="range_noise",
+            setup_confirmed=False,
+            candidate_reasons=("candidate_ok",),
+            risk_reasons=(),
+        )
+
+        tags = build_research_slice_tags(symbol, assessment)
+
+        self.assertIn("multi_range_action_base", tags)
+        self.assertIn("multi_range_action_pullback", tags)
+        self.assertIn("multi_range_action_pullback_sma_fast_gt008", tags)
+        self.assertNotIn("eth_range_action_base", tags)
+
+    def test_research_slice_tags_surface_eth_pullback_sma_fast_hypothesis(self) -> None:
+        symbol = make_symbol(
+            "ETH/USDT:USDT",
+            900_000,
+            2050.0,
+            atr_pct=0.0035,
+            range_pct=0.0040,
+            volume_ratio=1.20,
+            higher_bias="short",
+            higher_phase="pullback",
+        )
+        symbol.indicators["sma_fast_ratio"] = 0.0095
+        assessment = FreshEntryAssessment(
+            action="sell",
+            bias="short",
+            continuation_watch=False,
+            terminal_extension=False,
+            setup_phase="range_noise",
+            setup_confirmed=False,
+            candidate_reasons=("candidate_ok",),
+            risk_reasons=(),
+        )
+
+        tags = build_research_slice_tags(symbol, assessment)
+
+        self.assertIn("multi_range_action_pullback_sma_fast_gt008", tags)
+        self.assertIn("eth_range_action_pullback_sma_fast_gt008", tags)
+
+    def test_candidate_filter_shadow_candidate_tags_isolate_matching_fresh_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("SOL/USDT:USDT", "BTC/USDT:USDT"),
+                rule_mode="bottom_line",
+                max_open_positions=3,
+                research_shadow_candidate_tags=("multi_range_action_pullback_sma_fast_gt008",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            matching = make_symbol(
+                "SOL/USDT:USDT",
+                900_000,
+                160.0,
+                atr_pct=0.0035,
+                range_pct=0.0040,
+                volume_ratio=1.20,
+                higher_bias="short",
+                higher_phase="pullback",
+            )
+            matching.indicators["sma_fast_ratio"] = 0.0095
+            non_matching = make_symbol(
+                "BTC/USDT:USDT",
+                900_000,
+                100_000.0,
+                atr_pct=0.0060,
+                range_pct=0.0060,
+                volume_ratio=2.20,
+                higher_bias="short",
+                higher_phase="range",
+            )
+            non_matching.indicators["sma_fast_ratio"] = 0.0010
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[matching, non_matching],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "selected")
+            self.assertEqual(filtered.summary["selected_symbols"], ["SOL/USDT:USDT"])
+            by_symbol = {item["symbol"]: item for item in filtered.summary["symbols"]}
+            self.assertEqual(by_symbol["SOL/USDT:USDT"]["research_shadow_candidate"]["status"], "matched")
+            self.assertIn(
+                "research_shadow_candidate_tag_match:multi_range_action_pullback_sma_fast_gt008",
+                by_symbol["SOL/USDT:USDT"]["reasons"],
+            )
+            self.assertEqual(by_symbol["BTC/USDT:USDT"]["research_shadow_candidate"]["status"], "mismatch")
+            self.assertIn("research_shadow_candidate_tag_mismatch", by_symbol["BTC/USDT:USDT"]["reasons"])
+
+    def test_candidate_filter_shadow_candidate_tags_are_ignored_in_live_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                mode="live",
+                live_enable=True,
+                market_type="future",
+                symbols=("SOL/USDT:USDT", "BTC/USDT:USDT"),
+                rule_mode="bottom_line",
+                max_open_positions=3,
+                research_shadow_candidate_tags=("multi_range_action_pullback_sma_fast_gt008",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            matching = make_symbol(
+                "SOL/USDT:USDT",
+                900_000,
+                160.0,
+                atr_pct=0.0035,
+                range_pct=0.0040,
+                volume_ratio=1.20,
+                higher_bias="short",
+                higher_phase="pullback",
+            )
+            matching.indicators["sma_fast_ratio"] = 0.0095
+            ordinary = make_symbol(
+                "BTC/USDT:USDT",
+                900_000,
+                100_000.0,
+                atr_pct=0.0060,
+                range_pct=0.0060,
+                volume_ratio=2.20,
+                higher_bias="long",
+                higher_phase="trend",
+            )
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[matching, ordinary],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "selected")
+            self.assertIn("BTC/USDT:USDT", filtered.summary["selected_symbols"])
+            for summary in filtered.summary["symbols"]:
+                self.assertNotIn("research_shadow_candidate", summary)
+
+    def test_candidate_filter_surfaces_eth_trend_impulse_research_slice_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2011.61,
+                atr_pct=0.003485125986505482,
+                range_pct=0.0132,
+                volume_ratio=5.5141865755332775,
+                higher_bias="short",
+                higher_phase="trend",
+            )
+            symbol.indicators["return_1bar"] = -0.0028008288470500187
+            symbol.indicators["return_24bars"] = -0.0072888599374254515
+            symbol.indicators["rsi_14"] = 38.704753597906446
+            symbol.indicators["sma_fast_ratio"] = 0.0006259269729755879
+            symbol.indicators["sma_slow_ratio"] = -0.005828156839350562
+            symbol.higher_timeframe["trend_strength"] = 3.0
+            symbol.recent_candles = [
+                Candle(timestamp_ms=1, open=2024.0, high=2025.8, low=2020.4, close=2023.0, volume=8000.0),
+                Candle(timestamp_ms=2, open=2023.0, high=2024.2, low=2018.9, close=2021.0, volume=8200.0),
+                Candle(timestamp_ms=3, open=2021.0, high=2022.0, low=2017.5, close=2019.0, volume=8100.0),
+                Candle(timestamp_ms=4, open=2019.0, high=2020.0, low=2015.9, close=2017.0, volume=8300.0),
+                Candle(timestamp_ms=5, open=2017.0, high=2018.0, low=2011.61, close=2011.61, volume=24000.0),
+            ]
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            summary = filtered.summary["symbols"][0]
+            self.assertEqual(summary["setup_phase"], "short_breakdown_chase")
+            self.assertIn("eth_trend_impulse_short_breakdown_chase", summary["research_slice_tags"])
+            self.assertIn("eth_trend_impulse_short_breakdown_chase_range_gt012", summary["research_slice_tags"])
+            self.assertNotIn(
+                "eth_trend_impulse_short_breakdown_chase_terminal_volume_gt3",
+                summary["research_slice_tags"],
+            )
+
+    def test_candidate_filter_surfaces_eth_trend_chase_terminal_volume_research_slice_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2011.61,
+                atr_pct=0.003485125986505482,
+                range_pct=0.0032150575929513377,
+                volume_ratio=3.1754674866625225,
+                higher_bias="short",
+                higher_phase="trend",
+            )
+            symbol.indicators["return_1bar"] = -0.0027246232965022488
+            symbol.indicators["return_24bars"] = -0.00427973223741096
+            symbol.indicators["rsi_14"] = 25.770823745974894
+            symbol.indicators["sma_fast_ratio"] = -0.004415150425972181
+            symbol.indicators["sma_slow_ratio"] = -0.00318768669263636
+            symbol.higher_timeframe["trend_strength"] = 3.0
+            symbol.recent_candles = [
+                Candle(timestamp_ms=1, open=2024.0, high=2025.8, low=2020.4, close=2023.0, volume=8000.0),
+                Candle(timestamp_ms=2, open=2023.0, high=2024.2, low=2018.9, close=2021.0, volume=8200.0),
+                Candle(timestamp_ms=3, open=2021.0, high=2022.0, low=2017.5, close=2019.0, volume=8100.0),
+                Candle(timestamp_ms=4, open=2019.0, high=2020.0, low=2015.9, close=2017.0, volume=8300.0),
+                Candle(timestamp_ms=5, open=2017.0, high=2018.0, low=2011.2, close=2011.61, volume=24000.0),
+            ]
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            summary = filtered.summary["symbols"][0]
+            self.assertEqual(summary["setup_phase"], "short_breakdown_chase")
+            self.assertIn("eth_trend_impulse_short_breakdown_chase", summary["research_slice_tags"])
+            self.assertIn(
+                "eth_trend_impulse_short_breakdown_chase_terminal_volume_gt3",
+                summary["research_slice_tags"],
+            )
+            self.assertNotIn(
+                "eth_trend_impulse_short_breakdown_chase_range_gt012",
+                summary["research_slice_tags"],
+            )
+
+    def test_research_slice_tags_surface_eth_trend_range_noise_washout(self) -> None:
+        symbol = make_symbol(
+            "ETH/USDT:USDT",
+            900_000,
+            2000.0,
+            atr_pct=0.0040,
+            range_pct=0.0129,
+            volume_ratio=23.0,
+            higher_bias="short",
+            higher_phase="trend",
+        )
+        symbol.indicators["rsi_14"] = 14.9
+        symbol.indicators["sma_fast_ratio"] = -0.0115
+        symbol.indicators["sma_slow_ratio"] = -0.0116
+        assessment = FreshEntryAssessment(
+            action="sell",
+            bias="short",
+            continuation_watch=False,
+            terminal_extension=False,
+            setup_phase="range_noise",
+            setup_confirmed=False,
+            candidate_reasons=("candidate_ok",),
+            risk_reasons=(),
+        )
+
+        tags = build_research_slice_tags(symbol, assessment)
+
+        self.assertIn("eth_trend_impulse_range_noise_range_gt012", tags)
+        self.assertIn("eth_trend_impulse_range_noise_washout", tags)
+
+    def test_research_slice_tags_surface_eth_reclaim_long_failed_breakdown(self) -> None:
+        symbol = make_symbol(
+            "ETH/USDT:USDT",
+            900_000,
+            2000.0,
+            atr_pct=0.0045,
+            range_pct=0.0035,
+            volume_ratio=1.20,
+            higher_bias="long",
+            higher_phase="trend",
+        )
+        symbol.indicators["return_1bar"] = 0.0003
+        symbol.indicators["sma_slow_ratio"] = 0.0055
+        symbol.recent_candles = [
+            Candle(timestamp_ms=1, open=2000.0, high=2002.0, low=1991.0, close=1995.0, volume=900.0),
+            Candle(timestamp_ms=2, open=1995.0, high=1998.0, low=1992.0, close=1994.0, volume=920.0),
+            Candle(timestamp_ms=3, open=1994.0, high=1999.0, low=1993.0, close=1996.0, volume=930.0),
+            Candle(timestamp_ms=4, open=1996.0, high=2000.0, low=1994.0, close=1997.0, volume=940.0),
+            Candle(timestamp_ms=5, open=1997.0, high=2003.0, low=1996.0, close=2000.0, volume=1200.0),
+        ]
+        assessment = FreshEntryAssessment(
+            action="buy",
+            bias="long",
+            continuation_watch=False,
+            terminal_extension=False,
+            setup_phase="long_pullback_reclaim_confirmed",
+            setup_confirmed=True,
+            candidate_reasons=("long_setup_pullback_reclaim_confirmed",),
+            risk_reasons=(),
+        )
+
+        traditional_context = build_traditional_signal_context(symbol, assessment)
+        tags = build_research_slice_tags(symbol, assessment)
+
+        self.assertEqual(traditional_context["pattern_label"], "failed_breakdown_reclaim")
+        self.assertIn("eth_reclaim_long_failed_breakdown_base", tags)
+        self.assertIn("eth_reclaim_long_failed_breakdown_sma_slow_gt004", tags)
+        self.assertIn("eth_reclaim_long_failed_breakdown_return1bar_0004", tags)
+        self.assertIn("eth_reclaim_long_failed_breakdown_sma_slow_gt004_return1bar_0004", tags)
+        self.assertIn("eth_reclaim_long_failed_breakdown_trend_sma_slow_gt004", tags)
+        self.assertIn("eth_reclaim_long_failed_breakdown_trend_return1bar_0004", tags)
 
     def test_traditional_signal_context_flags_failed_rebound_breakdown(self) -> None:
         symbol = make_symbol(
@@ -2862,6 +4070,107 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertGreaterEqual(summary["score"], 8.0)
             self.assertNotIn("eth_short_rebound_fail_trend_low_score", summary["reasons"])
 
+    def test_candidate_filter_blocks_weak_trend_shallow_eth_short_rebound_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+                setup_model_enable=False,
+                setup_model_path=root / "state" / "models" / "setup_edge_model_short_rebound_phase6.json",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+            filter_service.setup_model_bundle = {
+                "symbols": {
+                    "ETH/USDT:USDT": {
+                        "short_rebound_fail_confirmed": {
+                            "bias": 0.0002627517761615377,
+                            "weights": [0.0] * 16,
+                            "feature_means": [0.0] * 16,
+                            "feature_stds": [1.0] * 16,
+                            "metrics": {
+                                "mae_pct": 0.0021120966574394487,
+                                "positive_edge_rate": 0.22641509433962265,
+                                "avg_target_edge_pct": -0.0013228232755130515,
+                                "sample_count": 212,
+                            },
+                        }
+                    }
+                }
+            }
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2094.4,
+                atr_pct=0.0015776765251554776,
+                range_pct=0.0037433155080212424,
+                volume_ratio=4.783956161044254,
+                higher_bias="short",
+                higher_phase="trend",
+            )
+            symbol.indicators["return_1bar"] = -0.0027426481791862356
+            symbol.indicators["return_24bars"] = -0.002581173624405908
+            symbol.indicators["rsi_14"] = 39.16403231471686
+            symbol.indicators["sma_fast_ratio"] = -0.0006473397834035888
+            symbol.indicators["sma_slow_ratio"] = -0.0008649526035193755
+            symbol.higher_timeframe = {
+                "timeframe": "1h",
+                "return_12bars": -0.012266495630561924,
+                "sma_fast_ratio": -0.0022612363118980072,
+                "sma_slow_ratio": -0.00751056648523718,
+                "rsi_14": 29.587099926704013,
+                "trend_bias": "short",
+                "trend_direction": "short",
+                "trend_phase": "trend",
+                "trend_strength": 3.0,
+                "fast_sma_slope": -0.0010314973526487359,
+                "slow_sma_slope": -0.0004140765500832977,
+                "distance_to_fast_sma": -0.0022612363118980072,
+                "distance_to_slow_sma": -0.00751056648523718,
+                "distance_from_12bar_extreme": -0.005256875477463785,
+            }
+            symbol.recent_candles = [
+                Candle(timestamp_ms=1, open=2099.82, high=2099.82, low=2097.06, close=2099.09, volume=4807.183),
+                Candle(timestamp_ms=2, open=2099.10, high=2100.27, low=2098.51, close=2100.05, volume=3907.852),
+                Candle(timestamp_ms=3, open=2100.06, high=2100.06, low=2098.11, close=2099.19, volume=4314.542),
+                Candle(timestamp_ms=4, open=2099.19, high=2099.59, low=2098.30, close=2098.73, volume=3414.482),
+                Candle(timestamp_ms=5, open=2098.74, high=2099.69, low=2096.79, close=2098.76, volume=4229.159),
+                Candle(timestamp_ms=6, open=2098.76, high=2099.77, low=2093.88, close=2096.16, volume=11541.98),
+                Candle(timestamp_ms=7, open=2096.16, high=2097.27, low=2095.97, close=2096.90, volume=3511.123),
+                Candle(timestamp_ms=8, open=2096.89, high=2101.29, low=2096.84, close=2101.28, volume=4794.65),
+                Candle(timestamp_ms=9, open=2101.29, high=2103.90, low=2100.47, close=2101.82, volume=12611.845),
+                Candle(timestamp_ms=10, open=2101.81, high=2101.82, low=2100.31, close=2100.57, volume=4368.577),
+                Candle(timestamp_ms=11, open=2100.57, high=2101.99, low=2100.28, close=2101.42, volume=2674.491),
+                Candle(timestamp_ms=12, open=2101.42, high=2103.42, low=2100.66, close=2100.81, volume=9599.078),
+                Candle(timestamp_ms=13, open=2100.81, high=2101.62, low=2099.11, close=2099.11, volume=5567.287),
+                Candle(timestamp_ms=14, open=2099.12, high=2099.12, low=2095.38, close=2095.38, volume=5797.096),
+                Candle(timestamp_ms=15, open=2095.39, high=2095.97, low=2092.30, close=2093.24, volume=11243.556),
+                Candle(timestamp_ms=16, open=2093.24, high=2095.35, low=2088.63, close=2094.99, volume=61492.883),
+                Candle(timestamp_ms=17, open=2094.99, high=2095.76, low=2093.77, close=2095.76, volume=4932.871),
+                Candle(timestamp_ms=18, open=2095.76, high=2097.21, low=2095.39, close=2096.45, volume=5978.701),
+                Candle(timestamp_ms=19, open=2096.44, high=2096.81, low=2093.13, close=2094.15, volume=8435.40),
+                Candle(timestamp_ms=20, open=2094.16, high=2094.16, low=2092.40, close=2093.07, volume=5232.746),
+                Candle(timestamp_ms=21, open=2093.07, high=2095.57, low=2093.06, close=2094.99, volume=4599.71),
+                Candle(timestamp_ms=22, open=2095.00, high=2097.38, low=2094.99, close=2097.38, volume=3608.23),
+                Candle(timestamp_ms=23, open=2097.38, high=2100.54, low=2097.38, close=2100.16, volume=6767.497),
+                Candle(timestamp_ms=24, open=2100.16, high=2100.16, low=2092.32, close=2094.40, volume=44563.025),
+            ]
+            bundle = make_bundle(timestamp_ms=900_000, symbols=[symbol], equity_quote=200.0, free_quote=200.0)
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "filtered_hold")
+            self.assertEqual(filtered.summary["selected_symbols"], [])
+            summary = filtered.summary["symbols"][0]
+            self.assertEqual(summary["setup_model_signal"]["quality"], "weak_favorable")
+            self.assertEqual(summary["traditional_signal_context"]["support_break_pct"], 0.0)
+            self.assertIn("setup_model_weak_trend_shallow_short_rebound_fail", summary["reasons"])
+
     def test_candidate_filter_blocks_weak_favorable_eth_reclaim_short_rebound_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2949,6 +4258,100 @@ class StrategyOptimizationTests(unittest.TestCase):
             summary = filtered.summary["symbols"][0]
             self.assertEqual(summary["setup_model_signal"]["quality"], "weak_favorable")
             self.assertIn("setup_model_weak_reclaim_short_rebound_fail", summary["reasons"])
+
+    def test_candidate_filter_blocks_neutral_eth_reclaim_short_rebound_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+                setup_model_enable=False,
+                setup_model_path=root / "state" / "models" / "setup_edge_model_short_rebound_phase6.json",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            filter_service = CandidateFilter(settings, journal)
+            filter_service.setup_model_bundle = {
+                "symbols": {
+                    "ETH/USDT:USDT": {
+                        "short_rebound_fail_confirmed": {
+                            "bias": 0.0000638258019143845,
+                            "weights": [0.0] * 16,
+                            "feature_means": [0.0] * 16,
+                            "feature_stds": [1.0] * 16,
+                            "metrics": {
+                                "mae_pct": 0.0025795471425634176,
+                                "positive_edge_rate": 0.26200873362445415,
+                                "avg_target_edge_pct": -0.0013197933549880894,
+                                "sample_count": 229,
+                            },
+                        }
+                    }
+                }
+            }
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2014.32,
+                atr_pct=0.0021588285022098954,
+                range_pct=0.002298542436157169,
+                volume_ratio=1.7005992064963853,
+                higher_bias="short",
+                higher_phase="reclaim",
+            )
+            symbol.indicators["return_1bar"] = -0.0013089005235602524
+            symbol.indicators["return_24bars"] = -0.0024266796089579268
+            symbol.indicators["rsi_14"] = 24.30055955235784
+            symbol.indicators["sma_fast_ratio"] = -0.004355868930977058
+            symbol.indicators["sma_slow_ratio"] = -0.003108090510647532
+            symbol.higher_timeframe["trend_strength"] = 3.0
+            symbol.higher_timeframe["return_12bars"] = -0.009054775743223664
+            symbol.higher_timeframe["sma_fast_ratio"] = -0.003509852495618304
+            symbol.higher_timeframe["sma_slow_ratio"] = -0.009666013427712339
+            symbol.higher_timeframe["rsi_14"] = 45.76914320406775
+            symbol.recent_candles = [
+                Candle(timestamp_ms=1, open=2021.17, high=2021.4, low=2019.21, close=2021.28, volume=6169.734),
+                Candle(timestamp_ms=2, open=2021.27, high=2023.98, low=2020.8, close=2021.52, volume=6101.418),
+                Candle(timestamp_ms=3, open=2021.52, high=2021.95, low=2018.26, close=2020.24, volume=5347.296),
+                Candle(timestamp_ms=4, open=2020.24, high=2020.49, low=2018.4, close=2020.28, volume=3101.405),
+                Candle(timestamp_ms=5, open=2020.28, high=2022.46, low=2019.99, close=2021.11, volume=3591.709),
+                Candle(timestamp_ms=6, open=2021.1, high=2022.89, low=2020.87, close=2021.7, volume=5497.788),
+                Candle(timestamp_ms=7, open=2021.7, high=2030.92, low=2021.23, close=2028.28, volume=21999.145),
+                Candle(timestamp_ms=8, open=2028.28, high=2029.34, low=2026.15, close=2026.75, volume=10773.505),
+                Candle(timestamp_ms=9, open=2026.76, high=2027.7, low=2026.0, close=2027.18, volume=5343.851),
+                Candle(timestamp_ms=10, open=2027.17, high=2028.4, low=2026.45, close=2027.81, volume=4011.036),
+                Candle(timestamp_ms=11, open=2027.81, high=2029.42, low=2025.3, close=2027.93, volume=11564.493),
+                Candle(timestamp_ms=12, open=2027.93, high=2033.54, low=2025.29, close=2031.76, volume=15113.557),
+                Candle(timestamp_ms=13, open=2031.75, high=2032.12, low=2029.04, close=2031.61, volume=8415.474),
+                Candle(timestamp_ms=14, open=2031.61, high=2033.16, low=2028.65, close=2029.0, volume=9950.455),
+                Candle(timestamp_ms=15, open=2029.0, high=2029.0, low=2025.57, close=2025.99, volume=8330.784),
+                Candle(timestamp_ms=16, open=2026.0, high=2026.32, low=2020.64, close=2022.65, volume=12727.071),
+                Candle(timestamp_ms=17, open=2022.66, high=2025.11, low=2022.0, close=2024.15, volume=6853.54),
+                Candle(timestamp_ms=18, open=2024.16, high=2025.09, low=2021.15, close=2022.1, volume=4739.941),
+                Candle(timestamp_ms=19, open=2022.11, high=2022.81, low=2018.23, close=2020.32, volume=10495.37),
+                Candle(timestamp_ms=20, open=2020.32, high=2021.98, low=2019.36, close=2020.12, volume=7686.502),
+                Candle(timestamp_ms=21, open=2020.12, high=2023.21, low=2016.62, close=2018.61, volume=16377.348),
+                Candle(timestamp_ms=22, open=2018.62, high=2019.39, low=2015.0, close=2016.96, volume=10918.593),
+                Candle(timestamp_ms=23, open=2016.97, high=2018.93, low=2014.3, close=2014.32, volume=15886.422),
+            ]
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "filtered_hold")
+            self.assertEqual(filtered.summary["selected_symbols"], [])
+            summary = filtered.summary["symbols"][0]
+            self.assertEqual(summary["setup_model_signal"]["label"], "neutral")
+            self.assertEqual(summary["setup_model_signal"]["quality"], "neutral")
+            self.assertIn("setup_model_neutral_reclaim_short_rebound_fail", summary["reasons"])
 
     def test_candidate_filter_allows_eth_range_noise_short_with_strong_breakdown_structure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3092,6 +4495,435 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertGreater(report["top_positive_patterns"][0]["avg_target_edge_pct"], 0.0)
             self.assertEqual(report["top_negative_patterns"][0]["traditional_pattern_label"], "trend_breakdown_pressure")
             self.assertLess(report["top_negative_patterns"][0]["avg_target_edge_pct"], 0.0)
+
+    def test_setup_edge_study_discovers_stable_positive_slices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, market_type="future")
+
+            def positive_example(timestamp_ms: int, target_edge_pct: float) -> dict[str, object]:
+                return {
+                    "symbol": "ETH/USDT:USDT",
+                    "timestamp_ms": timestamp_ms,
+                    "action": "sell",
+                    "bias": "short",
+                    "setup_phase": "short_breakdown_confirmed",
+                    "higher_timeframe_phase": "reclaim",
+                    "higher_timeframe_direction": "short",
+                    "traditional_pattern_family": "short",
+                    "traditional_pattern_label": "failed_rebound_breakdown",
+                    "target_edge_pct": target_edge_pct,
+                    "conviction_score": 0.72,
+                    "terminal_risk": False,
+                    "return_1bar": -0.0015,
+                    "return_24bars": -0.0065,
+                    "sma_fast_ratio": -0.0045,
+                    "sma_slow_ratio": -0.0055,
+                    "rsi_14": 31.0,
+                    "volume_ratio_20": 0.95,
+                    "range_pct": 0.0035,
+                    "higher_trend_strength": 1.6,
+                    "traditional_rebound_failure_pct": 0.009,
+                    "traditional_support_break_pct": 0.0025,
+                    "traditional_range_expansion_ratio": 0.82,
+                    "traditional_compression_score": 0.34,
+                    "feature_vector": [0.0] * 16,
+                }
+
+            class _StubSetupStudyService(SetupEdgeModelService):
+                def _collect_examples(self, **kwargs):
+                    return [
+                        positive_example(1, 0.0012),
+                        positive_example(2, 0.0009),
+                        {
+                            "symbol": "ETH/USDT:USDT",
+                            "timestamp_ms": 3,
+                            "action": "sell",
+                            "bias": "short",
+                            "setup_phase": "short_breakdown_confirmed",
+                            "higher_timeframe_phase": "trend",
+                            "traditional_pattern_label": "trend_breakdown_pressure",
+                            "target_edge_pct": -0.0008,
+                            "conviction_score": 0.42,
+                            "terminal_risk": False,
+                            "feature_vector": [0.0] * 16,
+                        },
+                        {
+                            "symbol": "ETH/USDT:USDT",
+                            "timestamp_ms": 4,
+                            "action": "sell",
+                            "bias": "short",
+                            "setup_phase": "short_breakdown_confirmed",
+                            "higher_timeframe_phase": "trend",
+                            "traditional_pattern_label": "trend_breakdown_pressure",
+                            "target_edge_pct": -0.0010,
+                            "conviction_score": 0.45,
+                            "terminal_risk": False,
+                            "feature_vector": [0.0] * 16,
+                        },
+                        positive_example(5, 0.0011),
+                        positive_example(6, 0.0008),
+                    ]
+
+            report = _StubSetupStudyService(settings).study(
+                symbols_filter=None,
+                setup_phases=["short_breakdown_confirmed"],
+                lookback_days=120,
+                horizon_bars=6,
+                min_samples=2,
+                top_k=30,
+                discover_slices=True,
+                stability_splits=2,
+            )
+
+            discovery = report["discovered_slices"]
+            self.assertGreaterEqual(discovery["stable_positive_slice_count"], 1)
+            self.assertGreaterEqual(discovery["consistently_positive_slice_count"], 1)
+            top_slice = next(
+                row
+                for row in discovery["top_stable_positive_slices"]
+                if row["dimensions"].get("traditional_pattern_label") == "failed_rebound_breakdown"
+            )
+            self.assertEqual(top_slice["dimensions"]["traditional_pattern_label"], "failed_rebound_breakdown")
+            self.assertGreater(top_slice["avg_target_edge_pct"], 0.0)
+            self.assertEqual(top_slice["stability"]["positive_folds"], 2)
+            self.assertTrue(
+                any(
+                    row["dimensions"].get("action") == "sell"
+                    and row["dimensions"].get("setup_phase") == "short_breakdown_confirmed"
+                    and row["dimensions"].get("higher_timeframe_phase") == "reclaim"
+                    for row in discovery["top_stable_positive_slices"]
+                )
+            )
+
+    def test_setup_edge_study_reports_named_eth_range_action_target_slices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, market_type="future")
+
+            def item(
+                timestamp_ms: int,
+                *,
+                higher_phase: str,
+                target_edge_pct: float,
+                rsi_14: float = 50.0,
+                sma_fast_ratio: float = 0.0,
+                sma_slow_ratio: float = 0.0,
+                return_24bars: float = 0.0,
+            ) -> dict[str, object]:
+                return {
+                    "symbol": "ETH/USDT:USDT",
+                    "timestamp_ms": timestamp_ms,
+                    "action": "sell",
+                    "bias": "short",
+                    "setup_phase": "range_noise",
+                    "higher_timeframe_phase": higher_phase,
+                    "higher_timeframe_direction": "short",
+                    "traditional_pattern_family": "short",
+                    "traditional_pattern_label": "short_structure_mixed",
+                    "target_edge_pct": target_edge_pct,
+                    "conviction_score": 0.44,
+                    "terminal_risk": False,
+                    "return_1bar": 0.0002,
+                    "return_24bars": return_24bars,
+                    "sma_fast_ratio": sma_fast_ratio,
+                    "sma_slow_ratio": sma_slow_ratio,
+                    "rsi_14": rsi_14,
+                    "volume_ratio_20": 0.95,
+                    "range_pct": 0.0022,
+                    "higher_trend_strength": 0.8,
+                    "feature_vector": [0.0] * 16,
+                }
+
+            class _StubSetupStudyService(SetupEdgeModelService):
+                def _collect_examples(self, **kwargs):
+                    return [
+                        item(1, higher_phase="pullback", target_edge_pct=0.0050, rsi_14=78.0),
+                        item(2, higher_phase="pullback", target_edge_pct=0.0040, rsi_14=80.0),
+                        item(3, higher_phase="range", target_edge_pct=0.0030, sma_fast_ratio=0.0090),
+                        item(4, higher_phase="range", target_edge_pct=0.0025, sma_fast_ratio=0.0100),
+                        item(5, higher_phase="pullback", target_edge_pct=-0.0010, sma_slow_ratio=0.0030),
+                        item(6, higher_phase="trend", target_edge_pct=-0.0020, rsi_14=82.0),
+                    ]
+
+            report = _StubSetupStudyService(settings).study(
+                symbols_filter=None,
+                setup_phases=["range_noise"],
+                lookback_days=120,
+                horizon_bars=24,
+                min_samples=2,
+                top_k=10,
+                stability_splits=2,
+                target_slice_set="eth-range-action",
+            )
+
+            target_slices = report["target_slices"]
+            self.assertEqual(target_slices["slice_set"], "eth-range-action")
+            rows = {row["label"]: row for row in target_slices["slices"]}
+            self.assertEqual(rows["sell_range_noise_pullback_or_range"]["sample_count"], 5)
+            self.assertEqual(rows["sell_range_noise_pullback_rsi_gt75"]["sample_count"], 2)
+            self.assertGreater(rows["sell_range_noise_pullback_rsi_gt75"]["avg_target_edge_pct"], 0.0)
+            self.assertTrue(rows["sell_range_noise_pullback_rsi_gt75"]["meets_min_samples"])
+            self.assertEqual(rows["sell_range_noise_range_sma_fast_gt008"]["sample_count"], 2)
+            self.assertEqual(rows["sell_range_noise_pullback_sma_slow_002_004"]["sample_count"], 1)
+            self.assertFalse(rows["sell_range_noise_pullback_sma_slow_002_004"]["meets_min_samples"])
+
+    def test_setup_edge_study_reports_named_multi_reclaim_sma_target_slices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, market_type="future")
+
+            def item(
+                timestamp_ms: int,
+                *,
+                symbol: str,
+                target_edge_pct: float,
+                sma_slow_ratio: float,
+                action: str = "buy",
+                setup_phase: str = "long_pullback_reclaim_confirmed",
+                pattern_label: str = "failed_breakdown_reclaim",
+            ) -> dict[str, object]:
+                return {
+                    "symbol": symbol,
+                    "timestamp_ms": timestamp_ms,
+                    "action": action,
+                    "bias": "long",
+                    "setup_phase": setup_phase,
+                    "higher_timeframe_phase": "pullback",
+                    "higher_timeframe_direction": "long",
+                    "traditional_pattern_family": "long",
+                    "traditional_pattern_label": pattern_label,
+                    "target_edge_pct": target_edge_pct,
+                    "conviction_score": 0.52,
+                    "terminal_risk": False,
+                    "return_1bar": 0.0002,
+                    "return_24bars": 0.0040,
+                    "sma_fast_ratio": 0.0060,
+                    "sma_slow_ratio": sma_slow_ratio,
+                    "rsi_14": 45.0,
+                    "volume_ratio_20": 1.20,
+                    "range_pct": 0.0022,
+                    "higher_trend_strength": 0.9,
+                    "feature_vector": [0.0] * 16,
+                }
+
+            class _StubSetupStudyService(SetupEdgeModelService):
+                def _collect_examples(self, **kwargs):
+                    return [
+                        item(1, symbol="SOL/USDT:USDT", target_edge_pct=0.0030, sma_slow_ratio=0.0090),
+                        item(2, symbol="SOL/USDT:USDT", target_edge_pct=0.0020, sma_slow_ratio=0.0110),
+                        item(3, symbol="XRP/USDT:USDT", target_edge_pct=-0.0010, sma_slow_ratio=0.0100),
+                        item(4, symbol="BTC/USDT:USDT", target_edge_pct=0.0010, sma_slow_ratio=0.0120),
+                        item(5, symbol="ETH/USDT:USDT", target_edge_pct=0.0005, sma_slow_ratio=0.0030),
+                        item(
+                            6,
+                            symbol="SOL/USDT:USDT",
+                            target_edge_pct=-0.0020,
+                            sma_slow_ratio=0.0100,
+                            action="sell",
+                        ),
+                    ]
+
+            report = _StubSetupStudyService(settings).study(
+                symbols_filter=None,
+                setup_phases=["long_pullback_reclaim_confirmed"],
+                lookback_days=90,
+                horizon_bars=6,
+                min_samples=2,
+                top_k=10,
+                stability_splits=2,
+                target_slice_set="multi-reclaim-sma-action",
+            )
+
+            target_slices = report["target_slices"]
+            self.assertEqual(target_slices["slice_set"], "multi-reclaim-sma-action")
+            rows = {row["label"]: row for row in target_slices["slices"]}
+            self.assertEqual(rows["buy_reclaim_failed_breakdown_any_sma"]["sample_count"], 5)
+            self.assertEqual(rows["buy_reclaim_failed_breakdown_sma_slow_gt008"]["sample_count"], 4)
+            self.assertGreater(rows["buy_reclaim_failed_breakdown_sma_slow_gt008"]["avg_target_edge_pct"], 0.0)
+            self.assertTrue(rows["buy_reclaim_failed_breakdown_sma_slow_gt008"]["meets_min_samples"])
+            self.assertEqual(rows["sol_buy_reclaim_failed_breakdown_any_sma"]["sample_count"], 2)
+            self.assertEqual(rows["xrp_buy_reclaim_failed_breakdown_sma_slow_gt004"]["sample_count"], 1)
+            self.assertEqual(rows["sol_buy_reclaim_failed_breakdown_sma_slow_gt008"]["sample_count"], 2)
+            self.assertTrue(rows["sol_buy_reclaim_failed_breakdown_sma_slow_gt008"]["meets_min_samples"])
+            self.assertEqual(rows["xrp_buy_reclaim_failed_breakdown_sma_slow_gt008"]["sample_count"], 1)
+            self.assertFalse(rows["xrp_buy_reclaim_failed_breakdown_sma_slow_gt008"]["meets_min_samples"])
+            self.assertEqual(rows["eth_buy_reclaim_failed_breakdown_sma_slow_gt008"]["sample_count"], 0)
+
+    def test_setup_edge_study_reports_named_multi_range_action_target_slices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, market_type="future")
+
+            def item(
+                timestamp_ms: int,
+                *,
+                symbol: str,
+                higher_phase: str,
+                target_edge_pct: float,
+                return_24bars: float = 0.0,
+                sma_fast_ratio: float = 0.0,
+                rsi_14: float = 50.0,
+                action: str = "sell",
+                setup_phase: str = "range_noise",
+            ) -> dict[str, object]:
+                return {
+                    "symbol": symbol,
+                    "timestamp_ms": timestamp_ms,
+                    "action": action,
+                    "bias": "short",
+                    "setup_phase": setup_phase,
+                    "higher_timeframe_phase": higher_phase,
+                    "higher_timeframe_direction": "short",
+                    "traditional_pattern_family": "short",
+                    "traditional_pattern_label": "short_structure_mixed",
+                    "target_edge_pct": target_edge_pct,
+                    "conviction_score": 0.46,
+                    "terminal_risk": False,
+                    "return_1bar": 0.0002,
+                    "return_24bars": return_24bars,
+                    "sma_fast_ratio": sma_fast_ratio,
+                    "sma_slow_ratio": 0.0020,
+                    "rsi_14": rsi_14,
+                    "volume_ratio_20": 1.10,
+                    "range_pct": 0.0022,
+                    "higher_trend_strength": 0.8,
+                    "feature_vector": [0.0] * 16,
+                }
+
+            class _StubSetupStudyService(SetupEdgeModelService):
+                def _collect_examples(self, **kwargs):
+                    return [
+                        item(1, symbol="SOL/USDT:USDT", higher_phase="pullback", target_edge_pct=0.0040, sma_fast_ratio=0.0090),
+                        item(2, symbol="XRP/USDT:USDT", higher_phase="pullback", target_edge_pct=0.0030, sma_fast_ratio=0.0100),
+                        item(3, symbol="BTC/USDT:USDT", higher_phase="range", target_edge_pct=0.0025, return_24bars=0.0130),
+                        item(4, symbol="ETH/USDT:USDT", higher_phase="range", target_edge_pct=0.0015, return_24bars=0.0040),
+                        item(5, symbol="SOL/USDT:USDT", higher_phase="pullback", target_edge_pct=0.0020, rsi_14=78.0),
+                        item(6, symbol="BTC/USDT:USDT", higher_phase="pullback", target_edge_pct=-0.0010, return_24bars=0.0140),
+                        item(
+                            7,
+                            symbol="SOL/USDT:USDT",
+                            higher_phase="pullback",
+                            target_edge_pct=0.0060,
+                            sma_fast_ratio=0.0110,
+                            setup_phase="short_rebound_fail_confirmed",
+                        ),
+                        item(
+                            8,
+                            symbol="SOL/USDT:USDT",
+                            higher_phase="range",
+                            target_edge_pct=-0.0030,
+                            return_24bars=0.0140,
+                            action="buy",
+                        ),
+                    ]
+
+            report = _StubSetupStudyService(settings).study(
+                symbols_filter=None,
+                setup_phases=["range_noise", "short_rebound_fail_confirmed"],
+                lookback_days=120,
+                horizon_bars=6,
+                min_samples=2,
+                top_k=10,
+                stability_splits=2,
+                target_slice_set="multi-range-action",
+            )
+
+            target_slices = report["target_slices"]
+            self.assertEqual(target_slices["slice_set"], "multi-range-action")
+            rows = {row["label"]: row for row in target_slices["slices"]}
+            self.assertEqual(rows["sell_range_noise_pullback_or_range"]["sample_count"], 6)
+            self.assertEqual(rows["sell_pullback_sma_fast_gt008"]["sample_count"], 3)
+            self.assertEqual(rows["sell_range_noise_pullback_sma_fast_gt008"]["sample_count"], 2)
+            self.assertEqual(rows["sell_range_return24_gt012"]["sample_count"], 1)
+            self.assertFalse(rows["sell_range_return24_gt012"]["meets_min_samples"])
+            self.assertEqual(rows["sell_pullback_return24_gt012"]["sample_count"], 1)
+            self.assertEqual(rows["sell_range_noise_pullback_rsi_gt75"]["sample_count"], 1)
+            self.assertEqual(rows["sell_range_return24_003_006"]["sample_count"], 1)
+            self.assertGreater(rows["sell_range_noise_pullback_sma_fast_gt008"]["avg_target_edge_pct"], 0.0)
+            self.assertTrue(rows["sell_range_noise_pullback_sma_fast_gt008"]["meets_min_samples"])
+
+    def test_setup_edge_study_reports_named_eth_reclaim_long_target_slices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, market_type="future")
+
+            def item(
+                timestamp_ms: int,
+                *,
+                target_edge_pct: float,
+                sma_slow_ratio: float,
+                return_1bar: float,
+                higher_phase: str = "trend",
+                action: str = "buy",
+                pattern_label: str = "failed_breakdown_reclaim",
+            ) -> dict[str, object]:
+                return {
+                    "symbol": "ETH/USDT:USDT",
+                    "timestamp_ms": timestamp_ms,
+                    "action": action,
+                    "bias": "long",
+                    "setup_phase": "long_pullback_reclaim_confirmed",
+                    "higher_timeframe_phase": higher_phase,
+                    "higher_timeframe_direction": "long",
+                    "traditional_pattern_family": "long",
+                    "traditional_pattern_label": pattern_label,
+                    "target_edge_pct": target_edge_pct,
+                    "conviction_score": 0.54,
+                    "terminal_risk": False,
+                    "return_1bar": return_1bar,
+                    "return_24bars": 0.0030,
+                    "sma_fast_ratio": 0.0050,
+                    "sma_slow_ratio": sma_slow_ratio,
+                    "rsi_14": 53.0,
+                    "volume_ratio_20": 1.10,
+                    "range_pct": 0.0024,
+                    "higher_trend_strength": 1.3,
+                    "feature_vector": [0.0] * 16,
+                }
+
+            class _StubSetupStudyService(SetupEdgeModelService):
+                def _collect_examples(self, **kwargs):
+                    return [
+                        item(1, target_edge_pct=0.0020, sma_slow_ratio=0.0050, return_1bar=0.0002),
+                        item(2, target_edge_pct=0.0015, sma_slow_ratio=0.0060, return_1bar=0.0003),
+                        item(3, target_edge_pct=-0.0010, sma_slow_ratio=0.0030, return_1bar=0.0002),
+                        item(4, target_edge_pct=0.0010, sma_slow_ratio=0.0050, return_1bar=0.0005),
+                        item(5, target_edge_pct=0.0005, sma_slow_ratio=0.0050, return_1bar=0.0002, higher_phase="pullback"),
+                        item(
+                            6,
+                            target_edge_pct=-0.0020,
+                            sma_slow_ratio=0.0060,
+                            return_1bar=0.0002,
+                            action="sell",
+                        ),
+                    ]
+
+            report = _StubSetupStudyService(settings).study(
+                symbols_filter=None,
+                setup_phases=["long_pullback_reclaim_confirmed"],
+                lookback_days=120,
+                horizon_bars=12,
+                min_samples=2,
+                top_k=10,
+                stability_splits=2,
+                target_slice_set="eth-reclaim-long-action",
+            )
+
+            target_slices = report["target_slices"]
+            self.assertEqual(target_slices["slice_set"], "eth-reclaim-long-action")
+            rows = {row["label"]: row for row in target_slices["slices"]}
+            self.assertEqual(rows["eth_buy_reclaim_failed_breakdown_any_sma"]["sample_count"], 5)
+            self.assertEqual(rows["eth_buy_reclaim_failed_breakdown_sma_slow_gt004"]["sample_count"], 4)
+            self.assertEqual(rows["eth_buy_reclaim_failed_breakdown_return1bar_0004"]["sample_count"], 4)
+            self.assertEqual(rows["eth_buy_reclaim_failed_breakdown_sma_slow_gt004_return1bar_0004"]["sample_count"], 3)
+            self.assertEqual(rows["eth_buy_reclaim_failed_breakdown_trend_sma_slow_gt004"]["sample_count"], 3)
+            self.assertEqual(rows["eth_buy_reclaim_failed_breakdown_trend_return1bar_0004"]["sample_count"], 3)
+            self.assertGreater(
+                rows["eth_buy_reclaim_failed_breakdown_sma_slow_gt004_return1bar_0004"]["avg_target_edge_pct"],
+                0.0,
+            )
+            self.assertTrue(rows["eth_buy_reclaim_failed_breakdown_sma_slow_gt004_return1bar_0004"]["meets_min_samples"])
 
     def test_candidate_filter_preserves_ranked_symbol_order_in_filtered_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9066,6 +10898,599 @@ class StrategyOptimizationTests(unittest.TestCase):
                 report["aggregate"]["by_entry_thesis"],
             )
 
+    def test_signal_review_groups_research_slice_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+
+            research_slice_tags = [
+                "eth_range_action_base",
+                "eth_range_action_range",
+                "eth_range_action_range_return24_gt012",
+            ]
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                300_000,
+                2050.0,
+                atr_pct=0.0035,
+                range_pct=0.0040,
+                volume_ratio=1.20,
+                higher_bias="short",
+                higher_phase="range",
+            )
+            symbol.candidate_context = {
+                "eligible": True,
+                "manage_only": False,
+                "score": 4.2,
+                "higher_timeframe_bias": "short",
+                "higher_timeframe_phase": "range",
+                "bars_since_last_action": None,
+                "setup_phase": "range_noise",
+                "setup_confirmed": False,
+                "phase_match_score": -0.15,
+                "research_slice_tags": research_slice_tags,
+                "reasons": ["candidate_ok"],
+            }
+            bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=bundle,
+                decision_action="sell",
+                final_action="sell",
+                symbol="ETH/USDT:USDT",
+                confidence=0.77,
+                raw_payload_extra={
+                    "candidate_filter": {
+                        "status": "selected",
+                        "selected_symbols": ["ETH/USDT:USDT"],
+                        "symbols": [
+                            {
+                                "symbol": "ETH/USDT:USDT",
+                                "eligible": True,
+                                "manage_only": False,
+                                "setup_phase": "range_noise",
+                                "higher_timeframe_phase": "range",
+                                "research_slice_tags": research_slice_tags,
+                                "reasons": ["candidate_ok"],
+                            }
+                        ],
+                    }
+                },
+            )
+
+            service = FakeReviewService(
+                settings,
+                journal,
+                candles_by_symbol={
+                    "ETH/USDT:USDT": [
+                        [300_000, 2050.0, 2052.0, 2048.0, 2050.0, 1000.0],
+                        [600_000, 2050.0, 2051.0, 2020.0, 2024.0, 1200.0],
+                    ],
+                },
+            )
+            report = service.signal_review(limit=10, horizon_bars=1, threshold_pct=0.003)
+            reviewed = [item for item in report["reviews"] if item.get("status") == "reviewed"]
+
+            self.assertEqual(len(reviewed), 1)
+            self.assertIn("eth_range_action_range_return24_gt012", reviewed[0]["research_slice_tags"])
+            by_tag = report["aggregate"]["by_research_slice_tag"]
+            self.assertEqual(by_tag["counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(by_tag["eth_range_action_range_return24_gt012"]["reviewed"], 1)
+
+    def test_signal_review_rebuilds_missing_research_slice_tags_from_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                300_000,
+                2050.0,
+                atr_pct=0.0035,
+                range_pct=0.0040,
+                volume_ratio=1.20,
+                higher_bias="short",
+                higher_phase="range",
+            )
+            symbol.candidate_context = {
+                "eligible": True,
+                "manage_only": False,
+                "score": 4.2,
+                "higher_timeframe_bias": "short",
+                "higher_timeframe_phase": "range",
+                "bars_since_last_action": None,
+                "setup_phase": "range_noise",
+                "setup_confirmed": False,
+                "phase_match_score": -0.15,
+                "reasons": ["candidate_ok"],
+            }
+            bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=bundle,
+                decision_action="sell",
+                final_action="sell",
+                symbol="ETH/USDT:USDT",
+                confidence=0.77,
+                raw_payload_extra={
+                    "candidate_filter": {
+                        "status": "selected",
+                        "selected_symbols": ["ETH/USDT:USDT"],
+                        "symbols": [
+                            {
+                                "symbol": "ETH/USDT:USDT",
+                                "eligible": True,
+                                "manage_only": False,
+                                "setup_phase": "range_noise",
+                                "higher_timeframe_phase": "range",
+                                "reasons": ["candidate_ok"],
+                            }
+                        ],
+                    }
+                },
+            )
+
+            service = FakeReviewService(
+                settings,
+                journal,
+                candles_by_symbol={
+                    "ETH/USDT:USDT": [
+                        [300_000, 2050.0, 2052.0, 2048.0, 2050.0, 1000.0],
+                        [600_000, 2050.0, 2051.0, 2020.0, 2024.0, 1200.0],
+                    ],
+                },
+            )
+            report = service.signal_review(limit=10, horizon_bars=1, threshold_pct=0.003)
+            reviewed = [item for item in report["reviews"] if item.get("status") == "reviewed"]
+
+            self.assertEqual(len(reviewed), 1)
+            self.assertIn("eth_range_action_range_return24_gt012", reviewed[0]["research_slice_tags"])
+            self.assertIn("eth_range_action_range_sma_slow_gt008", reviewed[0]["research_slice_tags"])
+            by_tag = report["aggregate"]["by_research_slice_tag"]
+            self.assertEqual(by_tag["counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(by_tag["counts"]["eth_range_action_range_sma_slow_gt008"], 1)
+
+    def test_research_slice_scan_reads_existing_walk_forward_backtest_databases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            walk_forward_root = root / "walk-forward"
+            backtest_dir = walk_forward_root / "01-demo" / "backtest"
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                state_dir=backtest_dir,
+                snapshot_dir=backtest_dir / "snapshots",
+                decision_dir=backtest_dir / "decisions",
+                log_dir=backtest_dir / "logs",
+                db_path=backtest_dir / "qount.db",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                300_000,
+                2050.0,
+                atr_pct=0.0035,
+                range_pct=0.0040,
+                volume_ratio=1.20,
+                higher_bias="short",
+                higher_phase="range",
+            )
+            bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=bundle,
+                decision_action="sell",
+                final_action="sell",
+                symbol="ETH/USDT:USDT",
+                confidence=0.77,
+            )
+            (walk_forward_root / "walk_forward.json").write_text(
+                json.dumps(
+                    {
+                        "mode": "walk_forward",
+                        "aggregate": {"sum_realized_return_pct": 0.12},
+                        "windows": [
+                            {
+                                "label": "demo",
+                                "backtest_artifact_dir": str(backtest_dir),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = research_slice_scan(
+                walk_forward_root,
+                symbols_filter=["ETH/USDT"],
+                target_tags=["eth_range_action_range_return24_gt012"],
+            )
+
+            self.assertEqual(report["source_mode"], "walk_forward")
+            self.assertEqual(report["backtest_count"], 1)
+            self.assertEqual(report["walk_forward_aggregate"]["sum_realized_return_pct"], 0.12)
+            self.assertEqual(report["snapshot_research_slice_tag_counts"]["eth_range_action_base"], 1)
+            self.assertEqual(report["snapshot_research_slice_tag_counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(report["ai_decision_research_slice_tag_counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(report["risk_final_research_slice_tag_counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(report["target_snapshot_research_slice_tag_counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(report["target_ai_decision_research_slice_tag_counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(report["target_risk_final_research_slice_tag_counts"]["eth_range_action_range_return24_gt012"], 1)
+            self.assertEqual(report["windows"][0]["label"], "demo")
+
+    def test_research_slice_scan_discovers_nested_research_run_collections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            collection_root = root / "research-runs"
+
+            def make_backtest_dir(run_label: str, closes: list[float]) -> Path:
+                backtest_dir = collection_root / run_label / "01-demo" / "backtest"
+                settings = make_settings(
+                    root,
+                    market_type="future",
+                    symbols=("ETH/USDT:USDT",),
+                    state_dir=backtest_dir,
+                    snapshot_dir=backtest_dir / "snapshots",
+                    decision_dir=backtest_dir / "decisions",
+                    log_dir=backtest_dir / "logs",
+                    db_path=backtest_dir / "qount.db",
+                )
+                journal = Journal(settings.db_path)
+                journal.ensure_schema()
+                for index, close in enumerate(closes, start=1):
+                    symbol = make_symbol(
+                        "ETH/USDT:USDT",
+                        300_000 * index,
+                        close,
+                        atr_pct=0.0035,
+                        range_pct=0.0040,
+                        volume_ratio=1.20,
+                        higher_bias="short",
+                        higher_phase="range",
+                    )
+                    bundle = make_bundle(
+                        timestamp_ms=300_000 * index,
+                        symbols=[symbol],
+                        equity_quote=200.0,
+                        free_quote=200.0,
+                    )
+                    record_run(
+                        journal,
+                        settings,
+                        bundle=bundle,
+                        decision_action="sell",
+                        final_action="sell",
+                        symbol="ETH/USDT:USDT",
+                        confidence=0.77,
+                    )
+                return backtest_dir
+
+            make_backtest_dir("run-a", [100.0, 90.0])
+            make_backtest_dir("run-b", [120.0, 108.0])
+
+            report = research_slice_scan(
+                collection_root,
+                symbols_filter=["ETH/USDT"],
+                target_tags=[
+                    "eth_range_action_range_return24_gt012",
+                    "eth_range_action_pullback_sma_slow_gt008",
+                ],
+                horizon_bars=[1],
+                contract_market=True,
+                fee_pct=0.0004,
+                slippage_pct=0.0002,
+            )
+
+            labels = {window["label"] for window in report["windows"]}
+            summary = report["target_snapshot_research_slice_future_edge_by_horizon"]["1"][
+                "eth_range_action_range_return24_gt012"
+            ]
+            self.assertEqual(report["source_mode"], "backtest_collection")
+            self.assertEqual(report["backtest_count"], 2)
+            self.assertEqual(labels, {"run-a/demo", "run-b/demo"})
+            self.assertEqual(summary["sample_count"], 2)
+            self.assertEqual(set(summary["by_window"]), {"run-a/demo", "run-b/demo"})
+            blocked_tags = report["shadow_candidate_readiness"]["blocked_tags_ranked"]
+            self.assertEqual(blocked_tags[0]["tag"], "eth_range_action_range_return24_gt012")
+            self.assertEqual(blocked_tags[0]["total_sample_count"], 2)
+            self.assertEqual(blocked_tags[0]["positive_avg_horizon_count"], 1)
+            self.assertLess(
+                blocked_tags[0]["blocking_reason_count"],
+                blocked_tags[1]["blocking_reason_count"],
+            )
+
+    def test_research_slice_scan_targets_pullback_mid_sma_hypothesis_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            walk_forward_root = root / "walk-forward"
+            backtest_dir = walk_forward_root / "01-demo" / "backtest"
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                state_dir=backtest_dir,
+                snapshot_dir=backtest_dir / "snapshots",
+                decision_dir=backtest_dir / "decisions",
+                log_dir=backtest_dir / "logs",
+                db_path=backtest_dir / "qount.db",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                300_000,
+                2050.0,
+                atr_pct=0.0035,
+                range_pct=0.0040,
+                volume_ratio=1.20,
+                higher_bias="short",
+                higher_phase="pullback",
+            )
+            symbol.indicators["sma_slow_ratio"] = 0.0030
+            symbol.indicators["sma_fast_ratio"] = 0.0090
+            bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=bundle,
+                decision_action="sell",
+                final_action="sell",
+                symbol="ETH/USDT:USDT",
+                confidence=0.77,
+            )
+            (walk_forward_root / "walk_forward.json").write_text(
+                json.dumps(
+                    {
+                        "mode": "walk_forward",
+                        "aggregate": {"sum_realized_return_pct": 0.0},
+                        "windows": [
+                            {
+                                "label": "demo",
+                                "backtest_artifact_dir": str(backtest_dir),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = research_slice_scan(walk_forward_root, symbols_filter=["ETH/USDT"])
+
+            tag = "eth_range_action_pullback_sma_slow_002_004"
+            self.assertIn(tag, report["target_tags"])
+            self.assertEqual(report["snapshot_research_slice_tag_counts"][tag], 1)
+            self.assertEqual(report["target_snapshot_research_slice_tag_counts"][tag], 1)
+            self.assertEqual(report["target_ai_decision_research_slice_tag_counts"][tag], 1)
+            self.assertEqual(report["target_risk_final_research_slice_tag_counts"][tag], 1)
+            fast_tag = "eth_range_action_pullback_sma_fast_gt008"
+            multi_fast_tag = "multi_range_action_pullback_sma_fast_gt008"
+            self.assertIn(fast_tag, report["target_tags"])
+            self.assertIn(multi_fast_tag, report["target_tags"])
+            self.assertEqual(report["target_snapshot_research_slice_tag_counts"][fast_tag], 1)
+            self.assertEqual(report["target_snapshot_research_slice_tag_counts"][multi_fast_tag], 1)
+
+    def test_research_slice_scan_summarizes_snapshot_future_edge_by_horizon(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            walk_forward_root = root / "walk-forward"
+            backtest_dir = walk_forward_root / "01-demo" / "backtest"
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                state_dir=backtest_dir,
+                snapshot_dir=backtest_dir / "snapshots",
+                decision_dir=backtest_dir / "decisions",
+                log_dir=backtest_dir / "logs",
+                db_path=backtest_dir / "qount.db",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+
+            for index, close in enumerate([100.0, 90.0, 81.0], start=1):
+                symbol = make_symbol(
+                    "ETH/USDT:USDT",
+                    300_000 * index,
+                    close,
+                    atr_pct=0.0035,
+                    range_pct=0.0040,
+                    volume_ratio=1.20,
+                    higher_bias="short",
+                    higher_phase="range",
+                )
+                bundle = make_bundle(
+                    timestamp_ms=300_000 * index,
+                    symbols=[symbol],
+                    equity_quote=200.0,
+                    free_quote=200.0,
+                )
+                record_run(
+                    journal,
+                    settings,
+                    bundle=bundle,
+                    decision_action="sell",
+                    final_action="sell",
+                    symbol="ETH/USDT:USDT",
+                    confidence=0.77,
+                )
+
+            (walk_forward_root / "walk_forward.json").write_text(
+                json.dumps(
+                    {
+                        "mode": "walk_forward",
+                        "aggregate": {"sum_realized_return_pct": 0.12},
+                        "windows": [
+                            {
+                                "label": "demo",
+                                "backtest_artifact_dir": str(backtest_dir),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = research_slice_scan(
+                walk_forward_root,
+                symbols_filter=["ETH/USDT"],
+                target_tags=["eth_range_action_range_return24_gt012"],
+                horizon_bars=[1, 2],
+                contract_market=True,
+                fee_pct=0.0004,
+                slippage_pct=0.0002,
+            )
+
+            h1 = report["target_snapshot_research_slice_future_edge_by_horizon"]["1"]["eth_range_action_range_return24_gt012"]
+            h2 = report["target_snapshot_research_slice_future_edge_by_horizon"]["2"]["eth_range_action_range_return24_gt012"]
+            expected_h1_aligned = (100.0 / 90.0) - 1.0
+            expected_h1_edge = expected_h1_aligned - 0.0012
+            expected_h2_aligned = (100.0 / 81.0) - 1.0
+            expected_h2_edge = expected_h2_aligned - 0.0012
+
+            self.assertEqual(report["version"], "research_slice_scan_v2")
+            self.assertEqual(report["future_edge_horizon_bars"], [1, 2])
+            self.assertEqual(h1["sample_count"], 2)
+            self.assertEqual(h1["positive_edge_count"], 2)
+            self.assertAlmostEqual(h1["avg_aligned_return_pct"], expected_h1_aligned)
+            self.assertAlmostEqual(h1["avg_target_edge_pct"], expected_h1_edge)
+            self.assertEqual(h1["by_window"]["demo"]["sample_count"], 2)
+            self.assertEqual(h2["sample_count"], 1)
+            self.assertAlmostEqual(h2["avg_aligned_return_pct"], expected_h2_aligned)
+            self.assertAlmostEqual(h2["avg_target_edge_pct"], expected_h2_edge)
+            self.assertEqual(
+                report["windows"][0]["snapshot_research_slice_future_edge_by_horizon"]["1"]["eth_range_action_range_return24_gt012"]["sample_count"],
+                2,
+            )
+            readiness = report["shadow_candidate_readiness"]["tags"]["eth_range_action_range_return24_gt012"]
+            self.assertEqual(readiness["status"], "not_ready")
+            self.assertIn("h1_insufficient_samples", readiness["blocking_reasons"])
+
+    def test_research_slice_scan_marks_ready_tags_for_targeted_shadow_proof_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            walk_forward_root = root / "walk-forward"
+
+            def make_backtest_window(label: str, closes: list[float]) -> Path:
+                backtest_dir = walk_forward_root / label / "backtest"
+                settings = make_settings(
+                    root,
+                    market_type="future",
+                    symbols=("ETH/USDT:USDT",),
+                    state_dir=backtest_dir,
+                    snapshot_dir=backtest_dir / "snapshots",
+                    decision_dir=backtest_dir / "decisions",
+                    log_dir=backtest_dir / "logs",
+                    db_path=backtest_dir / "qount.db",
+                )
+                journal = Journal(settings.db_path)
+                journal.ensure_schema()
+                for index, close in enumerate(closes, start=1):
+                    symbol = make_symbol(
+                        "ETH/USDT:USDT",
+                        300_000 * index,
+                        close,
+                        atr_pct=0.0035,
+                        range_pct=0.0040,
+                        volume_ratio=1.20,
+                        higher_bias="short",
+                        higher_phase="range",
+                    )
+                    bundle = make_bundle(
+                        timestamp_ms=300_000 * index,
+                        symbols=[symbol],
+                        equity_quote=200.0,
+                        free_quote=200.0,
+                    )
+                    record_run(
+                        journal,
+                        settings,
+                        bundle=bundle,
+                        decision_action="sell",
+                        final_action="sell",
+                        symbol="ETH/USDT:USDT",
+                        confidence=0.77,
+                    )
+                return backtest_dir
+
+            first_dir = make_backtest_window("01-demo-a", [100.0, 95.0, 90.0, 85.0, 80.0])
+            second_dir = make_backtest_window("02-demo-b", [120.0, 114.0, 108.0, 102.0, 96.0])
+            (walk_forward_root / "walk_forward.json").write_text(
+                json.dumps(
+                    {
+                        "mode": "walk_forward",
+                        "aggregate": {"sum_realized_return_pct": 0.12},
+                        "windows": [
+                            {"label": "demo-a", "backtest_artifact_dir": str(first_dir)},
+                            {"label": "demo-b", "backtest_artifact_dir": str(second_dir)},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = research_slice_scan(
+                walk_forward_root,
+                symbols_filter=["ETH/USDT"],
+                target_tags=["eth_range_action_range_return24_gt012"],
+                horizon_bars=[1],
+                contract_market=True,
+                fee_pct=0.0004,
+                slippage_pct=0.0002,
+            )
+
+            readiness_report = report["shadow_candidate_readiness"]
+            self.assertEqual(report["offline_future_edge_readiness"], readiness_report)
+            tag_readiness = readiness_report["tags"]["eth_range_action_range_return24_gt012"]
+            self.assertEqual(readiness_report["status"], "has_ready_tags")
+            self.assertEqual(readiness_report["ready_tags"], ["eth_range_action_range_return24_gt012"])
+            self.assertEqual(tag_readiness["status"], "ready_for_targeted_shadow_proof")
+            self.assertEqual(tag_readiness["sample_count_by_horizon"]["1"], 8)
+            self.assertEqual(tag_readiness["positive_window_count_by_horizon"]["1"], 2)
+            self.assertEqual(tag_readiness["blocking_reasons"], [])
+            self.assertEqual(
+                report["promotion_note"],
+                "offline_research_slice_scan_only_not_candidate_gate",
+            )
+
     def test_signal_review_replay_current_risk_populates_entry_thesis_slices(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -9898,15 +12323,18 @@ class StrategyOptimizationTests(unittest.TestCase):
                 public_exchange=fake_exchange,
                 orchestrator_factory=_orchestrator_factory,
             )
+            external_artifact_dir = Path(tmp) / "tmp-backtest"
 
             result = service.run(
                 start=datetime.fromtimestamp(rows_5m[48][0] / 1000, tz=timezone.utc),
                 end=datetime.fromtimestamp(rows_5m[64][0] / 1000, tz=timezone.utc),
                 review_horizon_bars=3,
                 review_threshold_pct=0.003,
+                artifact_dir=str(external_artifact_dir),
             )
 
             self.assertEqual(result["mode"], "backtest")
+            self.assertEqual(Path(result["artifact_dir"]), external_artifact_dir)
             self.assertGreaterEqual(result["runs_completed"], 10)
             self.assertGreaterEqual(result["order_stats"]["paper_filled"], 1)
             self.assertGreater(result["performance"]["final_equity_quote"], settings.paper_starting_quote)
@@ -9921,6 +12349,9 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertTrue(result["setup_model"]["backtest_window"]["oos_safe"])
             self.assertEqual(result["audit_context"]["rule_mode"], settings.rule_mode)
             self.assertEqual(result["audit_context"]["market_type"], settings.market_type)
+            self.assertEqual(result["audit_context"]["ai_temperature"], settings.ai_temperature)
+            self.assertEqual(result["audit_context"]["trailing_profit_arm_pct"], settings.trailing_profit_arm_pct)
+            self.assertEqual(result["audit_context"]["trailing_profit_retrace_pct"], settings.trailing_profit_retrace_pct)
             self.assertEqual(result["audit_context"]["paper_starting_quote"], settings.paper_starting_quote)
             review_payload = json.loads(Path(result["artifact_dir"], "review.json").read_text(encoding="utf-8"))
             self.assertIn("setup_model", review_payload)
@@ -9928,6 +12359,12 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertTrue(review_payload["setup_model"]["backtest_window"]["oos_safe"])
             self.assertTrue(Path(result["artifact_dir"], "summary.json").exists())
             self.assertTrue(Path(result["artifact_dir"], "review.json").exists())
+            persistent_dir = Path(result["persistent_artifact_dir"])
+            persistent_dir.relative_to(root / "state" / "research_runs")
+            self.assertTrue((persistent_dir / "summary.json").exists())
+            self.assertTrue((persistent_dir / "review.json").exists())
+            persistent_summary = json.loads((persistent_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(persistent_summary["persistent_artifact_dir"], str(persistent_dir))
 
     def test_backtest_service_supports_multi_symbol_same_cycle_processing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -10109,6 +12546,7 @@ class StrategyOptimizationTests(unittest.TestCase):
                 public_exchange=fake_exchange,
                 orchestrator_factory=_orchestrator_factory,
             )
+            external_artifact_dir = Path(tmp) / "tmp-walk-forward"
 
             result = service.run(
                 windows=[parse_walk_forward_window(f"synthetic={start.isoformat()},{end.isoformat()}")],
@@ -10124,16 +12562,21 @@ class StrategyOptimizationTests(unittest.TestCase):
                 review_threshold_pct=0.003,
                 starting_quote=None,
                 max_bars_per_window=12,
+                artifact_dir=str(external_artifact_dir),
                 research_profile="eth-only",
             )
 
             self.assertEqual(result["mode"], "walk_forward")
             self.assertTrue(result["complete"])
+            self.assertEqual(Path(result["artifact_dir"]), external_artifact_dir)
             self.assertEqual(result["max_bars_per_window"], 12)
             self.assertEqual(result["window_count"], 1)
             self.assertEqual(result["aggregate"]["oos_safe_windows"], 1)
             self.assertEqual(result["audit_context"]["rule_mode"], settings.rule_mode)
             self.assertEqual(result["audit_context"]["market_type"], settings.market_type)
+            self.assertEqual(result["audit_context"]["ai_temperature"], 0.0)
+            self.assertEqual(result["audit_context"]["trailing_profit_arm_pct"], 0.0018)
+            self.assertEqual(result["audit_context"]["trailing_profit_retrace_pct"], 0.003)
             self.assertEqual(result["audit_context"]["paper_starting_quote"], settings.paper_starting_quote)
             self.assertEqual(result["audit_context"]["research_profile"], "eth-only")
             window = result["windows"][0]
@@ -10147,10 +12590,20 @@ class StrategyOptimizationTests(unittest.TestCase):
             self.assertFalse(partial_payload["complete"])
             self.assertEqual(partial_payload["max_bars_per_window"], 12)
             self.assertEqual(partial_payload["window_count"], 1)
+            self.assertEqual(partial_payload["audit_context"]["ai_temperature"], 0.0)
+            self.assertEqual(partial_payload["audit_context"]["trailing_profit_arm_pct"], 0.0018)
+            self.assertEqual(partial_payload["audit_context"]["trailing_profit_retrace_pct"], 0.003)
             self.assertEqual(partial_payload["audit_context"]["research_profile"], "eth-only")
             child_summary = json.loads(Path(window["backtest_artifact_dir"], "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(child_summary["audit_context"]["ai_temperature"], 0.0)
+            self.assertEqual(child_summary["audit_context"]["trailing_profit_arm_pct"], 0.0018)
+            self.assertEqual(child_summary["audit_context"]["trailing_profit_retrace_pct"], 0.003)
             self.assertEqual(child_summary["audit_context"]["research_profile"], "eth-only")
             self.assertTrue(Path(result["artifact_dir"], "walk_forward.json").exists())
+            persistent_dir = Path(result["persistent_artifact_dir"])
+            persistent_dir.relative_to(root / "state" / "research_runs")
+            self.assertTrue((persistent_dir / "walk_forward.json").exists())
+            self.assertTrue((persistent_dir / "01-synthetic" / "backtest" / "summary.json").exists())
 
 
 if __name__ == "__main__":

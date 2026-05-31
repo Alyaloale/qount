@@ -80,6 +80,9 @@ class Settings:
     openai_api_key: str
     ai_model: str
     ai_timeout_seconds: int
+    ai_temperature: float
+    ai_decision_cache_enable: bool
+    ai_decision_cache_dir: Path
     rule_mode: str
     symbols: tuple[str, ...]
     timeframe: str
@@ -105,6 +108,7 @@ class Settings:
     hourly_model_path: Path
     setup_model_enable: bool
     setup_model_path: Path
+    research_shadow_candidate_tags: tuple[str, ...]
     min_expected_edge_pct: float
     max_net_directional_exposure_pct: float
     max_correlated_directional_exposure_pct: float
@@ -179,6 +183,9 @@ class Settings:
             openai_api_key=_env("QOUNT_OPENAI_API_KEY", "my-local-key") or "my-local-key",
             ai_model=_env("QOUNT_AI_MODEL", "gpt-5.4") or "gpt-5.4",
             ai_timeout_seconds=_env_int("QOUNT_AI_TIMEOUT_SECONDS", 40),
+            ai_temperature=_env_float("QOUNT_AI_TEMPERATURE", 0.2),
+            ai_decision_cache_enable=False,
+            ai_decision_cache_dir=state_dir / "research_cache" / "ai_decisions",
             rule_mode=_normalize_rule_mode(_env("QOUNT_RULE_MODE", "strict")),
             symbols=_env_list("QOUNT_SYMBOLS", ["BTC/USDT", "ETH/USDT"]),
             timeframe=_env("QOUNT_TIMEFRAME", "1h") or "1h",
@@ -210,6 +217,7 @@ class Settings:
                 _env("QOUNT_SETUP_MODEL_PATH", str(state_dir / "models" / "setup_edge_model.json"))
                 or str(state_dir / "models" / "setup_edge_model.json")
             ).expanduser(),
+            research_shadow_candidate_tags=(),
             min_expected_edge_pct=_env_float("QOUNT_MIN_EXPECTED_EDGE_PCT", 0.0025),
             max_net_directional_exposure_pct=_env_float("QOUNT_MAX_NET_DIRECTIONAL_EXPOSURE_PCT", 0.40),
             max_correlated_directional_exposure_pct=_env_float("QOUNT_MAX_CORRELATED_DIRECTIONAL_EXPOSURE_PCT", 0.30),
