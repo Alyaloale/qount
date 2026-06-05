@@ -759,7 +759,9 @@ S5  兜底：时序基础模型 offline overlay                ← 仅当 S2.2 G
 
 - **Purged K-Fold + Embargo CV**：S1.2 起所有 IC/模型评估默认口径。
 - **CPCV + Deflated Sharpe + PBO**：S2/S3 的模型与组合选择必须报告，量化"搜了 N 个配置后
-  夏普还剩多少可信"。
+  夏普还剩多少可信"。**Deflated Sharpe（`compute_directional_deflated_sharpe`）和 PBO/CSCV
+  （`compute_directional_pbo`）已在 `strategy-selection-scan` 落地并随每次 scan 输出**；
+  CPCV 多路径收益分布仍待补。
 - **样本唯一性加权**：重叠 horizon 样本按 uniqueness 降权。
 - **model card**：每个上线候选模型 dump 特征/区间/CV/DSR/PBO/SHAP，黑箱不进 gate。
 - **holdout 不变**：discovery 训练、validation_v1 once-only；validation 上看过结果再调 →
@@ -909,6 +911,10 @@ S0.1 地基已落地；S1'（频段 × 策略族选择扫描）**第一遍已全
 候选是一个**预测族** `4h xs_mom lb24/h6`，且它也只过了离线 sanity、被 fixed TP/SL exit
 否定，未到 paper。**计划仍停在 S1'，S2 重模型未启动，没有任何 promotion 证据。**
 
+> **2026-06-06 更新**：N1 全套反过拟合工具跑完后，该唯一候选已按 §7 **诚实退出**——
+> DSR ≈ 0.082、无可执行 exit 跑赢持有、~82% 收益来自单月，三者即满足全局退出条件。
+> 不为它消耗 once-only 日期。详见 **§11.7**。
+
 ### 11.2 S0–S5 实际进度
 
 ```text
@@ -940,6 +946,11 @@ scripts/strategy_selection_scan.py      ─┘
   / `--directional-stop-loss-pct`。
 - 横截面 IC → cell 的 `rank_ic_mean` / `effective_breadth` 字段。
 - purged/embargo CV → `--directional-purged-cv-folds` / `--directional-embargo-bars`。
+- Deflated Sharpe Ratio（§5/§9.x）→ `compute_directional_deflated_sharpe` + scan 顶层
+  `directional_deflated_sharpe`（单 scan 内多 cell 的多重检验惩罚，正态简化）。
+- PBO / CSCV（§5/§9.x）→ `compute_directional_pbo` + scan 顶层 `directional_pbo`
+  （按频段分组的 combinatorial symmetric CV 过拟合概率）。DSR / PBO 已落地；CPCV 多路径
+  收益分布、样本唯一性加权仍未落地，待 S2 前按需补。
 - CARRY 专线（§10.5）→ `--carry-model threshold_dual_leg` 及全套
   `--carry-*` 参数（basis source / tail stop / spot-perp gross / post-only economics）。
 
@@ -963,7 +974,20 @@ scripts/strategy_selection_scan.py      ─┘
 但**胜出 cell 仍不可晋级**：
 
 - fixed TP/SL triple-barrier 120 天四组全负（止损约止盈 2.18x），收益被路径止损 + 成本吃掉。
-- 月度不稳：2026-02 仅微正、2026-03 为负；purged-CV 第 2 fold（3/3–4/1）为负、IC 为负。
+- 波动率缩放 barrier（σ-scaled TP/SL）修正了非对称止损病、PnL 随 barrier 加宽单调改善，
+  但没有任何 σ 设置跑得赢"无 barrier 持有到期"的 close-exit 基线（best tp4/sl4=+0.165 <
+  close +0.297），可执行 path-dependent exit 仍未跑赢持有。
+- 月度不稳：2026-02 仅微正、2026-03 为负；purged-CV 第 2 fold（3/3–4/1）为负、IC 为负；
+  最佳 vol-barrier 仍 3 月负、~90% 收益来自 5 月单月。
+- entry 侧 regime dispersion 门 `thr0.034` 把 2026-03 由负翻正、4 月全 ≥ 0、Sharpe/回撤
+  都改善且总收益不变——首个真正缓解月度不稳的子步骤；但属 in-sample 阈值、5 月仍约 82%
+  收益、全是已看 discovery，仍需新完整 OOS once-only 复核才可能晋级。
+- Deflated Sharpe Ratio（§5/§9.x）：选出候选的 81-cell 网格 DSR ≈ 0.082、最佳 per-period
+  Sharpe 0.278 < 噪声期望最大值 0.407——网格内选择优势大概率是多重检验假象，是当前最强的
+  "不要急着进 S2"证据。
+- PBO / CSCV（§5/§9.x）：同网格 pbo 4h=0.020/1h=0.056/1d=0.214（全 < 0.5）。与 DSR 互补——
+  弱但排名稳定的横截面动量结构，但量级太弱（DSR≈0.08）不足以确认盈利；同频段 config 高相关
+  会让 PBO 偏低，低 PBO ≠ 低过拟合风险。
 - `jun01_04` 等只是已看窗口 sanity，不能当 promotion。
 
 `1d ts_mom`（原计划最看好的日频）已被 top12 扩币 120 天证伪（`sum=-2.67`，2/3/4 月全负）。
@@ -974,11 +998,27 @@ scripts/strategy_selection_scan.py      ─┘
 信号在 holdout 上有可交易、可执行的正 edge，而 `4h xs_mom` 的可执行 exit 尚未证明。
 
 ```text
-N1  4h xs_mom 的稳健 exit / 模型层 purged-CV / 新完整 OOS
-      —— close-to-close、stride、限仓 replay、simple fixed TP/SL、fixed-cell purged-CV
-         都已跑完，不要重复；下一刀只做"波动率缩放 barrier / 持仓管理"或新 OOS 日期。
-      门控：在新的 validation_v1 完整窗口上，带可执行 exit 仍有 post-cost 正 edge
-           且月度不全靠单月 → 才考虑进 S2（在 4h 上落 GBDT/meta-label）。
+N1  4h xs_mom 的稳健 exit / regime 过滤 / 新完整 OOS
+      —— close-to-close、stride、限仓 replay、simple fixed TP/SL、fixed-cell purged-CV、
+         波动率缩放 barrier(σ-scaled TP/SL)、entry 侧 regime dispersion 门 都已跑完，
+         不要重复。证据：(a) 所有路径 exit(fixed/σ-scaled barrier，及同类的部分止盈/移动
+         止损)都跑不赢"无 barrier 持有到期"的 close-exit 基线(best σ tp4/sl4=+0.165 <
+         close +0.297)，路径 exit 这条线已被证伪;(b) entry 侧 regime dispersion 门
+         `thr0.034`(跳过最低 ~25% dispersion bar)是首个在正确轴上的改善——总收益不变
+         (+0.299)、Sharpe 7.19→8.00、回撤 0.088→0.080、2026-03 由负翻正、4 月全 ≥ 0，
+         但属 in-sample 阈值选择、5 月仍约 82% 收益、且全是已看 discovery。
+         (c) 已按 §5/§9.x 补 Deflated Sharpe Ratio + PBO/CSCV：81-cell 网格 DSR ≈ 0.082
+         (最佳 per-period Sharpe 0.278 < 噪声期望最大值 0.407)、pbo 4h=0.020/1h=0.056/
+         1d=0.214。两者互补:**绝对量级不显著(DSR)但弱信号排名稳定(低 PBO)**——存在弱横截面
+         动量结构,量级不足以确认盈利(同频段 config 高相关还会让 PBO 偏低)。下一刀只剩一件事：
+         把 `thr0.034` 固定参数留到下一个完整独立 OOS 日期 once-only 复核(不再在已看窗口上
+         调阈值/调 exit)。
+      门控（已加硬）：在新的 validation_v1 完整窗口上，固定 `thr0.034` regime 门 + close-exit
+           仍有 post-cost 正 edge、月度不全靠单月、**且 DSR/PBO 可接受** → 才考虑进 S2；
+           否则按 §7 全局退出条件诚实退出。
+      【2026-06-06 判定】门控的 DSR 分支已先行触发：DSR ≈ 0.082 在新 OOS 前就证明网格内选择
+           优势不显著，且新 OOS 只多出 ~2 薄天不可能改变它 → 该候选按 §7 诚实退出，N1 关闭。
+           见 §11.7。
 N2  S-CARRY 只能等新的完整独立日期，或重做真实 hedge timing / basis-tail-aware exit；
       entry-only basis filter、simple hard stop、post-only economics 已证不够，不要重复。
 N3  5m 全族保持出局：只保留 cost-stress 证据；除非执行成本实测突破，不上 5m GBDT。
@@ -990,3 +1030,46 @@ N4  S2/S3/S4/S5 维持不启动，直到 N1 给出可执行正 edge。
 §6 / §10.7 的硬约束全部不变：live 关闭、不 forward paper、不放宽 broad gate、
 不在 discovery 上调参后当 promotion、validation_v1 once-only、Kronos / 外部模型不进
 candidate/risk/live、一轮只改一处。本节只校准计划与现实的对账，不放宽任何一条。
+
+### 11.7 诚实退出决策（2026-06-06，项目所有者确认）
+
+N1 反过拟合工具全部跑完后，唯一存活候选 `4h xs_mom lb24/h6` 按 §7 **诚实退出**。这是项目
+所有者在三选一（诚实退出 / 仍跑薄窗口 once-only / 攒更长 OOS）中明确选择的方向。
+
+**退出依据（三条同时成立，即 §7"搜了 N 个 cell 后该候选优势不可与噪声区分"）：**
+
+1. **DSR 分支已先于新 OOS 触发**：选出候选的 81-cell 网格 DSR ≈ `0.082`，最佳 per-period
+   Sharpe `0.278` < 81 次噪声下期望最大值 `0.407`。即该候选"网格内最优"在统计上与随机
+   挑最大不可区分；正态假设还高估了 DSR，真实只会更低。
+2. **可执行 exit 全线证伪**：fixed TP/SL、σ-scaled vol-barrier，以及同类部分止盈/移动止损
+   （都是路径依赖 exit），没有任何设置跑得赢"无 barrier 持有到期"的 close 基线
+   （best σ tp4/sl4 = `+0.165` < close `+0.297`）。能晋级的前提是可交易、可执行的正 edge，
+   而它不存在。
+3. **月度集中度未破**：即便最好的 entry 侧 regime 门 `thr0.034`（已是 N1 唯一在正确轴上的
+   改善）仍有约 82% 收益来自 2026-05 单月。
+
+**为什么不烧 once-only 日期**：once-only validation 日期是只能看一次的稀缺资源。2026-06-06
+相对该候选只多出 `2026-06-04..06` 约 2 天（4h 仅 ~12 根 bar）的未看数据，样本太薄，且即便
+为正也在数学上不可能把 DSR 从 `0.08` 拉到可接受门槛。把一次性资格消耗在这种窗口上是纯浪费，
+违背"先证伪、再投入"的纪律。`validation_v1` once-only 资格继续保留给未来真正够厚的独立窗口。
+
+**退出后的状态变更：**
+
+```text
+S1' 预测族晋级路径   ⛔ 关闭（4h xs_mom 候选按 §7 退出；1d ts_mom 早已被 top12 证伪）
+S2 / S3             ⛔ 维持不启动（无可执行正 edge 喂入）
+N1                  ✅ 关闭（不再在已看 2–5 月上加 exit/regime/阈值旋钮）
+```
+
+**研究转向（仍只做 research，全部硬约束不变）：**
+
+- 优先 §10 的**换频段 / 换特征源**：当前 16 维 5m/低频价量特征的横截面 alpha 量级（DSR≈0.08）
+  不足以支撑这套系统。下一刀应是**引入新的、文献上更稳的信息源**——微结构（盘口/成交不平衡）、
+  funding/basis 作为预测特征（非仅成本）、或时序基础模型特征 overlay（§10 / P6，仍 offline）——
+  而不是在已耗尽的特征集上继续堆模型或调参。
+- 或按 §7 末段**接受研究价值、停止追盈利**：若换频段/换特征源仍不能在 holdout 上给出统计
+  显著的 post-cost 正 edge，正确动作是承认"当前数据/成本结构下不足以支撑择时盈利"并停下，
+  把退出本身作为反过拟合纪律的延伸。两条路的取舍待新信息源的第一轮 kill-test 结果再定。
+
+**不变的硬约束**：§6 / §10.7 全部继承；live 关闭、不 forward paper、不放宽 broad gate、
+validation_v1 once-only、一轮只改一处。诚实退出不放宽任何一条，只是停止在已证伪的候选上投入。

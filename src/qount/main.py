@@ -29,6 +29,7 @@ from .strategy_selection import DEFAULT_CARRY_CAPITAL_MODEL
 from .strategy_selection import DEFAULT_CARRY_EXECUTION_COST_MODEL
 from .strategy_selection import DEFAULT_STRATEGY_SCAN_FAMILIES
 from .strategy_selection import DEFAULT_STRATEGY_SCAN_FREQUENCIES
+from .strategy_selection import DEFAULT_DIRECTIONAL_BARRIER_VOL_LOOKBACK_BARS
 from .strategy_selection import DEFAULT_DIRECTIONAL_EVALUATION_MODE
 from .strategy_selection import DEFAULT_DIRECTIONAL_EXIT_MODE
 from .strategy_selection import DEFAULT_DIRECTIONAL_EMBARGO_BARS
@@ -335,6 +336,30 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Research-only stop-loss barrier for --directional-exit-mode triple_barrier.",
+    )
+    strategy_scan.add_argument(
+        "--directional-barrier-vol-lookback-bars",
+        type=int,
+        default=DEFAULT_DIRECTIONAL_BARRIER_VOL_LOOKBACK_BARS,
+        help="Research-only lookback bars for volatility-scaled triple_barrier; 0 keeps fixed-pct barriers.",
+    )
+    strategy_scan.add_argument(
+        "--directional-take-profit-sigma",
+        type=float,
+        default=0.0,
+        help="Research-only take-profit barrier as a multiple of recent return sigma (needs vol lookback > 0).",
+    )
+    strategy_scan.add_argument(
+        "--directional-stop-loss-sigma",
+        type=float,
+        default=0.0,
+        help="Research-only stop-loss barrier as a multiple of recent return sigma (needs vol lookback > 0).",
+    )
+    strategy_scan.add_argument(
+        "--directional-regime-min-dispersion-pct",
+        type=float,
+        default=0.0,
+        help="Research-only cross-sectional regime gate; skip a bar when signal dispersion is below this. 0 disables.",
     )
     strategy_scan.add_argument(
         "--directional-purged-cv-folds",
@@ -672,6 +697,10 @@ def main() -> None:
             directional_exit_mode=args.directional_exit_mode,
             directional_take_profit_pct=args.directional_take_profit_pct,
             directional_stop_loss_pct=args.directional_stop_loss_pct,
+            directional_barrier_vol_lookback_bars=args.directional_barrier_vol_lookback_bars,
+            directional_take_profit_sigma=args.directional_take_profit_sigma,
+            directional_stop_loss_sigma=args.directional_stop_loss_sigma,
+            directional_regime_min_dispersion_pct=args.directional_regime_min_dispersion_pct,
             directional_purged_cv_folds=args.directional_purged_cv_folds,
             directional_embargo_bars=args.directional_embargo_bars,
             min_cross_section_symbols=args.min_cross_section_symbols,

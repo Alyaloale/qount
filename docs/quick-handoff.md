@@ -352,8 +352,17 @@ may_sum=+0.7414512205
 预测族；`--directional-overlap-mode all|stride` 用于降低 overlapping holding horizon 膨胀；
 `--directional-evaluation-mode portfolio_replay` / `--directional-max-open-positions` 用于限仓
 组合 replay；`--directional-exit-mode triple_barrier` / `--directional-take-profit-pct` /
-`--directional-stop-loss-pct` 用于 OHLC intrabar TP/SL barrier 复核。这些参数默认不变，
-不影响 live / `run-once`。top12 低频网格：
+`--directional-stop-loss-pct` 用于 OHLC intrabar TP/SL barrier 复核；
+`--directional-barrier-vol-lookback-bars` / `--directional-take-profit-sigma` /
+`--directional-stop-loss-sigma` 用于波动率缩放 barrier(σ 缩放 TP/SL,防泄漏,默认关闭,
+已证最佳仍跑不赢无 barrier 持有到期,不要重复);
+`--directional-regime-min-dispersion-pct` 用于 entry 侧 regime dispersion 门(各币 signal
+离散度低于阈值就跳过该 bar,纯决策时点,默认关闭;`thr0.034` 已证能把 3 月翻正且不降总收益,
+下一刀只把它固定留到新完整 OOS once-only 复核,不要在已看窗口再调阈值)。这些参数默认不变，
+不影响 live / `run-once`。scan 顶层还会输出 `directional_deflated_sharpe`(DSR) 与
+`directional_pbo`(PBO/CSCV,按频段分组)两类多重检验惩罚;注意选出候选的 81-cell 网格
+DSR ≈ 0.082(量级不显著)、pbo 4h=0.020/1h=0.056/1d=0.214(弱信号排名稳定但量级太弱),
+进 S2 前必须有可接受 DSR/PBO。top12 低频网格：
 `1h/4h/1d` × `xs_mom/xs_rev/ts_mom` × lookback `3/12/24` × holding `1/3/6`。
 
 ```text
@@ -629,11 +638,16 @@ python -m qount.main walk-forward \
 
 ## 下一步执行顺序
 
-1. 优先推进 `4h xs_mom lookback=24 holding=6` 的 S1.1/S1.2 后续：更稳健的 exit 设计、
-   模型层 purged-CV 或新完整 OOS，仍然只做 research；all-overlap、stride、限仓
-   portfolio replay、simple triple-barrier 和 fixed close/replay purged-CV 已跑完，
-   不要重复当下一刀。
-2. 不要重复 WLD/SOL entry-only basis filter，也不要重复 top12 1d TS-MOM sanity；两者已证不够。
-3. S-CARRY 只能等新的完整独立日期复核 WLD/SOL，或重做更真实的 hedge timing / basis 风险模型。
-4. 5m 预测族只保留 cost-stress 证据；除非执行成本实测突破，否则不继续 5m GBDT。
-5. 只有 `G_paper` 通过后才讨论 forward paper；只有 forward paper 后才讨论 `G_live`。
+> **2026-06-06 决策**：`4h xs_mom lb24/h6` 候选已按 §7 **诚实退出**（DSR ≈ 0.082、无可执行
+> exit 跑赢持有、~82% 收益来自单月）。**不要再在这个候选上做 exit / regime / 阈值复核，也
+> 不要为它消耗 once-only 日期。** 完整退出依据见 profit-engineering-plan.md §11.7。
+
+1. **不要**重复 `4h xs_mom` 的任何 exit / regime / purged-CV / triple-barrier 复核——N1 已
+   关闭，该候选 S2 晋级路径已关闭。
+2. 研究转向 profit-engineering-plan.md §10 的**换频段 / 换特征源**：微结构（盘口/成交不平衡）、
+   funding/basis 作为预测特征、或时序基础模型特征 overlay（offline）。对新信息源先跑最便宜的
+   kill-test（横截面 IC / DSR），不成立就按 §7 接受研究价值、停止追盈利。
+3. 不要重复 WLD/SOL entry-only basis filter，也不要重复 top12 1d TS-MOM sanity；两者已证不够。
+4. S-CARRY 只能等新的完整独立日期复核 WLD/SOL，或重做更真实的 hedge timing / basis 风险模型。
+5. 5m 预测族只保留 cost-stress 证据；除非执行成本实测突破，否则不继续 5m GBDT。
+6. 只有 `G_paper` 通过后才讨论 forward paper；只有 forward paper 后才讨论 `G_live`。

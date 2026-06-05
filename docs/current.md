@@ -39,6 +39,33 @@ live disabled
 - 2026-06-05 S1'（频段 × 策略族选择扫描）第一遍已全量跑完，结论是 CARRY 被 basis-tail
   证伪、唯一存活候选是预测族 `4h xs_mom lb24/h6` 但未过可执行 exit；计划与现实的对账见
   [profit-engineering-plan.md](profit-engineering-plan.md) §11，S2 重模型仍未启动。
+- 2026-06-05 已按 §11.5 N1 做 `4h xs_mom` 的波动率缩放 triple-barrier：vol-scaling 修正了
+  fixed barrier 的非对称止损病，PnL 随 barrier 加宽单调改善，但没有任何 σ 设置能跑赢"无
+  barrier 持有到期"的 close-exit 基线，最佳 `tp4/sl4` 仍只有 `+0.165`(< close `+0.297`)、
+  3 月仍负、~90% 收益来自 5 月单月。N1 门控未通过，**仍不进 S2**。
+- 2026-06-05 又按 N1 做 entry 侧 regime dispersion 门：`thr0.034` 总收益不变(`+0.299`)、
+  Sharpe `7.19→8.00`、回撤 `0.088→0.080`，并把 2026-03 从负翻正、4 月全部 ≥ 0——首个真正
+  改善月度稳健性的子步骤;但属 in-sample 阈值、5 月仍约 82% 收益、无新 OOS，N1 仍未过、
+  **不进 S2**;下一刀把 `thr0.034` 固定留到下一个完整 `validation_v1` once-only 复核。
+- 2026-06-05 已按 §5/§9.x 给 scan 补 Deflated Sharpe Ratio：在选出候选的 81-cell 网格上
+  DSR ≈ `0.082`，最佳 per-period Sharpe `0.278` < 噪声期望最大值 `0.407`——候选的网格内
+  选择优势大概率是多重检验假象。S2 门控加硬:新 OOS 正 + 可接受 DSR/PBO 才进 S2。
+- 2026-06-05 又补 PBO/CSCV：同一网格 pbo 4h=`0.020`/1h=`0.056`/1d=`0.214`(全 < 0.5)。
+  与 DSR 互补:存在弱但排名稳定的横截面动量结构,但量级(DSR≈0.08)太弱不足以确认盈利;
+  且同频段 config 高度相关会让 PBO 偏低。两指标都指向不进 S2,等新 OOS。
+- **2026-06-06 决策:`4h xs_mom lb24/h6` 候选按 §7 诚实退出。** N1 反过拟合工具
+  (vol-barrier / regime 门 / DSR / PBO)已全部做完,合起来给出的结论比"等新 OOS"更尖锐:
+  (a) 选出候选的 81-cell 网格 **DSR ≈ 0.082**、最佳 per-period Sharpe `0.278` < 噪声期望
+  最大值 `0.407`——网格内选择优势在统计上与"81 次噪声里挑最大"不可区分;(b) 没有任何
+  可执行 path-dependent exit(fixed / σ-scaled barrier 及同类部分止盈/移动止损)跑得赢
+  "无 barrier 持有到期"的 close 基线;(c) 即便最好的 regime 门 `thr0.034` 也仍有 ~82% 收益
+  来自 5 月单月。三者合起来即 [profit-engineering-plan.md](profit-engineering-plan.md) §7
+  的全局退出条件——"搜了 N 个 cell 后该候选的优势不显著"。**不为它消耗 once-only 日期**:
+  今天(2026-06-06)相对该候选只多出 `2026-06-04..06` 约 2 薄天(4h 仅 ~12 根 bar),即便正也
+  不可能把 DSR 从 0.08 拉到可接受;烧一次性日期在这么薄的窗口上是浪费。**关闭该候选的 S2
+  晋级路径**,研究转向 §10 的换频段 / 换特征源(微结构 / funding / 时序基础模型特征),或按 §7
+  接受研究价值、停止追盈利。纪律不变:不在已看 2–5 月上加任何旋钮,`validation_v1` once-only
+  资格留给未来真正够厚的独立窗口。对账见 §11.7。
 
 ## 当前能力
 
@@ -75,7 +102,15 @@ live disabled
   `--directional-exit-mode close|triple_barrier`、`--directional-take-profit-pct`、
   `--directional-stop-loss-pct`，用于 OHLC intrabar TP/SL barrier 复核；预测族还支持
   research-only `--directional-purged-cv-folds` / `--directional-embargo-bars`，
-  用于把 fixed cell 的时间分段稳定性和 embargo 区间写入 artifact。
+  用于把 fixed cell 的时间分段稳定性和 embargo 区间写入 artifact；预测族还支持
+  research-only `--directional-barrier-vol-lookback-bars` /
+  `--directional-take-profit-sigma` / `--directional-stop-loss-sigma`，把 triple-barrier
+  的 TP/SL 从固定百分比改为按决策时点近 N 根 bar 已实现收益 σ 缩放(防泄漏)，默认关闭；
+  预测族还支持 research-only `--directional-regime-min-dispersion-pct`，在每个 cross-section
+  上按各币 signal 离散度做 regime 入场门(低离散度跳过该 bar,纯决策时点)，默认关闭;scan
+  顶层还输出 `directional_deflated_sharpe`(Deflated Sharpe Ratio)和 `directional_pbo`
+  (PBO/CSCV,按频段分组的过拟合概率)，量化"搜了 N 个 cell 后最佳 Sharpe 还剩多少可信 +
+  IS 赢家在 OOS 是否仍靠前"的两类多重检验惩罚，diagnostic only。
 - Mac 到 WSL 同步与测试脚本：`scripts/sync-to-wsl.sh`、`scripts/run-wsl-tests.sh`。
 - `pyproject.toml` 已有 research optional extra：默认提供 `numpy` / `scikit-learn`；
   `lightgbm` 单独放在 `research-lightgbm`，因为 Mac cp314 wheel 可安装但当前缺
@@ -670,6 +705,120 @@ fold4_2026-05-02_to_2026-06-01=+0.2462749954
 3/4 folds 为正说明 candidate 仍值得研究；`2026-03-03..2026-04-01` fold 为负且 IC 为负，
 说明收益仍明显依赖后段行情。下一步不再重复 close/replay/purged sanity，而是做更稳健的
 exit 设计、模型层 purged-CV，或等待新的完整 OOS 日期。
+
+2026-06-05 已按 §11.5 N1 做"波动率缩放 barrier"(simple fixed TP/SL 已证不行,不再重复)：
+`strategy-selection-scan` 新增 research-only `--directional-barrier-vol-lookback-bars` /
+`--directional-take-profit-sigma` / `--directional-stop-loss-sigma`，把 triple-barrier 的
+TP/SL 从固定百分比改为按"决策时点近 N 根 bar 已实现收益 σ"缩放，默认关闭、live /
+`run-once` / CARRY 不变。本地和 WSL 全量测试升级为 `240 OK`。固定同一 `4h xs_mom lb24/h6`、
+top12、portfolio_replay、`max_open=12`、vol lookback `24`、120 天 discovery，扫 σ 倍率：
+
+```text
+artifact_dir=/home/alyaloale/Code/qount/state/research_runs/20260605T1410*-...-volbarrier-*-120d-20260605
+close_exit_baseline_sum=+0.2974912983 (无 barrier，既有 replay 读数)
+tp1.5/sl1.5 sum=-0.143287 sharpe=-5.9154 SL=643 TP=635 TIME=168
+tp2.0/sl2.0 sum=-0.050339 sharpe=-1.8044 SL=514 TP=544 TIME=388
+tp3.0/sl2.0 sum=+0.037766 sharpe=+1.2470 SL=539 TP=339 TIME=568
+tp3.0/sl3.0 sum=+0.118739 sharpe=+3.8430 SL=303 TP=360 TIME=783
+tp4.0/sl4.0 sum=+0.165134 sharpe=+4.7454 SL=192 TP=222 TIME=1032
+```
+
+最佳 `tp4.0/sl4.0` 月度（同 fixed cell，每月独立窗口）：
+
+```text
+feb_sum=+0.034363 sharpe=+4.3075 ic=-0.02582
+mar_sum=-0.039638 sharpe=-4.7000 ic=-0.02285
+apr_sum=+0.032380 sharpe=+5.2807 ic=+0.09500
+may_sum=+0.149386 sharpe=+12.8808 ic=+0.16039
+```
+
+读法：vol-scaling 确实改掉了 fixed barrier 的非对称止损病(fixed `tp0.030/sl0.015` 是
+stop-loss `873` / take-profit `400`，约 `2.18x`；vol `tp2/sl2` 已收敛到 `514/544` 接近 1:1)，
+且 PnL 随 barrier 加宽单调改善。但**没有任何 σ 设置能跑赢"无 barrier 持有到期"的 close-exit
+基线 `+0.2974912983`**：barrier 越宽，越多仓位以 `time` 退出、越接近 close 基线，最佳
+`tp4/sl4` 也只有 `+0.165134`，仍低于 close。月度上最佳 barrier 的 3 月仍为负、约 90% 收益
+来自 5 月单月，单月依赖未改善，且全部是已看过的 120 天 discovery。结论：N1 门控未通过——
+可执行 path-dependent exit 仍未跑赢持有，且无月度稳健性;**不进 S2**。下一刀只能等新的完整
+独立 OOS 日期复核，或做更细的持仓管理(部分止盈/移动止损/regime 过滤),不能 paper。
+
+2026-06-05 继续按 N1 做 entry 侧 **regime dispersion 门**(part/移动止损本质仍是已被证伪的
+路径 exit,故选未被排除的 entry 过滤):`strategy-selection-scan` 新增 research-only
+`--directional-regime-min-dispersion-pct`，在每个 cross-section 上计算各币 signal 的离散度
+(sample std,纯决策时点),低于阈值就跳过该 bar(同涨同跌、无相对强弱 = 不下注)。默认关闭,
+live / `run-once` / CARRY / ts_mom 不变。本地和 WSL 全量测试升级为 `241 OK`。该候选 120 天
+每根 bar 的 dispersion 分布 p25/p50/p75 = `0.034/0.048/0.068`。固定同一 `4h xs_mom lb24/h6`、
+top12、close-exit、portfolio_replay、`max_open=12`，120 天 discovery 扫阈值：
+
+```text
+thr0.000 sum=+0.297491 sharpe=+7.1945 dd=0.0877 gated=0   traded=721 win=0.4952
+thr0.034 sum=+0.298812 sharpe=+7.9989 dd=0.0798 gated=178 traded=543 win=0.5119
+thr0.048 sum=+0.272640 sharpe=+8.9771 dd=0.1021 gated=356 traded=365 win=0.4940
+thr0.068 sum=+0.195078 sharpe=+11.8154 dd=0.0527 gated=539 traded=182 win=0.4953
+```
+
+`thr0.034`(跳过最低 ~25% dispersion bar)月度，对比无过滤 close-exit 基线：
+
+```text
+feb_sum=+0.024688 ic=-0.00846  (baseline +0.0063)
+mar_sum=+0.002786 ic=-0.00387  (baseline -0.0094 → 翻正)
+apr_sum=+0.063078 ic=+0.10121
+may_sum=+0.246376 ic=+0.16039
+```
+
+读法：这是 N1 里第一个**在正确的轴上**改善候选的子步骤。`thr0.034` 总收益不变
+(`+0.298812` vs `+0.297491`)、Sharpe `7.19→8.00`、回撤 `0.088→0.080`、换手更少,而且把
+**2026-03 从负翻正**、4 个月全部 ≥ 0——直接打到"月度全靠单月"的门控失败点。`thr0.068`
+过滤太狠,2/3 月又转负。但仍有两条硬保留:(1) 阈值是在同一 120 天窗口的 dispersion 分布上
+选的(p25),属 in-sample 阈值选择,有轻微过拟合风险;(2) 5 月仍占约 82% 收益,只是不再有
+负月。且全部是已看 discovery。结论:候选现在处于明显更好的状态,但 N1 门控仍未通过(无新
+完整 OOS、仍偏单月),**仍不进 S2**;下一刀就是把这个 `thr0.034` 固定参数留到下一个完整
+`validation_v1` 独立窗口 once-only 复核。
+
+2026-06-05 已按计划 §5 / §9.x 给 `strategy-selection-scan` 补 **Deflated Sharpe Ratio (DSR)**
+多重检验惩罚(新增 `compute_directional_deflated_sharpe`,scan 顶层输出
+`directional_deflated_sharpe`;López de Prado 口径,正态简化,research-only diagnostic)。本地和
+WSL 全量测试升级为 `243 OK`。在**选出该候选的那张 81-cell 低频网格**
+(`1h/4h/1d × xs_mom/xs_rev/ts_mom × lb3/12/24 × h1/3/6`、top12、120 天 discovery)上读 DSR：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T143817Z-strategy-selection-scan-qount-strategy-selection-s1-lowfreq-top12-dsr-120d-20260605/qount-strategy-selection-s1-lowfreq-top12-dsr-120d-20260605.json
+trial_count=81
+best_by_per_period_sharpe=1d xs_mom lb24/h6
+best_per_period_sharpe=0.27825601
+expected_max_per_period_sharpe=0.40655144   # 81 次噪声下的期望最大 Sharpe
+trial_per_period_sharpe_variance=0.02741146
+best_period_count=119
+deflated_sharpe_ratio=0.08171240
+assumes_normal_returns=true
+```
+
+读法：这是迄今最重要的反过拟合读数。**观测到的最佳 per-period Sharpe `0.278` 比 81 次随机
+试验下噪声的期望最大值 `0.407` 还低,DSR ≈ `0.082`**(通常要求 > 0.95)。也就是说,在选出
+候选的那张网格上,最佳 cell 的 Sharpe 在统计上与"81 次噪声里挑最大"不可区分;而且这还用了
+正态假设(对肥尾会高估 DSR),真实 DSR 只会更低。这把结论从"候选还需新 OOS"收紧为
+"**候选的网格内选择优势本身大概率是多重检验假象**"。S2 门控据此加硬:即便将来某个完整新
+OOS 上 `thr0.034` 仍正,也必须同时给出可接受的 DSR/PBO 才能进 S2;否则按 §7 全局退出条件
+诚实退出。当前**仍不进 S2**。
+
+2026-06-05 又按 §5/§9.x 补 **PBO / CSCV**(Probability of Backtest Overfitting,Bailey &
+López de Prado;新增 `compute_directional_pbo`,scan 顶层输出 `directional_pbo`,按频段分组
+做 combinatorial symmetric CV,research-only diagnostic)。同一 81-cell 网格读数：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T150603Z-strategy-selection-scan-qount-strategy-selection-s1-lowfreq-top12-dsr-pbo-120d-20260605/qount-strategy-selection-s1-lowfreq-top12-dsr-pbo-120d-20260605.json
+block_count=10  combos=252  (每频段 27 个 config)
+pbo_1h=0.0556  median_logit=1.9042
+pbo_4h=0.0198  median_logit=2.8332
+pbo_1d=0.2143  median_logit=1.9042   (primary：DSR 最佳 per-period Sharpe 所在频段)
+```
+
+读法：DSR 与 PBO 互补、且不矛盾。**DSR** 问"绝对 Sharpe 量级在 N 次试验通缩后是否显著"
+→ 否(`0.082`);**PBO** 问"IS 最佳 config 在 OOS 是否仍排名靠前"→ 大体是(PBO 全部 < 0.5、
+median_logit > 0)。合起来的诚实图景:存在一个**弱但排名稳定**的横截面动量结构(不是纯随机
+→ PBO 低),但其**量级太弱**(DSR ≈ 0.08),在多重检验 + 成本 + 路径执行后不足以确认盈利。
+两个指标都指向同一决策:**不进 S2**。一条诚实保留:同频段 27 个 config 高度相关(同族、
+重叠 lookback),会让 CSCV 的排名稳定性虚高、PBO 偏低,所以低 PBO 不能解读为"低过拟合风险",
+只能解读为"赢家不是每次随机换人"。决策仍以 DSR + 等新 OOS 为准。
 
 最新盈利导向改动是一个窄 blocker：`eth_short_range_noise_terminal_washout`。它只拦
 ETH fresh `sell` + `range_noise` + higher trend/short，且同时满足

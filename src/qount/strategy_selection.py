@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import itertools
 import math
+import statistics
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
@@ -26,6 +28,7 @@ DEFAULT_DIRECTIONAL_EVALUATION_MODE = "cross_section"
 DEFAULT_DIRECTIONAL_EXIT_MODE = "close"
 DEFAULT_DIRECTIONAL_PURGED_CV_FOLDS = 0
 DEFAULT_DIRECTIONAL_EMBARGO_BARS = 0
+DEFAULT_DIRECTIONAL_BARRIER_VOL_LOOKBACK_BARS = 0
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,26 @@ class StrategySample:
     short_return_pct: float
     long_exit_reason: str
     short_exit_reason: str
+
+
+@dataclass(frozen=True)
+class BarrierVolConfig:
+    """Research-only volatility-scaled triple-barrier spec.
+
+    When active, take-profit / stop-loss barriers are derived per sample from the
+    recent realized close-to-close return volatility (sigma) measured strictly with
+    decision-time information, instead of fixed percentages. This adapts barriers to
+    each symbol / regime, the AFML-standard remedy for fixed barriers that ignore
+    per-symbol volatility.
+    """
+
+    lookback_bars: int
+    take_profit_sigma: float
+    stop_loss_sigma: float
+
+    @property
+    def active(self) -> bool:
+        return self.lookback_bars > 0 and self.take_profit_sigma > 0.0 and self.stop_loss_sigma > 0.0
 
 
 def _mean(values: list[float]) -> float:
@@ -111,6 +134,215 @@ def _sharpe(values: list[float], frequency: str) -> float | None:
     return (_mean(values) / std_value) * math.sqrt(_annualization_periods(frequency))
 
 
+_EULER_MASCHERONI = 0.5772156649015329
+
+
+def _per_period_sharpe(cell: dict[str, object]) -> float | None:
+    """Strip annualization from a cell's portfolio_sharpe to get per-observation SR."""
+
+    sharpe = cell.get("portfolio_sharpe")
+    frequency = cell.get("frequency")
+    if not isinstance(sharpe, (int, float)) or not isinstance(frequency, str):
+        return None
+    ann = _annualization_periods(frequency)
+    if ann <= 0.0:
+        return None
+    return float(sharpe) / math.sqrt(ann)
+
+
+def compute_directional_deflated_sharpe(cells: list[dict[str, object]]) -> dict[str, object] | None:
+    """Deflated Sharpe Ratio over the directional cells evaluated in one scan.
+
+    Quantifies the multiple-testing penalty (López de Prado): given ``N`` trials with
+    Sharpe dispersion ``V``, deflate the best per-period Sharpe by the expected maximum
+    Sharpe under ``N`` independent trials. Uses the normal-returns simplification
+    (skew=0, excess kurtosis=0). DSR is a probability; higher = more likely the best
+    cell's Sharpe is real rather than a search artifact. research-only, diagnostic.
+    """
+
+    trials = [(cell, _per_period_sharpe(cell)) for cell in cells]
+    trials = [(cell, sr) for cell, sr in trials if sr is not None]
+    if len(trials) < 2:
+        return None
+    sharpes = [sr for _cell, sr in trials]
+    trial_count = len(sharpes)
+    variance = statistics.pvariance(sharpes)
+    best_cell, best_sr = max(trials, key=lambda item: item[1])
+    period_count = int(_safe_float(best_cell.get("portfolio_period_count"), 0.0))
+
+    normal = statistics.NormalDist()
+    if variance <= 0.0:
+        expected_max = 0.0
+    else:
+        expected_max = math.sqrt(variance) * (
+            (1.0 - _EULER_MASCHERONI) * normal.inv_cdf(1.0 - 1.0 / trial_count)
+            + _EULER_MASCHERONI * normal.inv_cdf(1.0 - 1.0 / (trial_count * math.e))
+        )
+
+    deflated = None
+    if period_count > 1:
+        deflated = normal.cdf((best_sr - expected_max) * math.sqrt(period_count - 1))
+
+    return {
+        "trial_count": trial_count,
+        "best_cell_frequency": best_cell.get("frequency"),
+        "best_cell_family": best_cell.get("family"),
+        "best_cell_signal_lookback_bars": best_cell.get("signal_lookback_bars"),
+        "best_cell_holding_bars": best_cell.get("holding_bars"),
+        "best_annualized_sharpe": best_cell.get("portfolio_sharpe"),
+        "best_per_period_sharpe": best_sr,
+        "best_period_count": period_count,
+        "trial_per_period_sharpe_variance": variance,
+        "expected_max_per_period_sharpe": expected_max,
+        "deflated_sharpe_ratio": deflated,
+        "assumes_normal_returns": True,
+    }
+
+
+DEFAULT_DIRECTIONAL_PBO_BLOCKS = 10
+
+
+def _block_sharpe(stats: list[tuple[float, float, int]], block_indices: tuple[int, ...]) -> float | None:
+    total_sum = 0.0
+    total_sq = 0.0
+    total_n = 0
+    for index in block_indices:
+        block_sum, block_sq, block_n = stats[index]
+        total_sum += block_sum
+        total_sq += block_sq
+        total_n += block_n
+    if total_n < 2:
+        return None
+    mean = total_sum / total_n
+    variance = (total_sq - total_n * mean * mean) / (total_n - 1)
+    if variance <= 0.0:
+        return None
+    return mean / math.sqrt(variance)
+
+
+def _pbo_for_group(group: list[dict[str, object]], block_count: int) -> dict[str, object] | None:
+    """Single-frequency CSCV PBO over configs sharing a common time axis."""
+
+    if len(group) < 2:
+        return None
+    timestamps = sorted({int(ts) for cell in group for ts in cell["period_returns_by_timestamp"]})
+    if len(timestamps) < block_count:
+        return None
+    bounds = [int(len(timestamps) * index / block_count) for index in range(block_count + 1)]
+    blocks = [set(timestamps[bounds[index] : bounds[index + 1]]) for index in range(block_count)]
+
+    config_stats: list[list[tuple[float, float, int]]] = []
+    for cell in group:
+        series = {int(ts): float(value) for ts, value in cell["period_returns_by_timestamp"].items()}
+        row: list[tuple[float, float, int]] = []
+        for block in blocks:
+            values = [series[ts] for ts in block if ts in series]
+            row.append((sum(values), sum(value * value for value in values), len(values)))
+        config_stats.append(row)
+
+    half = block_count // 2
+    logits: list[float] = []
+    overfit = 0
+    for is_blocks in itertools.combinations(range(block_count), half):
+        oos_blocks = tuple(index for index in range(block_count) if index not in is_blocks)
+        is_scores = [(ci, _block_sharpe(config_stats[ci], is_blocks)) for ci in range(len(group))]
+        is_scores = [(ci, score) for ci, score in is_scores if score is not None]
+        if not is_scores:
+            continue
+        best_ci = max(is_scores, key=lambda item: item[1])[0]
+        oos_scores = [(ci, _block_sharpe(config_stats[ci], oos_blocks)) for ci in range(len(group))]
+        oos_scores = [(ci, score) for ci, score in oos_scores if score is not None]
+        best_oos = dict(oos_scores).get(best_ci)
+        if best_oos is None or len(oos_scores) < 2:
+            continue
+        worse = sum(1 for _ci, score in oos_scores if score < best_oos)
+        omega = (worse + 0.5) / len(oos_scores)
+        omega = min(max(omega, 1e-9), 1.0 - 1e-9)
+        logit = math.log(omega / (1.0 - omega))
+        logits.append(logit)
+        if logit <= 0.0:
+            overfit += 1
+
+    if not logits:
+        return None
+    return {
+        "config_count": len(group),
+        "block_count": block_count,
+        "combination_count": len(logits),
+        "pbo": overfit / len(logits),
+        "median_logit": statistics.median(logits),
+        "mean_logit": _mean(logits),
+        "method": "cscv_sharpe",
+    }
+
+
+def compute_directional_pbo(
+    cells: list[dict[str, object]],
+    *,
+    block_count: int = DEFAULT_DIRECTIONAL_PBO_BLOCKS,
+) -> dict[str, object] | None:
+    """Probability of Backtest Overfitting via CSCV (Bailey & López de Prado).
+
+    Partition the common time axis into S contiguous blocks, then for every way to
+    split them into S/2 in-sample (IS) and S/2 out-of-sample (OOS) halves: pick the
+    IS-best config by Sharpe, look up its OOS relative rank ω, and record the logit
+    λ=ln(ω/(1-ω)). PBO = fraction of splits where the IS-best config lands below the
+    OOS median (λ ≤ 0). High PBO means the search winner is overfit. research-only.
+
+    CSCV needs a common time axis, so PBO is computed per frequency group. The primary
+    frequency reported at the top level is the one holding the highest per-period Sharpe
+    config (so PBO and DSR describe the same search winner); per-frequency results are
+    kept under ``by_frequency``. Each cell must carry an in-memory
+    ``period_returns_by_timestamp``.
+    """
+
+    by_frequency: dict[str, list[dict[str, object]]] = {}
+    best_sharpe = None
+    primary_frequency: str | None = None
+    for cell in cells:
+        series = cell.get("period_returns_by_timestamp")
+        frequency = cell.get("frequency")
+        if not (isinstance(series, dict) and series and isinstance(frequency, str)):
+            continue
+        by_frequency.setdefault(frequency, []).append(cell)
+        per_period = _per_period_sharpe(cell)
+        if per_period is not None and (best_sharpe is None or per_period > best_sharpe):
+            best_sharpe = per_period
+            primary_frequency = frequency
+    if not by_frequency:
+        return None
+
+    block_count = block_count if block_count % 2 == 0 else block_count - 1
+    if block_count < 2:
+        return None
+
+    by_frequency_result: dict[str, object] = {}
+    for frequency, group in by_frequency.items():
+        group_result = _pbo_for_group(group, block_count)
+        if group_result is not None:
+            by_frequency_result[frequency] = group_result
+
+    if not by_frequency_result:
+        return None
+    if primary_frequency not in by_frequency_result:
+        primary_frequency = max(
+            by_frequency_result, key=lambda freq: int(by_frequency_result[freq]["config_count"])
+        )
+
+    primary = by_frequency_result[primary_frequency]
+    return {
+        "frequency": primary_frequency,
+        "config_count": primary["config_count"],
+        "block_count": primary["block_count"],
+        "combination_count": primary["combination_count"],
+        "pbo": primary["pbo"],
+        "median_logit": primary["median_logit"],
+        "mean_logit": primary["mean_logit"],
+        "method": "cscv_sharpe",
+        "by_frequency": by_frequency_result,
+    }
+
+
 def _max_drawdown(values: list[float]) -> float:
     equity = 1.0
     peak = 1.0
@@ -143,6 +375,7 @@ def build_directional_samples(
     exit_mode: str = DEFAULT_DIRECTIONAL_EXIT_MODE,
     take_profit_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
+    barrier_vol: BarrierVolConfig | None = None,
 ) -> list[StrategySample]:
     samples: list[StrategySample] = []
     for symbol, rows in rows_by_symbol.items():
@@ -166,6 +399,7 @@ def build_directional_samples(
                 exit_mode=exit_mode,
                 take_profit_pct=take_profit_pct,
                 stop_loss_pct=stop_loss_pct,
+                barrier_vol=barrier_vol,
             )
             if family == "xs_rev":
                 signal = -past_return
@@ -186,6 +420,25 @@ def build_directional_samples(
     return samples
 
 
+def _recent_return_std(rows: list[list[float]], index: int, lookback: int) -> float | None:
+    """Sample std of close-to-close returns over the lookback bars ending at ``index``.
+
+    Uses only bars at or before the decision bar ``index`` (no look-ahead).
+    """
+
+    if lookback < 1 or index - lookback < 0:
+        return None
+    returns: list[float] = []
+    for position in range(index - lookback + 1, index + 1):
+        previous_close = _safe_float(rows[position - 1][4])
+        current_close = _safe_float(rows[position][4])
+        if previous_close > 0.0 and current_close > 0.0:
+            returns.append((current_close / previous_close) - 1.0)
+    if len(returns) < 2:
+        return None
+    return _std(returns)
+
+
 def _directional_exit_returns(
     rows: list[list[float]],
     *,
@@ -194,11 +447,22 @@ def _directional_exit_returns(
     exit_mode: str,
     take_profit_pct: float,
     stop_loss_pct: float,
+    barrier_vol: BarrierVolConfig | None = None,
 ) -> tuple[float, float, str, str]:
     current_close = _safe_float(rows[index][4])
     future_close = _safe_float(rows[index + holding_bars][4])
     close_return = (future_close / current_close) - 1.0 if current_close > 0.0 and future_close > 0.0 else 0.0
-    if exit_mode != "triple_barrier" or take_profit_pct <= 0.0 or stop_loss_pct <= 0.0 or current_close <= 0.0:
+    if exit_mode != "triple_barrier" or current_close <= 0.0:
+        return close_return, -close_return, "time", "time"
+
+    if barrier_vol is not None and barrier_vol.active:
+        sigma = _recent_return_std(rows, index, barrier_vol.lookback_bars)
+        if sigma is None or sigma <= 0.0:
+            return close_return, -close_return, "time", "time"
+        take_profit_pct = barrier_vol.take_profit_sigma * sigma
+        stop_loss_pct = barrier_vol.stop_loss_sigma * sigma
+
+    if take_profit_pct <= 0.0 or stop_loss_pct <= 0.0:
         return close_return, -close_return, "time", "time"
 
     long_result: float | None = None
@@ -230,6 +494,25 @@ def _directional_exit_returns(
         long_reason,
         short_reason,
     )
+
+
+def _signal_dispersion(group: list[StrategySample]) -> float:
+    """Cross-sectional dispersion (sample std) of the family signals at one timestamp.
+
+    Signals are built from decision-time data only, so this regime gate uses no
+    look-ahead. Low dispersion means no clear relative winners/losers (a correlated,
+    momentum-unfriendly regime); high dispersion means a tradeable cross-section.
+    """
+
+    return _std([sample.signal for sample in group])
+
+
+def _barrier_vol_fields(barrier_vol: BarrierVolConfig | None) -> dict[str, object]:
+    return {
+        "directional_barrier_vol_lookback_bars": 0 if barrier_vol is None else barrier_vol.lookback_bars,
+        "directional_take_profit_sigma": 0.0 if barrier_vol is None else barrier_vol.take_profit_sigma,
+        "directional_stop_loss_sigma": 0.0 if barrier_vol is None else barrier_vol.stop_loss_sigma,
+    }
 
 
 def _allowed_timestamps_for_overlap_mode(
@@ -327,6 +610,8 @@ def _attach_directional_purged_cv(
     exit_mode: str,
     take_profit_pct: float,
     stop_loss_pct: float,
+    barrier_vol: BarrierVolConfig | None,
+    regime_min_dispersion_pct: float,
     fold_count: int,
     embargo_bars: int,
 ) -> None:
@@ -362,6 +647,8 @@ def _attach_directional_purged_cv(
                 exit_mode=exit_mode,
                 take_profit_pct=take_profit_pct,
                 stop_loss_pct=stop_loss_pct,
+                barrier_vol=barrier_vol,
+                regime_min_dispersion_pct=regime_min_dispersion_pct,
                 **kwargs,
             )
         else:
@@ -377,6 +664,7 @@ def _attach_directional_purged_cv(
                 exit_mode=exit_mode,
                 take_profit_pct=take_profit_pct,
                 stop_loss_pct=stop_loss_pct,
+                barrier_vol=barrier_vol,
             )
         fold_results.append(
             {
@@ -436,6 +724,8 @@ def evaluate_cross_sectional_family(
     exit_mode: str = DEFAULT_DIRECTIONAL_EXIT_MODE,
     take_profit_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
+    barrier_vol: BarrierVolConfig | None = None,
+    regime_min_dispersion_pct: float = 0.0,
 ) -> dict[str, object]:
     samples = build_directional_samples(
         rows_by_symbol,
@@ -447,6 +737,7 @@ def evaluate_cross_sectional_family(
         exit_mode=exit_mode,
         take_profit_pct=take_profit_pct,
         stop_loss_pct=stop_loss_pct,
+        barrier_vol=barrier_vol,
     )
     by_timestamp: dict[int, list[StrategySample]] = {}
     for sample in samples:
@@ -454,7 +745,9 @@ def evaluate_cross_sectional_family(
 
     ic_values: list[float] = []
     portfolio_returns: list[float] = []
+    period_returns_by_timestamp: dict[int, float] = {}
     turnover_events = 0
+    regime_gated_cross_sections = 0
     exit_reason_counts: dict[str, int] = {}
     allowed_timestamps = _allowed_timestamps_for_overlap_mode(
         list(by_timestamp),
@@ -466,6 +759,9 @@ def evaluate_cross_sectional_family(
             continue
         group = by_timestamp[timestamp]
         if len(group) < min_cross_section_symbols:
+            continue
+        if regime_min_dispersion_pct > 0.0 and _signal_dispersion(group) < regime_min_dispersion_pct:
+            regime_gated_cross_sections += 1
             continue
         signal_values = [sample.signal for sample in group]
         target_values = [sample.future_return_pct for sample in group]
@@ -485,6 +781,7 @@ def evaluate_cross_sectional_family(
             _increment_count(exit_reason_counts, f"short_{sample.short_exit_reason}")
         net_return = gross_return - (2.0 * cost_per_directional_bet_pct)
         portfolio_returns.append(net_return)
+        period_returns_by_timestamp[timestamp] = net_return
         turnover_events += 2 * side_count
 
     return {
@@ -496,6 +793,10 @@ def evaluate_cross_sectional_family(
         "directional_exit_mode": exit_mode,
         "directional_take_profit_pct": take_profit_pct,
         "directional_stop_loss_pct": stop_loss_pct,
+        **_barrier_vol_fields(barrier_vol),
+        "directional_regime_min_dispersion_pct": regime_min_dispersion_pct,
+        "directional_regime_gated_cross_sections": regime_gated_cross_sections,
+        "period_returns_by_timestamp": period_returns_by_timestamp,
         "sample_count": len(samples),
         "cross_section_count": len(portfolio_returns),
         "rank_ic_mean": None if not ic_values else _mean(ic_values),
@@ -504,6 +805,7 @@ def evaluate_cross_sectional_family(
         "portfolio_sum_return_pct": sum(portfolio_returns),
         "portfolio_sharpe": _sharpe(portfolio_returns, frequency),
         "portfolio_max_drawdown_pct": _max_drawdown(portfolio_returns),
+        "portfolio_period_count": len(portfolio_returns),
         "turnover_events": turnover_events,
         "directional_exit_reason_counts": exit_reason_counts,
         "cost_per_directional_bet_pct": cost_per_directional_bet_pct,
@@ -528,6 +830,8 @@ def evaluate_cross_sectional_portfolio_replay(
     exit_mode: str = DEFAULT_DIRECTIONAL_EXIT_MODE,
     take_profit_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
+    barrier_vol: BarrierVolConfig | None = None,
+    regime_min_dispersion_pct: float = 0.0,
 ) -> dict[str, object]:
     samples = build_directional_samples(
         rows_by_symbol,
@@ -539,6 +843,7 @@ def evaluate_cross_sectional_portfolio_replay(
         exit_mode=exit_mode,
         take_profit_pct=take_profit_pct,
         stop_loss_pct=stop_loss_pct,
+        barrier_vol=barrier_vol,
     )
     by_timestamp: dict[int, list[StrategySample]] = {}
     for sample in samples:
@@ -546,6 +851,7 @@ def evaluate_cross_sectional_portfolio_replay(
 
     timeframe_ms = timeframe_to_ms(frequency)
     holding_ms = max(int(holding_bars), 1) * timeframe_ms
+    regime_gated_cross_sections = 0
     allowed_timestamps = _allowed_timestamps_for_overlap_mode(
         list(by_timestamp),
         holding_bars=holding_bars,
@@ -577,6 +883,9 @@ def evaluate_cross_sectional_portfolio_replay(
             continue
         group = by_timestamp[timestamp]
         if len(group) < min_cross_section_symbols:
+            continue
+        if regime_min_dispersion_pct > 0.0 and _signal_dispersion(group) < regime_min_dispersion_pct:
+            regime_gated_cross_sections += 1
             continue
         cross_section_count += 1
         signal_values = [sample.signal for sample in group]
@@ -629,7 +938,10 @@ def evaluate_cross_sectional_portfolio_replay(
         closed_by_timestamp.setdefault(exit_timestamp_ms, []).append(float(position["net_return_pct"]))
 
     capital_slots = max_open_positions if max_open_positions > 0 else max(max_concurrent, 1)
-    period_returns = [sum(values) / capital_slots for _timestamp, values in sorted(closed_by_timestamp.items())]
+    period_returns_by_timestamp = {
+        int(timestamp): sum(values) / capital_slots for timestamp, values in sorted(closed_by_timestamp.items())
+    }
+    period_returns = list(period_returns_by_timestamp.values())
     closed_trade_returns = [value for values in closed_by_timestamp.values() for value in values]
     win_count = sum(1 for value in closed_trade_returns if value > 0.0)
     return {
@@ -641,6 +953,10 @@ def evaluate_cross_sectional_portfolio_replay(
         "directional_exit_mode": exit_mode,
         "directional_take_profit_pct": take_profit_pct,
         "directional_stop_loss_pct": stop_loss_pct,
+        **_barrier_vol_fields(barrier_vol),
+        "directional_regime_min_dispersion_pct": regime_min_dispersion_pct,
+        "directional_regime_gated_cross_sections": regime_gated_cross_sections,
+        "period_returns_by_timestamp": period_returns_by_timestamp,
         "directional_evaluation_mode": "portfolio_replay",
         "directional_max_open_positions": max_open_positions,
         "sample_count": len(samples),
@@ -651,6 +967,7 @@ def evaluate_cross_sectional_portfolio_replay(
         "portfolio_sum_return_pct": sum(period_returns),
         "portfolio_sharpe": _sharpe(period_returns, frequency),
         "portfolio_max_drawdown_pct": _max_drawdown(period_returns),
+        "portfolio_period_count": len(period_returns),
         "turnover_events": opened_count,
         "directional_exit_reason_counts": exit_reason_counts,
         "cost_per_directional_bet_pct": cost_per_directional_bet_pct,
@@ -676,6 +993,7 @@ def evaluate_time_series_momentum(
     exit_mode: str = DEFAULT_DIRECTIONAL_EXIT_MODE,
     take_profit_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
+    barrier_vol: BarrierVolConfig | None = None,
 ) -> dict[str, object]:
     samples = build_directional_samples(
         rows_by_symbol,
@@ -687,6 +1005,7 @@ def evaluate_time_series_momentum(
         exit_mode=exit_mode,
         take_profit_pct=take_profit_pct,
         stop_loss_pct=stop_loss_pct,
+        barrier_vol=barrier_vol,
     )
     allowed_timestamps = _allowed_timestamps_for_overlap_mode(
         [sample.timestamp_ms for sample in samples],
@@ -699,6 +1018,7 @@ def evaluate_time_series_momentum(
         [sample.future_return_pct for sample in filtered_samples],
     )
     returns: list[float] = []
+    returns_by_timestamp: dict[int, list[float]] = {}
     exit_reason_counts: dict[str, int] = {}
     for sample in filtered_samples:
         if sample.signal == 0.0:
@@ -708,7 +1028,11 @@ def evaluate_time_series_momentum(
         exit_reason = sample.long_exit_reason if direction > 0.0 else sample.short_exit_reason
         side = "long" if direction > 0.0 else "short"
         _increment_count(exit_reason_counts, f"{side}_{exit_reason}")
-        returns.append(directional_return - cost_per_directional_bet_pct)
+        net_return = directional_return - cost_per_directional_bet_pct
+        returns.append(net_return)
+        returns_by_timestamp.setdefault(int(sample.timestamp_ms), []).append(net_return)
+    # Aggregate same-timestamp bets to a portfolio return so PBO can align on the time axis.
+    period_returns_by_timestamp = {ts: _mean(values) for ts, values in returns_by_timestamp.items()}
     return {
         "frequency": frequency,
         "family": "ts_mom",
@@ -718,6 +1042,8 @@ def evaluate_time_series_momentum(
         "directional_exit_mode": exit_mode,
         "directional_take_profit_pct": take_profit_pct,
         "directional_stop_loss_pct": stop_loss_pct,
+        **_barrier_vol_fields(barrier_vol),
+        "period_returns_by_timestamp": period_returns_by_timestamp,
         "sample_count": len(samples),
         "evaluated_sample_count": len(filtered_samples),
         "rank_ic_mean": ic,
@@ -726,6 +1052,7 @@ def evaluate_time_series_momentum(
         "portfolio_sum_return_pct": sum(returns),
         "portfolio_sharpe": _sharpe(returns, frequency),
         "portfolio_max_drawdown_pct": _max_drawdown(returns),
+        "portfolio_period_count": len(returns),
         "turnover_events": len(returns),
         "directional_exit_reason_counts": exit_reason_counts,
         "cost_per_directional_bet_pct": cost_per_directional_bet_pct,
@@ -1361,6 +1688,10 @@ class StrategySelectionScanService:
         directional_exit_mode: str = DEFAULT_DIRECTIONAL_EXIT_MODE,
         directional_take_profit_pct: float = 0.0,
         directional_stop_loss_pct: float = 0.0,
+        directional_barrier_vol_lookback_bars: int = DEFAULT_DIRECTIONAL_BARRIER_VOL_LOOKBACK_BARS,
+        directional_take_profit_sigma: float = 0.0,
+        directional_stop_loss_sigma: float = 0.0,
+        directional_regime_min_dispersion_pct: float = 0.0,
         directional_purged_cv_folds: int = DEFAULT_DIRECTIONAL_PURGED_CV_FOLDS,
         directional_embargo_bars: int = DEFAULT_DIRECTIONAL_EMBARGO_BARS,
         carry_model: str = "naive",
@@ -1391,6 +1722,12 @@ class StrategySelectionScanService:
         cost_per_directional_bet_pct = 2.0 * (
             max(float(self.settings.estimated_fee_pct), 0.0) + max(float(self.settings.estimated_slippage_pct), 0.0)
         )
+        directional_barrier_vol = BarrierVolConfig(
+            lookback_bars=max(int(directional_barrier_vol_lookback_bars), 0),
+            take_profit_sigma=max(float(directional_take_profit_sigma), 0.0),
+            stop_loss_sigma=max(float(directional_stop_loss_sigma), 0.0),
+        )
+        directional_regime_dispersion = max(float(directional_regime_min_dispersion_pct), 0.0)
         cells: list[dict[str, object]] = []
         fetch_summary: dict[str, dict[str, int]] = {}
         signal_lookback_values = [int(value) for value in _grid_values(signal_lookback_bars, signal_lookback_grid_bars, default=12)]
@@ -1440,6 +1777,8 @@ class StrategySelectionScanService:
                                 exit_mode=directional_exit_mode,
                                 take_profit_pct=directional_take_profit_pct,
                                 stop_loss_pct=directional_stop_loss_pct,
+                                barrier_vol=directional_barrier_vol,
+                                regime_min_dispersion_pct=directional_regime_dispersion,
                                 **kwargs,
                             )
                             _attach_directional_purged_cv(
@@ -1460,6 +1799,8 @@ class StrategySelectionScanService:
                                 exit_mode=directional_exit_mode,
                                 take_profit_pct=directional_take_profit_pct,
                                 stop_loss_pct=directional_stop_loss_pct,
+                                barrier_vol=directional_barrier_vol,
+                                regime_min_dispersion_pct=directional_regime_dispersion,
                                 fold_count=directional_purged_cv_folds,
                                 embargo_bars=directional_embargo_bars,
                             )
@@ -1477,6 +1818,7 @@ class StrategySelectionScanService:
                                 exit_mode=directional_exit_mode,
                                 take_profit_pct=directional_take_profit_pct,
                                 stop_loss_pct=directional_stop_loss_pct,
+                                barrier_vol=directional_barrier_vol,
                             )
                             _attach_directional_purged_cv(
                                 cell,
@@ -1496,6 +1838,8 @@ class StrategySelectionScanService:
                                 exit_mode=directional_exit_mode,
                                 take_profit_pct=directional_take_profit_pct,
                                 stop_loss_pct=directional_stop_loss_pct,
+                                barrier_vol=directional_barrier_vol,
+                                regime_min_dispersion_pct=directional_regime_dispersion,
                                 fold_count=directional_purged_cv_folds,
                                 embargo_bars=directional_embargo_bars,
                             )
@@ -1571,6 +1915,14 @@ class StrategySelectionScanService:
                     )
                 )
 
+        directional_cells = [cell for cell in cells if cell.get("family") in {"xs_mom", "xs_rev", "ts_mom"}]
+        directional_deflated_sharpe = compute_directional_deflated_sharpe(directional_cells)
+        directional_pbo = compute_directional_pbo(directional_cells)
+        # period_returns_by_timestamp is an in-memory series for DSR/PBO only; drop it
+        # before serialization to keep artifacts compact.
+        for cell in cells:
+            cell.pop("period_returns_by_timestamp", None)
+
         ranked_cells = sorted(
             cells,
             key=lambda cell: (
@@ -1598,6 +1950,10 @@ class StrategySelectionScanService:
             "directional_exit_mode": directional_exit_mode,
             "directional_take_profit_pct": directional_take_profit_pct,
             "directional_stop_loss_pct": directional_stop_loss_pct,
+            "directional_barrier_vol_lookback_bars": directional_barrier_vol.lookback_bars,
+            "directional_take_profit_sigma": directional_barrier_vol.take_profit_sigma,
+            "directional_stop_loss_sigma": directional_barrier_vol.stop_loss_sigma,
+            "directional_regime_min_dispersion_pct": directional_regime_dispersion,
             "directional_purged_cv_folds": directional_purged_cv_folds,
             "directional_embargo_bars": directional_embargo_bars,
             "min_cross_section_symbols": min_cross_section_symbols,
@@ -1622,6 +1978,8 @@ class StrategySelectionScanService:
             "cells": ranked_cells,
             "best_cell": best_cell,
             "decision": _decision_from_best_cell(best_cell),
+            "directional_deflated_sharpe": directional_deflated_sharpe,
+            "directional_pbo": directional_pbo,
         }
 
 

@@ -67,6 +67,11 @@ from qount.setup_model import score_setup_edge_model_signal
 from qount.setup_model import SetupEdgeModelService
 from qount.setup_model import SETUP_EDGE_MODEL_V2_FEATURE_NAMES
 from qount.setup_model import SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS
+from qount.strategy_selection import BarrierVolConfig
+from qount.strategy_selection import compute_directional_deflated_sharpe
+from qount.strategy_selection import compute_directional_pbo
+from qount.strategy_selection import build_directional_samples
+from qount.strategy_selection import _recent_return_std
 from qount.strategy_selection import evaluate_carry_family
 from qount.strategy_selection import evaluate_cross_sectional_family
 from qount.strategy_selection import evaluate_cross_sectional_portfolio_replay
@@ -1067,6 +1072,14 @@ class StrategyOptimizationTests(unittest.TestCase):
                 "0.02",
                 "--directional-stop-loss-pct",
                 "0.01",
+                "--directional-barrier-vol-lookback-bars",
+                "24",
+                "--directional-take-profit-sigma",
+                "2.0",
+                "--directional-stop-loss-sigma",
+                "1.0",
+                "--directional-regime-min-dispersion-pct",
+                "0.02",
                 "--directional-purged-cv-folds",
                 "3",
                 "--directional-embargo-bars",
@@ -1123,6 +1136,10 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertEqual(args.directional_exit_mode, "triple_barrier")
         self.assertAlmostEqual(args.directional_take_profit_pct, 0.02)
         self.assertAlmostEqual(args.directional_stop_loss_pct, 0.01)
+        self.assertEqual(args.directional_barrier_vol_lookback_bars, 24)
+        self.assertAlmostEqual(args.directional_take_profit_sigma, 2.0)
+        self.assertAlmostEqual(args.directional_stop_loss_sigma, 1.0)
+        self.assertAlmostEqual(args.directional_regime_min_dispersion_pct, 0.02)
         self.assertEqual(args.directional_purged_cv_folds, 3)
         self.assertEqual(args.directional_embargo_bars, 2)
         self.assertEqual(args.carry_model, "threshold_dual_leg")
@@ -1235,6 +1252,214 @@ class StrategyOptimizationTests(unittest.TestCase):
             {"long_take_profit": 1, "short_take_profit": 1},
         )
         self.assertGreater(barrier_mode["portfolio_sum_return_pct"], close_mode["portfolio_sum_return_pct"])
+
+    def test_recent_return_std_ignores_future_bars(self) -> None:
+        base_rows = [
+            [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+            [60_000, 101.0, 101.0, 101.0, 101.0, 1000.0],
+            [120_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+            [180_000, 101.0, 101.0, 101.0, 101.0, 1000.0],
+            [240_000, 50.0, 200.0, 10.0, 50.0, 1000.0],
+        ]
+        future_changed = [list(row) for row in base_rows]
+        future_changed[4] = [240_000, 999.0, 9999.0, 1.0, 999.0, 1000.0]
+
+        sigma_base = _recent_return_std(base_rows, index=3, lookback=3)
+        sigma_future = _recent_return_std(future_changed, index=3, lookback=3)
+
+        self.assertIsNotNone(sigma_base)
+        self.assertEqual(sigma_base, sigma_future)
+
+    def test_volatility_scaled_barrier_adapts_per_symbol(self) -> None:
+        # Both symbols see the same +0.5% high during the holding bar, but the
+        # low-vol symbol's sigma-scaled take-profit is tight enough to fire while
+        # the high-vol symbol's barrier is too wide, so it falls through to time.
+        low_vol_rows = [
+            [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+            [60_000, 100.05, 100.05, 100.05, 100.05, 1000.0],
+            [120_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+            [180_000, 100.05, 100.05, 100.05, 100.05, 1000.0],
+            [240_000, 100.05, 100.5503, 100.05, 100.05, 1000.0],
+        ]
+        high_vol_rows = [
+            [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+            [60_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+            [120_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+            [180_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+            [240_000, 110.55, 110.55, 110.0, 110.55, 1000.0],
+        ]
+        barrier_vol = BarrierVolConfig(lookback_bars=3, take_profit_sigma=1.0, stop_loss_sigma=1.0)
+
+        low_samples = build_directional_samples(
+            {"LOW/USDT:USDT": low_vol_rows},
+            family="xs_mom",
+            signal_lookback_bars=1,
+            holding_bars=1,
+            start_ms=180_000,
+            end_ms=180_000,
+            exit_mode="triple_barrier",
+            barrier_vol=barrier_vol,
+        )
+        high_samples = build_directional_samples(
+            {"HIGH/USDT:USDT": high_vol_rows},
+            family="xs_mom",
+            signal_lookback_bars=1,
+            holding_bars=1,
+            start_ms=180_000,
+            end_ms=180_000,
+            exit_mode="triple_barrier",
+            barrier_vol=barrier_vol,
+        )
+
+        self.assertEqual(len(low_samples), 1)
+        self.assertEqual(len(high_samples), 1)
+        self.assertEqual(low_samples[0].long_exit_reason, "take_profit")
+        self.assertEqual(high_samples[0].long_exit_reason, "time")
+
+    def test_volatility_scaled_barrier_records_config_fields(self) -> None:
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 101.0, 101.0, 101.0, 101.0, 1000.0],
+                [120_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [180_000, 101.0, 102.0, 100.5, 101.0, 1000.0],
+                [240_000, 101.0, 103.0, 100.0, 101.0, 1000.0],
+            ],
+        }
+
+        result = evaluate_cross_sectional_family(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1m",
+            signal_lookback_bars=1,
+            holding_bars=1,
+            start_ms=180_000,
+            end_ms=180_000,
+            min_cross_section_symbols=1,
+            top_fraction=0.5,
+            cost_per_directional_bet_pct=0.0,
+            exit_mode="triple_barrier",
+            barrier_vol=BarrierVolConfig(lookback_bars=3, take_profit_sigma=2.0, stop_loss_sigma=1.5),
+        )
+
+        self.assertEqual(result["directional_barrier_vol_lookback_bars"], 3)
+        self.assertAlmostEqual(result["directional_take_profit_sigma"], 2.0)
+        self.assertAlmostEqual(result["directional_stop_loss_sigma"], 1.5)
+
+    def test_deflated_sharpe_penalizes_more_trials(self) -> None:
+        def cell(sharpe: float, lb: int = 12) -> dict:
+            return {
+                "family": "xs_mom",
+                "frequency": "1d",
+                "signal_lookback_bars": lb,
+                "holding_bars": 6,
+                "portfolio_sharpe": sharpe,
+                "portfolio_period_count": 100,
+            }
+
+        few = [cell(8.0, lb=24), cell(1.0), cell(0.5), cell(-0.5)]
+        many = few + [cell(s) for s in (2.0, -2.0, 1.5, -1.5, 1.2, -1.2, 0.8, -0.8, 0.3, -0.3)]
+
+        dsr_few = compute_directional_deflated_sharpe(few)
+        dsr_many = compute_directional_deflated_sharpe(many)
+
+        self.assertIsNotNone(dsr_few)
+        self.assertIsNotNone(dsr_many)
+        self.assertEqual(dsr_few["trial_count"], 4)
+        self.assertEqual(dsr_many["trial_count"], 14)
+        self.assertEqual(dsr_few["best_cell_signal_lookback_bars"], 24)
+        self.assertAlmostEqual(dsr_few["best_annualized_sharpe"], 8.0)
+        for result in (dsr_few, dsr_many):
+            self.assertGreaterEqual(result["deflated_sharpe_ratio"], 0.0)
+            self.assertLessEqual(result["deflated_sharpe_ratio"], 1.0)
+        # More trials with wider Sharpe dispersion raise the deflation benchmark,
+        # so the same best Sharpe is less convincing.
+        self.assertLess(dsr_many["deflated_sharpe_ratio"], dsr_few["deflated_sharpe_ratio"])
+
+    def test_pbo_is_zero_when_one_config_is_consistently_best(self) -> None:
+        ts = list(range(24))
+
+        def make(series_fn) -> dict:
+            return {
+                "family": "xs_mom",
+                "frequency": "1d",
+                "period_returns_by_timestamp": {t: series_fn(t) for t in ts},
+            }
+
+        good = make(lambda t: 0.01 + (0.0005 if t % 2 == 0 else -0.0005))
+        noise_a = make(lambda t: 0.002 if t % 2 == 0 else -0.002)
+        noise_b = make(lambda t: -0.002 if t % 2 == 0 else 0.002)
+
+        result = compute_directional_pbo([good, noise_a, noise_b], block_count=10)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["config_count"], 3)
+        self.assertEqual(result["frequency"], "1d")
+        self.assertEqual(result["block_count"], 10)
+        self.assertGreater(result["combination_count"], 0)
+        self.assertEqual(result["pbo"], 0.0)
+
+    def test_pbo_returns_none_without_a_common_series(self) -> None:
+        self.assertIsNone(compute_directional_pbo([]))
+        self.assertIsNone(
+            compute_directional_pbo(
+                [{"family": "xs_mom", "frequency": "1d", "period_returns_by_timestamp": {0: 0.01, 1: 0.02}}]
+            )
+        )
+
+    def test_deflated_sharpe_returns_none_below_two_trials(self) -> None:
+        self.assertIsNone(compute_directional_deflated_sharpe([]))
+        self.assertIsNone(
+            compute_directional_deflated_sharpe(
+                [{"family": "xs_mom", "frequency": "1d", "portfolio_sharpe": 5.0, "portfolio_period_count": 50}]
+            )
+        )
+
+    def test_regime_dispersion_gate_skips_low_dispersion_cross_sections(self) -> None:
+        # ts 60000 has dispersed signals (tradeable); ts 120000 has tight signals
+        # (no relative winners/losers) and is gated out by the regime filter.
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+                [120_000, 111.1, 111.1, 111.1, 111.1, 1000.0],
+                [180_000, 111.1, 111.1, 111.1, 111.1, 1000.0],
+            ],
+            "BBB/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 102.0, 102.0, 102.0, 102.0, 1000.0],
+                [120_000, 103.02, 103.02, 103.02, 103.02, 1000.0],
+                [180_000, 103.02, 103.02, 103.02, 103.02, 1000.0],
+            ],
+            "CCC/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 95.0, 95.0, 95.0, 95.0, 1000.0],
+                [120_000, 95.95, 95.95, 95.95, 95.95, 1000.0],
+                [180_000, 95.95, 95.95, 95.95, 95.95, 1000.0],
+            ],
+        }
+        common = dict(
+            family="xs_mom",
+            frequency="1m",
+            signal_lookback_bars=1,
+            holding_bars=1,
+            start_ms=60_000,
+            end_ms=120_000,
+            min_cross_section_symbols=3,
+            top_fraction=0.34,
+            cost_per_directional_bet_pct=0.0,
+        )
+
+        no_filter = evaluate_cross_sectional_family(rows_by_symbol, **common)
+        filtered = evaluate_cross_sectional_family(
+            rows_by_symbol, regime_min_dispersion_pct=0.04, **common
+        )
+
+        self.assertEqual(no_filter["directional_regime_gated_cross_sections"], 0)
+        self.assertEqual(no_filter["turnover_events"], 4)
+        self.assertEqual(filtered["directional_regime_gated_cross_sections"], 1)
+        self.assertEqual(filtered["turnover_events"], 2)
+        self.assertAlmostEqual(filtered["directional_regime_min_dispersion_pct"], 0.04)
 
     def test_strategy_selection_fetch_ohlcv_keeps_ccxt_close_column(self) -> None:
         exchange = FakeExchange(
