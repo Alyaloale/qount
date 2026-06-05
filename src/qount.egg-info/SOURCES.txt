@@ -2,7 +2,9 @@ README.md
 pyproject.toml
 src/qount/__init__.py
 src/qount/ai_client.py
+src/qount/ai_hold_baseline.py
 src/qount/analytics.py
+src/qount/artifacts.py
 src/qount/backtest.py
 src/qount/candidate_filter.py
 src/qount/decision_schema.py
@@ -10,6 +12,7 @@ src/qount/entry_quality.py
 src/qount/exchange_utils.py
 src/qount/executor.py
 src/qount/hourly_model.py
+src/qount/idle_window_diagnostic.py
 src/qount/journal.py
 src/qount/mac_monitor.py
 src/qount/main.py
@@ -18,11 +21,13 @@ src/qount/models.py
 src/qount/notifier.py
 src/qount/orchestrator.py
 src/qount/research_profile.py
+src/qount/research_slice_scan.py
 src/qount/review.py
 src/qount/risk_engine.py
 src/qount/safety.py
 src/qount/settings.py
 src/qount/setup_model.py
+src/qount/strategy_selection.py
 src/qount/trade_policy.py
 src/qount/walk_forward.py
 src/qount.egg-info/PKG-INFO

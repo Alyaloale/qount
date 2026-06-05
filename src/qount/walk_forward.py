@@ -272,6 +272,7 @@ def _build_walk_forward_result(
     research_profile: str | None,
     holdout_role: str,
     ai_decision_cache_enable: bool,
+    setup_model_version: str,
 ) -> dict[str, Any]:
     return {
         "mode": "walk_forward",
@@ -308,6 +309,7 @@ def _build_walk_forward_result(
             "holdout_role": holdout_role,
             "ai_decision_cache_enable": ai_decision_cache_enable,
             "ai_decision_cache_dir": str(settings.ai_decision_cache_dir),
+            "setup_model_version": setup_model_version,
         },
     }
 
@@ -365,6 +367,7 @@ class WalkForwardService:
         min_samples: int,
         ridge_alpha: float,
         split_higher_phase: bool,
+        setup_model_version: str,
         window: WalkForwardWindow,
         model_path: Path,
     ) -> dict[str, Any]:
@@ -388,6 +391,7 @@ class WalkForwardService:
             ridge_alpha=ridge_alpha,
             artifact_path=model_path,
             split_higher_phase=split_higher_phase,
+            model_version=setup_model_version,
             training_end=training_end,
         )
 
@@ -403,6 +407,7 @@ class WalkForwardService:
         min_samples: int,
         ridge_alpha: float,
         split_higher_phase: bool,
+        setup_model_version: str = "v1",
         artifact_dir: str | None = None,
         research_profile: str | None = None,
         holdout_role: str = "unknown",
@@ -425,6 +430,7 @@ class WalkForwardService:
                 min_samples=min_samples,
                 ridge_alpha=ridge_alpha,
                 split_higher_phase=split_higher_phase,
+                setup_model_version=setup_model_version,
                 window=window,
                 model_path=model_path,
             )
@@ -455,6 +461,7 @@ class WalkForwardService:
                 min_samples=min_samples,
                 ridge_alpha=ridge_alpha,
                 split_higher_phase=split_higher_phase,
+                setup_model_version=setup_model_version,
                 complete=False,
                 research_profile=research_profile,
                 holdout_role=holdout_role,
@@ -476,6 +483,7 @@ class WalkForwardService:
             min_samples=min_samples,
             ridge_alpha=ridge_alpha,
             split_higher_phase=split_higher_phase,
+            setup_model_version=setup_model_version,
             complete=True,
             research_profile=research_profile,
             holdout_role=holdout_role,
@@ -502,6 +510,7 @@ class WalkForwardService:
         min_samples: int,
         ridge_alpha: float,
         split_higher_phase: bool,
+        setup_model_version: str,
         complete: bool,
         research_profile: str | None,
         holdout_role: str,
@@ -526,6 +535,7 @@ class WalkForwardService:
             "min_samples": min_samples,
             "ridge_alpha": ridge_alpha,
             "split_higher_phase": split_higher_phase,
+            "setup_model_version": setup_model_version,
             "aggregate": aggregate,
             "windows": rows,
             "audit_context": {
@@ -536,6 +546,7 @@ class WalkForwardService:
                 "setup_model_enable": self.settings.setup_model_enable,
                 "research_profile": research_profile,
                 "holdout_role": holdout_role,
+                "setup_model_version": setup_model_version,
             },
         }
 
@@ -611,6 +622,7 @@ class WalkForwardService:
         min_samples: int,
         ridge_alpha: float,
         split_higher_phase: bool,
+        setup_model_version: str = "v1",
         max_bars_per_window: int | None = None,
         artifact_dir: str | None = None,
         research_profile: str | None = None,
@@ -634,6 +646,7 @@ class WalkForwardService:
                 min_samples=min_samples,
                 ridge_alpha=ridge_alpha,
                 split_higher_phase=split_higher_phase,
+                setup_model_version=setup_model_version,
                 window=window,
                 model_path=model_path,
             )
@@ -686,6 +699,7 @@ class WalkForwardService:
                 min_samples=min_samples,
                 ridge_alpha=ridge_alpha,
                 split_higher_phase=split_higher_phase,
+                setup_model_version=setup_model_version,
                 complete=False,
                 research_profile=research_profile,
                 holdout_role=holdout_role,
@@ -707,6 +721,7 @@ class WalkForwardService:
             min_samples=min_samples,
             ridge_alpha=ridge_alpha,
             split_higher_phase=split_higher_phase,
+            setup_model_version=setup_model_version,
             complete=True,
             research_profile=research_profile,
             holdout_role=holdout_role,
@@ -739,6 +754,7 @@ class WalkForwardService:
         research_profile: str | None = None,
         holdout_role: str = "unknown",
         ai_decision_cache_enable: bool = False,
+        setup_model_version: str = "v1",
     ) -> dict[str, Any]:
         if not windows:
             raise ValueError("walk_forward_requires_at_least_one_window")
@@ -774,6 +790,7 @@ class WalkForwardService:
                 ridge_alpha=ridge_alpha,
                 artifact_path=model_path,
                 split_higher_phase=split_higher_phase,
+                model_version=setup_model_version,
                 training_end=training_end,
             )
 
@@ -840,6 +857,7 @@ class WalkForwardService:
                 research_profile=research_profile,
                 holdout_role=holdout_role,
                 ai_decision_cache_enable=ai_decision_cache_enable,
+                setup_model_version=setup_model_version,
             )
             (root / "walk_forward.partial.json").write_text(json.dumps(partial, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -860,6 +878,7 @@ class WalkForwardService:
             research_profile=research_profile,
             holdout_role=holdout_role,
             ai_decision_cache_enable=ai_decision_cache_enable,
+            setup_model_version=setup_model_version,
         )
         persistent_root = mirror_artifact_tree_if_external(self.settings, root, kind="walk-forward")
         if persistent_root is not None:

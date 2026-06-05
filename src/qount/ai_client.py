@@ -153,12 +153,13 @@ class AIDecisionClient:
     def _cache_path(
         self,
         *,
+        prompt_version: str,
         system_prompt: str,
         decision_prompt: str,
         snapshot_summary: dict[str, Any],
     ) -> tuple[str, Path]:
         cache_payload = {
-            "prompt_version": "v1",
+            "prompt_version": prompt_version,
             "model": self.settings.ai_model,
             "temperature": self.settings.ai_temperature,
             "response_format": {"type": "json_object"},
@@ -209,19 +210,46 @@ class AIDecisionClient:
         }
         cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def request_decision(self, bundle: MarketSnapshotBundle) -> tuple[dict, str, str]:
+    def load_prompt_texts(
+        self,
+        *,
+        system_prompt_override: str | None = None,
+        decision_prompt_override: str | None = None,
+    ) -> tuple[str, str]:
+        system_prompt = (
+            self._render_prompt(system_prompt_override)
+            if system_prompt_override is not None
+            else self._load_prompt(
+                self.settings.system_prompt_path,
+                default_system_prompt(self.settings.contract_market, self.settings.timeframe),
+            )
+        )
+        decision_prompt = (
+            self._render_prompt(decision_prompt_override)
+            if decision_prompt_override is not None
+            else self._load_prompt(
+                self.settings.decision_prompt_path,
+                default_decision_prompt(self.settings.contract_market, self.settings.timeframe),
+            )
+        )
+        return system_prompt, decision_prompt
+
+    def request_decision(
+        self,
+        bundle: MarketSnapshotBundle,
+        *,
+        system_prompt_override: str | None = None,
+        decision_prompt_override: str | None = None,
+        prompt_version: str = "v1",
+    ) -> tuple[dict, str, str]:
         try:
             from openai import OpenAI
         except ImportError as exc:
             raise RuntimeError("openai package is required for AI decisions") from exc
 
-        system_prompt = self._load_prompt(
-            self.settings.system_prompt_path,
-            default_system_prompt(self.settings.contract_market, self.settings.timeframe),
-        )
-        decision_prompt = self._load_prompt(
-            self.settings.decision_prompt_path,
-            default_decision_prompt(self.settings.contract_market, self.settings.timeframe),
+        system_prompt, decision_prompt = self.load_prompt_texts(
+            system_prompt_override=system_prompt_override,
+            decision_prompt_override=decision_prompt_override,
         )
         snapshot_summary = bundle.summary_for_prompt()
         snapshot_json = json.dumps(snapshot_summary, ensure_ascii=False)
@@ -237,12 +265,14 @@ class AIDecisionClient:
             "messages": messages,
             "temperature": self.settings.ai_temperature,
             "response_format": {"type": "json_object"},
+            "prompt_version": prompt_version,
         }
 
         cache_key: str | None = None
         cache_path: Path | None = None
         if self._cache_allowed():
             cache_key, cache_path = self._cache_path(
+                prompt_version=prompt_version,
                 system_prompt=system_prompt,
                 decision_prompt=decision_prompt,
                 snapshot_summary=snapshot_summary,

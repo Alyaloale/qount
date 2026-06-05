@@ -57,6 +57,12 @@ ETH_RANGE_NOISE_SHORT_MIN_CONVICTION_SCORE = 0.60
 ETH_RANGE_NOISE_SHORT_MIN_REBOUND_FAILURE_PCT = 0.0075
 ETH_RANGE_NOISE_SHORT_MIN_SUPPORT_BREAK_PCT = 0.0018
 ETH_RANGE_NOISE_SHORT_MIN_RANGE_EXPANSION_RATIO = 0.90
+ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_RSI = 32.0
+ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_SMA_FAST = -0.0080
+ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_SMA_SLOW = -0.0080
+ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_RETURN_24BARS = -0.0100
+ETH_RANGE_NOISE_TERMINAL_WASHOUT_MIN_VOLUME_RATIO = 1.50
+ETH_RANGE_NOISE_TERMINAL_WASHOUT_MIN_RANGE_PCT = 0.0080
 ETH_SHORT_REBOUND_FAIL_TREND_MIN_SCORE = 8.0
 HARD_BOTTOM_LINE_REASONS = (
     "low_volatility",
@@ -76,6 +82,7 @@ HARD_BOTTOM_LINE_REASONS = (
     "eth_short_rebound_fail_trend_terminal_flush",
     "eth_short_research_blocks_short_continuation_open",
     "eth_short_range_noise_requires_breakdown_structure",
+    "eth_short_range_noise_terminal_washout",
     "eth_short_research_blocks_fresh_outside_short_trend_family_open",
     "research_shadow_candidate_tag_mismatch",
     "research_shadow_candidate_tag_blocked_by_operational_guard",
@@ -499,6 +506,39 @@ def _eth_structural_short_range_noise_allowed(
     )
 
 
+def _eth_short_range_noise_terminal_washout_blocked(
+    symbol: SymbolSnapshot,
+    *,
+    fresh_entry_assessment,
+    manage_only: bool,
+) -> bool:
+    if manage_only or fresh_entry_assessment is None:
+        return False
+    if symbol.symbol != "ETH/USDT:USDT":
+        return False
+    if fresh_entry_assessment.action != "sell":
+        return False
+    if fresh_entry_assessment.setup_phase != "range_noise":
+        return False
+    if _higher_timeframe_bias(symbol) != "short" or _higher_timeframe_phase(symbol) != "trend":
+        return False
+    indicators = symbol.indicators
+    return_24bars = float(indicators.get("return_24bars") or 0.0)
+    rsi_14 = float(indicators.get("rsi_14") or 50.0)
+    sma_fast_ratio = float(indicators.get("sma_fast_ratio") or 0.0)
+    sma_slow_ratio = float(indicators.get("sma_slow_ratio") or 0.0)
+    volume_ratio_20 = float(indicators.get("volume_ratio_20") or 0.0)
+    range_pct = float(indicators.get("range_pct") or 0.0)
+    return (
+        return_24bars <= ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_RETURN_24BARS
+        and rsi_14 <= ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_RSI
+        and sma_fast_ratio <= ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_SMA_FAST
+        and sma_slow_ratio <= ETH_RANGE_NOISE_TERMINAL_WASHOUT_MAX_SMA_SLOW
+        and volume_ratio_20 >= ETH_RANGE_NOISE_TERMINAL_WASHOUT_MIN_VOLUME_RATIO
+        and range_pct >= ETH_RANGE_NOISE_TERMINAL_WASHOUT_MIN_RANGE_PCT
+    )
+
+
 def _eth_short_research_blocks_fresh_outside_short_trend_family_open(
     symbol: SymbolSnapshot,
     *,
@@ -782,6 +822,13 @@ class CandidateFilter:
                         ):
                             eligible = False
                             reasons.append("eth_short_range_noise_requires_breakdown_structure")
+                        if _eth_short_range_noise_terminal_washout_blocked(
+                            symbol,
+                            fresh_entry_assessment=fresh_entry_assessment,
+                            manage_only=manage_only,
+                        ):
+                            eligible = False
+                            reasons.append("eth_short_range_noise_terminal_washout")
                         if _eth_short_research_blocks_fresh_outside_short_trend_family_open(
                             symbol,
                             fresh_entry_assessment=fresh_entry_assessment,
@@ -933,6 +980,13 @@ class CandidateFilter:
                     ):
                         eligible = False
                         reasons.append("eth_short_range_noise_requires_breakdown_structure")
+                    if _eth_short_range_noise_terminal_washout_blocked(
+                        symbol,
+                        fresh_entry_assessment=fresh_entry_assessment,
+                        manage_only=manage_only,
+                    ):
+                        eligible = False
+                        reasons.append("eth_short_range_noise_terminal_washout")
                     if _eth_short_research_blocks_fresh_outside_short_trend_family_open(
                         symbol,
                         fresh_entry_assessment=fresh_entry_assessment,

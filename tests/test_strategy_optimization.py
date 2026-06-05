@@ -4,6 +4,8 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import types
@@ -22,6 +24,8 @@ if "ccxt" not in sys.modules:
 
 from qount.candidate_filter import CandidateFilter
 from qount.backtest import BacktestService
+from qount.ai_hold_baseline import AIHoldBaselineService
+from qount.ai_hold_baseline import build_ai_hold_prompt_variant
 from qount.ai_client import AIDecisionClient
 from qount.ai_client import default_decision_prompt
 from qount.ai_client import default_system_prompt
@@ -33,6 +37,7 @@ from qount.entry_quality import build_traditional_signal_context
 from qount.entry_quality import FreshEntryAssessment
 from qount.hourly_model import fit_symbol_hourly_return_model
 from qount.hourly_model import score_hourly_return_model_signal
+from qount.idle_window_diagnostic import IdleWindowDiagnosticService
 from qount.executor import Executor
 from qount.journal import Journal
 from qount.market import build_higher_timeframe_context_from_completed_candles
@@ -60,6 +65,13 @@ from qount.setup_model import build_setup_model_feature_map
 from qount.setup_model import fit_setup_edge_model
 from qount.setup_model import score_setup_edge_model_signal
 from qount.setup_model import SetupEdgeModelService
+from qount.setup_model import SETUP_EDGE_MODEL_V2_FEATURE_NAMES
+from qount.setup_model import SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS
+from qount.strategy_selection import evaluate_carry_family
+from qount.strategy_selection import evaluate_cross_sectional_family
+from qount.strategy_selection import evaluate_cross_sectional_portfolio_replay
+from qount.strategy_selection import enrich_funding_with_premium_index_basis
+from qount.strategy_selection import StrategySelectionScanService
 from qount.walk_forward import parse_walk_forward_window
 from qount.walk_forward import _aggregate_rows
 from qount.walk_forward import _performance_summary
@@ -833,11 +845,71 @@ class StrategyOptimizationTests(unittest.TestCase):
                 "train-setup-model",
                 "--research-profile",
                 "eth-only",
+                "--setup-model-version",
+                "v2_interactions",
             ]
         )
 
         self.assertEqual(args.command, "train-setup-model")
         self.assertEqual(args.research_profile, "eth-only")
+        self.assertEqual(args.setup_model_version, "v2_interactions")
+
+    def test_setup_model_compare_parser_accepts_research_controls(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "setup-model-compare",
+                "--research-profile",
+                "eth-only",
+                "--lookback-days",
+                "45",
+                "--horizon-bars",
+                "6",
+                "--min-samples",
+                "12",
+                "--split-higher-phase",
+                "--eval-fraction",
+                "0.25",
+                "--output-path",
+                "/tmp/qount-setup-compare.json",
+            ]
+        )
+
+        self.assertEqual(args.command, "setup-model-compare")
+        self.assertEqual(args.research_profile, "eth-only")
+        self.assertEqual(args.lookback_days, 45)
+        self.assertEqual(args.horizon_bars, 6)
+        self.assertEqual(args.min_samples, 12)
+        self.assertTrue(args.split_higher_phase)
+        self.assertAlmostEqual(args.eval_fraction, 0.25)
+        self.assertEqual(args.output_path, "/tmp/qount-setup-compare.json")
+
+    def test_live_entry_import_does_not_load_research_ml_stack(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        existing_pythonpath = env.get("PYTHONPATH")
+        src_path = str(repo_root / "src")
+        env["PYTHONPATH"] = src_path if not existing_pythonpath else f"{src_path}{os.pathsep}{existing_pythonpath}"
+        probe = (
+            "import json, sys; "
+            "import qount.main; "
+            "print(json.dumps({name: name in sys.modules for name in "
+            "('numpy', 'sklearn', 'lightgbm')}, sort_keys=True))"
+        )
+
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {"lightgbm": False, "numpy": False, "sklearn": False},
+        )
 
     def test_setup_edge_study_parser_accepts_multi_symbol_research_profile(self) -> None:
         parser = build_parser()
@@ -959,6 +1031,811 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertEqual(args.horizon_bars, [3, 6, 12])
         self.assertEqual(args.output_path, "/tmp/qount-scan.json")
 
+    def test_strategy_selection_scan_parser_defaults_to_discovery_boundary(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "strategy-selection-scan",
+                "--research-profile",
+                "multi-symbol",
+                "--families",
+                "xs_mom",
+                "carry",
+                "--frequencies",
+                "1h",
+                "1d",
+                "--lookback-days",
+                "30",
+                "--holdout-role",
+                "validation_v1",
+                "--signal-lookback-grid-bars",
+                "6",
+                "12",
+                "--holding-grid-bars",
+                "1",
+                "3",
+                "--directional-overlap-mode",
+                "stride",
+                "--directional-evaluation-mode",
+                "portfolio_replay",
+                "--directional-max-open-positions",
+                "6",
+                "--directional-exit-mode",
+                "triple_barrier",
+                "--directional-take-profit-pct",
+                "0.02",
+                "--directional-stop-loss-pct",
+                "0.01",
+                "--directional-purged-cv-folds",
+                "3",
+                "--directional-embargo-bars",
+                "2",
+                "--carry-model",
+                "threshold_dual_leg",
+                "--carry-entry-threshold-pct",
+                "0.00008",
+                "--carry-exit-threshold-pct",
+                "0.00004",
+                "--carry-min-hold-periods",
+                "3",
+                "--carry-entry-threshold-grid-pct",
+                "0.00004",
+                "0.00008",
+                "--carry-exit-threshold-grid-pct",
+                "0.00002",
+                "0.00004",
+                "--carry-min-hold-grid",
+                "2",
+                "3",
+                "--carry-basis-source",
+                "premium_index",
+                "--carry-execution-cost-model",
+                "per_order",
+                "--carry-capital-model",
+                "spot_perp_gross",
+                "--carry-perp-margin-fraction",
+                "0.1666667",
+                "--carry-basis-tail-stop-pct",
+                "0.0015",
+                "--carry-basis-entry-max-abs-pct",
+                "0.0010",
+                "--carry-maker-order-cost-pct",
+                "0.0",
+                "--carry-taker-order-cost-pct",
+                "0.00045",
+                "--output-path",
+                "/tmp/qount-strategy-selection.json",
+            ]
+        )
+
+        self.assertEqual(args.command, "strategy-selection-scan")
+        self.assertEqual(args.research_profile, "multi-symbol")
+        self.assertEqual(args.families, ["xs_mom", "carry"])
+        self.assertEqual(args.frequencies, ["1h", "1d"])
+        self.assertEqual(args.end, "2026-06-01T00:00:00+00:00")
+        self.assertEqual(args.holdout_role, "validation_v1")
+        self.assertEqual(args.signal_lookback_grid_bars, [6, 12])
+        self.assertEqual(args.holding_grid_bars, [1, 3])
+        self.assertEqual(args.directional_overlap_mode, "stride")
+        self.assertEqual(args.directional_evaluation_mode, "portfolio_replay")
+        self.assertEqual(args.directional_max_open_positions, 6)
+        self.assertEqual(args.directional_exit_mode, "triple_barrier")
+        self.assertAlmostEqual(args.directional_take_profit_pct, 0.02)
+        self.assertAlmostEqual(args.directional_stop_loss_pct, 0.01)
+        self.assertEqual(args.directional_purged_cv_folds, 3)
+        self.assertEqual(args.directional_embargo_bars, 2)
+        self.assertEqual(args.carry_model, "threshold_dual_leg")
+        self.assertEqual(args.carry_entry_threshold_pct, 0.00008)
+        self.assertEqual(args.carry_exit_threshold_pct, 0.00004)
+        self.assertEqual(args.carry_min_hold_periods, 3)
+        self.assertEqual(args.carry_entry_threshold_grid_pct, [0.00004, 0.00008])
+        self.assertEqual(args.carry_exit_threshold_grid_pct, [0.00002, 0.00004])
+        self.assertEqual(args.carry_min_hold_grid, [2, 3])
+        self.assertEqual(args.carry_basis_source, "premium_index")
+        self.assertEqual(args.carry_execution_cost_model, "per_order")
+        self.assertEqual(args.carry_capital_model, "spot_perp_gross")
+        self.assertAlmostEqual(args.carry_perp_margin_fraction, 0.1666667)
+        self.assertAlmostEqual(args.carry_basis_tail_stop_pct, 0.0015)
+        self.assertAlmostEqual(args.carry_basis_entry_max_abs_pct, 0.0010)
+        self.assertAlmostEqual(args.carry_maker_order_cost_pct, 0.0)
+        self.assertAlmostEqual(args.carry_taker_order_cost_pct, 0.00045)
+        self.assertEqual(args.output_path, "/tmp/qount-strategy-selection.json")
+
+    def test_strategy_selection_cross_sectional_momentum_recovers_positive_ic(self) -> None:
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+                [120_000, 121.0, 121.0, 121.0, 121.0, 1000.0],
+            ],
+            "BBB/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 102.0, 102.0, 102.0, 102.0, 1000.0],
+                [120_000, 103.0, 103.0, 103.0, 103.0, 1000.0],
+            ],
+            "CCC/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 95.0, 95.0, 95.0, 95.0, 1000.0],
+                [120_000, 90.0, 90.0, 90.0, 90.0, 1000.0],
+            ],
+        }
+
+        result = evaluate_cross_sectional_family(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1m",
+            signal_lookback_bars=1,
+            holding_bars=1,
+            start_ms=60_000,
+            end_ms=60_000,
+            min_cross_section_symbols=3,
+            top_fraction=0.34,
+            cost_per_directional_bet_pct=0.0,
+        )
+
+        self.assertEqual(result["family"], "xs_mom")
+        self.assertEqual(result["cross_section_count"], 1)
+        self.assertGreater(result["rank_ic_mean"], 0.9)
+        self.assertGreater(result["portfolio_sum_return_pct"], 0.0)
+
+    def test_strategy_selection_triple_barrier_uses_intrabar_high_low_outcomes(self) -> None:
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 110.0, 111.0, 109.0, 110.0, 1000.0],
+                [120_000, 110.0, 113.0, 109.0, 111.0, 1000.0],
+            ],
+            "BBB/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 102.0, 103.0, 101.0, 102.0, 1000.0],
+                [120_000, 102.0, 103.0, 101.0, 102.0, 1000.0],
+            ],
+            "CCC/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 95.0, 96.0, 94.0, 95.0, 1000.0],
+                [120_000, 95.0, 95.5, 93.0, 94.0, 1000.0],
+            ],
+        }
+
+        close_mode = evaluate_cross_sectional_family(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1m",
+            signal_lookback_bars=1,
+            holding_bars=1,
+            start_ms=60_000,
+            end_ms=60_000,
+            min_cross_section_symbols=3,
+            top_fraction=0.34,
+            cost_per_directional_bet_pct=0.0,
+        )
+        barrier_mode = evaluate_cross_sectional_family(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1m",
+            signal_lookback_bars=1,
+            holding_bars=1,
+            start_ms=60_000,
+            end_ms=60_000,
+            min_cross_section_symbols=3,
+            top_fraction=0.34,
+            cost_per_directional_bet_pct=0.0,
+            exit_mode="triple_barrier",
+            take_profit_pct=0.02,
+            stop_loss_pct=0.01,
+        )
+
+        self.assertEqual(close_mode["directional_exit_mode"], "close")
+        self.assertEqual(barrier_mode["directional_exit_mode"], "triple_barrier")
+        self.assertAlmostEqual(barrier_mode["directional_take_profit_pct"], 0.02)
+        self.assertAlmostEqual(barrier_mode["directional_stop_loss_pct"], 0.01)
+        self.assertEqual(
+            barrier_mode["directional_exit_reason_counts"],
+            {"long_take_profit": 1, "short_take_profit": 1},
+        )
+        self.assertGreater(barrier_mode["portfolio_sum_return_pct"], close_mode["portfolio_sum_return_pct"])
+
+    def test_strategy_selection_fetch_ohlcv_keeps_ccxt_close_column(self) -> None:
+        exchange = FakeExchange(
+            {
+                "AAA/USDT:USDT": [
+                    [0, 10.0, 15.0, 9.0, 12.0, 1000.0],
+                    [60_000, 12.0, 16.0, 11.0, 14.0, 1100.0],
+                ]
+            }
+        )
+        settings = make_settings(Path(tempfile.mkdtemp()))
+        service = StrategySelectionScanService(settings)
+
+        rows = service._fetch_ohlcv_range(
+            exchange=exchange,
+            symbol="AAA/USDT:USDT",
+            frequency="1m",
+            start_ms=0,
+            end_ms=60_000,
+        )
+
+        self.assertEqual(rows[0], [0, 10.0, 15.0, 9.0, 12.0, 1000.0])
+        self.assertEqual(rows[1][4], 14.0)
+        self.assertNotEqual(rows[1][4], rows[1][3])
+
+    def test_strategy_selection_overlap_stride_skips_overlapping_directional_cross_sections(self) -> None:
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [86_400_000, 104.0, 104.0, 104.0, 104.0, 1000.0],
+                [172_800_000, 108.0, 108.0, 108.0, 108.0, 1000.0],
+                [259_200_000, 112.0, 112.0, 112.0, 112.0, 1000.0],
+                [345_600_000, 116.0, 116.0, 116.0, 116.0, 1000.0],
+            ],
+            "BBB/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [86_400_000, 99.0, 99.0, 99.0, 99.0, 1000.0],
+                [172_800_000, 98.0, 98.0, 98.0, 98.0, 1000.0],
+                [259_200_000, 97.0, 97.0, 97.0, 97.0, 1000.0],
+                [345_600_000, 96.0, 96.0, 96.0, 96.0, 1000.0],
+            ],
+        }
+
+        all_mode = evaluate_cross_sectional_family(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1d",
+            signal_lookback_bars=1,
+            holding_bars=2,
+            start_ms=86_400_000,
+            end_ms=259_200_000,
+            min_cross_section_symbols=2,
+            top_fraction=0.5,
+            cost_per_directional_bet_pct=0.0,
+        )
+        stride_mode = evaluate_cross_sectional_family(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1d",
+            signal_lookback_bars=1,
+            holding_bars=2,
+            start_ms=86_400_000,
+            end_ms=259_200_000,
+            min_cross_section_symbols=2,
+            top_fraction=0.5,
+            cost_per_directional_bet_pct=0.0,
+            overlap_mode="stride",
+        )
+
+        self.assertEqual(all_mode["directional_overlap_mode"], "all")
+        self.assertEqual(all_mode["cross_section_count"], 2)
+        self.assertEqual(stride_mode["directional_overlap_mode"], "stride")
+        self.assertEqual(stride_mode["cross_section_count"], 1)
+        self.assertLess(stride_mode["turnover_events"], all_mode["turnover_events"])
+
+    def test_strategy_selection_portfolio_replay_caps_overlapping_open_positions(self) -> None:
+        day_ms = 86_400_000
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [day_ms, 104.0, 104.0, 104.0, 104.0, 1000.0],
+                [2 * day_ms, 108.0, 108.0, 108.0, 108.0, 1000.0],
+                [3 * day_ms, 112.0, 112.0, 112.0, 112.0, 1000.0],
+                [4 * day_ms, 116.0, 116.0, 116.0, 116.0, 1000.0],
+            ],
+            "BBB/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [day_ms, 101.0, 101.0, 101.0, 101.0, 1000.0],
+                [2 * day_ms, 102.0, 102.0, 102.0, 102.0, 1000.0],
+                [3 * day_ms, 103.0, 103.0, 103.0, 103.0, 1000.0],
+                [4 * day_ms, 104.0, 104.0, 104.0, 104.0, 1000.0],
+            ],
+            "CCC/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [day_ms, 98.0, 98.0, 98.0, 98.0, 1000.0],
+                [2 * day_ms, 96.0, 96.0, 96.0, 96.0, 1000.0],
+                [3 * day_ms, 94.0, 94.0, 94.0, 94.0, 1000.0],
+                [4 * day_ms, 92.0, 92.0, 92.0, 92.0, 1000.0],
+            ],
+        }
+
+        unlimited = evaluate_cross_sectional_portfolio_replay(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1d",
+            signal_lookback_bars=1,
+            holding_bars=2,
+            start_ms=day_ms,
+            end_ms=2 * day_ms,
+            min_cross_section_symbols=3,
+            top_fraction=0.34,
+            cost_per_directional_bet_pct=0.0,
+        )
+        capped = evaluate_cross_sectional_portfolio_replay(
+            rows_by_symbol,
+            family="xs_mom",
+            frequency="1d",
+            signal_lookback_bars=1,
+            holding_bars=2,
+            start_ms=day_ms,
+            end_ms=2 * day_ms,
+            min_cross_section_symbols=3,
+            top_fraction=0.34,
+            cost_per_directional_bet_pct=0.0,
+            max_open_positions=2,
+        )
+
+        self.assertEqual(unlimited["directional_evaluation_mode"], "portfolio_replay")
+        self.assertEqual(unlimited["portfolio_replay_closed_trade_count"], 4)
+        self.assertEqual(unlimited["portfolio_replay_max_concurrent_positions"], 4)
+        self.assertEqual(unlimited["directional_exit_reason_counts"], {"long_time": 2, "short_time": 2})
+        self.assertEqual(capped["directional_max_open_positions"], 2)
+        self.assertEqual(capped["portfolio_replay_closed_trade_count"], 2)
+        self.assertEqual(capped["portfolio_replay_skipped_trade_count"], 2)
+        self.assertGreater(capped["portfolio_sum_return_pct"], 0.0)
+
+    def test_strategy_selection_directional_grid_expands_cells_and_records_horizon(self) -> None:
+        rows = {
+            ("AAA/USDT:USDT", "1d"): [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [86_400_000, 104.0, 104.0, 104.0, 104.0, 1000.0],
+                [172_800_000, 108.0, 108.0, 108.0, 108.0, 1000.0],
+                [259_200_000, 112.0, 112.0, 112.0, 112.0, 1000.0],
+                [345_600_000, 116.0, 116.0, 116.0, 116.0, 1000.0],
+            ],
+            ("BBB/USDT:USDT", "1d"): [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [86_400_000, 98.0, 98.0, 98.0, 98.0, 1000.0],
+                [172_800_000, 96.0, 96.0, 96.0, 96.0, 1000.0],
+                [259_200_000, 94.0, 94.0, 94.0, 94.0, 1000.0],
+                [345_600_000, 92.0, 92.0, 92.0, 92.0, 1000.0],
+            ],
+        }
+        settings = make_settings(Path(tempfile.mkdtemp()), market_type="future", symbols=("AAA/USDT", "BBB/USDT"))
+        result = StrategySelectionScanService(settings, public_exchange=FakeHistoricalExchange(rows)).run(
+            symbols_filter=["AAA/USDT", "BBB/USDT"],
+            frequencies=["1d"],
+            families=["xs_mom", "ts_mom"],
+            start=datetime.fromtimestamp(86_400_000 / 1000, tz=timezone.utc),
+            end=datetime.fromtimestamp(259_200_000 / 1000, tz=timezone.utc),
+            lookback_days=1,
+            signal_lookback_bars=1,
+            holding_bars=1,
+            signal_lookback_grid_bars=[1, 2],
+            holding_grid_bars=[1, 2],
+            directional_overlap_mode="stride",
+            directional_evaluation_mode="portfolio_replay",
+            directional_max_open_positions=2,
+            directional_exit_mode="triple_barrier",
+            directional_take_profit_pct=0.02,
+            directional_stop_loss_pct=0.01,
+            directional_purged_cv_folds=2,
+            directional_embargo_bars=1,
+            min_cross_section_symbols=2,
+            top_fraction=0.5,
+        )
+
+        self.assertEqual(result["signal_lookback_grid_bars"], [1, 2])
+        self.assertEqual(result["holding_grid_bars"], [1, 2])
+        self.assertEqual(len(result["cells"]), 8)
+        self.assertEqual({cell["family"] for cell in result["cells"]}, {"xs_mom", "ts_mom"})
+        self.assertEqual({cell["signal_lookback_bars"] for cell in result["cells"]}, {1, 2})
+        self.assertEqual({cell["holding_bars"] for cell in result["cells"]}, {1, 2})
+        self.assertEqual({cell["directional_overlap_mode"] for cell in result["cells"]}, {"stride"})
+        self.assertEqual(result["directional_evaluation_mode"], "portfolio_replay")
+        self.assertEqual(result["directional_max_open_positions"], 2)
+        self.assertEqual(result["directional_exit_mode"], "triple_barrier")
+        self.assertAlmostEqual(result["directional_take_profit_pct"], 0.02)
+        self.assertAlmostEqual(result["directional_stop_loss_pct"], 0.01)
+        self.assertEqual(result["directional_purged_cv_folds"], 2)
+        self.assertEqual(result["directional_embargo_bars"], 1)
+        self.assertEqual({cell["directional_evaluation_mode"] for cell in result["cells"] if cell["family"] == "xs_mom"}, {"portfolio_replay"})
+        self.assertEqual({cell["directional_exit_mode"] for cell in result["cells"]}, {"triple_barrier"})
+        xs_mom_cell = next(cell for cell in result["cells"] if cell["family"] == "xs_mom")
+        self.assertEqual(xs_mom_cell["directional_purged_cv"]["fold_count"], 2)
+        self.assertEqual(xs_mom_cell["directional_purged_cv"]["embargo_bars"], 1)
+        self.assertEqual(len(xs_mom_cell["directional_purged_cv"]["folds"]), 2)
+        self.assertIn("train_after_start_utc", xs_mom_cell["directional_purged_cv"]["folds"][0])
+        self.assertEqual(result["fetch_summary"]["1d"]["AAA/USDT:USDT"], 5)
+
+    def test_strategy_selection_carry_uses_absolute_funding_cashflow(self) -> None:
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": 0.0010},
+                {"timestamp_ms": 2, "funding_rate": 0.0012},
+            ],
+            "BBB/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": -0.0008},
+                {"timestamp_ms": 2, "funding_rate": -0.0009},
+            ],
+        }
+
+        result = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0,
+        )
+
+        self.assertEqual(result["family"], "carry")
+        self.assertEqual(result["sample_count"], 4)
+        self.assertGreater(result["portfolio_sum_return_pct"], 0.0)
+        self.assertEqual(result["by_symbol"]["AAA/USDT:USDT"]["positive_periods"], 2)
+
+    def test_strategy_selection_threshold_carry_accounts_for_dual_leg_costs_and_min_hold(self) -> None:
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": 0.0010, "basis_pct": 0.0002},
+                {"timestamp_ms": 2, "funding_rate": 0.0012, "basis_pct": 0.0003},
+                {"timestamp_ms": 3, "funding_rate": 0.0001, "basis_pct": 0.0001},
+                {"timestamp_ms": 4, "funding_rate": -0.0011, "basis_pct": -0.0002},
+            ],
+            "BBB/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": 0.0001},
+                {"timestamp_ms": 2, "funding_rate": -0.0001},
+            ],
+        }
+
+        result = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0001,
+            model="threshold_dual_leg",
+            entry_threshold_pct=0.0008,
+            exit_threshold_pct=0.0002,
+            min_hold_periods=2,
+        )
+
+        self.assertEqual(result["family"], "carry")
+        self.assertEqual(result["carry_model"], "threshold_dual_leg")
+        self.assertEqual(result["sample_count"], 6)
+        self.assertEqual(result["carry_entry_events"], 2)
+        self.assertEqual(result["carry_exit_events"], 1)
+        self.assertEqual(result["carry_invested_periods"], 3)
+        self.assertAlmostEqual(result["carry_utilization_ratio"], 0.5)
+        self.assertEqual(result["carry_dual_leg_gross_exposure_periods"], 6)
+        self.assertEqual(result["basis_sample_count"], 3)
+        self.assertAlmostEqual(result["basis_max_abs_pct"], 0.0003)
+        self.assertEqual(result["carry_execution_cost_model"], "directional_round_trip")
+        self.assertEqual(result["carry_capital_model"], "perp_notional")
+        self.assertAlmostEqual(result["carry_order_cost_pct"], 0.0001)
+        self.assertGreater(result["carry_gross_funding_return_pct"], 0.0)
+        self.assertGreater(result["carry_execution_cost_sum_pct"], 0.0)
+        self.assertIsNotNone(result["carry_break_even_order_cost_pct"])
+        self.assertAlmostEqual(result["basis_single_tail_loss_on_capital_pct"], 0.0003)
+        self.assertIsNotNone(result["basis_single_tail_to_net_ratio"])
+        self.assertGreater(result["portfolio_sum_return_pct"], 0.0)
+        self.assertEqual(result["by_symbol"]["BBB/USDT:USDT"]["sum_net_funding_pct"], 0.0)
+
+    def test_strategy_selection_threshold_carry_explicit_spot_perp_cost_and_capital_model(self) -> None:
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": 0.0010, "basis_pct": 0.0002},
+                {"timestamp_ms": 2, "funding_rate": 0.0010, "basis_pct": 0.0003},
+            ],
+        }
+
+        result = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0004,
+            model="threshold_dual_leg",
+            entry_threshold_pct=0.0008,
+            exit_threshold_pct=0.0002,
+            min_hold_periods=1,
+            execution_cost_model="per_order",
+            capital_model="spot_perp_gross",
+            perp_margin_fraction=1.0,
+        )
+
+        self.assertEqual(result["carry_execution_cost_model"], "per_order")
+        self.assertEqual(result["carry_capital_model"], "spot_perp_gross")
+        self.assertAlmostEqual(result["carry_order_cost_pct"], 0.0002)
+        self.assertAlmostEqual(result["carry_capital_per_perp_notional"], 2.0)
+        self.assertAlmostEqual(result["carry_gross_funding_return_pct"], 0.0010)
+        self.assertAlmostEqual(result["carry_execution_cost_sum_pct"], 0.0002)
+        self.assertAlmostEqual(result["portfolio_sum_return_pct"], 0.0008)
+        self.assertAlmostEqual(result["carry_break_even_order_cost_pct"], 0.0010)
+        self.assertAlmostEqual(result["carry_avg_dual_leg_gross_exposure_on_capital_pct"], 1.0)
+        self.assertAlmostEqual(result["basis_single_tail_loss_on_capital_pct"], 0.00015)
+        self.assertAlmostEqual(result["basis_single_tail_to_net_ratio"], 0.1875)
+        self.assertAlmostEqual(result["portfolio_sum_after_single_basis_tail_pct"], 0.00065)
+        self.assertAlmostEqual(result["by_symbol"]["AAA/USDT:USDT"]["sum_after_single_basis_tail_pct"], 0.00065)
+
+    def test_strategy_selection_threshold_carry_post_only_economics_are_diagnostic(self) -> None:
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": 0.0010, "basis_pct": 0.0002},
+                {"timestamp_ms": 2, "funding_rate": 0.0010, "basis_pct": 0.0003},
+            ],
+        }
+
+        result = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0004,
+            model="threshold_dual_leg",
+            entry_threshold_pct=0.0008,
+            exit_threshold_pct=0.0002,
+            min_hold_periods=1,
+            execution_cost_model="per_order",
+            capital_model="spot_perp_gross",
+            perp_margin_fraction=1.0,
+            maker_order_cost_pct=0.0,
+            taker_order_cost_pct=0.0012,
+        )
+
+        self.assertAlmostEqual(result["portfolio_sum_return_pct"], 0.0008)
+        self.assertAlmostEqual(result["carry_post_only_maker_order_cost_pct"], 0.0)
+        self.assertAlmostEqual(result["carry_post_only_taker_order_cost_pct"], 0.0012)
+        self.assertAlmostEqual(result["carry_post_only_target_order_cost_for_break_even_pct"], 0.0010)
+        self.assertAlmostEqual(result["carry_post_only_target_order_cost_after_single_basis_tail_pct"], 0.00085)
+        self.assertAlmostEqual(result["carry_required_maker_fill_rate_for_break_even"], 1.0 / 6.0)
+        self.assertAlmostEqual(result["carry_required_maker_fill_rate_after_single_basis_tail"], 0.2916666667)
+        self.assertTrue(result["carry_post_only_break_even_feasible"])
+        self.assertTrue(result["carry_post_only_after_tail_feasible"])
+
+    def test_strategy_selection_threshold_carry_basis_tail_stop_is_explicit_research_control(self) -> None:
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": 0.0010, "basis_pct": 0.0001},
+                {"timestamp_ms": 2, "funding_rate": 0.0010, "basis_pct": 0.0004},
+                {"timestamp_ms": 3, "funding_rate": 0.0010, "basis_pct": 0.0001},
+            ],
+        }
+
+        baseline = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0,
+            model="threshold_dual_leg",
+            entry_threshold_pct=0.0008,
+            exit_threshold_pct=0.0002,
+            min_hold_periods=1,
+        )
+        stopped = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0,
+            model="threshold_dual_leg",
+            entry_threshold_pct=0.0008,
+            exit_threshold_pct=0.0002,
+            min_hold_periods=1,
+            basis_tail_stop_pct=0.0003,
+        )
+
+        self.assertEqual(baseline["basis_tail_stop_threshold_pct"], None)
+        self.assertEqual(baseline["basis_tail_stop_events"], 0)
+        self.assertAlmostEqual(baseline["portfolio_sum_return_pct"], 0.0030)
+        self.assertAlmostEqual(baseline["basis_max_abs_pct"], 0.0004)
+        self.assertEqual(stopped["basis_tail_stop_threshold_pct"], 0.0003)
+        self.assertEqual(stopped["basis_tail_stop_events"], 1)
+        self.assertEqual(stopped["carry_exit_events"], 1)
+        self.assertAlmostEqual(stopped["portfolio_sum_return_pct"], 0.0020)
+        self.assertAlmostEqual(stopped["basis_max_abs_pct"], 0.0001)
+        self.assertEqual(stopped["by_symbol"]["AAA/USDT:USDT"]["basis_tail_stop_events"], 1)
+
+    def test_strategy_selection_threshold_carry_basis_entry_filter_blocks_new_high_basis_entries(self) -> None:
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [
+                {"timestamp_ms": 1, "funding_rate": 0.0010, "basis_pct": 0.0006},
+                {"timestamp_ms": 2, "funding_rate": 0.0010, "basis_pct": 0.0002},
+                {"timestamp_ms": 3, "funding_rate": 0.0010, "basis_pct": 0.0001},
+            ],
+        }
+
+        baseline = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0,
+            model="threshold_dual_leg",
+            entry_threshold_pct=0.0008,
+            exit_threshold_pct=0.0002,
+            min_hold_periods=1,
+        )
+        filtered = evaluate_carry_family(
+            funding_by_symbol,
+            cost_per_directional_bet_pct=0.0,
+            model="threshold_dual_leg",
+            entry_threshold_pct=0.0008,
+            exit_threshold_pct=0.0002,
+            min_hold_periods=1,
+            basis_entry_max_abs_pct=0.0003,
+        )
+
+        self.assertEqual(baseline["basis_entry_max_abs_pct"], None)
+        self.assertEqual(baseline["basis_entry_blocked_events"], 0)
+        self.assertAlmostEqual(baseline["portfolio_sum_return_pct"], 0.0030)
+        self.assertAlmostEqual(baseline["basis_max_abs_pct"], 0.0006)
+        self.assertEqual(filtered["basis_entry_max_abs_pct"], 0.0003)
+        self.assertEqual(filtered["basis_entry_blocked_events"], 1)
+        self.assertEqual(filtered["carry_entry_events"], 1)
+        self.assertEqual(filtered["carry_invested_periods"], 2)
+        self.assertAlmostEqual(filtered["portfolio_sum_return_pct"], 0.0020)
+        self.assertAlmostEqual(filtered["basis_max_abs_pct"], 0.0002)
+        self.assertEqual(filtered["by_symbol"]["AAA/USDT:USDT"]["basis_entry_blocked_events"], 1)
+
+    def test_strategy_selection_enriches_funding_with_premium_index_basis(self) -> None:
+        funding_rows = [
+            {"timestamp_ms": 0, "funding_rate": 0.0010},
+            {"timestamp_ms": 28_800_000, "funding_rate": -0.0005},
+        ]
+        premium_rows = [
+            [0, 0.0001, 0.0003, -0.0001, 0.0002, 0.0],
+            [28_800_000, 0.0002, 0.0004, -0.0002, -0.0003, 0.0],
+        ]
+
+        enriched = enrich_funding_with_premium_index_basis(
+            funding_rows,
+            premium_rows,
+            timeframe_ms=28_800_000,
+        )
+
+        self.assertEqual(enriched[0]["basis_source"], "premium_index")
+        self.assertEqual(enriched[0]["basis_pct"], 0.0002)
+        self.assertEqual(enriched[1]["basis_pct"], -0.0003)
+
+    def test_strategy_selection_carry_grid_expands_threshold_cells(self) -> None:
+        class FakeFundingExchange:
+            def load_markets(self) -> dict[str, dict]:
+                return {
+                    "BTC/USDT:USDT": {
+                        "symbol": "BTC/USDT:USDT",
+                        "id": "BTCUSDT",
+                        "base": "BTC",
+                        "quote": "USDT",
+                        "settle": "USDT",
+                        "contract": True,
+                        "linear": True,
+                        "swap": True,
+                        "limits": {"cost": {"min": 5.0}, "amount": {"min": 0.001}},
+                        "precision": {"amount": 0.001, "price": 0.01},
+                    }
+                }
+
+            def fetch_funding_rate_history(self, symbol: str, since: int | None = None, limit: int | None = None):
+                rows = [
+                    {
+                        "symbol": symbol,
+                        "timestamp": 1,
+                        "fundingRate": "0.0010",
+                        "info": {"markPrice": "101.0", "indexPrice": "100.0"},
+                    },
+                    {
+                        "symbol": symbol,
+                        "timestamp": 2,
+                        "fundingRate": "0.0002",
+                        "info": {"markPrice": "100.5", "indexPrice": "100.0"},
+                    },
+                    {
+                        "symbol": symbol,
+                        "timestamp": 3,
+                        "fundingRate": "-0.0010",
+                        "info": {"markPrice": "99.0", "indexPrice": "100.0"},
+                    },
+                ]
+                filtered = [row for row in rows if since is None or int(row["timestamp"]) >= since]
+                return filtered[:limit] if limit is not None else filtered
+
+            def fetch_premium_index_ohlcv(self, symbol: str, timeframe: str, since: int | None = None, limit: int | None = None):
+                rows = [
+                    [1, 0.0001, 0.0003, 0.0000, 0.0002, 0.0],
+                    [2, 0.0001, 0.0003, 0.0000, -0.0004, 0.0],
+                    [3, 0.0001, 0.0003, 0.0000, 0.0001, 0.0],
+                ]
+                filtered = [row for row in rows if since is None or int(row[0]) >= since]
+                return filtered[:limit] if limit is not None else filtered
+
+        settings = make_settings(Path(tempfile.mkdtemp()), market_type="future", symbols=("BTC/USDT",))
+        result = StrategySelectionScanService(settings, public_exchange=FakeFundingExchange()).run(
+            symbols_filter=["BTC/USDT"],
+            frequencies=["5m"],
+            families=["carry"],
+            start=datetime.fromtimestamp(0, tz=timezone.utc),
+            end=datetime.fromtimestamp(3 / 1000, tz=timezone.utc),
+            lookback_days=1,
+            signal_lookback_bars=12,
+            holding_bars=1,
+            min_cross_section_symbols=1,
+            top_fraction=0.25,
+            carry_model="threshold_dual_leg",
+            carry_entry_threshold_grid_pct=[0.0002, 0.0008],
+            carry_exit_threshold_grid_pct=[0.0001],
+            carry_min_hold_grid=[1, 2],
+            carry_basis_source="premium_index",
+            carry_execution_cost_model="per_order",
+            carry_capital_model="spot_perp_gross",
+            carry_perp_margin_fraction=0.25,
+            carry_basis_tail_stop_pct=0.0005,
+            carry_basis_entry_max_abs_pct=0.0006,
+            carry_maker_order_cost_pct=0.0,
+            carry_taker_order_cost_pct=0.00045,
+            holdout_role="validation_v1",
+        )
+
+        self.assertEqual(result["holdout_role"], "validation_v1")
+        self.assertEqual(result["carry_entry_threshold_grid_pct"], [0.0002, 0.0008])
+        self.assertEqual(result["carry_min_hold_grid"], [1, 2])
+        self.assertEqual(result["carry_basis_source"], "premium_index")
+        self.assertEqual(result["carry_execution_cost_model"], "per_order")
+        self.assertEqual(result["carry_capital_model"], "spot_perp_gross")
+        self.assertEqual(result["carry_perp_margin_fraction"], 0.25)
+        self.assertEqual(result["carry_basis_tail_stop_pct"], 0.0005)
+        self.assertEqual(result["carry_basis_entry_max_abs_pct"], 0.0006)
+        self.assertEqual(result["carry_maker_order_cost_pct"], 0.0)
+        self.assertEqual(result["carry_taker_order_cost_pct"], 0.00045)
+        self.assertEqual(result["fetch_summary"]["premium_index_8h"]["BTC/USDT:USDT"], 3)
+        self.assertEqual(len(result["cells"]), 4)
+        self.assertEqual({cell["carry_model"] for cell in result["cells"]}, {"threshold_dual_leg"})
+        self.assertEqual({cell["carry_execution_cost_model"] for cell in result["cells"]}, {"per_order"})
+        self.assertTrue(all("carry_utilization_ratio" in cell for cell in result["cells"]))
+        self.assertTrue(all("carry_avg_dual_leg_gross_exposure_on_capital_pct" in cell for cell in result["cells"]))
+        self.assertTrue(all("basis_single_tail_loss_on_capital_pct" in cell for cell in result["cells"]))
+        self.assertTrue(all(cell["basis_tail_stop_threshold_pct"] == 0.0005 for cell in result["cells"]))
+        self.assertTrue(all(cell["basis_entry_max_abs_pct"] == 0.0006 for cell in result["cells"]))
+        self.assertTrue(all(cell["carry_post_only_maker_order_cost_pct"] == 0.0 for cell in result["cells"]))
+        self.assertTrue(all(cell["carry_post_only_taker_order_cost_pct"] == 0.00045 for cell in result["cells"]))
+        self.assertTrue(any(cell["basis_sample_count"] > 0 for cell in result["cells"]))
+
+    def test_ai_hold_baseline_parser_accepts_research_controls(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "ai-hold-baseline",
+                "--research-profile",
+                "eth-only",
+                "--artifact-dir",
+                "/tmp/qount-wf",
+                "--prompt-variant",
+                "v3_veto_only",
+                "--repeat",
+                "3",
+                "--limit",
+                "4",
+                "--run-ids",
+                "20",
+                "21",
+                "--target-tags",
+                "multi_range_action_pullback_sma_fast_gt008",
+                "--dry-run",
+                "--output-path",
+                "/tmp/qount-ai-hold.json",
+            ]
+        )
+
+        self.assertEqual(args.command, "ai-hold-baseline")
+        self.assertEqual(args.research_profile, "eth-only")
+        self.assertEqual(args.artifact_dir, "/tmp/qount-wf")
+        self.assertEqual(args.prompt_variant, "v3_veto_only")
+        self.assertEqual(args.repeat, 3)
+        self.assertEqual(args.limit, 4)
+        self.assertEqual(args.run_ids, [20, 21])
+        self.assertIsNone(args.symbols)
+        self.assertEqual(args.target_tags, ["multi_range_action_pullback_sma_fast_gt008"])
+        self.assertTrue(args.dry_run)
+        self.assertEqual(args.output_path, "/tmp/qount-ai-hold.json")
+
+    def test_idle_window_diagnostic_parser_accepts_research_controls(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "idle-window-diagnostic",
+                "--research-profile",
+                "eth-only",
+                "--artifact-dir",
+                "/tmp/qount-wf",
+                "--horizon-bars",
+                "6",
+                "--top-candidates",
+                "7",
+                "--reason-limit",
+                "4",
+                "--include-traded-windows",
+                "--output-path",
+                "/tmp/qount-idle.json",
+            ]
+        )
+
+        self.assertEqual(args.command, "idle-window-diagnostic")
+        self.assertEqual(args.research_profile, "eth-only")
+        self.assertEqual(args.artifact_dir, "/tmp/qount-wf")
+        self.assertEqual(args.horizon_bars, 6)
+        self.assertEqual(args.top_candidates, 7)
+        self.assertEqual(args.reason_limit, 4)
+        self.assertTrue(args.include_traded_windows)
+        self.assertEqual(args.output_path, "/tmp/qount-idle.json")
+
     def test_research_json_artifact_defaults_to_persistent_state_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1028,6 +1905,286 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertIn("short_breakdown_confirmed", decision_prompt)
         self.assertIn("failed_rebound_breakdown with terminal_risk=false", system_prompt)
         self.assertIn("failed_rebound_breakdown with terminal_risk=false", decision_prompt)
+
+    def test_ai_hold_prompt_variant_removes_broad_default_wait_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, market_type="future")
+
+            system_prompt, decision_prompt, hypothesis = build_ai_hold_prompt_variant(
+                settings,
+                "v2_remove_default_wait",
+            )
+
+            self.assertEqual(hypothesis["prompt_variant"], "v2_remove_default_wait")
+            self.assertNotIn("default wait", system_prompt)
+            self.assertNotIn("default wait", decision_prompt)
+            self.assertNotIn("prefer waiting", system_prompt)
+            self.assertNotIn("prefer waiting", decision_prompt)
+            self.assertIn("Set the output prompt_version field", decision_prompt)
+
+    def test_ai_hold_baseline_dry_run_summarizes_stored_hold_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            tag = "multi_range_action_pullback_sma_fast_gt008"
+            candidate_filter = {
+                "status": "selected",
+                "selected_symbols": ["ETH/USDT:USDT"],
+                "symbols": [
+                    {
+                        "symbol": "ETH/USDT:USDT",
+                        "eligible": True,
+                        "manage_only": False,
+                        "setup_phase": "range_noise",
+                        "higher_timeframe_phase": "pullback",
+                        "research_slice_tags": [tag],
+                        "setup_model_signal": {"quality": "strong_favorable"},
+                        "reasons": ["candidate_ok"],
+                    }
+                ],
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[
+                    make_symbol(
+                        "ETH/USDT:USDT",
+                        900_000,
+                        2500.0,
+                        atr_pct=0.004,
+                        range_pct=0.004,
+                        volume_ratio=1.2,
+                        higher_bias="short",
+                        higher_phase="pullback",
+                    )
+                ],
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=bundle,
+                decision_action="hold",
+                final_action="hold",
+                symbol="ETH/USDT:USDT",
+                raw_payload_extra={"candidate_filter": candidate_filter},
+            )
+
+            result = AIHoldBaselineService(settings).run(
+                artifact_dir=settings.state_dir,
+                target_tags=[tag],
+                dry_run=True,
+            )
+
+            self.assertEqual(result["version"], "ai_hold_baseline_v1")
+            self.assertTrue(result["dry_run"])
+            self.assertEqual(result["sample_count"], 1)
+            self.assertEqual(result["request_count"], 0)
+            self.assertEqual(result["aggregate"]["stored_actions"]["counts"]["hold"], 1)
+            self.assertEqual(result["samples"][0]["research_slice_tags"], [tag])
+            self.assertEqual(result["samples"][0]["setup_model_qualities"], ["strong_favorable"])
+
+            filtered = AIHoldBaselineService(settings).run(
+                artifact_dir=settings.state_dir,
+                target_tags=[tag],
+                symbols_filter=["BTC/USDT"],
+                dry_run=True,
+            )
+            self.assertEqual(filtered["sample_count"], 0)
+
+    def test_ai_hold_baseline_replays_prompt_repeats_with_stub_requester(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            candidate_filter = {
+                "status": "selected",
+                "selected_symbols": ["ETH/USDT:USDT"],
+                "symbols": [
+                    {
+                        "symbol": "ETH/USDT:USDT",
+                        "eligible": True,
+                        "manage_only": False,
+                        "setup_phase": "range_noise",
+                        "higher_timeframe_phase": "pullback",
+                        "research_slice_tags": ["multi_range_action_pullback_sma_fast_gt008"],
+                        "setup_model_signal": {"quality": "strong_favorable"},
+                        "reasons": ["candidate_ok"],
+                    }
+                ],
+            }
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[
+                    make_symbol(
+                        "ETH/USDT:USDT",
+                        900_000,
+                        2500.0,
+                        atr_pct=0.004,
+                        range_pct=0.004,
+                        volume_ratio=1.2,
+                        higher_bias="short",
+                        higher_phase="pullback",
+                    )
+                ],
+            )
+            record_run(
+                journal,
+                settings,
+                bundle=bundle,
+                decision_action="hold",
+                final_action="hold",
+                symbol="ETH/USDT:USDT",
+                raw_payload_extra={"candidate_filter": candidate_filter},
+            )
+            calls: list[str] = []
+
+            def _requester(bundle, system_prompt, decision_prompt, prompt_version):
+                calls.append(prompt_version)
+                action = "sell" if len(calls) == 1 else "hold"
+                payload = {
+                    "timestamp": utc_now().isoformat(),
+                    "symbol": bundle.symbols[0].symbol,
+                    "action": action,
+                    "size_pct": 0.10 if action == "sell" else 0.0,
+                    "take_profit_pct": 0.02 if action == "sell" else 0.0,
+                    "stop_loss_pct": 0.01 if action == "sell" else 0.0,
+                    "ttl_minutes": 30,
+                    "confidence": 0.70,
+                    "reason": "stub",
+                    "prompt_version": prompt_version,
+                }
+                return {"prompt_version": prompt_version}, json.dumps(payload), "stub-model"
+
+            result = AIHoldBaselineService(settings, requester=_requester).run(
+                artifact_dir=settings.state_dir,
+                prompt_variant="v3_veto_only",
+                repeat=2,
+                limit=1,
+            )
+
+            self.assertEqual(calls, ["v3_veto_only", "v3_veto_only"])
+            self.assertEqual(result["sample_count"], 1)
+            self.assertEqual(result["request_count"], 2)
+            self.assertEqual(result["aggregate"]["replayed_actions"]["counts"]["sell"], 1)
+            self.assertEqual(result["aggregate"]["replayed_actions"]["counts"]["hold"], 1)
+            self.assertEqual(result["samples"][0]["replays"][0]["prompt_version"], "v3_veto_only")
+
+    def test_idle_window_diagnostic_summarizes_zero_trade_candidate_layers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            candidate_filter = {
+                "status": "selected",
+                "selected_symbols": ["ETH/USDT:USDT"],
+                "symbols": [
+                    {
+                        "symbol": "ETH/USDT:USDT",
+                        "eligible": True,
+                        "manage_only": False,
+                        "score": 9.5,
+                        "setup_phase": "range_noise",
+                        "higher_timeframe_phase": "pullback",
+                        "higher_timeframe_bias": "short",
+                        "entry_thesis_candidate": {"direction": "short"},
+                        "setup_model_signal": {
+                            "label": "favorable",
+                            "quality": "strong_favorable",
+                        },
+                        "traditional_signal_context": {
+                            "pattern_label": "failed_rebound_breakdown",
+                        },
+                        "reasons": ["candidate_ok", "low_volume_soft_penalty"],
+                    }
+                ],
+            }
+            first_bundle = make_bundle(
+                timestamp_ms=300_000,
+                symbols=[
+                    make_symbol(
+                        "ETH/USDT:USDT",
+                        300_000,
+                        100.0,
+                        atr_pct=0.004,
+                        range_pct=0.004,
+                        volume_ratio=1.2,
+                        higher_bias="short",
+                        higher_phase="pullback",
+                    )
+                ],
+            )
+            second_bundle = make_bundle(
+                timestamp_ms=600_000,
+                symbols=[
+                    make_symbol(
+                        "ETH/USDT:USDT",
+                        600_000,
+                        98.0,
+                        atr_pct=0.004,
+                        range_pct=0.004,
+                        volume_ratio=1.2,
+                        higher_bias="short",
+                        higher_phase="pullback",
+                    )
+                ],
+            )
+            for bundle in (first_bundle, second_bundle):
+                record_run(
+                    journal,
+                    settings,
+                    bundle=bundle,
+                    decision_action="hold",
+                    final_action="hold",
+                    symbol="ETH/USDT:USDT",
+                    raw_payload_extra={
+                        "candidate_filter": candidate_filter,
+                    },
+                )
+
+            result = IdleWindowDiagnosticService(settings).run(
+                artifact_dir=settings.state_dir,
+                symbols_filter=["ETH/USDT"],
+                horizon_bars=1,
+                top_candidates=5,
+                reason_limit=1,
+            )
+
+            self.assertEqual(result["version"], "idle_window_diagnostic_v1")
+            self.assertEqual(result["idle_window_count"], 1)
+            self.assertEqual(result["aggregate"]["ai_hold_count"], 2)
+            self.assertEqual(result["aggregate"]["candidate_filter_hold_count"], 0)
+            self.assertEqual(
+                result["aggregate"]["setup_model_quality_counts"]["counts"]["strong_favorable"],
+                2,
+            )
+            self.assertEqual(
+                result["aggregate"]["candidate_reason_counts"]["counts"]["candidate_ok"],
+                2,
+            )
+            self.assertEqual(result["aggregate"]["candidate_reason_counts"]["total"], 4)
+            window = result["windows"][0]
+            self.assertEqual(window["candidate_reason_counts"]["total"], 4)
+            self.assertEqual(window["top_candidate_count"], 1)
+            self.assertGreater(window["top_candidates_by_score"][0]["candidate_aligned_future_edge_pct"], 0.0)
 
     def test_walk_forward_summary_reads_nested_review_overall_metrics(self) -> None:
         summary = _performance_summary(
@@ -3227,6 +4384,126 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertEqual(signal["quality"], "strong_favorable")
         self.assertGreater(signal["predicted_edge_pct"], 0.0)
 
+    def test_setup_edge_model_v2_scores_interaction_features(self) -> None:
+        feature_names = SETUP_EDGE_MODEL_V2_FEATURE_NAMES
+        rows: list[list[float]] = []
+        targets: list[float] = []
+        for idx in range(80):
+            interaction_active = idx >= 40
+            feature_map = {name: 0.0 for name in feature_names}
+            feature_map["sma_fast_ratio"] = 0.010 if interaction_active else 0.001
+            feature_map["phase_pullback"] = 1.0
+            feature_map["phase_pullback_x_sma_fast_gt008"] = 1.0 if interaction_active else 0.0
+            rows.append([feature_map[name] for name in feature_names])
+            targets.append(0.0040 if interaction_active else -0.0015)
+        model_payload = fit_setup_edge_model(
+            symbol_name="ETH/USDT:USDT",
+            setup_phase="range_noise",
+            feature_rows=rows,
+            targets=targets,
+            ridge_alpha=0.0005,
+            model_version="v2_interactions",
+            feature_names=feature_names,
+        )
+        symbol = make_symbol(
+            "ETH/USDT:USDT",
+            900_000,
+            2400.0,
+            atr_pct=0.0020,
+            range_pct=0.0021,
+            volume_ratio=1.05,
+            higher_bias="short",
+            higher_phase="pullback",
+        )
+        symbol.indicators["sma_fast_ratio"] = 0.010
+        assessment = FreshEntryAssessment(
+            action="sell",
+            bias="short",
+            continuation_watch=False,
+            terminal_extension=False,
+            setup_phase="range_noise",
+            setup_confirmed=True,
+            candidate_reasons=(),
+            risk_reasons=(),
+        )
+
+        signal = score_setup_edge_model_signal(
+            symbol=symbol,
+            assessment=assessment,
+            traditional_signal_context={},
+            model_bundle={
+                "version": SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS,
+                "symbols": {"ETH/USDT:USDT": {"range_noise": model_payload}},
+            },
+        )
+
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["version"], SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS)
+        self.assertEqual(signal["label"], "favorable")
+        self.assertGreater(signal["predicted_edge_pct"], 0.0)
+
+    def test_setup_model_compare_reports_v1_and_v2_offline_split(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, market_type="future")
+            feature_names = SETUP_EDGE_MODEL_V2_FEATURE_NAMES
+
+            def item(timestamp_ms: int, interaction_active: bool) -> dict[str, object]:
+                feature_map = {name: 0.0 for name in feature_names}
+                feature_map["phase_pullback"] = 1.0
+                feature_map["sma_fast_ratio"] = 0.010 if interaction_active else 0.001
+                feature_map["phase_pullback_x_sma_fast_gt008"] = 1.0 if interaction_active else 0.0
+                return {
+                    "symbol": "ETH/USDT:USDT",
+                    "timestamp_ms": timestamp_ms,
+                    "setup_phase": "range_noise",
+                    "higher_timeframe_phase": "pullback",
+                    "target_edge_pct": 0.0040 if interaction_active else -0.0015,
+                    "feature_map": feature_map,
+                    "feature_vector": [feature_map[name] for name in feature_names[:16]],
+                }
+
+            class _StubSetupStudyService(SetupEdgeModelService):
+                def _collect_examples(self, **kwargs):
+                    examples = []
+                    for idx in range(80):
+                        examples.append(item(idx, interaction_active=idx % 2 == 0))
+                    return examples, {
+                        "sample_window_start_utc": "2026-05-01T00:00:00+00:00",
+                        "sample_window_end_utc": "2026-05-10T00:00:00+00:00",
+                        "training_cutoff_utc": "2026-05-10T00:30:00+00:00",
+                        "lookback_days": 10,
+                        "horizon_bars": 6,
+                        "timeframe": "5m",
+                        "higher_timeframe": "1h",
+                        "example_count": len(examples),
+                    }
+
+            report = _StubSetupStudyService(settings).compare_versions(
+                symbols_filter=["ETH/USDT:USDT"],
+                setup_phases=["range_noise"],
+                lookback_days=10,
+                horizon_bars=6,
+                min_samples=10,
+                ridge_alpha=0.0005,
+                split_higher_phase=True,
+                eval_fraction=0.25,
+            )
+
+            self.assertEqual(report["version"], "setup_model_compare_v1")
+            self.assertEqual(report["example_count"], 80)
+            self.assertEqual(report["eval_example_count"], 20)
+            self.assertIn("v1", report["versions"])
+            self.assertIn("v2_interactions", report["versions"])
+            self.assertGreater(
+                report["versions"]["v2_interactions"]["feature_count"],
+                report["versions"]["v1"]["feature_count"],
+            )
+            self.assertEqual(
+                report["versions"]["v2_interactions"]["evaluation"]["scored_count"],
+                20,
+            )
+
     def test_setup_edge_model_signal_exposes_training_window_metadata(self) -> None:
         feature_rows = [[0.0] * 16 for _ in range(20)]
         model_payload = fit_setup_edge_model(
@@ -4427,6 +5704,79 @@ class StrategyOptimizationTests(unittest.TestCase):
                 "eth_structural_range_noise_short",
             )
 
+    def test_candidate_filter_hard_blocks_eth_range_noise_terminal_washout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(
+                root,
+                market_type="future",
+                symbols=("ETH/USDT:USDT",),
+                rule_mode="bottom_line",
+                setup_model_enable=True,
+            )
+            journal = Journal(settings.db_path)
+            journal.ensure_schema()
+            model_payload = fit_setup_edge_model(
+                symbol_name="ETH/USDT:USDT",
+                setup_phase="range_noise",
+                feature_rows=[[0.0] * 16 for _ in range(40)],
+                targets=[-0.00110] * 40,
+                ridge_alpha=0.0005,
+            )
+            settings.setup_model_path.parent.mkdir(parents=True, exist_ok=True)
+            settings.setup_model_path.write_text(
+                json.dumps(
+                    {
+                        "symbols": {
+                            "ETH/USDT:USDT": {
+                                "range_noise": model_payload,
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            filter_service = CandidateFilter(settings, journal)
+
+            symbol = make_symbol(
+                "ETH/USDT:USDT",
+                900_000,
+                2_045.95,
+                atr_pct=0.0092,
+                range_pct=0.0092,
+                volume_ratio=4.20,
+                higher_bias="short",
+                higher_phase="trend",
+            )
+            symbol.indicators["return_1bar"] = -0.00009
+            symbol.indicators["return_24bars"] = -0.01680
+            symbol.indicators["rsi_14"] = 24.8
+            symbol.indicators["sma_fast_ratio"] = -0.0092
+            symbol.indicators["sma_slow_ratio"] = -0.0145
+            symbol.recent_candles = [
+                Candle(timestamp_ms=1, open=2068.0, high=2070.0, low=2060.0, close=2062.0, volume=900.0),
+                Candle(timestamp_ms=2, open=2062.0, high=2064.0, low=2056.0, close=2058.0, volume=930.0),
+                Candle(timestamp_ms=3, open=2058.0, high=2060.0, low=2055.0, close=2057.0, volume=880.0),
+                Candle(timestamp_ms=4, open=2057.0, high=2058.0, low=2053.0, close=2054.0, volume=950.0),
+                Candle(timestamp_ms=5, open=2058.0, high=2059.0, low=2045.5, close=2045.95, volume=1300.0),
+            ]
+            bundle = make_bundle(
+                timestamp_ms=900_000,
+                symbols=[symbol],
+                equity_quote=200.0,
+                free_quote=200.0,
+            )
+
+            filtered = filter_service.apply(bundle)
+
+            self.assertEqual(filtered.status, "filtered_hold")
+            self.assertEqual(filtered.summary["selected_symbols"], [])
+            summary = filtered.summary["symbols"][0]
+            self.assertEqual(summary["setup_phase"], "range_noise")
+            self.assertIn("eth_short_range_noise_terminal_washout", summary["reasons"])
+            self.assertNotIn("ETH/USDT:USDT", filtered.summary["selected_symbols"])
+
     def test_setup_edge_study_reports_positive_and_negative_patterns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -4571,7 +5921,7 @@ class StrategyOptimizationTests(unittest.TestCase):
                 lookback_days=120,
                 horizon_bars=6,
                 min_samples=2,
-                top_k=30,
+                top_k=100,
                 discover_slices=True,
                 stability_splits=2,
             )

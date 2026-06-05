@@ -10,7 +10,8 @@
 - 不放宽任何既有硬约束（live 关闭、不放宽 broad gate、不把 0/0 当晋级证据）。
 
 读法：先读第 1 节"现状一句话"，再读第 2 节问题清单，最后读第 3 节路线。
-所有结论都基于 2026-05-30 当前 artifact，不是新跑出来的。
+结构性问题清单基于 2026-05-30 artifact；2026-05-31 已补入 T-A/T-B/T-D/T-G 的
+实现进展和 WSL 读数。
 
 ---
 
@@ -138,6 +139,10 @@ G_live（在 G_paper 通过基础上叠加）：
 如果 prompt v2/v3 在 holdout 上把 AI hold rate 砍下来、且 realized return 不变差，
 则 WS-4 才有继续往 step 4 走的余地。否则现有 alpha 在 AI 这一关就被吃掉，下面
 WS-4/5 都是白做。
+
+2026-05-31 进展：`ai-hold-baseline` 已落地。WSL dry-run 复现 WS-4 fast-SMA
+step3 两个窗口 `stored_hold=24/24`；eth-only `v3_veto_only` 小样本 smoke 仍是
+`hold=2/2`，且理由是具体 veto。当前结论是工具化完成、v3 未证明可推进。
 
 ### 2.4 setup_model 是 16 维线性 ridge，无法表达已知 alpha 所在的交互维度
 
@@ -411,7 +416,9 @@ WS-1/WS-2 的所有"不支持继续"读法都建立在不完整 artifact 上。
 ```text
 T-A  已落地：docs/holdout.md 已冻结 discovery_pool / validation_pool_v1，并定义 G_paper / G_live。
 T-D  已落地：AI 决策缓存、setup-edge-walk-forward、candidate-walk-forward、Mac->WSL sync/test 脚本已实现。
-T-G  部分落地：readiness 命名已改为 offline_future_edge_readiness；0 交易窗诊断仍待做。
+T-G  已落地第一版：readiness 命名已改为 offline_future_edge_readiness；idle-window-diagnostic 已跑完 ETH-only root 诊断。
+T-B  已落地第一版：ai-hold-baseline 已复现 WS-4 fast-SMA 24/24 stored hold。
+T-C  已落地第一版 plumbing：v2_interactions + setup-model-compare 可跑；首轮 ETH-only 读数不支持替换主线。
 ```
 
 ```text
@@ -489,6 +496,34 @@ T-J  WS-1 持仓 horizon 重做（用拆分后的工具）  （研究级）
 
 终止条件：在 holdout 上证明 v2 优于 v1，或证明不优于 v1（接受现实并转 T-I 评 Kronos）。
 
+2026-05-31 进展：第一版 `v2_interactions` 已落地，v1 默认路径不变。新增
+`setup-model-compare` 做 chronological train/eval split，并允许研究命令显式
+`--setup-model-version v2_interactions`。
+
+WSL 默认相位 artifact：
+
+```text
+/home/alyaloale/Code/qount/state/research_runs/20260531T075127Z-setup-model-compare-qount-setup-model-compare-ethonly-v2-20260531/qount-setup-model-compare-ethonly-v2-20260531.json
+```
+
+读数：`example_count=705`、`eval_example_count=212`；
+`v2_minus_v1_top_decile_avg_target_edge_pct=-0.0002249732`，`v2_minus_v1_mae=+0.0000124423`。
+
+WSL 包含 `range_noise` artifact：
+
+```text
+/home/alyaloale/Code/qount/state/research_runs/20260531T075351Z-setup-model-compare-qount-setup-model-compare-ethonly-v2-range-20260531/qount-setup-model-compare-ethonly-v2-range-20260531.json
+```
+
+读数：`example_count=19681`、`eval_example_count=5905`；
+`v2_minus_v1_top_decile_avg_target_edge_pct=+0.0001926716`，但
+`v2_top_decile_avg_target_edge_pct=-0.0013618186`，`v2_minus_v1_mae=+0.0000053851`，
+`v2_strong_favorable=0`。
+
+结论：第一版 v2 交互项 plumbing 成功，但 lift 不够，不能替换主线 setup model。
+下一步若继续 T-C，只做 targeted ablation / calibration，先找出哪些 interaction
+真的贡献 lift；不能把这版 v2 接进 gate。
+
 ### T-D — 实验工具优化（AI 缓存 + 命令拆分 + Mac/WSL 同步脚本）
 
 > 修 §2.7 + §2.8。**与 T-A 并行做**，因为它放大所有后续 track 的速度。
@@ -547,6 +582,22 @@ fresh_entry_selected / reasons）逐 cycle 等价。
 终止条件：在 9-window 上跑完一次诊断，回答"0 交易窗里有没有被 setup_model 整体
 压住的潜在 alpha"。
 
+2026-05-31 进展：`idle-window-diagnostic` 已落地并在 WSL 对
+`state/research_runs` 运行 ETH-only 诊断。artifact：
+
+```text
+/home/alyaloale/Code/qount/state/research_runs/20260531T072108Z-idle-window-diagnostic-qount-idle-window-diagnostic-ethonly-20260531-v2/qount-idle-window-diagnostic-ethonly-20260531-v2.json
+```
+
+读数：`39` 个 backtest 中跳过 `3` 个有成交窗口，诊断 `36` 个 idle 窗；
+`candidate_filter_hold_count=2878`、`ai_hold_count=87`、
+`positive_top_candidate_avg_future_edge_windows=5/36`。setup quality 为
+`missing=2867 / unfavorable=72 / weak_favorable=12 / neutral=4 / strong_favorable=0`。
+
+结论：没有看到"0 交易窗里大量 strong_favorable alpha 被 setup_model/AI 压掉"的证据；
+主要 blocker 是 ETH short research 边界、range-noise 结构要求、低波动/低成交量。
+因此 T-G 已回答第一版问题，后续只能作为诊断入口，不能直接产出 entry gate。
+
 ### T-H — 多币 paper-only 独立 track
 
 > 修 §2.11。在 T-A、T-D 完成后启动。
@@ -598,9 +649,9 @@ fresh_entry_selected / reasons）逐 cycle 等价。
   T-D  实验工具优化（AI 缓存 / 命令拆分 / 同步脚本）
 
 紧接（最大策略杠杆）：
-  T-B  AI hold-bias 量化与 prompt 实验
-  T-C  setup_model v2 交互项
-  T-G  0 交易窗口诊断（readiness 命名已完成）
+  T-C  setup_model v2 targeted ablation / calibration（第一版 v2 不够）
+  T-B  AI hold-bias 量化与 prompt 实验（第一版工具已完成）
+  T-G  0 交易窗口诊断（第一版工具已完成）
 
 并行的工程化（行为不变）：
   T-E  candidate_filter 窄 gate 集合化

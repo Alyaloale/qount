@@ -1,6 +1,6 @@
 # qount 更新记录
 
-更新时间：2026-05-31
+更新时间：2026-06-05
 
 这份文档只记录近期关键变更、验证结果和当前读法。当前策略结论以
 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
@@ -27,9 +27,1513 @@
 - 研究工具新增 `--holdout-role`、`--ai-decision-cache`、
   `setup-edge-walk-forward`、`candidate-walk-forward`、
   `scripts/sync-to-wsl.sh`、`scripts/run-wsl-tests.sh`；不改 entry / risk / live。
+- 2026-05-31 新增 `ai-hold-baseline`：可从既有 artifact 还原 fresh-entry prompt，
+  统计 v1/v2/v3 研究 prompt 的 hold-bias；不改 live / `run-once`。
+- 2026-05-31 新增 `idle-window-diagnostic`：可从既有 artifact 汇总 0 交易窗口的
+  setup / candidate / AI hold 读数；diagnostic only，不改 live / `run-once`。
+- 2026-05-31 新增 `setup-model-compare` 和 setup_model `v2_interactions` plumbing；
+  第一版 ETH-only compare 没有形成可交易 lift，不能替换主线模型。
 - `research-slice-scan` 新增 `offline_future_edge_readiness`，旧
   `shadow_candidate_readiness` 保留为兼容别名。
+- 2026-06-04 第一次 `validation_v1` once-only 端到端验证失败：
+  `sum_realized_return_pct=-0.7159862916%`、`positive_realized_windows=0/2`、
+  `paper_filled=7`、`total_review_missed_candidate_move=2`。不能 forward paper。
+- 2026-06-04 盈利导向新增 `eth_short_range_noise_terminal_washout` hard blocker：
+  已失败窗口降级 discovery 后转正为 `+0.9173089048%`。新的
+  2026-06-03..2026-06-04 第一次 validation 被 AI relay `auth_unavailable` 污染；
+  relay 恢复后同策略 infra rerun 无 AI 错误，但 `sum_realized_return_pct=-1.1912362466%`，
+  仍不能 promotion。
+- 2026-06-05 已按 `profit-engineering-plan.md §10` 启动盈利工程路线：先做 S0/S1'
+  地基和“频段 × 策略族”选择扫描，不再默认把 5m 作为给定频段。
+- 2026-06-05 新增 `strategy-selection-scan` 并完成 30 天 discovery 初扫；初扫 top cell
+  是 `1d ts_mom`，但 rank-IC 很弱且有效广度约 1.13，不能 promotion。
+- 2026-06-05 120 天和月度 sensitivity 否定了把 `1d ts_mom lb12/h1` 直接推进 S2；
+  5m / CARRY 只在 zero-cost 下转正，maker-ish 成本后为负。
+- 2026-06-05 S-CARRY 后续验证继续否定 promotion：WLD/SOL post-only 在 6/1-6/5
+  after-tail 为正需要超过 100% maker fill；entry-only basis regime filter 在 120 天或
+  6/1-6/5 上均不过关。
+- 2026-06-05 top12 `1d ts_mom` 扩币 sanity 也不过关：120 天 `sum=-2.6698947371`，
+  2/3/4 月全负，只有 5 月单月正。
+- 2026-06-05 新增 prediction-family lookback/holding grid，低频 top12 扫描找到当前最强
+  discovery cell：`4h xs_mom lookback=24 holding=6`，120 天 `sum=+3.5251307739`、
+  `rank_ic=+0.0523457125`；但 2026-03 月度 sanity 为负，且 holding=6 仍需
+  overlap-aware 组合复核。
+- 2026-06-05 新增 `--directional-overlap-mode stride` overlap sanity；同一 fixed cell
+  120 天 stride `sum=+0.5087944384`、`rank_ic=+0.0607409120`，但 2/3 月仍负，只能推进
+  S1.1/S1.2，不能 paper。
+- 2026-06-05 新增 `--directional-evaluation-mode portfolio_replay` 限仓组合 replay；
+  同一 fixed cell、`max_open_positions=12` 的 120 天 replay `sum=+0.2974912983`、
+  `sharpe=+7.1945433715`，但 2026-03 仍负，仍不能 paper。
+- 2026-06-05 新增 `--directional-exit-mode triple_barrier`；同一 fixed cell 的 simple
+  TP/SL barrier 120 天四组全负，最不差 `tp=0.030/sl=0.015` 也只有
+  `sum=-0.1635040433`，进一步否定 paper。
+- 2026-06-05 给 triple-barrier artifact 补 `directional_exit_reason_counts`；最不差
+  `tp=0.030/sl=0.015` 的 120 天 stop-loss `873`、take-profit `400`、time `173`，
+  解释了为什么 close-to-close/replay 正收益会被 fixed TP/SL 打负。
+- 2026-06-05 新增 `--directional-purged-cv-folds` / `--directional-embargo-bars`；
+  fixed `4h xs_mom lb24/h6` close/replay 的 4-fold 诊断为 `3/4` folds 正，但
+  2026-03-03..2026-04-01 fold 为负，仍不能 paper。
 - 结论：有历史盈利样本，不等于稳定盈利；仍处于 research-only。
+
+## 2026-06-05
+
+### 计划文档对账（代码 / 成果 / 计划三方校准）
+
+本条只改文档，不动代码;本地全量测试仍 `237 OK`。把 `profit-engineering-plan.md` 的
+前瞻计划与已落地代码、已跑 artifact 对账,发现并修正三处偏差:
+
+```text
+1. 计划/落地结构偏差:
+   §9/§10 设计的 labeling.py / ic_diagnostic.py / cross-sectional-ic 命令 /
+   scripts/strategy_selection_scan.py 均未单独存在;
+   实际全部合并进 src/qount/strategy_selection.py(约 1647 行)+ strategy-selection-scan。
+   triple-barrier=--directional-exit-mode triple_barrier;
+   横截面 IC=cell.rank_ic_mean/effective_breadth;
+   purged/embargo=--directional-purged-cv-folds/--directional-embargo-bars;
+   CARRY 专线=--carry-model threshold_dual_leg + 全套 --carry-* flag。
+   labeling.py / ic_diagnostic.py / meta_label_model.py / portfolio.py 当前不存在。
+2. current.md 代码结构漏列 strategy_selection.py(最大研究模块),已补。
+3. §10.4 分叉预测未成立:计划赌"CARRY 很可能胜",实际 CARRY 被 basis-tail 证伪,
+   存活候选是预测族 4h xs_mom lb24/h6(非日频),且未过可执行 exit。
+```
+
+改动落点:
+
+```text
+docs/profit-engineering-plan.md  新增 §11「执行进展与计划校准」
+                                 (S0–S5 进度表 / 模块映射偏差 / §10.4 分叉对照表 /
+                                  带门控的下一步 N1–N4 / 硬约束不变)
+docs/current.md                  代码结构补 strategy_selection.py;
+                                 当前结论加 S1' 第一遍结论 + 指向 §11 的交叉引用
+```
+
+S0–S5 当前进度(校准后):
+
+```text
+S0.1 ✅ 已落地    S0.2 ✅ 复用既有    S0.3 ⬜ 未做(可选)
+S1'  🔄 第一遍全量跑完,仍在 exit/OOS 复核期,无晋级候选
+S2/S3/S4/S5 ⛔ 未启动(S2 硬门控未通过)
+```
+
+读法:这是一条 meta/对账记录,不引入新策略行为、不放宽任何硬约束、无新 artifact。
+计划文档现在与代码和成果一致;S2 重模型仍按门控不启动,直到 4h xs_mom 在新 OOS 上
+带可执行 exit 仍有 post-cost 正 edge。
+
+### S1' low-frequency prediction grid
+
+新增 research-only 参数：
+
+```text
+--signal-lookback-grid-bars
+--holding-grid-bars
+```
+
+读法：只扩展 `strategy-selection-scan` 预测族的离线 grid，默认行为不变，不影响 live /
+`run-once`。本地和 WSL 全量测试均为 `236 OK`。
+
+关键结果：
+
+```text
+grid_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T121551Z-strategy-selection-scan-qount-strategy-selection-s1-lowfreq-top12-lb3-12-24-h1-3-6-20260605/qount-strategy-selection-s1-lowfreq-top12-lb3-12-24-h1-3-6-20260605.json
+grid=1h/4h/1d x xs_mom/xs_rev/ts_mom x lookback 3/12/24 x holding 1/3/6
+best=4h xs_mom lookback=24 holding=6
+sum=+3.5251307739
+sharpe=+7.1555415974
+rank_ic=+0.0523457125
+feb_sum=+0.0054374620
+mar_sum=-0.3056398179
+apr_sum=+0.9769441561
+may_sum=+2.8938136721
+jun01_04_sum=+0.2839507666
+top_fraction 0.10/0.25/0.50 all positive
+```
+
+新增 research-only overlap sanity 参数：
+
+```text
+--directional-overlap-mode all|stride
+```
+
+默认 `all` 保持旧读数；`stride` 每个 holding window 只取一次 cross-section，先降低
+`holding=6` 的重叠 horizon 膨胀。
+
+```text
+stride_120d_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T123357Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-stride-120d-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-stride-120d-20260605.json
+stride_120d_sum=+0.5087944384
+stride_120d_sharpe=+6.0811826595
+stride_120d_rank_ic=+0.0607409120
+stride_120d_cross_sections=121
+stride_feb_sum=-0.0026969105
+stride_mar_sum=-0.0234895413
+stride_apr_sum=+0.0796046219
+stride_may_sum=+0.5008009667
+stride_jun01_04_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T123424Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-stride-jun01_04-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-stride-jun01_04-20260605.json
+stride_jun01_04_sum=+0.0627083513
+```
+
+结论：`4h xs_mom` 是当前最像样的 prediction-family discovery candidate；stride sanity
+下仍为 120 天正收益，说明不是纯重叠 horizon 幻觉。但 2/3 月 stride 仍为负，`jun01_04`
+是已看窗口。下一步不是 paper，而是 S1.1/S1.2：purged-CV、triple-barrier、
+overlap-aware portfolio replay。
+
+新增 research-only 限仓组合 replay 参数：
+
+```text
+--directional-evaluation-mode portfolio_replay
+--directional-max-open-positions
+```
+
+默认仍是旧 `cross_section`，不影响历史 artifact / live / `run-once`。固定 `4h xs_mom`
+lb24/h6、top12、top_fraction `0.25`、`max_open_positions=12`：
+
+```text
+portfolio_replay_120d_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T125713Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-portfolio-replay-120d-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-portfolio-replay-120d-20260605.json
+portfolio_replay_120d_sum=+0.2974912983
+portfolio_replay_120d_sharpe=+7.1945433715
+portfolio_replay_120d_max_dd=0.0876673733
+portfolio_replay_120d_trades=1446
+portfolio_replay_120d_skipped=2880
+portfolio_replay_120d_win_rate=0.4951590595
+portfolio_replay_feb_sum=+0.0062629159
+portfolio_replay_mar_sum=-0.0094161679
+portfolio_replay_apr_sum=+0.0656249961
+portfolio_replay_may_sum=+0.2463757288
+portfolio_replay_jun01_04_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T125741Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-portfolio-replay-jun01_04-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-portfolio-replay-jun01_04-20260605.json
+portfolio_replay_jun01_04_sum=+0.0082009038
+```
+
+结论：限仓 replay 下 120 天仍为正，说明当前 candidate 不只是无限重叠下注的 artifact；
+但 2026-03 仍为负，2026-02 只是微正，`jun01_04` 是已看窗口。下一步不是 paper，而是
+S1.1/S1.2 的 purged-CV / triple-barrier / 新 OOS。
+
+新增 research-only triple-barrier 参数：
+
+```text
+--directional-exit-mode close|triple_barrier
+--directional-take-profit-pct
+--directional-stop-loss-pct
+```
+
+默认 `close` 不变，不影响历史 artifact / live / `run-once`。同一 fixed cell、top12、
+portfolio replay、max open `12`，120 天简单 barrier：
+
+```text
+tp015_sl010_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T132052Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.015-sl0.010-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.015-sl0.010-20260605.json
+tp015_sl010_sum=-0.2542260860
+tp015_sl010_sharpe=-21.9420203800
+
+tp020_sl010_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T132057Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.020-sl0.010-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.020-sl0.010-20260605.json
+tp020_sl010_sum=-0.2307013696
+tp020_sl010_sharpe=-16.8127315231
+
+tp020_sl015_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T132104Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.020-sl0.015-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.020-sl0.015-20260605.json
+tp020_sl015_sum=-0.2296270771
+tp020_sl015_sharpe=-14.6592774682
+
+tp030_sl015_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T132109Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.030-sl0.015-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-120d-tp0.030-sl0.015-20260605.json
+tp030_sl015_sum=-0.1635040433
+tp030_sl015_sharpe=-8.7264450618
+```
+
+最不差的 `tp=0.030/sl=0.015` 月度：
+
+```text
+exit_reason_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T132953Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-exitreasons-120d-tp0.030-sl0.015-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-exitreasons-120d-tp0.030-sl0.015-20260605.json
+120d_exit_counts=stop_loss 873, take_profit 400, time 173
+120d_win_rate=0.3443983402
+feb_sum=-0.0356452182
+feb_exit_counts=stop_loss 224, take_profit 110, time 8
+mar_sum=-0.0631122398
+mar_exit_counts=stop_loss 242, take_profit 107, time 29
+apr_sum=-0.0812657295
+apr_exit_counts=stop_loss 211, take_profit 73, time 82
+may_sum=+0.0203985601
+may_exit_counts=stop_loss 205, take_profit 116, time 57
+jun01_04_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T132208Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-jun01_04-tp0.030-sl0.015-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-triple-jun01_04-tp0.030-sl0.015-20260605.json
+jun01_04_sum=+0.0177000000
+```
+
+结论：simple fixed TP/SL 把 120 天全部打负，且最不差参数 2/3/4 月全负，只剩 5 月和已看
+6 月正。原因是路径执行失败：120 天 stop-loss 触发约为 take-profit 的 `2.18x`，交易成本
+再把边际进一步压低。`4h xs_mom` 不能 paper；下一步只能做 purged-CV、exit 设计或新 OOS。
+
+新增 fixed-cell purged/embargo CV 诊断参数：
+
+```text
+--directional-purged-cv-folds
+--directional-embargo-bars
+```
+
+默认关闭，只影响 `strategy-selection-scan` 预测族 artifact，不影响 CARRY / live /
+`run-once`。同一 fixed cell、top12、close exit、portfolio replay、max open `12`，
+4 folds + 6 bars embargo：
+
+```text
+purged_cv_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T133904Z-strategy-selection-scan-qount-strategy-selection-s1-xsmom-4h-lb24-h6-purgedcv-120d-20260605/qount-strategy-selection-s1-xsmom-4h-lb24-h6-purgedcv-120d-20260605.json
+full_sum=+0.2974912983
+full_sharpe=+7.1945433715
+rank_ic=+0.0523457125
+positive_folds=3/4
+mean_fold_sum=+0.0743728246
+min_fold_sum=-0.0566596009
+fold1_sum=+0.0467298450
+fold2_sum=-0.0566596009
+fold3_sum=+0.0611460588
+fold4_sum=+0.2462749954
+```
+
+结论：purged/embargo artifact 已把 fold 稳定性机器化，且 3/4 folds 为正，支持继续研究；
+但 `2026-03-03..2026-04-01` fold 为负且 IC 为负，收益仍依赖后段行情。fixed close/replay
+purged sanity 已跑完，不能 paper；下一步转向更稳健的 exit 设计、模型层 purged-CV 或新完整
+OOS。
+
+### S-CARRY basis-entry filter 和 top12 TS-MOM sanity
+
+新增 research-only CARRY 参数：
+
+```text
+--carry-basis-entry-max-abs-pct
+```
+
+读法：只阻止 basis 已经偏离过大的新 CARRY 入场，默认关闭，不影响 live / `run-once`。
+本地和 WSL 全量测试均为 `233 OK`。
+
+关键结果：
+
+```text
+WLD/SOL basis_entry_max_abs=0.0008 discovery120d sum=-0.0066684341 after_tail=-0.0083560026
+WLD/SOL basis_entry_max_abs=0.0010 discovery120d sum=-0.0010824000 after_tail=-0.0028620256
+WLD/SOL basis_entry_max_abs=0.0015 discovery120d sum=+0.0020099742 after_tail=+0.0002303486
+WLD/SOL jun01_04 all thresholds sum=-0.0003841457 after_tail=-0.0010857771
+top12 1d ts_mom 120d sum=-2.6698947371 sharpe=-0.7852540386 rank_ic=-0.0517447570
+top12 1d ts_mom monthly Feb/Mar/Apr all negative; May positive only
+```
+
+结论：entry-only basis filter 不能拯救当前 WLD/SOL S-CARRY；top12 扩币也不能让
+`1d ts_mom` 进入 S1.1/S1.2。继续时不要重复这两条 sanity。
+
+### profit-engineering S0.1 research 依赖隔离
+
+变更：
+
+```text
+pyproject.toml
+scripts/check-research-deps.sh
+tests/test_strategy_optimization.py
+```
+
+读数：
+
+```text
+Mac Python=3.14.4
+numpy=2.4.6 ok
+sklearn=1.9.0 ok
+lightgbm optional=false-to-import: missing libomp.dylib
+local unittest=222 OK
+```
+
+落地结论：
+
+- `research` optional extra 只默认安装 `numpy` / `scikit-learn`。
+- `lightgbm` 单独放进 `research-lightgbm`；当前 Mac wheel 可安装但 import 需要额外
+  `libomp.dylib`，所以后续 S2 默认用 sklearn `HistGradientBoosting`。
+- 新增单测确认 `import qount.main` 不加载 `numpy` / `sklearn` / `lightgbm`，live /
+  `run-once` 路径不因 research 依赖变化而改行为。
+- 这一步只是 S0.1 地基，不是策略 promotion，不给 forward paper / live 许可。
+
+### profit-engineering S1' strategy-selection-scan
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+src/qount/setup_model.py
+```
+
+新增命令：
+
+```bash
+python -m qount.main strategy-selection-scan \
+  --research-profile multi-symbol \
+  --families xs_mom xs_rev ts_mom carry \
+  --frequencies 5m 1h 4h 1d \
+  --lookback-days 30 \
+  --signal-lookback-bars 12 \
+  --holding-bars 1 \
+  --output-path /tmp/qount-strategy-selection-s1-30d-20260605.json
+```
+
+WSL artifact：
+
+```text
+/home/alyaloale/Code/qount/state/research_runs/20260605T065952Z-strategy-selection-scan-qount-strategy-selection-s1-30d-20260605/qount-strategy-selection-s1-30d-20260605.json
+```
+
+关键读数：
+
+```text
+window=2026-05-02T00:00:00Z..2026-06-01T00:00:00Z
+best_cell=1d ts_mom
+sum_return_pct=+0.3121233665
+mean_return_pct=+0.0025171239
+sharpe=2.2679849920
+rank_ic_mean=+0.0085476003
+effective_breadth=1.1323823788
+5m_xs_rev_rank_ic_mean=+0.0289588724
+5m_xs_rev_sum_return_pct=-20.6197925003
+carry_sum_return_pct=-0.1147211
+```
+
+读法：
+
+- 这只是 discovery 初扫，不是 promotion。
+- 5m `xs_rev` 出现正 rank-IC，但 post-cost 大幅为负，支持“5m 成本主导/不适配本系统”的判断。
+- CARRY 在当前朴素成本口径下为负；这不是最终否定，因为双腿持仓和方向翻转成本模型仍需更真实。
+- `1d ts_mom` 暂列第一，但 rank-IC 很弱、有效广度约 1.13；下一步要做更长 discovery 和参数敏感性，不能直接进 S2/S3。
+- 顺手修复 `discover_edge_slices` 同分排序的非确定性，WSL 全量测试从偶发失败恢复为稳定通过。
+
+验证：
+
+```text
+local unittest=225 OK
+WSL unittest=225 OK
+WSL live_guard ok=false reason=live_disabled
+qount-runner.timer/service inactive
+```
+
+### S1' 120 天 / 月度 / 成本敏感性
+
+120 天全频段全族：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T070504Z-strategy-selection-scan-qount-strategy-selection-s1-120d-full-lb12-h1-20260605/qount-strategy-selection-s1-120d-full-lb12-h1-20260605.json
+window=2026-02-01T00:00:00Z..2026-06-01T00:00:00Z
+best_cell=1d ts_mom
+sum_return_pct=-0.3885499348
+mean_return_pct=-0.0008027891
+sharpe=-0.4637426827
+rank_ic_mean=-0.0524746039
+effective_breadth=1.0810517903
+```
+
+1d 参数敏感性：
+
+```text
+lb3/h1 best=xs_rev sum=-0.0652799064 sharpe=-0.6990452037
+lb12/h3 best=ts_mom sum=+0.5824374867 sharpe=+0.4579358431
+lb24/h1 best=ts_mom sum=-0.0867584111 sharpe=-0.1035899869
+```
+
+月度 `1d ts_mom lb12/h1`：
+
+```text
+Feb sum=+0.1023244575 sharpe=+0.3227715436
+Mar sum=-0.4297008569 sharpe=-2.2922293236
+Apr sum=-0.4340789583 sharpe=-2.8870027003
+May sum=+0.3233152390 sharpe=+2.3098638880
+```
+
+成本压力：
+
+```text
+zero_cost_5m_xs_rev_sum=+1.2386542488
+zero_cost_carry_sum=+0.0824606
+maker_ish_cost_per_directional_bet=0.0004
+maker_ish_5m_xs_rev_sum=-26.4101457512
+maker_ish_carry_sum=-0.0999394
+```
+
+读法：
+
+- 30 天 `1d ts_mom` 正收益主要来自 2026-05，120 天和 3/4 月不支持稳定性。
+- 5m `xs_rev` 和 CARRY 有 gross edge，但太薄，maker-ish 成本后转负。
+- 当前不能进 S2/S3；下一步是更真实的 CARRY 双腿/阈值模型和扩 universe。
+
+### S1' OHLCV 列回归测试后复跑
+
+变更：
+
+```text
+tests/test_strategy_optimization.py
+```
+
+新增回归测试锁定 `strategy-selection-scan` 的 OHLCV fetch 输出必须保持 ccxt 标准列：
+`[timestamp, open, high, low, close, volume]`。扫描评估层统一把 `row[4]` 当 close，
+所以这个测试用于防止 close/low 列错位污染 S1' 读数。
+
+验证：
+
+```text
+local unittest=226 OK
+WSL unittest=226 OK
+```
+
+WSL 复跑 120 天全频段全族：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T071948Z-strategy-selection-scan-qount-strategy-selection-s1-120d-full-lb12-h1-ohlcv-rerun-20260605/qount-strategy-selection-s1-120d-full-lb12-h1-ohlcv-rerun-20260605.json
+window=2026-02-01T00:00:00Z..2026-06-01T00:00:00Z
+best_cell=1d ts_mom
+sum_return_pct=-0.3885499348
+mean_return_pct=-0.0008027891
+sharpe=-0.4637426827
+rank_ic_mean=-0.0524746039
+effective_breadth=1.0810517903
+decision=no_positive_cell
+```
+
+WSL 复跑成本压力：
+
+```text
+zero_cost_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T072101Z-strategy-selection-scan-qount-strategy-selection-s1-120d-5m-xsrev-carry-zero-cost-ohlcv-rerun-20260605/qount-strategy-selection-s1-120d-5m-xsrev-carry-zero-cost-ohlcv-rerun-20260605.json
+zero_cost_5m_xs_rev_sum=+1.2386542488
+zero_cost_carry_sum=+0.0824606
+
+maker_ish_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T072410Z-strategy-selection-scan-qount-strategy-selection-s1-120d-5m-xsrev-carry-maker-ish-ohlcv-rerun-20260605/qount-strategy-selection-s1-120d-5m-xsrev-carry-maker-ish-ohlcv-rerun-20260605.json
+maker_ish_cost_per_directional_bet=0.0004
+maker_ish_5m_xs_rev_sum=-26.4101457512
+maker_ish_carry_sum=-0.0999394
+```
+
+读法：复跑没有改变 S1' 结论。当前没有可 promotion 的 prediction cell；CARRY 有结构性
+gross cashflow，但当前朴素“方向翻转即付成本”模型在 maker-ish 成本下为负。下一步仍是
+按 `profit-engineering-plan.md §10.5` 做真实 CARRY 双腿/阈值/最短持仓模型，而不是进入
+5m GBDT 或 S2/S3。
+
+### S-CARRY threshold_dual_leg 第一版
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+```
+
+新增显式 research-only carry 模型：
+
+```bash
+python -m qount.main strategy-selection-scan \
+  --research-profile multi-symbol \
+  --families carry \
+  --carry-model threshold_dual_leg \
+  --carry-entry-threshold-pct 0.00008 \
+  --carry-exit-threshold-pct 0.00004 \
+  --carry-min-hold-periods 3
+```
+
+默认 `carry_model=naive` 不变；新模型只在显式参数下使用。模型计入：
+
+```text
+entry threshold / exit threshold
+min_hold_periods
+dual-leg entry cost = 2 * cost_per_directional_bet
+dual-leg exit cost = 2 * cost_per_directional_bet
+dual-leg switch cost = 4 * cost_per_directional_bet
+idle periods / entry / exit / switch event counts
+```
+
+验证：
+
+```text
+local unittest=227 OK
+WSL unittest=227 OK
+```
+
+WSL 120 天 zero-cost：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T073159Z-strategy-selection-scan-qount-strategy-selection-s-carry-threshold-dual-leg-zero-cost-20260605/qount-strategy-selection-s-carry-threshold-dual-leg-zero-cost-20260605.json
+carry_model=threshold_dual_leg
+entry_threshold=0.00008
+exit_threshold=0.00004
+min_hold_periods=3
+sum_return_pct=+0.04728436
+sharpe=+15.3873642125
+turnover_events=270
+entry_events=119
+exit_events=119
+switch_events=16
+idle_periods=868
+```
+
+WSL 120 天 maker-ish：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T073141Z-strategy-selection-scan-qount-strategy-selection-s-carry-threshold-dual-leg-maker-ish-20260605/qount-strategy-selection-s-carry-threshold-dual-leg-maker-ish-20260605.json
+cost_per_directional_bet=0.0004
+sum_return_pct=-0.16871564
+sharpe=-11.8459471734
+turnover_events=270
+entry_events=119
+exit_events=119
+switch_events=16
+idle_periods=868
+decision=no_positive_cell
+```
+
+读法：阈值/最短持仓把 naive carry 的 gross cashflow 从 `+0.0824606` 降到
+`+0.04728436`，但更接近实际双腿执行；maker-ish 成本后仍为负。不能进入 S-CARRY paper。
+下一步是固定 discovery 网格、扩大 universe，并加入 basis / 资金占用读数，而不是为了这
+4 币窗口调阈值。
+
+### S-CARRY fixed grid + utilization / basis diagnostics
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+```
+
+新增显式固定 discovery grid 参数：
+
+```bash
+python -m qount.main strategy-selection-scan \
+  --research-profile multi-symbol \
+  --families carry \
+  --carry-model threshold_dual_leg \
+  --carry-entry-threshold-grid-pct 0.00004 0.00008 0.00012 \
+  --carry-exit-threshold-grid-pct 0.00002 0.00004 \
+  --carry-min-hold-grid 1 3 6
+```
+
+每个 grid 组合写成独立 carry cell，不自动改配置，不作为 promotion。输出新增：
+
+```text
+carry_invested_periods
+carry_utilization_ratio
+carry_dual_leg_gross_exposure_periods
+carry_avg_dual_leg_gross_exposure_pct
+basis_sample_count
+basis_avg_abs_pct / basis_max_abs_pct
+```
+
+验证：
+
+```text
+local unittest=228 OK
+WSL unittest=228 OK
+```
+
+WSL 120 天 fixed grid zero-cost：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T081342Z-strategy-selection-scan-qount-strategy-selection-s-carry-fixed-grid-zero-cost-20260605/qount-strategy-selection-s-carry-fixed-grid-zero-cost-20260605.json
+cell_count=18
+best_entry_threshold=0.00004
+best_exit_threshold=0.00002
+best_min_hold_periods=1
+sum_return_pct=+0.07147182
+sharpe=+24.8646327338
+turnover_events=608
+utilization=0.6715277778
+avg_dual_leg_gross_exposure=1.3430555556
+basis_sample_count=0
+```
+
+WSL 120 天 fixed grid maker-ish：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T081321Z-strategy-selection-scan-qount-strategy-selection-s-carry-fixed-grid-maker-ish-20260605/qount-strategy-selection-s-carry-fixed-grid-maker-ish-20260605.json
+cell_count=18
+cost_per_directional_bet=0.0004
+best_entry_threshold=0.00012
+best_exit_threshold=0.00002
+best_min_hold_periods=6
+sum_return_pct=-0.02967449
+sharpe=-3.9818426324
+turnover_events=73
+utilization=0.2708333333
+avg_dual_leg_gross_exposure=0.5416666667
+basis_sample_count=0
+decision=no_positive_cell
+```
+
+读法：固定 grid 没有找到 maker-ish 成本后仍为正的 CARRY cell。zero-cost best 说明 gross
+cashflow 存在；maker-ish best 转负说明 4 币 universe 下成本仍吃掉 edge。Binance
+`fetch_funding_rate_history` 当前未给可用 mark/index 历史，所以 basis 诊断字段存在但
+`basis_sample_count=0`；basis 风险需要后续接 mark/index 或 premium index 历史数据源。
+当前不能进入 S-CARRY paper。
+
+### S-CARRY premium index basis source
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+```
+
+新增显式 basis 数据源：
+
+```bash
+python -m qount.main strategy-selection-scan \
+  --research-profile multi-symbol \
+  --families carry \
+  --carry-model threshold_dual_leg \
+  --carry-basis-source premium_index
+```
+
+实现：通过 ccxt `fetch_premium_index_ohlcv` 拉 Binance 8h premium index kline，用 close
+作为 premium/basis 代理，并按 funding 8h bucket 合并到 funding rows。默认
+`carry_basis_source=funding_history` 不变；只有显式 `premium_index` 才多拉该数据源。
+
+验证：
+
+```text
+local unittest=229 OK
+WSL unittest=229 OK
+```
+
+WSL 120 天 fixed grid maker-ish + premium basis：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T083154Z-strategy-selection-scan-qount-strategy-selection-s-carry-fixed-grid-premium-basis-maker-ish-20260605/qount-strategy-selection-s-carry-fixed-grid-premium-basis-maker-ish-20260605.json
+premium_index_8h_fetch=361 bars per symbol
+cell_count=18
+cost_per_directional_bet=0.0004
+best_entry_threshold=0.00012
+best_exit_threshold=0.00002
+best_min_hold_periods=6
+sum_return_pct=-0.02967449
+turnover_events=73
+utilization=0.2708333333
+avg_dual_leg_gross_exposure=0.5416666667
+basis_sample_count=390
+basis_avg_abs_pct=0.0005576725
+basis_max_abs_pct=0.00143783
+decision=no_positive_cell
+```
+
+读法：basis 数据源已接通，之前 `basis_sample_count=0` 的问题已解决。收益结论没有变化：
+premium basis 只是风险诊断，不改变 CARRY PnL；4 币 maker-ish 成本后 best cell 仍为负，
+不能进入 S-CARRY paper。下一步是扩大 universe 和更真实 spot/perp 双腿资金占用/执行口径。
+
+### S-CARRY top12 universe + premium basis cost control
+
+WSL 120 天 top12 fixed grid maker-ish + premium basis：
+
+```text
+symbols=BTC/ETH/ZEC/SOL/HYPE/WLD/XRP/BNB/NEAR/DOGE/ADA/SUI USDT perpetuals
+maker_ish_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T083609Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-premium-basis-maker-ish-20260605/qount-strategy-selection-s-carry-top12-premium-basis-maker-ish-20260605.json
+premium_index_8h_fetch=361 bars per symbol
+sample_count=4680
+cell_count=18
+cost_per_directional_bet=0.0004
+best_entry_threshold=0.00012
+best_exit_threshold=0.00002
+best_min_hold_periods=6
+sum_return_pct=-0.07594874
+sharpe=-2.9327964782
+turnover_events=221
+utilization=0.2816239316
+avg_dual_leg_gross_exposure=0.5632478632
+basis_sample_count=1318
+basis_avg_abs_pct=0.0005359447
+basis_max_abs_pct=0.00265777
+decision=no_positive_cell
+best_cell_only_positive_symbol=WLD/USDT:USDT +0.03113714
+```
+
+同 universe / grid / premium basis 的 zero-cost control：
+
+```text
+zero_cost_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T083859Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-premium-basis-zero-cost-20260605/qount-strategy-selection-s-carry-top12-premium-basis-zero-cost-20260605.json
+cost_per_directional_bet=0
+best_entry_threshold=0.00004
+best_exit_threshold=0.00002
+best_min_hold_periods=1
+sum_return_pct=+0.27826189
+sharpe=+20.6366164287
+turnover_events=2104
+utilization=0.6970085470
+avg_dual_leg_gross_exposure=1.3940170940
+basis_sample_count=3262
+basis_avg_abs_pct=0.0004813930
+basis_max_abs_pct=0.00265777
+decision=carry_candidate
+```
+
+读法：扩到 12 币后，zero-cost gross funding cashflow 从 4 币 fixed grid 的 `+0.07147182`
+提升到 `+0.27826189`，S-CARRY 仍值得继续；但这主要来自低阈值、高换手 cell，maker-ish
+成本后同一 universe 全部 grid 仍为负。当前瓶颈从“没有 gross cashflow”收敛为“成本 / 双腿执行 /
+资金占用 / basis 风险没有可交易证明”。不能进入 S-CARRY paper；下一步做 explicit hedge
+history replay 与 post-only 成交率/资金占用模型。
+
+### S-CARRY explicit spot/perp capital model
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+```
+
+新增显式 research-only 参数：
+
+```bash
+python -m qount.main strategy-selection-scan \
+  --families carry \
+  --carry-model threshold_dual_leg \
+  --carry-execution-cost-model per_order \
+  --carry-capital-model spot_perp_gross \
+  --carry-perp-margin-fraction 0.1666667
+```
+
+默认仍是旧 `directional_round_trip + perp_notional`，旧 artifact 口径不变。新字段包括
+`carry_order_cost_pct`、`carry_capital_per_perp_notional`、
+`carry_avg_dual_leg_gross_exposure_on_capital_pct`、`carry_gross_funding_return_pct`、
+`carry_execution_cost_sum_pct`、`carry_cost_to_gross_ratio`、
+`carry_break_even_order_cost_pct`。
+
+验证：
+
+```text
+local unittest=230 OK
+WSL unittest=230 OK
+```
+
+WSL 120 天 top12 explicit spot/perp gross，per-order cost `0.0002`：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T085512Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-gross-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-gross-20260605.json
+execution_cost_model=per_order
+capital_model=spot_perp_gross
+perp_margin_fraction=0.1666667
+order_cost=0.0002
+best_entry_threshold=0.00012
+best_exit_threshold=0.00002
+best_min_hold_periods=6
+sum_return_pct=+0.0106725083
+sharpe=+0.7275658326
+turnover_events=221
+gross_funding_return_pct=+0.0864439347
+execution_cost_sum_pct=+0.0757714264
+cost_to_gross_ratio=0.8765383794
+break_even_order_cost_pct=0.0002281703
+positive_cells=3/18
+basis_sample_count=1318
+basis_max_abs_pct=0.00265777
+decision=carry_candidate
+```
+
+同口径 cost stress，per-order cost `0.00025`：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T085742Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-gross-cost025-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-gross-cost025-20260605.json
+order_cost=0.00025
+best_sum_return_pct=-0.0082703483
+best_sharpe=-0.5083163356
+cost_to_gross_ratio=1.0956729742
+break_even_order_cost_pct=0.0002281703
+decision=no_positive_cell
+```
+
+读法：explicit spot/perp 口径下出现小正候选，但这不是 paper 许可。正收益完全依赖
+`order_cost <= 0.00022817`，per-order 成本只增加 5bp 的一半级别就转负；同时 basis tail
+`0.00265777` 大于净收益边际。下一步应先做 post-only 成交率和实测订单成本验证，再做
+basis tail 压力；不能把 discovery best cell promotion。
+
+### S-CARRY fixed-cell validation_v1 one-day sanity
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+```
+
+`strategy-selection-scan` 新增显式 `--holdout-role discovery|validation_v1|unknown`，默认
+仍为 `discovery`。用于把固定参数 sanity artifact 和 discovery grid artifact 区分开。
+
+验证：
+
+```text
+local unittest=230 OK
+WSL unittest=230 OK
+```
+
+固定参数：top12 explicit spot/perp best cell，entry `0.00012` / exit `0.00002` /
+min-hold `6`，不跑 grid search。
+
+WSL 1 天 `validation_v1` sanity，per-order cost `0.0002`：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T103552Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-20260605.json
+window=2026-06-04T00:00:00Z..2026-06-05T00:00:00Z
+holdout_role=validation_v1
+sample_count=51
+order_cost=0.0002
+sum_return_pct=+0.0003597343
+sharpe=+2.6637283960
+turnover_events=4
+gross_funding_return_pct=+0.0017311628
+execution_cost_sum_pct=+0.0013714285
+cost_to_gross_ratio=0.7922007833
+break_even_order_cost_pct=0.0002524613
+basis_sample_count=14
+basis_max_abs_pct=0.00235832
+decision=carry_candidate
+```
+
+同窗口 cost stress，per-order cost `0.00025`：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T103620Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-cost025-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-cost025-20260605.json
+order_cost=0.00025
+sum_return_pct=+0.0000168771
+sharpe=+0.1072893774
+cost_to_gross_ratio=0.9902509791
+break_even_order_cost_pct=0.0002524613
+decision=carry_candidate
+```
+
+读法：这个新窗口没有立即证伪 CARRY fixed cell，但证据强度不足以 paper。窗口只有 1 天、
+51 条 funding 样本、4 个 entry events；`0.00025` 成本下几乎贴着 break-even。basis tail
+`0.00235832` 仍明显大于净收益边际。下一步继续做 post-only fill / 实测订单成本 / basis tail，
+不是 promotion。
+
+### S-CARRY basis tail diagnostic
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+tests/test_strategy_optimization.py
+```
+
+`strategy-selection-scan` 的 CARRY cell 增加纯诊断字段，不改变
+`portfolio_sum_return_pct`：
+
+```text
+basis_single_tail_loss_on_capital_pct
+basis_single_tail_to_net_ratio
+portfolio_sum_after_single_basis_tail_pct
+by_symbol.*.sum_after_single_basis_tail_pct
+```
+
+验证：
+
+```text
+local unittest=230 OK
+WSL unittest=230 OK
+```
+
+同一个 1 天 `validation_v1` fixed cell 复跑，per-order cost `0.0002`：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T104512Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-basis-tail-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-basis-tail-20260605.json
+window=2026-06-04T00:00:00Z..2026-06-05T00:00:00Z
+holdout_role=validation_v1
+sample_count=51
+order_cost=0.0002
+portfolio_sum_return_pct=+0.0003597343
+portfolio_sharpe=+2.6637283960
+turnover_events=4
+gross_funding_return_pct=+0.0017311628
+execution_cost_sum_pct=+0.0013714285
+cost_to_gross_ratio=0.7922007833
+break_even_order_cost_pct=0.0002524613
+basis_sample_count=14
+basis_max_abs_pct=0.00235832
+basis_single_tail_loss_on_capital_pct=0.0020214171
+basis_single_tail_to_net_ratio=5.6191951202
+portfolio_sum_after_single_basis_tail_pct=-0.0016616828
+```
+
+有实际持仓的逐币 tail 读数：
+
+```text
+ZEC sum=+0.0004934743 tail_ratio=4.0962968110 after_tail=-0.0015279428
+SOL sum=+0.0000535886 tail_ratio=13.0929302623 after_tail=-0.0006480428
+HYPE sum=-0.0000322629 tail_ratio=29.9391604676 after_tail=-0.0009981857
+XRP sum=-0.0001550657 tail_ratio=3.8154883644 after_tail=-0.0007467171
+```
+
+读法：basis-tail 诊断没有改变原 PnL，但给出了更严格的风险压力结论。1 天 fixed-cell
+`+0.0003597343` 的净收益会被同窗口观察到的一次最大 basis shock 估算压力抹掉并转成
+`-0.0016616828`，tail/net 比例约 `5.62x`。这说明当前 S-CARRY 小正候选没有 paper
+资格；下一步必须先补 post-only fill / 实测订单成本，以及 basis-tail-aware hedge / exit
+模型，不能把 fixed-cell sanity 当 promotion。
+
+### S-CARRY simple basis tail stop
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+```
+
+新增显式 research-only 参数：
+
+```text
+--carry-basis-tail-stop-pct
+```
+
+默认 `None`，不改变旧扫描。显式设置后，`threshold_dual_leg` 在持仓且
+`abs(basis_pct) >= threshold` 时强制退出，计入双腿平仓成本，并输出：
+
+```text
+basis_tail_stop_threshold_pct
+basis_tail_stop_events
+by_symbol.*.basis_tail_stop_events
+```
+
+验证：
+
+```text
+local strategy-selection tests=9 OK
+local unittest=231 OK
+sync-to-wsl.sh --install=OK
+WSL unittest=231 OK
+```
+
+同一个 1 天 `validation_v1` fixed cell，per-order cost `0.0002`，测试三个 stop：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T105545Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-tail-stop001-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-tail-stop001-20260605.json
+stop=0.0010
+portfolio_sum_return_pct=-0.0008075743
+portfolio_sharpe=-5.7715287233
+basis_tail_stop_events=2
+carry_execution_cost_sum_pct=0.0023999999
+basis_max_abs_pct=0.00081857
+basis_single_tail_loss_on_capital_pct=0.0007016314
+basis_single_tail_to_net_ratio=0.8688134838
+portfolio_sum_after_single_basis_tail_pct=-0.0015092057
+
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T105616Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-tail-stop00015-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-tail-stop00015-20260605.json
+stop=0.0015
+portfolio_sum_return_pct=-0.0004218600
+portfolio_sharpe=-3.5005595112
+basis_tail_stop_events=1
+carry_execution_cost_sum_pct=0.0020571428
+basis_max_abs_pct=0.00112691
+basis_single_tail_loss_on_capital_pct=0.0009659228
+basis_single_tail_to_net_ratio=2.2896763313
+portfolio_sum_after_single_basis_tail_pct=-0.0013877828
+
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T105622Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-tail-stop00020-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-val-jun04-tail-stop00020-20260605.json
+stop=0.0020
+portfolio_sum_return_pct=-0.0004218600
+portfolio_sharpe=-3.5005595112
+basis_tail_stop_events=1
+carry_execution_cost_sum_pct=0.0020571428
+basis_max_abs_pct=0.00112691
+basis_single_tail_loss_on_capital_pct=0.0009659228
+basis_single_tail_to_net_ratio=2.2896763313
+portfolio_sum_after_single_basis_tail_pct=-0.0013877828
+```
+
+读法：simple hard stop 能把最大持仓期 basis 从 `0.00235832` 降到 `0.00081857` /
+`0.00112691`，但退出成本和少收 funding 直接把组合 PnL 转负。当前 S-CARRY 不能靠单一
+basis hard stop 解决，仍不能 paper。下一步应转向 post-only fill / 实测订单成本，或做
+更细的 symbol/filter 与 hedge timing，而不是继续在这个 1 天窗口调 stop 阈值。
+
+### S-CARRY cost audit + WLD/SOL filter probe
+
+只读 live 成本审计：
+
+```text
+command=execution-cost-audit --limit 200
+orders_considered=200
+market_orders_analyzed=4
+avg_abs_slippage_pct=0.0421792397
+p50_abs_slippage_pct=0.0440920717
+p90_abs_slippage_pct=0.0544432983
+max_abs_slippage_pct=0.0574514535
+fee_rate_pct=null
+missing_fee_info=4
+```
+
+读法：样本太少，且 fee 信息缺失，不能直接作为最终实测成本；但历史 live 市价单 slippage
+中位约 `0.044%`，已经高于当前 S-CARRY fixed-cell 的 `0.020%` per-order 假设。
+
+120 天 discovery explicit artifact 的逐币读法：
+
+```text
+source=/home/alyaloale/Code/qount/state/research_runs/20260605T085512Z-strategy-selection-scan-qount-strategy-selection-s-carry-top12-explicit-spot-perp-gross-20260605/qount-strategy-selection-s-carry-top12-explicit-spot-perp-gross-20260605.json
+positive_by_symbol=WLD +0.0342318333, SOL +0.0036256113, ZEC +0.0009311400
+ZEC_after_single_basis_tail=-0.0005715771
+```
+
+按 discovery tail-aware 过滤，只保留 `WLD/SOL`，固定参数复跑：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110031Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-discovery120d-20260605/qount-strategy-selection-s-carry-wld-sol-discovery120d-20260605.json
+window=2026-02-01T00:00:00Z..2026-06-01T00:00:00Z
+holdout_role=discovery
+sample_count=720
+portfolio_sum_return_pct=+0.0378574446
+portfolio_sharpe=+8.9535171438
+turnover_events=51
+gross_funding_return_pct=+0.0553431584
+execution_cost_sum_pct=+0.0174857138
+cost_to_gross_ratio=0.3159507749
+break_even_order_cost_pct=0.0006330100
+basis_max_abs_pct=0.00265777
+portfolio_sum_after_single_basis_tail_pct=+0.0355793561
+```
+
+同一 WLD/SOL filter 在已看过的 1 天 sanity 窗口：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110033Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-valjun04-20260605/qount-strategy-selection-s-carry-wld-sol-valjun04-20260605.json
+window=2026-06-04T00:00:00Z..2026-06-05T00:00:00Z
+holdout_role=validation_v1
+sample_count=8
+portfolio_sum_return_pct=+0.0000535886
+portfolio_sharpe=+1.9439023230
+turnover_events=1
+gross_funding_return_pct=+0.0003964457
+execution_cost_sum_pct=+0.0003428571
+cost_to_gross_ratio=0.8648274669
+break_even_order_cost_pct=0.0002312600
+basis_max_abs_pct=0.00081857
+portfolio_sum_after_single_basis_tail_pct=-0.0006480428
+```
+
+成本压力：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110109Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-valjun04-cost000025-20260605/qount-strategy-selection-s-carry-wld-sol-valjun04-cost000025-20260605.json
+order_cost=0.00025
+portfolio_sum_return_pct=-0.0000321257
+cost_to_gross_ratio=1.0810343337
+portfolio_sum_after_single_basis_tail_pct=-0.0007337571
+
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110114Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-valjun04-cost000045-20260605/qount-strategy-selection-s-carry-wld-sol-valjun04-cost000045-20260605.json
+order_cost=0.00045
+portfolio_sum_return_pct=-0.0003749828
+cost_to_gross_ratio=1.9458618006
+portfolio_sum_after_single_basis_tail_pct=-0.0010766143
+```
+
+读法：`WLD/SOL` 是当前最像样的 S-CARRY symbol filter，120 天 discovery 的 net / after-tail
+都明显好于 top12。但 1 天 sanity 只有 SOL 成交，after-tail 仍为负；per-order cost
+提高到 `0.00025` 即转负，而历史 live 市价单 slippage 中位约 `0.00044`。不能 paper。
+下一步应先证明 maker/post-only fill 能把实际 per-order cost 压到 `0.000231` 以下，或找
+新的独立日期继续验证 WLD/SOL 的稳定性。
+
+### S-CARRY WLD/SOL monthly and early-June read
+
+WLD/SOL 固定参数分月 discovery：
+
+```text
+feb_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T111620Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-feb-20260605/qount-strategy-selection-s-carry-wld-sol-feb-20260605.json
+sum=+0.0040478056
+after_tail=+0.0028153799
+turnover_events=19
+
+mar_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T111622Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-mar-20260605/qount-strategy-selection-s-carry-wld-sol-mar-20260605.json
+sum=+0.0028695942
+after_tail=+0.0017230457
+turnover_events=15
+
+apr_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T111625Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-apr-20260605/qount-strategy-selection-s-carry-wld-sol-apr-20260605.json
+sum=+0.0190945623
+after_tail=+0.0168164738
+turnover_events=7
+
+may_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T111627Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-may-20260605/qount-strategy-selection-s-carry-wld-sol-may-20260605.json
+sum=+0.0119759397
+after_tail=+0.0104161540
+turnover_events=11
+```
+
+6 月已看窗口逐日固定参数复核全部降级 `discovery`，只看稳定性：
+
+```text
+jun01_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110450Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-day-jun01-20260605/qount-strategy-selection-s-carry-wld-sol-day-jun01-20260605.json
+sum=0.0
+turnover_events=0
+
+jun02_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110452Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-day-jun02-20260605/qount-strategy-selection-s-carry-wld-sol-day-jun02-20260605.json
+sum=0.0
+turnover_events=0
+
+jun03_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110455Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-day-jun03-20260605/qount-strategy-selection-s-carry-wld-sol-day-jun03-20260605.json
+sum=-0.0000948771
+after_tail=-0.0005669486
+turnover_events=1
+
+jun04_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T110458Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-day-jun04-20260605/qount-strategy-selection-s-carry-wld-sol-day-jun04-20260605.json
+sum=+0.0000535886
+after_tail=-0.0006480428
+turnover_events=1
+
+jun01_04_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T111629Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-jun01-04-20260605/qount-strategy-selection-s-carry-wld-sol-jun01-04-20260605.json
+sum=+0.0003015686
+after_tail=-0.0004000628
+turnover_events=1
+```
+
+2026-06-05 当前只是 partial day，不作为 validation：
+
+```text
+partial_artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T111654Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-jun05-partial-20260605/qount-strategy-selection-s-carry-wld-sol-jun05-partial-20260605.json
+holdout_role=unknown
+sample_count=4
+sum=-0.0002471743
+after_tail=-0.0003076628
+turnover_events=2
+```
+
+读法：WLD/SOL 在 2-5 月 discovery 月月为正，且 after-tail 也为正，说明它不是单日假象；
+但 4/5 月主要靠 WLD，6/1-6/4 已看窗口 after-tail 为负，6/5 partial 也暂时为负。不能
+paper。下一步只能等新的完整独立日期复核，或先解决 maker/post-only 成本；不能继续用
+6/1-6/5 调阈值后声称 validation。
+
+### S-CARRY post-only economics diagnostic
+
+变更：
+
+```text
+src/qount/strategy_selection.py
+src/qount/main.py
+tests/test_strategy_optimization.py
+```
+
+新增 research-only 诊断参数：
+
+```text
+--carry-maker-order-cost-pct
+--carry-taker-order-cost-pct
+```
+
+这些参数只计算所需 maker fill rate，不改变 `portfolio_sum_return_pct`。输出新增：
+
+```text
+carry_post_only_maker_order_cost_pct
+carry_post_only_taker_order_cost_pct
+carry_post_only_target_order_cost_for_break_even_pct
+carry_post_only_target_order_cost_after_single_basis_tail_pct
+carry_required_maker_fill_rate_for_break_even
+carry_required_maker_fill_rate_after_single_basis_tail
+carry_post_only_break_even_feasible
+carry_post_only_after_tail_feasible
+```
+
+验证：
+
+```text
+local strategy-selection tests=10 OK
+local unittest=232 OK
+sync-to-wsl.sh --install=OK
+WSL unittest=232 OK
+```
+
+WLD/SOL 固定参数，maker cost `0`，taker cost `0.00045`：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T113704Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-discovery120d-postonly-econ-20260605/qount-strategy-selection-s-carry-wld-sol-discovery120d-postonly-econ-20260605.json
+window=2026-02-01T00:00:00Z..2026-06-01T00:00:00Z
+holdout_role=discovery
+portfolio_sum_return_pct=+0.0378574446
+portfolio_sum_after_single_basis_tail_pct=+0.0355793561
+turnover_events=51
+target_order_cost_for_break_even_pct=0.0006330100
+target_order_cost_after_single_basis_tail_pct=0.0006069534
+required_maker_fill_for_break_even=0.0
+required_maker_fill_after_single_basis_tail=0.0
+after_tail_feasible=true
+
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T113706Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-jun01-04-postonly-econ-20260605/qount-strategy-selection-s-carry-wld-sol-jun01-04-postonly-econ-20260605.json
+window=2026-06-01T00:00:00Z..2026-06-05T00:00:00Z
+holdout_role=discovery
+portfolio_sum_return_pct=+0.0003015686
+portfolio_sum_after_single_basis_tail_pct=-0.0004000628
+turnover_events=1
+target_order_cost_for_break_even_pct=0.0003759150
+target_order_cost_after_single_basis_tail_pct=-0.0000333700
+required_maker_fill_for_break_even=0.1646333333
+required_maker_fill_after_single_basis_tail=1.0741555556
+after_tail_feasible=false
+
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T113709Z-strategy-selection-scan-qount-strategy-selection-s-carry-wld-sol-jun05-partial-postonly-econ-20260605/qount-strategy-selection-s-carry-wld-sol-jun05-partial-postonly-econ-20260605.json
+window=2026-06-05T00:00:00Z..2026-06-05T11:00:00Z
+holdout_role=unknown
+portfolio_sum_return_pct=-0.0002471743
+portfolio_sum_after_single_basis_tail_pct=-0.0007569857
+turnover_events=2
+target_order_cost_after_single_basis_tail_pct=-0.0000207875
+required_maker_fill_after_single_basis_tail=1.0461944444
+after_tail_feasible=false
+```
+
+读法：post-only economics 证明 WLD/SOL 120 天 discovery 并不依赖低成本，甚至 taker
+`0.00045` 也可 after-tail 为正；但 6/1-6/5 的 after-tail 亏损不是 maker fill 能解决的，
+因为 after-tail 为正需要超过 100% maker fill。下一步不应继续成本调参，应该研究
+hedge timing / basis regime filter，或者转向 1d TS-MOM 扩 universe。
+
+## 2026-06-04
+
+### 7907 Binance 专线恢复
+
+现象：
+
+```text
+QountBinanceProxy task=Ready
+WSL tcp 192.168.128.1:7907=fail
+candidate-walk-forward failed at binance fapi exchangeInfo proxy timeout
+```
+
+处理：
+
+```powershell
+Start-ScheduledTask -TaskName QountBinanceProxy
+```
+
+恢复读数：
+
+```text
+Windows 7907 listener=verge-mihomo.exe
+WSL tcp 192.168.128.1:7907=ok
+curl --proxy http://192.168.128.1:7907 https://fapi.binance.com/fapi/v1/time=ok
+preflight-live public_api/symbols/credentials/position_mode/balance_guard=ok
+live_guard ok=false reason=live_disabled
+```
+
+读法：这是基础设施恢复，不是 live 许可；`QOUNT_LIVE_ENABLE=false` 保持不变。
+
+### validation_v1 candidate v1/v2 对比
+
+命令口径：
+
+```text
+candidate-walk-forward --research-profile eth-only --holdout-role validation_v1
+windows:
+  val-jun01=2026-06-01T00:00:00Z,2026-06-02T00:00:00Z
+  val-jun02=2026-06-02T00:00:00Z,2026-06-03T00:00:00Z
+```
+
+Artifacts：
+
+```text
+v1=/home/alyaloale/Code/qount/state/research_runs/20260604T132940Z-candidate-walk-forward-qount-candidate-wf-eth-validation-v1-v1-20260604
+v2=/home/alyaloale/Code/qount/state/research_runs/20260604T132941Z-candidate-walk-forward-qount-candidate-wf-eth-validation-v1-v2-20260604
+```
+
+读数：
+
+```text
+window_count=2
+total_cycles=578
+total_fresh_entry_selected=25
+v1_total_selected_cycles=25
+v2_total_selected_cycles=25
+v1_strong_favorable=0
+v2_strong_favorable=0
+```
+
+读法：`v2_interactions` 没有增加 candidate 覆盖，也没有产生更强 setup quality；
+不进入端到端验证，不替换主线 v1。
+
+### validation_v1 端到端 walk-forward
+
+命令口径：
+
+```text
+walk-forward --research-profile eth-only --holdout-role validation_v1 \
+  --setup-model-version v1 --ai-decision-cache
+windows:
+  val-jun01=2026-06-01T00:00:00Z,2026-06-02T00:00:00Z
+  val-jun02=2026-06-02T00:00:00Z,2026-06-03T00:00:00Z
+```
+
+Artifact：
+
+```text
+/home/alyaloale/Code/qount/state/research_runs/20260604T134036Z-walk-forward-qount-wf-eth-validation-v1-v1-20260604
+```
+
+总读数：
+
+```text
+oos_safe_windows=2
+positive_realized_windows=0/2
+paper_filled=7
+paper_closed=8
+sum_realized_return_pct=-0.7159862916%
+avg_realized_return_pct=-0.3579931458%
+windows_with_open_positions=0
+total_reviewed=40
+total_review_missed_candidate_move=2
+windows_with_missed_candidate_move=1
+```
+
+分窗：
+
+```text
+val-jun01 realized=-0.1510033978% paper_filled=1 paper_closed=1
+  review_avg_net_edge=-0.0676188793% missed_candidate_move=0
+val-jun02 realized=-0.5649828938% paper_filled=6 paper_closed=7
+  review_avg_net_edge=-0.0558199036% missed_candidate_move=2
+```
+
+Tag 读法：
+
+```text
+eth_trend_impulse_range_noise_range_gt012:
+  reviewed=1 bad=1 avg_net_edge=-0.9964830654%
+eth_trend_impulse_range_noise_washout:
+  reviewed=1 bad=1 avg_net_edge=-0.9964830654%
+eth_trend_impulse_short_breakdown_chase:
+  reviewed=9 hold_reviewed=9 missed_candidate_move=2
+  avg_candidate_aligned_future_return_pct=-0.0240872630%
+  avg_candidate_opportunity_edge_pct=+0.1548490521%
+```
+
+结论：
+
+- 这次 once-only validation 不满足 `G_paper`，不能 forward paper。
+- `range_noise_range_gt012` / `washout` 在新样本中直接变成 bad trade，不能进 gate。
+- `short_breakdown_chase` 有 2 个 missed candidate move，但整体 tag/readout 不支持通过
+  放宽 short entry 修复；这两个窗口已使用，后续调参不能再把它们当 validation。
+- 保持 `ETH-only research-only`、live disabled。
+
+### terminal washout blocker：盈利方向验证
+
+改动：
+
+```text
+src/qount/candidate_filter.py
+reason=eth_short_range_noise_terminal_washout
+hard_bottom_line=true
+```
+
+触发条件：
+
+```text
+symbol=ETH/USDT:USDT
+fresh_entry action=sell
+setup_phase=range_noise
+higher_timeframe_bias=short
+higher_timeframe_phase=trend
+return_24bars <= -0.0100
+rsi_14 <= 32.0
+sma_fast_ratio <= -0.0080
+sma_slow_ratio <= -0.0080
+volume_ratio_20 >= 1.50
+range_pct >= 0.0080
+```
+
+本地窄测试：
+
+```text
+test_candidate_filter_hard_blocks_eth_range_noise_terminal_washout
+targeted range_noise unittest: 9 OK
+```
+
+完整验证：
+
+```text
+local unittest discover: 221 OK
+sync-to-wsl.sh: OK
+WSL unittest via run-wsl-tests.sh: 221 OK
+```
+
+已失败 validation 窗口降级 discovery 后复测：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260604T135759Z-walk-forward-qount-wf-eth-terminal-washout-block-discovery-20260604
+windows=disc-jun01 2026-06-01T00:00:00Z..2026-06-02T00:00:00Z
+        disc-jun02 2026-06-02T00:00:00Z..2026-06-03T00:00:00Z
+holdout_role=discovery
+positive_realized_windows=1/2
+paper_filled=4
+paper_closed=5
+sum_realized_return_pct=+0.9173089048%
+avg_realized_return_pct=+0.4586544524%
+windows_with_open_positions=0
+total_review_missed_candidate_move=2
+disc-jun01 realized=-0.1510033978%
+disc-jun02 realized=+1.0683123026%
+```
+
+读法：这是有效的 loss-attribution blocker，说明 6/2 的 terminal washout short
+不该开；但这两个窗口已在失败 validation 中被看过，只能作为 discovery。
+
+新的 once-only validation 第一次运行：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260604T141045Z-walk-forward-qount-wf-eth-terminal-washout-block-val-jun03-20260604
+window=val-jun03 2026-06-03T00:00:00Z..2026-06-04T00:00:00Z
+holdout_role=validation_v1
+oos_safe_windows=1
+positive_realized_windows=0/1
+paper_filled=2
+paper_closed=1
+sum_realized_return_pct=-0.3858229487%
+unrealized_return_pct=+0.8770829226%
+total_return_pct=+0.4912599739%
+windows_with_open_positions=1
+open_positions=1
+max_drawdown_pct=2.8234367106%
+total_review_missed_candidate_move=0
+review_avg_net_edge_pct=-0.0005301342
+promotion_blockers=open_position_remaining,non_positive_realized_return,non_positive_review_edge
+raw_ai_error_count=227/289
+validated_invalid=227
+halted=true
+```
+
+读法：这份 artifact 的 open position 主要来自 AI auth outage，不是可直接调参的 exit 证据。
+
+AI relay 恢复后做同策略 infra rerun：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260604T145900Z-walk-forward-qount-wf-eth-terminal-washout-block-val-jun03-infra-rerun-20260604
+window=val-jun03 2026-06-03T00:00:00Z..2026-06-04T00:00:00Z
+holdout_role=validation_v1
+oos_safe_windows=1
+positive_realized_windows=0/1
+paper_filled=6
+paper_closed=6
+sum_realized_return_pct=-1.1912362466%
+windows_with_open_positions=0
+max_drawdown_pct=1.5370303348%
+total_reviewed=26
+total_review_missed_candidate_move=1
+review_avg_net_edge_pct=-0.0383055167%
+raw_ai_error_count=0/289
+validated_invalid=0
+promotion_blockers=non_positive_realized_return,non_positive_review_edge
+```
+
+Order attribution:
+
+```text
+entry_runs=20,43,206,234,241,250
+closed_trades=6
+wins=1
+losses=5
+run43 pnl=+0.3846991822 quote
+run241 pnl=-0.9643193956 quote
+run250 pnl=-0.1322188764 quote
+```
+
+Terminal-washout miss read:
+
+```text
+run241 return_24bars=-0.01710 rsi_14=15.17 sma_fast=-0.00973 sma_slow=-0.01457 volume_ratio_20=2.27 range_pct=0.00595
+run250 return_24bars=-0.02331 rsi_14=28.59 sma_fast=-0.00771 sma_slow=-0.01788 volume_ratio_20=2.70 range_pct=0.00727
+current blocker misses because range_pct>=0.008 and sma_fast<=-0.008 are too narrow
+```
+
+结论：方向上比原 baseline 好，但仍没有通过 `G_paper`。真实下一步是研究 repeated
+`range_noise` short、loss reentry cooldown 和 terminal-washout 阈值；不要放宽
+`range_noise` / `short_rebound_fail` 来追成交。2026-06-03..2026-06-04 已看过，后续调参后
+不能再用它宣称 promotion。
 
 ## 2026-05-31
 
@@ -72,10 +1576,171 @@ scripts/run-wsl-tests.sh
 验证：
 
 ```text
-local unittest: 211 OK
+local unittest: 220 OK
 sync-to-wsl.sh --install: OK
-WSL unittest via run-wsl-tests.sh: 211 OK
+WSL unittest via run-wsl-tests.sh: 220 OK
 ```
+
+### T-B AI hold-bias 工具化
+
+新增：
+
+```text
+ai-hold-baseline
+src/qount/ai_hold_baseline.py
+```
+
+能力：
+
+- 从 backtest / walk-forward artifact 的 `qount.db` 还原 selected fresh-entry prompt 样本。
+- 支持 profile / symbol / target tag / run_id 过滤。
+- 支持 `v1`、`v2_remove_default_wait`、`v3_veto_only` prompt 研究变体。
+- 默认结果写入 `state/research_runs`；diagnostic only，不是 promotion 证据。
+
+WSL 读数：
+
+```text
+multi_symbol_dry_run=/home/alyaloale/Code/qount/state/research_runs/20260531T064411Z-ai-hold-baseline-qount-ai-hold-multi-fast-sma-dryrun-20260531/qount-ai-hold-multi-fast-sma-dryrun-20260531.json
+sample_count=24
+stored_hold=24/24
+windows=ws4 step3 mar03 20 + apr20 4
+
+eth_only_symbol_filter=/home/alyaloale/Code/qount/state/research_runs/20260531T064410Z-ai-hold-baseline-qount-ai-hold-ethonly-symbol-filter-20260531/qount-ai-hold-ethonly-symbol-filter-20260531.json
+sample_count=2
+symbols_filter=ETH/USDT
+
+eth_only_v3_smoke=/home/alyaloale/Code/qount/state/research_runs/20260531T064502Z-ai-hold-baseline-qount-ai-hold-ethonly-v3-smoke-20260531/qount-ai-hold-ethonly-v3-smoke-20260531.json
+sample_count=2
+request_count=2
+replayed_hold=2/2
+```
+
+读法：WS-4 fast-SMA step3 的 24 条目标样本确实是 AI 层全 hold；但 `v3_veto_only`
+在 ETH-only 小样本 smoke 里仍 hold，且理由是具体 veto（负 expected_edge、SMA/24bar
+冲突、rebound 或过热），所以不能把 prompt v3 直接推进到 gate。
+
+### T-G 0 交易窗口诊断
+
+新增/修改：
+
+```text
+idle-window-diagnostic
+src/qount/idle_window_diagnostic.py
+```
+
+能力：
+
+- 扫描既有 backtest / walk-forward artifact 的 `qount.db` / `summary.json`。
+- 默认跳过有 paper fill/close 的窗口，只看 0 交易窗口。
+- 输出 setup model label/quality、setup phase、candidate blocker、traditional pattern、
+  AI hold reason 和 top candidate h6 future edge。
+- 只读诊断，不调用 AI、不执行订单、不改 candidate / risk / live。
+- 修正 reason aggregate：窗口展示受 `--reason-limit` 限制，aggregate 使用未截断计数。
+
+WSL 读数：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260531T072108Z-idle-window-diagnostic-qount-idle-window-diagnostic-ethonly-20260531-v2/qount-idle-window-diagnostic-ethonly-20260531-v2.json
+backtest_count=39
+window_count=36
+idle_window_count=36
+skipped_traded_window_count=3
+candidate_filter_hold_count=2878
+ai_hold_count=87
+selected_or_candidate_like_scored_count=890
+positive_top_candidate_avg_future_edge_windows=5/36
+positive_top_candidate_avg_future_edge_rate=0.1388888888888889
+```
+
+setup model quality：
+
+```text
+missing=2867
+unfavorable=72
+weak_favorable=12
+neutral=4
+strong_favorable=0
+```
+
+主要 candidate blocker：
+
+```text
+eth_short_research_blocks_fresh_outside_short_trend_family_open=1598
+eth_short_range_noise_requires_breakdown_structure=1191
+low_volatility=874
+low_volume=609
+low_volatility_soft_penalty=605
+short_setup_countertrend_drift=441
+low_volume_soft_penalty=405
+```
+
+验证：
+
+```text
+local unittest: 220 OK
+sync-to-wsl.sh --install: OK
+WSL unittest via run-wsl-tests.sh: 220 OK
+```
+
+读法：0 交易窗口主要是 research/candidate/market-quality 层主动拦截，setup_model
+没有在这些窗口里给出大量 strong favorable 候选；5/36 正 top-candidate-edge 窗口仍是
+已看过 discovery 样本，不能作为 promotion 或新 gate 证据。
+
+### T-C setup_model v2 interaction 对比
+
+新增/修改：
+
+```text
+setup_model v2_interactions
+setup-model-compare
+walk-forward / setup-edge-walk-forward / candidate-walk-forward --setup-model-version
+```
+
+能力：
+
+- v1 默认不变。
+- v2 在 v1 16 维特征上增加 higher-timeframe phase × bin 交互。
+- `setup-model-compare` 用 chronological train/eval split 离线对比 v1/v2。
+- 只拉历史 K 线并训练/评分，不调用 AI、不执行订单、不改变 candidate / risk / live。
+
+WSL 默认相位读数：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260531T075127Z-setup-model-compare-qount-setup-model-compare-ethonly-v2-20260531/qount-setup-model-compare-ethonly-v2-20260531.json
+example_count=705
+eval_example_count=212
+v1_top_decile_avg_target_edge_pct=-0.0011523934
+v2_top_decile_avg_target_edge_pct=-0.0013773666
+v2_minus_v1_top_decile=-0.0002249732
+v2_minus_v1_mae=+0.0000124423
+```
+
+WSL range-noise-inclusive 读数：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260531T075351Z-setup-model-compare-qount-setup-model-compare-ethonly-v2-range-20260531/qount-setup-model-compare-ethonly-v2-range-20260531.json
+example_count=19681
+eval_example_count=5905
+v1_top_decile_avg_target_edge_pct=-0.0015544902
+v2_top_decile_avg_target_edge_pct=-0.0013618186
+v2_minus_v1_top_decile=+0.0001926716
+v2_minus_v1_mae=+0.0000053851
+v2_directional_accuracy=0.7334010840
+v1_directional_accuracy=0.7347560976
+v2_strong_favorable=0
+```
+
+验证：
+
+```text
+local unittest: 220 OK
+sync-to-wsl.sh --install: OK
+WSL unittest via run-wsl-tests.sh: 220 OK
+```
+
+读法：第一版 v2 interaction plumbing 可用，但读数不支持推进。包含 `range_noise` 后
+top decile 相对 v1 略好，但绝对 future edge 仍为负，MAE 和 directional accuracy 略差，
+且 `strong_favorable=0`。不能替换主线 setup model，不能写 gate。
 
 ## 2026-05-30
 
@@ -546,6 +2211,7 @@ src/qount/artifacts.py
 2. 不放宽 broad `range_noise` / `short_rebound_fail`。
 3. 旧 13-window 和 5/30 前后 OOS 只算 `discovery_pool`；promotion 级读数必须等
    `validation_pool_v1` once-only 窗口。
-4. 优先做 T-B：量化 AI hold-bias，冻结 prompt v2/v3，避免继续在已看过窗口上调参。
-5. 并行做 T-C/T-G：setup model v2 交互项、0 交易窗口 setup/candidate/AI 拒绝原因诊断。
-6. 只有 `G_paper` 通过后才进入 forward paper；只有 forward paper 后才讨论 `G_live`。
+4. T-C 第一版 v2 已证不够；继续时只做 targeted ablation / calibration，不替换主线。
+5. 继续做 T-B：扩大 AI hold-bias 对照，不在 discovery 上调 prompt。
+6. T-G 第一版已落地；只补诊断，不从 discovery 0 交易读数直接加 gate。
+7. 只有 `G_paper` 通过后才进入 forward paper；只有 forward paper 后才讨论 `G_live`。

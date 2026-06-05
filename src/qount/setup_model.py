@@ -23,7 +23,15 @@ from .trade_policy import estimated_action_cost_pct
 from .trade_policy import timeframe_to_ms
 
 
-SETUP_EDGE_MODEL_VERSION = "setup_edge_ridge_v1"
+SETUP_EDGE_MODEL_VARIANT_V1 = "v1"
+SETUP_EDGE_MODEL_VARIANT_V2_INTERACTIONS = "v2_interactions"
+SETUP_EDGE_MODEL_VERSION_V1 = "setup_edge_ridge_v1"
+SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS = "setup_edge_ridge_v2_interactions"
+SETUP_EDGE_MODEL_VERSION = SETUP_EDGE_MODEL_VERSION_V1
+SETUP_EDGE_MODEL_VARIANTS = (
+    SETUP_EDGE_MODEL_VARIANT_V1,
+    SETUP_EDGE_MODEL_VARIANT_V2_INTERACTIONS,
+)
 SETUP_EDGE_MODEL_TIMEFRAME = "5m"
 SETUP_EDGE_MODEL_HIGHER_TIMEFRAME = "1h"
 DEFAULT_SETUP_PHASES = (
@@ -48,6 +56,23 @@ SETUP_EDGE_MODEL_FEATURE_NAMES = (
     "phase_pullback",
     "phase_reclaim",
     "phase_exhaustion",
+)
+SETUP_EDGE_MODEL_V2_EXTRA_FEATURE_NAMES = (
+    "phase_range",
+    "phase_trend_x_return24_lt_neg006",
+    "phase_trend_x_return24_gt006",
+    "phase_pullback_x_sma_fast_gt008",
+    "phase_pullback_x_sma_slow_gt008",
+    "phase_pullback_x_return24_gt012",
+    "phase_range_x_return24_gt012",
+    "phase_range_x_return24_003_006",
+    "phase_reclaim_x_rsi_low35",
+    "phase_reclaim_x_rsi_high65",
+    "phase_reclaim_x_rsi_centered",
+)
+SETUP_EDGE_MODEL_V2_FEATURE_NAMES = (
+    *SETUP_EDGE_MODEL_FEATURE_NAMES,
+    *SETUP_EDGE_MODEL_V2_EXTRA_FEATURE_NAMES,
 )
 TARGET_SLICE_SET_ETH_RANGE_ACTION = "eth-range-action"
 TARGET_SLICE_SET_MULTI_RECLAIM_SMA_ACTION = "multi-reclaim-sma-action"
@@ -105,8 +130,33 @@ def _fit_linear_regression(
     return weights, bias
 
 
-def _feature_vector(feature_map: dict[str, float]) -> list[float]:
-    return [float(feature_map[name]) for name in SETUP_EDGE_MODEL_FEATURE_NAMES]
+def setup_edge_model_payload_version(model_version: str | None) -> str:
+    if model_version in {SETUP_EDGE_MODEL_VARIANT_V2_INTERACTIONS, SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS}:
+        return SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS
+    return SETUP_EDGE_MODEL_VERSION_V1
+
+
+def setup_edge_model_feature_names(model_version: str | None) -> tuple[str, ...]:
+    if model_version in {SETUP_EDGE_MODEL_VARIANT_V2_INTERACTIONS, SETUP_EDGE_MODEL_VERSION_V2_INTERACTIONS}:
+        return SETUP_EDGE_MODEL_V2_FEATURE_NAMES
+    return SETUP_EDGE_MODEL_FEATURE_NAMES
+
+
+def _feature_vector(
+    feature_map: dict[str, float],
+    feature_names: tuple[str, ...] = SETUP_EDGE_MODEL_FEATURE_NAMES,
+) -> list[float]:
+    return [float(feature_map.get(name, 0.0)) for name in feature_names]
+
+
+def _example_feature_vector(item: dict[str, object], feature_names: tuple[str, ...]) -> list[float]:
+    feature_map = item.get("feature_map")
+    if isinstance(feature_map, dict):
+        return _feature_vector(feature_map, feature_names)
+    raw_vector = list(item.get("feature_vector") or [])
+    if len(raw_vector) >= len(feature_names):
+        return [float(value) for value in raw_vector[: len(feature_names)]]
+    return [float(value) for value in raw_vector] + [0.0] * (len(feature_names) - len(raw_vector))
 
 
 def _summarize_edges(items: list[dict[str, object]]) -> dict[str, object]:
@@ -402,12 +452,13 @@ def discover_edge_slices(
 
     rows.sort(
         key=lambda row: (
-            float(row["avg_target_edge_pct"]),
-            int((row["stability"] or {}).get("positive_folds") or 0),
-            float(row["positive_edge_rate"]),
-            int(row["sample_count"]),
-        ),
-        reverse=True,
+            -float(row["avg_target_edge_pct"]),
+            -int((row["stability"] or {}).get("positive_folds") or 0),
+            -float(row["positive_edge_rate"]),
+            -int(row["sample_count"]),
+            tuple(row["dimension_names"]),
+            tuple(str((row["dimensions"] or {}).get(name) or "") for name in row["dimension_names"]),
+        )
     )
     positive_rows = [row for row in rows if float(row["avg_target_edge_pct"]) > 0.0]
     stable_positive_rows = [
@@ -424,7 +475,14 @@ def discover_edge_slices(
         == int((row["stability"] or {}).get("covered_folds") or 0)
         and float((row["stability"] or {}).get("min_fold_avg_target_edge_pct") or 0.0) > 0.0
     ]
-    negative_rows = sorted(rows, key=lambda row: float(row["avg_target_edge_pct"]))
+    negative_rows = sorted(
+        rows,
+        key=lambda row: (
+            float(row["avg_target_edge_pct"]),
+            tuple(row["dimension_names"]),
+            tuple(str((row["dimensions"] or {}).get(name) or "") for name in row["dimension_names"]),
+        ),
+    )
     return {
         "version": "edge_slice_discovery_v1",
         "sample_count": len(examples),
@@ -805,10 +863,12 @@ def build_setup_model_bundle_metadata(
     training_window = training_window if isinstance(training_window, dict) else None
     metadata = {
         "version": model_bundle.get("version"),
+        "model_variant": model_bundle.get("model_variant"),
         "timeframe": model_bundle.get("timeframe"),
         "higher_timeframe": model_bundle.get("higher_timeframe"),
         "horizon_bars": model_bundle.get("horizon_bars"),
         "split_higher_phase": model_bundle.get("split_higher_phase"),
+        "feature_count": len(model_bundle.get("feature_names") or []),
         "trained_at": model_bundle.get("trained_at"),
         "training_cutoff_utc": model_bundle.get("training_cutoff_utc")
         or (None if training_window is None else training_window.get("training_cutoff_utc")),
@@ -852,12 +912,21 @@ def build_setup_model_feature_map(
     indicators = symbol.indicators
     higher = symbol.higher_timeframe or {}
     higher_phase = str(higher.get("trend_phase") or "range")
+    return_24bars = float(indicators.get("return_24bars") or 0.0)
+    sma_fast_ratio = float(indicators.get("sma_fast_ratio") or 0.0)
+    sma_slow_ratio = float(indicators.get("sma_slow_ratio") or 0.0)
+    rsi_centered = (float(indicators.get("rsi_14") or 50.0) - 50.0) / 50.0
+    phase_trend = 1.0 if higher_phase == "trend" else 0.0
+    phase_pullback = 1.0 if higher_phase == "pullback" else 0.0
+    phase_reclaim = 1.0 if higher_phase == "reclaim" else 0.0
+    phase_exhaustion = 1.0 if higher_phase == "exhaustion" else 0.0
+    phase_range = 1.0 if higher_phase == "range" else 0.0
     return {
         "return_1bar": float(indicators.get("return_1bar") or 0.0),
-        "return_24bars": float(indicators.get("return_24bars") or 0.0),
-        "sma_fast_ratio": float(indicators.get("sma_fast_ratio") or 0.0),
-        "sma_slow_ratio": float(indicators.get("sma_slow_ratio") or 0.0),
-        "rsi_centered": (float(indicators.get("rsi_14") or 50.0) - 50.0) / 50.0,
+        "return_24bars": return_24bars,
+        "sma_fast_ratio": sma_fast_ratio,
+        "sma_slow_ratio": sma_slow_ratio,
+        "rsi_centered": rsi_centered,
         "volume_ratio_20": float(indicators.get("volume_ratio_20") or 0.0),
         "range_pct": float(indicators.get("range_pct") or 0.0),
         "higher_trend_strength": float(higher.get("trend_strength") or 0.0),
@@ -873,10 +942,21 @@ def build_setup_model_feature_map(
             if isinstance(traditional_signal_context, dict) and bool(traditional_signal_context.get("terminal_risk"))
             else 0.0
         ),
-        "phase_trend": 1.0 if higher_phase == "trend" else 0.0,
-        "phase_pullback": 1.0 if higher_phase == "pullback" else 0.0,
-        "phase_reclaim": 1.0 if higher_phase == "reclaim" else 0.0,
-        "phase_exhaustion": 1.0 if higher_phase == "exhaustion" else 0.0,
+        "phase_trend": phase_trend,
+        "phase_pullback": phase_pullback,
+        "phase_reclaim": phase_reclaim,
+        "phase_exhaustion": phase_exhaustion,
+        "phase_range": phase_range,
+        "phase_trend_x_return24_lt_neg006": phase_trend * (1.0 if return_24bars < -0.006 else 0.0),
+        "phase_trend_x_return24_gt006": phase_trend * (1.0 if return_24bars > 0.006 else 0.0),
+        "phase_pullback_x_sma_fast_gt008": phase_pullback * (1.0 if sma_fast_ratio > 0.008 else 0.0),
+        "phase_pullback_x_sma_slow_gt008": phase_pullback * (1.0 if sma_slow_ratio > 0.008 else 0.0),
+        "phase_pullback_x_return24_gt012": phase_pullback * (1.0 if return_24bars > 0.012 else 0.0),
+        "phase_range_x_return24_gt012": phase_range * (1.0 if return_24bars > 0.012 else 0.0),
+        "phase_range_x_return24_003_006": phase_range * (1.0 if 0.003 < return_24bars <= 0.006 else 0.0),
+        "phase_reclaim_x_rsi_low35": phase_reclaim * (1.0 if rsi_centered < -0.30 else 0.0),
+        "phase_reclaim_x_rsi_high65": phase_reclaim * (1.0 if rsi_centered > 0.30 else 0.0),
+        "phase_reclaim_x_rsi_centered": phase_reclaim * rsi_centered,
     }
 
 
@@ -887,15 +967,23 @@ def fit_setup_edge_model(
     feature_rows: list[list[float]],
     targets: list[float],
     ridge_alpha: float,
+    model_version: str = SETUP_EDGE_MODEL_VARIANT_V1,
+    feature_names: tuple[str, ...] | None = None,
 ) -> dict[str, object]:
-    feature_means = [_mean([row[column] for row in feature_rows]) for column in range(len(SETUP_EDGE_MODEL_FEATURE_NAMES))]
-    feature_stds = [_std([row[column] for row in feature_rows], feature_means[column]) for column in range(len(SETUP_EDGE_MODEL_FEATURE_NAMES))]
+    active_feature_names = tuple(feature_names or setup_edge_model_feature_names(model_version))
+    normalized_feature_rows = [
+        [float(value) for value in row[: len(active_feature_names)]]
+        + [0.0] * max(len(active_feature_names) - len(row), 0)
+        for row in feature_rows
+    ]
+    feature_means = [_mean([row[column] for row in normalized_feature_rows]) for column in range(len(active_feature_names))]
+    feature_stds = [_std([row[column] for row in normalized_feature_rows], feature_means[column]) for column in range(len(active_feature_names))]
     standardized_rows = [
         [
             (value - feature_means[column]) / max(feature_stds[column], 1e-9)
             for column, value in enumerate(row)
         ]
-        for row in feature_rows
+        for row in normalized_feature_rows
     ]
     weights, bias = _fit_linear_regression(
         standardized_rows,
@@ -917,9 +1005,9 @@ def fit_setup_edge_model(
     return {
         "symbol": symbol_name,
         "setup_phase": setup_phase,
-        "version": SETUP_EDGE_MODEL_VERSION,
+        "version": setup_edge_model_payload_version(model_version),
         "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
-        "feature_names": list(SETUP_EDGE_MODEL_FEATURE_NAMES),
+        "feature_names": list(active_feature_names),
         "feature_means": feature_means,
         "feature_stds": feature_stds,
         "weights": weights,
@@ -932,6 +1020,62 @@ def fit_setup_edge_model(
             "directional_accuracy": directional_hits / max(len(targets), 1),
             "avg_target_edge_pct": _mean(targets),
         },
+    }
+
+
+def _predict_setup_model_payload(
+    *,
+    feature_map: dict[str, float],
+    model_payload: dict[str, object],
+) -> float:
+    feature_names = tuple(str(name) for name in model_payload.get("feature_names") or SETUP_EDGE_MODEL_FEATURE_NAMES)
+    raw_vector = _feature_vector(feature_map, feature_names)
+    standardized_vector = [
+        (value - float(model_payload["feature_means"][index])) / max(float(model_payload["feature_stds"][index]), 1e-9)
+        for index, value in enumerate(raw_vector)
+    ]
+    return float(model_payload["bias"]) + sum(
+        float(weight) * feature
+        for weight, feature in zip(model_payload["weights"], standardized_vector)
+    )
+
+
+def _classify_setup_model_prediction(
+    *,
+    predicted_edge_pct: float,
+    model_payload: dict[str, object],
+) -> dict[str, object]:
+    mae_pct = max(float(((model_payload.get("metrics") or {}).get("mae_pct") or 0.0)), 1e-6)
+    confidence_ratio = abs(predicted_edge_pct) / mae_pct
+    threshold_pct = max(mae_pct * 0.10, 0.0002)
+    if predicted_edge_pct >= threshold_pct:
+        label = "favorable"
+    elif predicted_edge_pct <= -threshold_pct:
+        label = "unfavorable"
+    else:
+        label = "neutral"
+    positive_edge_rate = float(((model_payload.get("metrics") or {}).get("positive_edge_rate") or 0.0))
+    avg_target_edge_pct = float(((model_payload.get("metrics") or {}).get("avg_target_edge_pct") or 0.0))
+    quality = "neutral"
+    if label == "favorable":
+        quality = (
+            "strong_favorable"
+            if (
+                predicted_edge_pct >= 0.0025
+                and confidence_ratio >= 1.5
+                and positive_edge_rate >= 0.40
+                and avg_target_edge_pct > 0.0
+            )
+            else "weak_favorable"
+        )
+    elif label == "unfavorable":
+        quality = "unfavorable"
+    return {
+        "confidence_ratio": confidence_ratio,
+        "label": label,
+        "quality": quality,
+        "positive_edge_rate": positive_edge_rate,
+        "avg_target_edge_pct": avg_target_edge_pct,
     }
 
 
@@ -969,50 +1113,24 @@ def score_setup_edge_model_signal(
 
     model_metadata = build_setup_model_bundle_metadata(model_bundle)
     feature_map = build_setup_model_feature_map(symbol, assessment, traditional_signal_context)
-    raw_vector = _feature_vector(feature_map)
-    standardized_vector = [
-        (value - float(model_payload["feature_means"][index])) / max(float(model_payload["feature_stds"][index]), 1e-9)
-        for index, value in enumerate(raw_vector)
-    ]
-    predicted_edge_pct = float(model_payload["bias"]) + sum(
-        float(weight) * feature
-        for weight, feature in zip(model_payload["weights"], standardized_vector)
+    predicted_edge_pct = _predict_setup_model_payload(
+        feature_map=feature_map,
+        model_payload=model_payload,
     )
-    mae_pct = max(float(((model_payload.get("metrics") or {}).get("mae_pct") or 0.0)), 1e-6)
-    confidence_ratio = abs(predicted_edge_pct) / mae_pct
-    threshold_pct = max(mae_pct * 0.10, 0.0002)
-    if predicted_edge_pct >= threshold_pct:
-        label = "favorable"
-    elif predicted_edge_pct <= -threshold_pct:
-        label = "unfavorable"
-    else:
-        label = "neutral"
-    positive_edge_rate = float(((model_payload.get("metrics") or {}).get("positive_edge_rate") or 0.0))
-    avg_target_edge_pct = float(((model_payload.get("metrics") or {}).get("avg_target_edge_pct") or 0.0))
-    quality = "neutral"
-    if label == "favorable":
-        quality = (
-            "strong_favorable"
-            if (
-                predicted_edge_pct >= 0.0025
-                and confidence_ratio >= 1.5
-                and positive_edge_rate >= 0.40
-                and avg_target_edge_pct > 0.0
-            )
-            else "weak_favorable"
-        )
-    elif label == "unfavorable":
-        quality = "unfavorable"
+    classification = _classify_setup_model_prediction(
+        predicted_edge_pct=predicted_edge_pct,
+        model_payload=model_payload,
+    )
     return {
-        "version": SETUP_EDGE_MODEL_VERSION,
+        "version": str(model_payload.get("version") or SETUP_EDGE_MODEL_VERSION),
         "setup_phase": assessment.setup_phase,
         "predicted_edge_pct": predicted_edge_pct,
-        "confidence_ratio": confidence_ratio,
-        "label": label,
-        "quality": quality,
+        "confidence_ratio": classification["confidence_ratio"],
+        "label": classification["label"],
+        "quality": classification["quality"],
         "sample_count": int(((model_payload.get("metrics") or {}).get("sample_count") or 0)),
-        "positive_edge_rate": positive_edge_rate,
-        "avg_target_edge_pct": avg_target_edge_pct,
+        "positive_edge_rate": classification["positive_edge_rate"],
+        "avg_target_edge_pct": classification["avg_target_edge_pct"],
         "higher_timeframe_phase": higher_phase,
         "trained_at": None if model_metadata is None else model_metadata.get("trained_at"),
         "training_cutoff_utc": None if model_metadata is None else model_metadata.get("training_cutoff_utc"),
@@ -1025,6 +1143,204 @@ def load_setup_model_bundle(path: Path | None) -> dict[str, object] | None:
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else None
+
+
+def _fit_setup_models_from_examples(
+    examples: list[dict[str, object]],
+    *,
+    min_samples: int,
+    ridge_alpha: float,
+    split_higher_phase: bool,
+    model_version: str,
+) -> tuple[dict[str, dict[str, object]], list[dict[str, object]]]:
+    active_feature_names = setup_edge_model_feature_names(model_version)
+    payload_version = setup_edge_model_payload_version(model_version)
+    by_symbol_setup: dict[tuple[str, str], dict[str, list]] = {}
+    by_symbol_setup_phase: dict[tuple[str, str, str], dict[str, list]] = {}
+    for item in examples:
+        symbol = str(item["symbol"])
+        setup_phase = str(item["setup_phase"])
+        feature_row = _example_feature_vector(item, active_feature_names)
+        bucket = by_symbol_setup.setdefault((symbol, setup_phase), {"features": [], "targets": []})
+        bucket["features"].append(feature_row)
+        bucket["targets"].append(float(item["target_edge_pct"]))
+        phase_bucket = by_symbol_setup_phase.setdefault(
+            (symbol, setup_phase, str(item.get("higher_timeframe_phase") or "unknown")),
+            {"features": [], "targets": []},
+        )
+        phase_bucket["features"].append(feature_row)
+        phase_bucket["targets"].append(float(item["target_edge_pct"]))
+
+    symbol_models: dict[str, dict[str, object]] = {}
+    training_summary: list[dict[str, object]] = []
+    aggregate_models: dict[tuple[str, str], dict[str, object]] = {}
+    for (symbol, setup_phase), payload in sorted(by_symbol_setup.items()):
+        targets = payload["targets"]
+        if len(targets) < max(min_samples, 8):
+            continue
+        model_payload = fit_setup_edge_model(
+            symbol_name=symbol,
+            setup_phase=setup_phase,
+            feature_rows=payload["features"],
+            targets=targets,
+            ridge_alpha=ridge_alpha,
+            model_version=model_version,
+            feature_names=active_feature_names,
+        )
+        aggregate_models[(symbol, setup_phase)] = model_payload
+        symbol_models.setdefault(symbol, {})[setup_phase] = model_payload
+        metrics = model_payload["metrics"]
+        training_summary.append(
+            {
+                "symbol": symbol,
+                "setup_phase": setup_phase,
+                "version": payload_version,
+                "samples": int(metrics["sample_count"]),
+                "mae_pct": float(metrics["mae_pct"]),
+                "positive_edge_rate": float(metrics["positive_edge_rate"]),
+                "directional_accuracy": float(metrics["directional_accuracy"]),
+                "avg_target_edge_pct": float(metrics["avg_target_edge_pct"]),
+            }
+        )
+
+    if not split_higher_phase:
+        return symbol_models, training_summary
+
+    phase_models_by_setup: dict[tuple[str, str], dict[str, dict[str, object]]] = {}
+    for (symbol, setup_phase, higher_phase), payload in sorted(by_symbol_setup_phase.items()):
+        targets = payload["targets"]
+        if len(targets) < max(min_samples, 8):
+            continue
+        model_payload = fit_setup_edge_model(
+            symbol_name=symbol,
+            setup_phase=setup_phase,
+            feature_rows=payload["features"],
+            targets=targets,
+            ridge_alpha=ridge_alpha,
+            model_version=model_version,
+            feature_names=active_feature_names,
+        )
+        phase_models_by_setup.setdefault((symbol, setup_phase), {})[higher_phase] = model_payload
+        metrics = model_payload["metrics"]
+        training_summary.append(
+            {
+                "symbol": symbol,
+                "setup_phase": setup_phase,
+                "higher_timeframe_phase": higher_phase,
+                "version": payload_version,
+                "samples": int(metrics["sample_count"]),
+                "mae_pct": float(metrics["mae_pct"]),
+                "positive_edge_rate": float(metrics["positive_edge_rate"]),
+                "directional_accuracy": float(metrics["directional_accuracy"]),
+                "avg_target_edge_pct": float(metrics["avg_target_edge_pct"]),
+            }
+        )
+    for (symbol, setup_phase), phase_models in phase_models_by_setup.items():
+        aggregate_payload = aggregate_models.get((symbol, setup_phase))
+        if aggregate_payload is None:
+            continue
+        symbol_models.setdefault(symbol, {})[setup_phase] = {
+            "mode": "by_higher_timeframe_phase",
+            "aggregate": aggregate_payload,
+            "by_higher_timeframe_phase": phase_models,
+        }
+    return symbol_models, training_summary
+
+
+def _model_payload_for_example(
+    symbol_models: dict[str, dict[str, object]],
+    item: dict[str, object],
+) -> dict[str, object] | None:
+    symbol_entry = symbol_models.get(str(item.get("symbol") or ""))
+    if not isinstance(symbol_entry, dict):
+        return None
+    model_payload = symbol_entry.get(str(item.get("setup_phase") or ""))
+    if not isinstance(model_payload, dict):
+        return None
+    if "by_higher_timeframe_phase" not in model_payload:
+        return model_payload
+    phase_models = model_payload.get("by_higher_timeframe_phase")
+    if isinstance(phase_models, dict):
+        phase_payload = phase_models.get(str(item.get("higher_timeframe_phase") or "unknown"))
+        if isinstance(phase_payload, dict):
+            return phase_payload
+    aggregate_payload = model_payload.get("aggregate")
+    return aggregate_payload if isinstance(aggregate_payload, dict) else None
+
+
+def _evaluate_setup_model_bundle(
+    symbol_models: dict[str, dict[str, object]],
+    examples: list[dict[str, object]],
+) -> dict[str, object]:
+    rows: list[dict[str, object]] = []
+    for item in examples:
+        model_payload = _model_payload_for_example(symbol_models, item)
+        feature_map = item.get("feature_map")
+        if model_payload is None or not isinstance(feature_map, dict):
+            continue
+        prediction = _predict_setup_model_payload(
+            feature_map=feature_map,
+            model_payload=model_payload,
+        )
+        classification = _classify_setup_model_prediction(
+            predicted_edge_pct=prediction,
+            model_payload=model_payload,
+        )
+        rows.append(
+            {
+                "predicted_edge_pct": prediction,
+                "target_edge_pct": float(item["target_edge_pct"]),
+                "label": classification["label"],
+                "quality": classification["quality"],
+            }
+        )
+
+    errors = [float(row["predicted_edge_pct"]) - float(row["target_edge_pct"]) for row in rows]
+    directional_hits = [
+        row
+        for row in rows
+        if (float(row["predicted_edge_pct"]) > 0.0 and float(row["target_edge_pct"]) > 0.0)
+        or (float(row["predicted_edge_pct"]) < 0.0 and float(row["target_edge_pct"]) <= 0.0)
+    ]
+    positive_predictions = [row for row in rows if float(row["predicted_edge_pct"]) > 0.0]
+    favorable_predictions = [row for row in rows if str(row["label"]) == "favorable"]
+    strong_favorable_predictions = [row for row in rows if str(row["quality"]) == "strong_favorable"]
+    top_count = max(1, math.ceil(len(rows) * 0.10)) if rows else 0
+    top_rows = sorted(rows, key=lambda row: float(row["predicted_edge_pct"]), reverse=True)[:top_count]
+    bottom_rows = sorted(rows, key=lambda row: float(row["predicted_edge_pct"]))[:top_count]
+    quality_counts: dict[str, int] = {}
+    label_counts: dict[str, int] = {}
+    for row in rows:
+        quality_counts[str(row["quality"])] = quality_counts.get(str(row["quality"]), 0) + 1
+        label_counts[str(row["label"])] = label_counts.get(str(row["label"]), 0) + 1
+    return {
+        "eval_count": len(examples),
+        "scored_count": len(rows),
+        "coverage_rate": None if not examples else len(rows) / len(examples),
+        "mae_pct": None if not rows else _mean([abs(error) for error in errors]),
+        "rmse_pct": None if not rows else math.sqrt(_mean([error * error for error in errors])),
+        "directional_accuracy": None if not rows else len(directional_hits) / len(rows),
+        "avg_predicted_edge_pct": None if not rows else _mean([float(row["predicted_edge_pct"]) for row in rows]),
+        "avg_target_edge_pct": None if not rows else _mean([float(row["target_edge_pct"]) for row in rows]),
+        "positive_prediction_count": len(positive_predictions),
+        "favorable_count": len(favorable_predictions),
+        "strong_favorable_count": len(strong_favorable_predictions),
+        "avg_target_edge_when_predicted_positive": (
+            None if not positive_predictions else _mean([float(row["target_edge_pct"]) for row in positive_predictions])
+        ),
+        "avg_target_edge_when_favorable": (
+            None if not favorable_predictions else _mean([float(row["target_edge_pct"]) for row in favorable_predictions])
+        ),
+        "avg_target_edge_when_strong_favorable": (
+            None
+            if not strong_favorable_predictions
+            else _mean([float(row["target_edge_pct"]) for row in strong_favorable_predictions])
+        ),
+        "top_decile_avg_target_edge_pct": None if not top_rows else _mean([float(row["target_edge_pct"]) for row in top_rows]),
+        "bottom_decile_avg_target_edge_pct": None if not bottom_rows else _mean([float(row["target_edge_pct"]) for row in bottom_rows]),
+        "label_counts": label_counts,
+        "quality_counts": quality_counts,
+    }
 
 
 @dataclass
@@ -1284,9 +1600,12 @@ class SetupEdgeModelService:
         ridge_alpha: float,
         artifact_path: Path | None,
         split_higher_phase: bool = False,
+        model_version: str = SETUP_EDGE_MODEL_VARIANT_V1,
         training_end: datetime | None = None,
     ) -> dict[str, object]:
         active_setup_phases = tuple(setup_phases) if setup_phases else DEFAULT_SETUP_PHASES
+        active_feature_names = setup_edge_model_feature_names(model_version)
+        payload_version = setup_edge_model_payload_version(model_version)
         collected = self._collect_examples(
             symbols_filter=symbols_filter,
             setup_phases=active_setup_phases,
@@ -1306,7 +1625,7 @@ class SetupEdgeModelService:
                 (str(item["symbol"]), str(item["setup_phase"])),
                 {"features": [], "targets": []},
             )
-            bucket["features"].append(list(item["feature_vector"]))
+            bucket["features"].append(_example_feature_vector(item, active_feature_names))
             bucket["targets"].append(float(item["target_edge_pct"]))
             phase_bucket = by_symbol_setup_phase.setdefault(
                 (
@@ -1316,7 +1635,7 @@ class SetupEdgeModelService:
                 ),
                 {"features": [], "targets": []},
             )
-            phase_bucket["features"].append(list(item["feature_vector"]))
+            phase_bucket["features"].append(_example_feature_vector(item, active_feature_names))
             phase_bucket["targets"].append(float(item["target_edge_pct"]))
 
         symbol_models: dict[str, dict[str, object]] = {}
@@ -1333,6 +1652,8 @@ class SetupEdgeModelService:
                 feature_rows=feature_rows,
                 targets=targets,
                 ridge_alpha=ridge_alpha,
+                model_version=model_version,
+                feature_names=active_feature_names,
             )
             aggregate_models[(symbol, setup_phase)] = model_payload
             symbol_models.setdefault(symbol, {})[setup_phase] = model_payload
@@ -1341,6 +1662,7 @@ class SetupEdgeModelService:
                 {
                     "symbol": symbol,
                     "setup_phase": setup_phase,
+                    "version": payload_version,
                     "samples": int(metrics["sample_count"]),
                     "mae_pct": float(metrics["mae_pct"]),
                     "positive_edge_rate": float(metrics["positive_edge_rate"]),
@@ -1363,6 +1685,8 @@ class SetupEdgeModelService:
                     feature_rows=feature_rows,
                     targets=targets,
                     ridge_alpha=ridge_alpha,
+                    model_version=model_version,
+                    feature_names=active_feature_names,
                 )
                 phase_models_by_setup.setdefault((symbol, setup_phase), {})[higher_phase] = model_payload
                 metrics = model_payload["metrics"]
@@ -1371,6 +1695,7 @@ class SetupEdgeModelService:
                         "symbol": symbol,
                         "setup_phase": setup_phase,
                         "higher_timeframe_phase": higher_phase,
+                        "version": payload_version,
                         "samples": int(metrics["sample_count"]),
                         "mae_pct": float(metrics["mae_pct"]),
                         "positive_edge_rate": float(metrics["positive_edge_rate"]),
@@ -1390,11 +1715,13 @@ class SetupEdgeModelService:
             training_summary.extend(phase_training_rows)
 
         bundle = {
-            "version": SETUP_EDGE_MODEL_VERSION,
+            "version": payload_version,
+            "model_variant": model_version,
             "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
             "higher_timeframe": SETUP_EDGE_MODEL_HIGHER_TIMEFRAME,
             "horizon_bars": horizon_bars,
             "split_higher_phase": split_higher_phase,
+            "feature_names": list(active_feature_names),
             "trained_at": datetime.now(timezone.utc).isoformat(),
             "training_cutoff_utc": training_window["training_cutoff_utc"],
             "training_window": training_window,
@@ -1405,13 +1732,105 @@ class SetupEdgeModelService:
         target_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
         return {
             "model_path": str(target_path),
-            "version": SETUP_EDGE_MODEL_VERSION,
+            "version": payload_version,
+            "model_variant": model_version,
             "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
             "higher_timeframe": SETUP_EDGE_MODEL_HIGHER_TIMEFRAME,
+            "feature_count": len(active_feature_names),
+            "feature_names": list(active_feature_names),
             "horizon_bars": horizon_bars,
             "training_cutoff_utc": training_window["training_cutoff_utc"],
             "training_window": training_window,
             "symbols": training_summary,
+        }
+
+    def compare_versions(
+        self,
+        *,
+        symbols_filter: list[str] | None,
+        setup_phases: list[str] | None,
+        lookback_days: int,
+        horizon_bars: int,
+        min_samples: int,
+        ridge_alpha: float,
+        split_higher_phase: bool,
+        eval_fraction: float = 0.30,
+    ) -> dict[str, object]:
+        active_setup_phases = tuple(setup_phases) if setup_phases else DEFAULT_SETUP_PHASES
+        collected = self._collect_examples(
+            symbols_filter=symbols_filter,
+            setup_phases=active_setup_phases,
+            lookback_days=lookback_days,
+            horizon_bars=horizon_bars,
+        )
+        examples, training_window = _split_example_batch(
+            collected,
+            lookback_days=lookback_days,
+            horizon_bars=horizon_bars,
+        )
+        ordered_examples = sorted(
+            examples,
+            key=lambda item: (int(item.get("timestamp_ms") or 0), str(item.get("symbol") or ""), str(item.get("setup_phase") or "")),
+        )
+        if len(ordered_examples) < 2:
+            train_examples = ordered_examples
+            eval_examples: list[dict[str, object]] = []
+        else:
+            bounded_fraction = min(max(eval_fraction, 0.05), 0.80)
+            split_index = int(len(ordered_examples) * (1.0 - bounded_fraction))
+            split_index = min(max(split_index, 1), len(ordered_examples) - 1)
+            train_examples = ordered_examples[:split_index]
+            eval_examples = ordered_examples[split_index:]
+
+        versions: dict[str, object] = {}
+        for model_variant in SETUP_EDGE_MODEL_VARIANTS:
+            symbol_models, training_summary = _fit_setup_models_from_examples(
+                train_examples,
+                min_samples=min_samples,
+                ridge_alpha=ridge_alpha,
+                split_higher_phase=split_higher_phase,
+                model_version=model_variant,
+            )
+            versions[model_variant] = {
+                "version": setup_edge_model_payload_version(model_variant),
+                "feature_count": len(setup_edge_model_feature_names(model_variant)),
+                "training_model_count": sum(
+                    1
+                    for row in training_summary
+                    if isinstance(row, dict) and int(row.get("samples") or 0) >= max(min_samples, 8)
+                ),
+                "training_rows": training_summary,
+                "evaluation": _evaluate_setup_model_bundle(symbol_models, eval_examples),
+            }
+
+        v1_top = ((versions.get(SETUP_EDGE_MODEL_VARIANT_V1) or {}).get("evaluation") or {}).get("top_decile_avg_target_edge_pct")
+        v2_top = ((versions.get(SETUP_EDGE_MODEL_VARIANT_V2_INTERACTIONS) or {}).get("evaluation") or {}).get("top_decile_avg_target_edge_pct")
+        top_decile_delta = None if v1_top is None or v2_top is None else float(v2_top) - float(v1_top)
+        v1_mae = ((versions.get(SETUP_EDGE_MODEL_VARIANT_V1) or {}).get("evaluation") or {}).get("mae_pct")
+        v2_mae = ((versions.get(SETUP_EDGE_MODEL_VARIANT_V2_INTERACTIONS) or {}).get("evaluation") or {}).get("mae_pct")
+        mae_delta = None if v1_mae is None or v2_mae is None else float(v2_mae) - float(v1_mae)
+        return {
+            "version": "setup_model_compare_v1",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "timeframe": SETUP_EDGE_MODEL_TIMEFRAME,
+            "higher_timeframe": SETUP_EDGE_MODEL_HIGHER_TIMEFRAME,
+            "horizon_bars": horizon_bars,
+            "lookback_days": lookback_days,
+            "min_samples": min_samples,
+            "ridge_alpha": ridge_alpha,
+            "split_higher_phase": split_higher_phase,
+            "eval_fraction": eval_fraction,
+            "setup_phases": list(active_setup_phases),
+            "training_window": training_window,
+            "example_count": len(ordered_examples),
+            "train_example_count": len(train_examples),
+            "eval_example_count": len(eval_examples),
+            "versions": versions,
+            "comparison": {
+                "v2_minus_v1_top_decile_avg_target_edge_pct": top_decile_delta,
+                "v2_minus_v1_mae_pct": mae_delta,
+            },
+            "promotion_note": "offline_setup_model_comparison_only_not_candidate_gate",
         }
 
     def study(

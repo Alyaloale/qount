@@ -260,6 +260,9 @@ ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .e
   T-A..T-J 路线。
 - [docs/profit-research-plan.md](docs/profit-research-plan.md)：盈利研究历史路线；
   旧 promotion gate 已被 `holdout.md` 取代。
+- [docs/profit-engineering-plan.md](docs/profit-engineering-plan.md)：架构天花板诊断
+  （主动管理基本定律）与现代量化 ML 升级路线（triple-barrier / meta-labeling / GBDT /
+  横截面多币 / Kelly sizing / LLM 重定位）。
 
 当前基线：`ETH-only research-only`，live 和 forward paper 都关闭。生产真相在
 WSL `/home/alyaloale/Code/qount`，Mac `/Users/alyaloale/Code/qount` 是编辑和 git
