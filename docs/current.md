@@ -9,7 +9,10 @@
 [holdout.md](holdout.md)，长证据链看 [update-log.md](update-log.md)，架构评审和路线看
 [optimization-plan.md](optimization-plan.md)，历史盈利研究路线看
 [profit-research-plan.md](profit-research-plan.md)，架构天花板与现代量化 ML 升级看
-[profit-engineering-plan.md](profit-engineering-plan.md)。
+[profit-engineering-plan.md](profit-engineering-plan.md)，§7 止盈后的重启设计（换信息源/L3,已证伪）看
+[l3-information-edge-plan.md](l3-information-edge-plan.md)，跨资产趋势重启线（L1,攻 BR,首个真 edge 但
+已固化暂停）看 [l1-cross-asset-plan.md](l1-cross-asset-plan.md)，跨所套利重启线（L4,换游戏,S1 已证伪）看
+[l4-cross-exchange-plan.md](l4-cross-exchange-plan.md)。
 
 ## 当前结论
 
@@ -20,6 +23,10 @@ hourly model off
 setup model phase6 on
 live disabled
 §7 profit-pursuit halted (2026-06-06, owner-confirmed)
+L3 restart (stablecoin/chain-TVL + AI) falsified (2026-06-06): L3a + L3b both fail breadth-adjusted IC
+L1 restart (cross-asset trend, attacks BR): S1 breadth PASSED (eff-breadth 2.97); S2 trend REAL+robust but retail-ETF magnitude ~0.4 net Sharpe < 0.5 gate (single + ensemble); FROZEN as partial success (2026-06-06, owner-confirmed) — first real positive edge, paused per §7, no broker on sub-gate evidence
+L4 restart (cross-exchange funding arb, changes the game): S1 falsified (2026-06-06): gross cross-venue spread REAL +7.4%/yr but break-even 2.7bps/leg, pair churns every ~12h, net deeply negative at taker cost, required_maker_fill ~0.93 (single-venue CARRY maker wall, cross-venue)
+GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart lines (L3/L1/L4) exhausted; stop pursuing timing profit; durable research assets frozen. Next restart needs owner-authorized NEW infra (futures broker=L1-S5 / options venue=L5 / multi-venue accounts=L4-S2), none pursued now.
 ```
 
 - **2026-06-06 项目级决策(所有者确认):执行 §7 诚实止盈,停止追盈利。** 根因是架构级广度
@@ -103,6 +110,128 @@ live disabled
   §10 想逃离的天花板。这是**架构级 §7 证据**:换特征源 / 扩币都改变不了广度天花板,xs_mom /
   ts_mom / xs_funding 全部过不了线是同一个根因。**2026-06-06 所有者已据此确认执行项目级 §7
   诚实止盈**(见上方「当前结论」)。对账见 §11.8。
+- **2026-06-06 重启方向设计:L3 换信息源(链上/流/叙事 + AI)。** §11.8 规定唯一合法重启触发是
+  「结构性新输入」;经五杠杆(L1 跨资产 / L2 事件驱动 / L3 换信息源 / L4 跨所套利 / L5 换目标)
+  权衡,所有者选 **L3**——把信息源从价量换成非价量慢数据、horizon 抬到日/周线、AI 从最终 gate
+  挪到慢特征/regime 标注层,攻基本定律的 **IC 项**。新计划文档
+  [l3-information-edge-plan.md](l3-information-edge-plan.md):优先 **L3a 稳定币供给→市场择时**
+  (广度来自时间 ~150 周、要求 IC ≈0.083 比横截面 0.15 更可达、执行最干净);第一刀 kill-test 即
+  DefiLlama 稳定币供给对 BTC 周线 forward-return 的时序 IC + DSR/PBO。仍 research-only、先证伪
+  再投入、全套硬约束不变;不过则 L3 也按 §7 退出。
+- **2026-06-06 L3 S0.1 数据接入层已落地并端到端验证(research-only)。** 新模块
+  `src/qount/l3_information_edge.py` + research-only 命令 `l3-stablecoin-fetch`:拉 DefiLlama
+  聚合稳定币总供给、缓存到 `state/`、归一化成排序去重日度序列、严格 as-of(无前视)join 到周线
+  锚点;只用 stdlib `urllib`、不引入新依赖、live / `run-once` 不 import。local/WSL unittest 均
+  `254 OK`(+5 新单测)。WSL 实网拉取:3112 日度观测(2017-11..2026-06)、归一化零丢点、近 4 年
+  窗口 209 周锚点全覆盖(全历史 444 周)、缓存命中路径已验证。artifact
+  `state/research_runs/20260606T045947Z-l3-stablecoin-fetch/`。**只做数据层,未算 IC、未下注**;
+  下一步 S1 kill-test(稳定币供给增速 → BTC 周线 forward-return 时序 rank-IC + DSR/PBO,门控
+  breadth-adjusted 要求 IC ≈0.083)。硬约束全不变,未碰 `validation_v1`。
+- **2026-06-06 L3 S1 kill-test 完成:L3a(稳定币供给→BTC 周线择时)= 证伪。** 新增
+  `evaluate_l3a_stablecoin_timing` + 命令 `l3-stablecoin-timing-scan`:供给 log-增速
+  (lookback 4/8/13 周)对 BTC t→t+h(1..4 周)forward-return 的时序 rank-IC,复用 §7 的
+  DSR/PBO/Spearman/`_sharpe` harness,12 个 (L×h) config 全计 DSR trial,BTC 走期货 fapi。
+  local/WSL `257 OK`(+3 单测)。两窗口实跑均 `falsified_l3a`:全窗口 2020-07..2026-06(309 周)
+  best |rank-IC|=`0.054` < 门控 `0.083`(净正只是退化恒做多的 BTC beta,DSR/PBO 因 config 雷同
+  虚高、不具判别力);子窗口 2022-06..2026-06(209 周)|rank-IC|=`0.154` 虽过门控却**符号翻转为负**
+  (与"供给=干火药→涨"先验相反)+ PBO `0.64`(高过拟合)。**符号在窗口间翻转 = 无稳定样本外预测**
+  ——供给与 BTC 同骑一条流动性周期(内生共动),与 §7 价量 IC ~0.05 天花板同源。rank-IC 对单调变换
+  不变,z-score 救不了。artifact `state/research_runs/20260606T051647Z-...` 与 `...051746Z-...`。
+  下一步按 §5/§8:测 L3b(链上横截面,相关天花板+共动顾虑仍在)或经济动机耗尽则 L3 按 §7 退出。
+  硬约束全不变,未碰 `validation_v1`。
+- **2026-06-06 L3b(链 TVL 横截面)kill-test 完成 = 证伪;L3a+L3b 均证伪 → L3 整体证伪,按 §8/§7
+  退出。** 新增 `evaluate_l3b_chain_tvl_cross_section` + 命令 `l3-chain-tvl-scan`:DefiLlama 链
+  TVL log-增速横截面排序 12 个链 token,复用 §7 harness + `_panel_effective_breadth`。local/WSL
+  `259 OK`(+2 单测)。WSL 实跑(209 周):**effective_breadth=`1.68`**(r̄=0.559)< 逃逸阈 2.5 →
+  breadth 不逃逸;best |rank_ic_mean|=`0.0755`(t=3.47,正、全 9 cell 符号稳定、DSR 0.953/PBO 0.36
+  都过)< 门控 0.15 → `falsified_l3b`。**这是 §2"广度幻觉"的经验证实**:L3b 找到了真实、显著、
+  符号稳定的弱信号(链 TVL↑→token 涨),但 token 收益面板有效广度仍只有 1.68(贴着 §7 价量天花板
+  1.6),要求 IC 仍 ~0.15、真信号只有一半——**绑定约束是广度不是信号,§7 架构级根因在新数据源原样
+  复现**。慢数据换信息源没绕开广度天花板。下一次重启需真正结构性新输入(L1 低相关 universe / L4
+  跨所套利 / L5 换目标),非 L3 内部堆特征。artifact `state/research_runs/20260606T052959Z-...`。
+  硬约束全不变,未碰 `validation_v1`。
+- **2026-06-06 重启线选定 L1(跨资产趋势,正面攻 BR);S1 广度 kill-test 通过。** 所有者从
+  L1/L4/L5 选 L1。命门是「跨资产 universe 有效广度是否 ≫1.6」——纯数据、零新场(新模块
+  `l1_cross_asset.py` + 命令 `l1-cross-asset-breadth-scan`:Tiingo 免费跨资产 EOD → as-of 周线
+  → `_panel_effective_breadth`)。**基建发现:跨资产 TradFi 免费免-key 源(Stooq 反爬 / Yahoo
+  429 / FRED 超时)从生产主机全不可用;选 Tiingo(已配 key)**。local/WSL `262 OK`(+3 单测)。
+  WSL 实跑(广度随 universe 正确变宽单调改善):crypto majors r̄0.63/breadth 1.6 → L1 13-ETF
+  r̄0.354/**2.477**(临界)→ L1 21-ETF 跨资产 r̄0.303/**2.973** > 2.5 → `breadth_supports_l1`。
+  **真正跨资产 universe 结构性逃逸了 majors 广度天花板**(§7/L3 都缺的那一项);eff_breadth 2.97
+  × ~52 周 → BR≈154 → 要求 IC≈0.081(可达,远好于横截面 0.15)。门控 2.5 未动,只按论点本意
+  补全 universe。**S1 通过 → 进 S2**(ts_mom 聚合 IR / 扣费净值 / DSR / PBO)。诚实保留:广度
+  过线必要非充分,趋势扣费 IR 是否过线是 S2 才知道;开券商只在 S1–S4 全过后。计划见
+  [l1-cross-asset-plan.md](l1-cross-asset-plan.md)。artifact `...20260606T062015Z-...`。硬约束全不变。
+- **2026-06-06 L1 S2 趋势 kill-test:真实正 edge 但低于门控(`tsmom_below_gate`)。** 21-ETF
+  TSMOM(sign(trailing L 周收益)× 反波动率定权,周再平衡)+ 复用年化 Sharpe/DSR/PBO(命令
+  `l1-cross-asset-tsmom-scan`)。local/WSL `263 OK`(+1 单测)。WSL 实跑(753 周):best 年化净
+  Sharpe `0.421`(lb39w,gross 0.542)、4 lookback 净 Sharpe 全正、2022 利率趋势 crisis-alpha;
+  但 < IR 门控 0.5,DSR `0.856`(<0.95)、PBO `0.627`(>0.5)均不过。**跨资产趋势是真实、正、经济
+  一致的 edge(不同于 L3a 噪声),但零售 ETF universe 上只有 ~0.42 净 Sharpe**——绑定限制从广度
+  变成「零售 ETF 的 edge 量级」,真 CTA 需 50–100 期货(券商,S5 推迟)。S2 未过 → 不进 S3。
+  下一步所有者决策:lookback 等权 ensemble(无参、回应 PBO)/ 接受 ~0.42 作零售天花板 / 停。
+  artifact `...20260606T063553Z-...`。硬约束全不变,未碰 `validation_v1`、未开券商。
+- **2026-06-06 L1 S2 ensemble:确认 edge 真实稳健但量级仍 < 门控(`tsmom_ensemble_below_gate`)。**
+  按所有者选择做 lookback 等权 ensemble(`--ensemble`,信号层 `mean_L sign(trailing_L)`,无参 →
+  purged 时间折代替 DSR/PBO)。local/WSL `264 OK`(+1 单测)。WSL 实跑:净年化 Sharpe `0.363`
+  (gross 0.553)、**4/5 时间折为正**(0.87/0.11/0.35/-0.04/1.00)——但**反而略低于最佳单一 lookback
+  lb39w 0.421**(等权纳入较弱快周期 lb13w 0.10 拉低)。**L1 完整定论:跨资产趋势是本项目第一个
+  真实、稳健、正、经济一致的 edge**(gross 0.55、4/5 折正、2022 crisis-alpha、与 crypto 无关),
+  但零售 ETF 净 Sharpe 仅 ~0.36–0.42 < 开券商所需 0.5;绑定限制是「原始 edge 量级 × 零售 universe」
+  非方法,经典 CTA 0.7–1.0 需 50–100 期货(券商 S5)。S2 未过 → 不进 S3。**L1 落在终局决策点**:
+  S5 券商(真期货 universe)/ 固化为部分成功 / 转 L5。artifact `...20260606T064415Z-...`。硬约束
+  全不变,未碰 `validation_v1`、未开券商。
+- **2026-06-06 终局决策(所有者确认):L1 固化为部分成功,暂停。** 三条文档内合法路径
+  (S5 券商 / 固化 / 转 L5)中,所有者选**固化**。理由对账:(a) L1 计划 §3 规定「开券商(S5)
+  只在 S1–S4 全过之后」,而 S2 扣费 IR 不显著(净 Sharpe ~0.4 < 0.5)、DSR `0.856` < 0.95、
+  PBO `0.627` > 0.5 均未过——**不在 sub-gate 证据上开真期货券商、不为它建新工程轮/掏真实资金**;
+  (b) 在同批已看 ETF 数据上继续加旋钮/堆标的正是 §5 禁止的「L1 内部堆参当重启」,L1 内部可触及
+  研究路径已穷尽。**固化内容**:L1 是本项目**第一个真实、稳健、正、经济一致的 edge**(21-ETF
+  跨资产 TSMOM,gross Sharpe 0.55、净 0.36–0.42、4/5 时间折正、2022 利率趋势 crisis-alpha、与
+  crypto 无关),并**经验证实了 §2 的核心论点**——把 universe 换成结构性低相关的跨资产能真正逃出
+  majors 广度天花板(eff-breadth 1.6 → 2.97),绑定约束随之从「广度」迁移到「零售 ETF 的 edge
+  量级」。**这是停止在 L1 上投入,不放宽任何纪律**:L1 按 §7 暂停而非删除——若未来开期货券商
+  (独立工程轮)或拿到结构性更优 universe,S2 门控原样适用、从 S3 续跑。live 仍关闭、不 forward
+  paper、不放宽 broad gate、`validation_v1` once-only 资格继续保留。下一次重启需新的结构性输入
+  (L5 换预测目标=波动率 / L4 跨所套利),非 L1 内部微调。对账见
+  [l1-cross-asset-plan.md](l1-cross-asset-plan.md) §3/§5。
+- **2026-06-06 重启线选定 L4(跨所套利,换「游戏」=市场中性不预测方向);S1 跨所 spread kill-test
+  证伪。** 所有者从 L4/L5/L2 选 L4。命门:跨所 funding spread 的「幅度 × 持续性」能否跨过双所往返
+  成本——纯数据、零新场、零下单(新模块 `l4_cross_exchange.py` + 命令 `l4-cross-exchange-funding-scan`:
+  ccxt 拉多所 perp funding 历史、`state/` 缓存、按各所原生间隔归一到 8h 当量、as-of 对齐、取
+  `spread=max−min` 做多最低所/做空最高所、复用 §7 的 `_sharpe`/DSR/PBO)。**基建发现:三所
+  Binance/Bybit/OKX 均需配置代理(直连全 NetworkError),跑命令前必须 `source .env`,否则
+  `Settings.from_env` 拿不到代理→全所 unreachable;Hyperliquid 实测可达但 USDC 结算+1h funding,
+  推迟 S2 需独立符号/基差映射。** local/WSL `269 OK`(+5 单测)。WSL 实跑(120 天 discovery、
+  6 USDT 永续、binance/bybit/okx、261 共同 8h bucket):**(a) 跨所 spread 真实为正——毛年化
+  `+0.074`(7.4%/yr)、6 币毛值全正**;(b) 但 `break_even_cost_per_side ≈ 0.000027`(**2.7bps/腿**),
+  且最优 pair **每 ~1.5 bucket(~12h)翻转一次**(261 翻 ~165 次),每翻付 4 腿往返;(c) 按 taker
+  `0.0004`:净年化 `−1.6`、组合 Sharpe 深负、**`required_maker_fill ≈ 0.93`**(单所 CARRY 的 maker
+  墙跨所原样重现);(d) `DSR=0.0`(最佳 per-period 净 Sharpe `−1.1` < 噪声期望 `0.107`)、PBO 0.083
+  (低但因净负无意义)。`decision=cross_exchange_spread_below_gate`。**根因:套利者已把跨所 funding
+  spread 压到 ~maker 成本地板(回本 2.7bps),残差每 ~12h 均值翻转 → 4 腿换手吃光毛值**;只有
+  co-located maker/返佣 HFT(另一种操作者、需多所基建)够得着,对本「慢+延迟无关」操作者证伪——
+  正是计划 §5/§1 预判的成本墙。S1 未过 → 不进 S2。artifact
+  `state/research_runs/20260606T113148Z-l4-cross-exchange-funding-scan/`。硬约束全不变,未碰
+  `validation_v1`、未下任何单、未开多所账户。**L4 落在终局决策点**(退出转 L5/L2 /
+  L4-S2 maker 执行研究需多所账户),对账见 [l4-cross-exchange-plan.md](l4-cross-exchange-plan.md) §3/§5。
+- **2026-06-06 全局决策(所有者确认):接受 §7 全局诚实止盈,三条重启线全部走完,停止追择时盈利。**
+  §7 原始止盈后,按 §11.8「唯一合法重启=结构性新输入」依次试了三条结构性重启线,各攻 `IR=IC×√BR`
+  的不同项或游戏本身,**全部撞到同一类结构性/成本墙**:
+  - **L3(换 IC 来源:非价量慢数据)= 证伪** —— 广度天花板在新数据源原样复现(L3b 找到真信号
+    IC 0.075 但 token 收益 eff-breadth 仍 1.68,要求 IC ~0.15)。
+  - **L1(攻 BR:跨资产趋势)= 固化暂停** —— 跨资产 universe 真逃逸广度天花板(eff-breadth 2.97),
+    找到**项目首个真实、稳健、正、经济一致的 edge**(跨资产 TSMOM),但零售 ETF 量级净 Sharpe ~0.4
+    < 0.5 券商门控;真 CTA 量级需期货券商(独立工程轮,未授权)。
+  - **L4(换游戏:市场中性跨所套利)= 证伪** —— 跨所 funding spread 真实(毛 +7.4%/yr)但已被压到
+    maker 成本地板(回本 2.7bps)+ 每 ~12h 翻转,换手吃光,required_maker_fill ~0.93(CARRY maker 墙跨所重现)。
+  **固化的研究价值**:整套反过拟合 harness(triple-barrier / purged-CV / DSR / PBO /
+  effective-breadth / breadth-adjusted 要求 IC)、kill-test 方法论(最便宜的证伪优先)、以及三条
+  重启线的诚实证据链——**这些是项目的真成果**。**唯一合法的下一次重启触发仍是所有者授权的结构性
+  新基建**:期货券商(L1-S5,把真 edge 量级补到券商档)/ 期权场(L5 波动率变现)/ 多所账户(L4-S2
+  maker 执行)——**当前一个都不追**。**这是停止投入,不放宽任何纪律**:live 仍关闭、不 forward paper、
+  不放宽 broad gate、`validation_v1` once-only 资格继续保留。对账见
+  [profit-engineering-plan.md](profit-engineering-plan.md) §11.8。
 
 ## 当前能力
 
@@ -149,6 +278,25 @@ live disabled
   (PBO/CSCV,按频段分组的过拟合概率)，量化"搜了 N 个 cell 后最佳 Sharpe 还剩多少可信 +
   IS 赢家在 OOS 是否仍靠前"的两类多重检验惩罚，diagnostic only。
 - Mac 到 WSL 同步与测试脚本：`scripts/sync-to-wsl.sh`、`scripts/run-wsl-tests.sh`。
+- L3 信息源数据接入层（S0.1）：`src/qount/l3_information_edge.py` + research-only 命令
+  `l3-stablecoin-fetch`，拉 DefiLlama 聚合稳定币总供给、`state/` 缓存离线复跑、归一化成
+  排序去重日度序列、严格 as-of(无前视)join 到周线锚点;只用 stdlib `urllib`、不引入新依赖、
+  live / `run-once` 不 import、不算 IC 不下注。
+- L3 S1 kill-test 工具:命令 `l3-stablecoin-timing-scan` + `evaluate_l3a_stablecoin_timing`,
+  把稳定币供给增速对 BTC 周线 forward-return 的时序 rank-IC + DSR/PBO 机械化(复用 §7 harness),
+  breadth-adjusted 门控 IC ≈0.083;BTC 走期货 fapi、研究-only、无仓位。已用于证伪 L3a。
+- L3b 横截面 kill-test 工具:命令 `l3-chain-tvl-scan` + `evaluate_l3b_chain_tvl_cross_section`
+  + `_panel_effective_breadth`,把链 TVL 增长横截面 rank-IC 与 token 收益有效广度 + DSR/PBO
+  机械化(§2 要求二者一起判生死);链 TVL 走 DefiLlama、价格走期货 fapi、研究-only。已用于证伪 L3b。
+- L1 跨资产广度 kill-test 工具:`src/qount/l1_cross_asset.py` + 命令 `l1-cross-asset-breadth-scan`,
+  拉 Tiingo 免费跨资产日线 EOD 面板(复权)、`state/` 缓存、as-of 周线、量 `_panel_effective_breadth`;
+  research-only、无仓位、不算 IC。需 `QOUNT_TIINGO_API_KEY`(缺则返回 missing-key 提示不崩溃)。
+- L4 跨所 funding spread kill-test 工具:`src/qount/l4_cross_exchange.py` + 命令
+  `l4-cross-exchange-funding-scan` + `evaluate_l4_cross_exchange_funding`,ccxt 拉多所 perp funding
+  历史(`normalize_funding_history` 复用)、`state/` 缓存、按各所原生结算间隔(相邻时间戳中位)
+  归一到 8h 当量、as-of 对齐到 8h bucket、取 `spread=max−min` 的市场中性 pair、算扣费净 capture /
+  break-even / required_maker_fill / pair 持续性 + 复用 §7 的 `_sharpe`/DSR/PBO;research-only、
+  无仓位、不下单。三所需配置代理 + 跑前 `source .env`;不足两所可达返回 guard 不崩溃。已用于证伪 L4 S1。
 - `pyproject.toml` 已有 research optional extra：默认提供 `numpy` / `scikit-learn`；
   `lightgbm` 单独放在 `research-lightgbm`，因为 Mac cp314 wheel 可安装但当前缺
   `libomp.dylib`，检查脚本会把它报告为可选不可用。验证入口：

@@ -13,6 +13,14 @@ from .backtest import BacktestService
 from .backtest import parse_backtest_datetime
 from .hourly_model import HourlySignalModelService
 from .idle_window_diagnostic import IdleWindowDiagnosticService
+from .l3_information_edge import DEFILLAMA_STABLECOIN_CHARTS_URL
+from .l1_cross_asset import DEFAULT_TIINGO_START_DATE
+from .l1_cross_asset import L1CrossAssetBreadthService
+from .l1_cross_asset import L1TimeSeriesMomentumService
+from .l4_cross_exchange import L4CrossExchangeFundingService
+from .l3_information_edge import L3ChainTvlCrossSectionService
+from .l3_information_edge import L3StablecoinSupplyService
+from .l3_information_edge import L3StablecoinTimingService
 from .orchestrator import Orchestrator
 from .research_profile import apply_research_profile
 from .research_profile import normalize_research_profile
@@ -434,6 +442,91 @@ def build_parser() -> argparse.ArgumentParser:
     )
     strategy_scan.add_argument("--output-path", default=None, help="Optional output path for the scan JSON.")
     _add_research_profile_arg(strategy_scan)
+    l3_stablecoin = subparsers.add_parser(
+        "l3-stablecoin-fetch",
+        help="Research-only L3 S0.1 data layer: fetch/cache/normalize DefiLlama stablecoin supply.",
+    )
+    l3_stablecoin.add_argument("--start", default=None, help="Optional weekly anchor window start (ISO); defaults to first observation.")
+    l3_stablecoin.add_argument("--end", default=None, help="Optional weekly anchor window end (ISO); defaults to last observation.")
+    l3_stablecoin.add_argument("--url", default=DEFILLAMA_STABLECOIN_CHARTS_URL, help="DefiLlama stablecoin charts URL.")
+    l3_stablecoin.add_argument("--cache-path", default=None, help="Optional state cache path; reused on later runs unless --force-refresh.")
+    l3_stablecoin.add_argument("--force-refresh", action="store_true", help="Ignore any cached payload and re-fetch from the network.")
+    l3_stablecoin.add_argument("--output-path", default=None, help="Optional output path for the diagnostic JSON.")
+    l3_timing = subparsers.add_parser(
+        "l3-stablecoin-timing-scan",
+        help="Research-only L3 S1 kill-test: stablecoin supply growth vs BTC weekly forward-return IC + DSR/PBO.",
+    )
+    l3_timing.add_argument("--start", required=True, help="Weekly anchor window start (ISO).")
+    l3_timing.add_argument("--end", required=True, help="Weekly anchor window end (ISO).")
+    l3_timing.add_argument("--symbol", default="BTC/USDT", help="Single liquid timing target; default BTC/USDT.")
+    l3_timing.add_argument("--signal-lookback-weeks-grid", nargs="+", type=int, default=None, help="Supply log-growth lookbacks in weeks; default 4 8 13.")
+    l3_timing.add_argument("--horizon-weeks-grid", nargs="+", type=int, default=None, help="Forward prediction horizons in weeks; default 1 2 3 4.")
+    l3_timing.add_argument("--cost-per-side-pct", type=float, default=None, help="Per-side cost; default settings fee+slippage.")
+    l3_timing.add_argument("--supply-cache-path", default=None, help="Optional DefiLlama supply cache path.")
+    l3_timing.add_argument("--price-cache-path", default=None, help="Optional BTC daily-close cache path.")
+    l3_timing.add_argument("--url", default=DEFILLAMA_STABLECOIN_CHARTS_URL, help="DefiLlama stablecoin charts URL.")
+    l3_timing.add_argument("--force-refresh", action="store_true", help="Ignore caches and re-fetch supply and price.")
+    l3_timing.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
+    l3_timing.add_argument("--output-path", default=None, help="Optional output path for the kill-test JSON.")
+    l3_xs = subparsers.add_parser(
+        "l3-chain-tvl-scan",
+        help="Research-only L3b S1 kill-test: chain TVL growth vs token weekly cross-sectional forward-return IC + effective-breadth + DSR/PBO.",
+    )
+    l3_xs.add_argument("--start", required=True, help="Weekly anchor window start (ISO).")
+    l3_xs.add_argument("--end", required=True, help="Weekly anchor window end (ISO).")
+    l3_xs.add_argument("--tokens", nargs="+", default=None, help="Optional subset of chain tokens (e.g. ETH/USDT SOL/USDT); default uses the built-in chain-token map.")
+    l3_xs.add_argument("--signal-lookback-weeks-grid", nargs="+", type=int, default=None, help="TVL log-growth lookbacks in weeks; default 4 8 13.")
+    l3_xs.add_argument("--horizon-weeks-grid", nargs="+", type=int, default=None, help="Forward prediction horizons in weeks; default 1 2 4.")
+    l3_xs.add_argument("--cost-per-side-pct", type=float, default=None, help="Per-side cost; default settings fee+slippage.")
+    l3_xs.add_argument("--top-fraction", type=float, default=0.25, help="Long/short fraction for the diagnostic LS series.")
+    l3_xs.add_argument("--min-cross-section-tokens", type=int, default=4, help="Minimum tokens per cross-section to score an anchor.")
+    l3_xs.add_argument("--cache-dir", default=None, help="Optional directory for per-chain TVL and per-token price caches.")
+    l3_xs.add_argument("--force-refresh", action="store_true", help="Ignore caches and re-fetch TVL and price.")
+    l3_xs.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
+    l3_xs.add_argument("--output-path", default=None, help="Optional output path for the kill-test JSON.")
+    l1_breadth = subparsers.add_parser(
+        "l1-cross-asset-breadth-scan",
+        help="Research-only L1 first kill-test: effective breadth of a free cross-asset EOD panel (Tiingo). Needs QOUNT_TIINGO_API_KEY.",
+    )
+    l1_breadth.add_argument("--start", required=True, help="Weekly anchor window start (ISO).")
+    l1_breadth.add_argument("--end", required=True, help="Weekly anchor window end (ISO).")
+    l1_breadth.add_argument("--tickers", nargs="+", default=None, help="Optional cross-asset ticker panel; default uses the built-in panel.")
+    l1_breadth.add_argument("--start-date", default=DEFAULT_TIINGO_START_DATE, help="Tiingo EOD history start date (YYYY-MM-DD).")
+    l1_breadth.add_argument("--cache-dir", default=None, help="Optional directory for per-ticker EOD caches.")
+    l1_breadth.add_argument("--force-refresh", action="store_true", help="Ignore caches and re-fetch EOD data.")
+    l1_breadth.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
+    l1_breadth.add_argument("--output-path", default=None, help="Optional output path for the breadth-scan JSON.")
+    l1_tsmom = subparsers.add_parser(
+        "l1-cross-asset-tsmom-scan",
+        help="Research-only L1 S2 kill-test: cross-asset time-series-momentum (trend) annualized IR + DSR/PBO. Needs QOUNT_TIINGO_API_KEY.",
+    )
+    l1_tsmom.add_argument("--start", required=True, help="Weekly anchor window start (ISO).")
+    l1_tsmom.add_argument("--end", required=True, help="Weekly anchor window end (ISO).")
+    l1_tsmom.add_argument("--tickers", nargs="+", default=None, help="Optional cross-asset ticker panel; default uses the built-in panel.")
+    l1_tsmom.add_argument("--lookback-weeks-grid", nargs="+", type=int, default=None, help="Trend lookbacks in weeks; default 13 26 52.")
+    l1_tsmom.add_argument("--vol-lookback-weeks", type=int, default=26, help="Trailing weeks for the inverse-vol position scaling.")
+    l1_tsmom.add_argument("--ensemble", action="store_true", help="Blend the lookback grid into one parameter-free multi-horizon trend (purged folds instead of DSR/PBO).")
+    l1_tsmom.add_argument("--n-folds", type=int, default=5, help="Contiguous time folds for ensemble robustness.")
+    l1_tsmom.add_argument("--cost-per-side-pct", type=float, default=None, help="Per-side cost; default settings fee+slippage.")
+    l1_tsmom.add_argument("--start-date", default=DEFAULT_TIINGO_START_DATE, help="Tiingo EOD history start date (YYYY-MM-DD).")
+    l1_tsmom.add_argument("--cache-dir", default=None, help="Optional directory for per-ticker EOD caches.")
+    l1_tsmom.add_argument("--force-refresh", action="store_true", help="Ignore caches and re-fetch EOD data.")
+    l1_tsmom.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
+    l1_tsmom.add_argument("--output-path", default=None, help="Optional output path for the tsmom-scan JSON.")
+    l4_funding = subparsers.add_parser(
+        "l4-cross-exchange-funding-scan",
+        help="Research-only L4 S1 kill-test: cross-exchange perp funding-spread capture vs two-venue round-trip cost (market-neutral, no direction).",
+    )
+    l4_funding.add_argument("--start", required=True, help="Bucket window start (ISO).")
+    l4_funding.add_argument("--end", required=True, help="Bucket window end (ISO).")
+    l4_funding.add_argument("--venues", nargs="+", default=None, help="ccxt venue ids; default binance bybit okx hyperliquid.")
+    l4_funding.add_argument("--symbols", nargs="+", default=None, help="Unified linear-perp symbols; default BTC/ETH/SOL/XRP/DOGE/BNB USDT.")
+    l4_funding.add_argument("--cost-per-side-pct", type=float, default=None, help="Per-leg execution cost; default settings fee+slippage.")
+    l4_funding.add_argument("--taker-cost-per-side-pct", type=float, default=None, help="Optional taker per-leg cost for the required-maker-fill feasibility read.")
+    l4_funding.add_argument("--cache-dir", default=None, help="Optional directory for per-venue per-symbol funding caches.")
+    l4_funding.add_argument("--force-refresh", action="store_true", help="Ignore caches and re-fetch funding history.")
+    l4_funding.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
+    l4_funding.add_argument("--output-path", default=None, help="Optional output path for the kill-test JSON.")
     dashboard = subparsers.add_parser("dashboard-snapshot", help="Return a single aggregated monitoring snapshot.")
     dashboard.add_argument("--review-limit", type=int, default=10)
     dashboard.add_argument("--review-horizon-bars", type=int, default=1)
@@ -736,6 +829,135 @@ def main() -> None:
             kind="strategy-selection-scan",
             path_key="output_path",
             default_filename="strategy_selection_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l3-stablecoin-fetch":
+        result = L3StablecoinSupplyService(settings).run(
+            start_ms=None if args.start is None else int(parse_backtest_datetime(args.start).timestamp() * 1000),
+            end_ms=None if args.end is None else int(parse_backtest_datetime(args.end).timestamp() * 1000),
+            cache_path=args.cache_path,
+            url=args.url,
+            force_refresh=args.force_refresh,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l3-stablecoin-fetch",
+            path_key="output_path",
+            default_filename="l3_stablecoin_fetch.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l3-stablecoin-timing-scan":
+        result = L3StablecoinTimingService(settings).run(
+            start_ms=int(parse_backtest_datetime(args.start).timestamp() * 1000),
+            end_ms=int(parse_backtest_datetime(args.end).timestamp() * 1000),
+            symbol=args.symbol,
+            signal_lookback_weeks_grid=args.signal_lookback_weeks_grid,
+            horizon_weeks_grid=args.horizon_weeks_grid,
+            cost_per_side_pct=args.cost_per_side_pct,
+            supply_cache_path=args.supply_cache_path,
+            price_cache_path=args.price_cache_path,
+            url=args.url,
+            force_refresh=args.force_refresh,
+            holdout_role=args.holdout_role,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l3-stablecoin-timing-scan",
+            path_key="output_path",
+            default_filename="l3_stablecoin_timing_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l3-chain-tvl-scan":
+        chain_token_map = None
+        if args.tokens:
+            from .l3_information_edge import L3B_DEFAULT_CHAIN_TOKEN_MAP
+
+            missing = [token for token in args.tokens if token not in L3B_DEFAULT_CHAIN_TOKEN_MAP]
+            if missing:
+                parser.error(f"unknown chain tokens (no TVL mapping): {missing}")
+            chain_token_map = {token: L3B_DEFAULT_CHAIN_TOKEN_MAP[token] for token in args.tokens}
+        result = L3ChainTvlCrossSectionService(settings).run(
+            start_ms=int(parse_backtest_datetime(args.start).timestamp() * 1000),
+            end_ms=int(parse_backtest_datetime(args.end).timestamp() * 1000),
+            chain_token_map=chain_token_map,
+            signal_lookback_weeks_grid=args.signal_lookback_weeks_grid,
+            horizon_weeks_grid=args.horizon_weeks_grid,
+            cost_per_side_pct=args.cost_per_side_pct,
+            top_fraction=args.top_fraction,
+            min_cross_section_tokens=args.min_cross_section_tokens,
+            cache_dir=args.cache_dir,
+            force_refresh=args.force_refresh,
+            holdout_role=args.holdout_role,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l3-chain-tvl-scan",
+            path_key="output_path",
+            default_filename="l3_chain_tvl_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l1-cross-asset-breadth-scan":
+        result = L1CrossAssetBreadthService(settings).run(
+            start_ms=int(parse_backtest_datetime(args.start).timestamp() * 1000),
+            end_ms=int(parse_backtest_datetime(args.end).timestamp() * 1000),
+            tickers=args.tickers,
+            start_date=args.start_date,
+            cache_dir=args.cache_dir,
+            force_refresh=args.force_refresh,
+            holdout_role=args.holdout_role,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l1-cross-asset-breadth-scan",
+            path_key="output_path",
+            default_filename="l1_cross_asset_breadth_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l1-cross-asset-tsmom-scan":
+        result = L1TimeSeriesMomentumService(settings).run(
+            start_ms=int(parse_backtest_datetime(args.start).timestamp() * 1000),
+            end_ms=int(parse_backtest_datetime(args.end).timestamp() * 1000),
+            tickers=args.tickers,
+            lookback_weeks_grid=args.lookback_weeks_grid,
+            vol_lookback_weeks=args.vol_lookback_weeks,
+            cost_per_side_pct=args.cost_per_side_pct,
+            ensemble=args.ensemble,
+            n_folds=args.n_folds,
+            start_date=args.start_date,
+            cache_dir=args.cache_dir,
+            force_refresh=args.force_refresh,
+            holdout_role=args.holdout_role,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l1-cross-asset-tsmom-scan",
+            path_key="output_path",
+            default_filename="l1_cross_asset_tsmom_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l4-cross-exchange-funding-scan":
+        result = L4CrossExchangeFundingService(settings).run(
+            start_ms=int(parse_backtest_datetime(args.start).timestamp() * 1000),
+            end_ms=int(parse_backtest_datetime(args.end).timestamp() * 1000),
+            venues=args.venues,
+            symbols=args.symbols,
+            cost_per_side_pct=args.cost_per_side_pct,
+            taker_cost_per_side_pct=args.taker_cost_per_side_pct,
+            cache_dir=args.cache_dir,
+            force_refresh=args.force_refresh,
+            holdout_role=args.holdout_role,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l4-cross-exchange-funding-scan",
+            path_key="output_path",
+            default_filename="l4_cross_exchange_funding_scan.json",
             explicit_path=args.output_path,
         )
     elif args.command == "dashboard-snapshot":

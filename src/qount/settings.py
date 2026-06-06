@@ -135,6 +135,7 @@ class Settings:
     contract_leverage: int
     contract_margin_mode: str
     notify_webhook_url: str | None
+    tiingo_api_key: str | None = None
 
     @property
     def paper_mode(self) -> bool:
@@ -244,6 +245,7 @@ class Settings:
             contract_leverage=max(1, _env_int("QOUNT_CONTRACT_LEVERAGE", 3)),
             contract_margin_mode=_normalize_margin_mode(_env("QOUNT_CONTRACT_MARGIN_MODE", "isolated")),
             notify_webhook_url=_env("QOUNT_NOTIFY_WEBHOOK_URL"),
+            tiingo_api_key=_env("QOUNT_TIINGO_API_KEY"),
         )
 
     def ensure_directories(self) -> None:

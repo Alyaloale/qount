@@ -4,6 +4,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 import json
+import math
 import os
 import subprocess
 import sys
@@ -38,6 +39,24 @@ from qount.entry_quality import FreshEntryAssessment
 from qount.hourly_model import fit_symbol_hourly_return_model
 from qount.hourly_model import score_hourly_return_model_signal
 from qount.idle_window_diagnostic import IdleWindowDiagnosticService
+from qount.l3_information_edge import L3StablecoinSupplyService
+from qount.l3_information_edge import SupplyPoint
+from qount.l3_information_edge import WEEK_MS
+from qount.l3_information_edge import asof_supply_at
+from qount.l3_information_edge import evaluate_l3a_stablecoin_timing
+from qount.l3_information_edge import evaluate_l3b_chain_tvl_cross_section
+from qount.l3_information_edge import _panel_effective_breadth
+from qount.l1_cross_asset import L1CrossAssetBreadthService
+from qount.l1_cross_asset import evaluate_l1_timeseries_momentum
+from qount.l1_cross_asset import evaluate_l1_tsmom_ensemble
+from qount.l1_cross_asset import normalize_tiingo_eod
+from qount.l4_cross_exchange import L4CrossExchangeFundingService
+from qount.l4_cross_exchange import evaluate_l4_cross_exchange_funding
+from qount.l3_information_edge import fetch_stablecoin_supply_raw
+from qount.l3_information_edge import normalize_close_series
+from qount.l3_information_edge import normalize_stablecoin_supply_series
+from qount.l3_information_edge import resample_supply_to_anchors
+from qount.l3_information_edge import weekly_anchors
 from qount.executor import Executor
 from qount.journal import Journal
 from qount.market import build_higher_timeframe_context_from_completed_candles
@@ -14310,6 +14329,450 @@ class StrategyOptimizationTests(unittest.TestCase):
             persistent_dir.relative_to(root / "state" / "research_runs")
             self.assertTrue((persistent_dir / "walk_forward.json").exists())
             self.assertTrue((persistent_dir / "01-synthetic" / "backtest" / "summary.json").exists())
+
+
+class L3InformationEdgeTests(unittest.TestCase):
+    """S0.1 data-layer tests for the L3 stablecoin-supply information source."""
+
+    def _raw_rows(self) -> list[dict]:
+        # Unix-seconds string dates, out of order, with one duplicate and one
+        # malformed row, to exercise sort / de-dup / skip.
+        return [
+            {"date": "1700006400", "totalCirculatingUSD": {"peggedUSD": 110.0}},  # day 2
+            {"date": "1699920000", "totalCirculatingUSD": {"peggedUSD": 100.0}},  # day 1
+            {"date": "1700092800", "totalCirculatingUSD": {"peggedUSD": 121.0}},  # day 3
+            {"date": "1700092800", "totalCirculatingUSD": {"peggedUSD": 122.0}},  # day 3 dup -> later wins
+            {"date": "bad", "totalCirculatingUSD": {"peggedUSD": 999.0}},  # unparseable date
+            {"date": "1700179200", "totalCirculatingUSD": {}},  # missing field
+        ]
+
+    def test_normalize_sorts_dedups_and_skips_malformed(self) -> None:
+        series = normalize_stablecoin_supply_series(self._raw_rows())
+        self.assertEqual([point.value for point in series], [100.0, 110.0, 122.0])
+        timestamps = [point.timestamp_ms for point in series]
+        self.assertEqual(timestamps, sorted(timestamps))
+        # Unix seconds were promoted to milliseconds.
+        self.assertEqual(timestamps[0], 1699920000 * 1000)
+
+    def test_asof_join_uses_latest_at_or_before_anchor_without_leak(self) -> None:
+        series = normalize_stablecoin_supply_series(self._raw_rows())
+        day1 = 1699920000 * 1000
+        # Before any observation -> None (never leaks the first future value).
+        self.assertIsNone(asof_supply_at(series, day1 - 1))
+        # Exactly on an observation -> that value.
+        self.assertEqual(asof_supply_at(series, day1), 100.0)
+        # Between day 1 and day 2 -> still day 1 (no look-ahead to day 2).
+        self.assertEqual(asof_supply_at(series, day1 + 1), 100.0)
+        # After the last observation -> the last value carries forward.
+        self.assertEqual(asof_supply_at(series, day1 + 10 * 24 * 60 * 60 * 1000), 122.0)
+
+    def test_weekly_anchors_and_resample_align(self) -> None:
+        series = normalize_stablecoin_supply_series(self._raw_rows())
+        start = 1699920000 * 1000
+        end = start + 14 * 24 * 60 * 60 * 1000
+        anchors = weekly_anchors(start, end)
+        self.assertEqual(len(anchors), 3)  # weeks 0, 1, 2 inclusive
+        resampled = resample_supply_to_anchors(series, anchors)
+        self.assertEqual(resampled[0], (start, 100.0))
+        # Later weekly anchors carry forward the last observed value (122.0).
+        self.assertEqual(resampled[1][1], 122.0)
+        self.assertEqual(resampled[2][1], 122.0)
+
+    def test_cache_hit_short_circuits_the_fetcher(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "stablecoin.json"
+            cache_path.write_text(json.dumps(self._raw_rows()), encoding="utf-8")
+            calls: list[str] = []
+
+            def _boom(url: str):  # pragma: no cover - must never run
+                calls.append(url)
+                raise AssertionError("network fetch should not run on cache hit")
+
+            raw, source = fetch_stablecoin_supply_raw(cache_path=cache_path, fetcher=_boom)
+            self.assertEqual(source, "cache")
+            self.assertEqual(calls, [])
+            self.assertEqual(len(raw), len(self._raw_rows()))
+
+    def test_fetch_writes_cache_and_service_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache_path = root / "cache" / "stablecoin.json"
+            rows = self._raw_rows()
+
+            def _fetcher(url: str):
+                return rows
+
+            raw, source = fetch_stablecoin_supply_raw(cache_path=cache_path, fetcher=_fetcher)
+            self.assertEqual(source, "network")
+            self.assertTrue(cache_path.is_file())
+            # Second call now hits the freshly written cache.
+            _, source2 = fetch_stablecoin_supply_raw(cache_path=cache_path, fetcher=_fetcher)
+            self.assertEqual(source2, "cache")
+
+            settings = make_settings(root)
+            payload = L3StablecoinSupplyService(settings).run(cache_path=cache_path, fetcher=_fetcher)
+            self.assertEqual(payload["fetched_from"], "cache")
+            self.assertEqual(payload["normalized_point_count"], 3)
+            self.assertEqual(payload["latest_supply_usd"], 122.0)
+            self.assertEqual(payload["source"], "defillama_stablecoin_supply")
+
+    def test_normalize_close_series_sorts_and_skips_short_rows(self) -> None:
+        rows = [
+            [1700006400000, 1.0, 2.0, 0.5, 110.0, 9.0],
+            [1699920000000, 1.0, 2.0, 0.5, 100.0, 9.0],
+            [1700092800000, 1.0, 2.0, 0.5],  # too short -> skipped
+        ]
+        series = normalize_close_series(rows)
+        self.assertEqual([point.value for point in series], [100.0, 110.0])
+
+    def test_l3a_timing_recovers_strong_positive_ic_when_supply_predicts_returns(self) -> None:
+        base = 1577836800000  # 2020-01-01
+        weeks = 40
+        anchors = [base + i * WEEK_MS for i in range(weeks)]
+        growth = [(((i * 7) % 11) - 5) / 100.0 for i in range(weeks)]
+        supply_points = [SupplyPoint(anchors[0], 100_000_000_000.0)]
+        for i in range(1, weeks):
+            supply_points.append(SupplyPoint(anchors[i], supply_points[-1].value * math.exp(growth[i])))
+        price_points = [SupplyPoint(anchors[0], 30_000.0)]
+        for i in range(1, weeks):
+            # next-week return is proportional to last week's supply growth -> rank-IC ~ +1.
+            price_points.append(SupplyPoint(anchors[i], price_points[-1].value * (1.0 + 0.5 * growth[i - 1])))
+
+        result = evaluate_l3a_stablecoin_timing(
+            supply_series=supply_points,
+            price_series=price_points,
+            anchors_ms=anchors,
+            signal_lookback_weeks_grid=[1],
+            horizon_weeks_grid=[1],
+            cost_per_side_pct=0.0,
+            holdout_role="discovery",
+        )
+        best = result["best_cell"]
+        self.assertIsNotNone(best)
+        self.assertGreater(best["rank_ic"], 0.9)
+        self.assertGreater(result["best_abs_rank_ic"], 0.9)
+        # In-memory period series must never reach the artifact payload.
+        self.assertNotIn("period_returns_by_timestamp", best)
+        self.assertIn(result["decision"], {"advance_to_s2", "falsified_l3a"})
+        self.assertIn("passes_kill_test", result["kill_test"])
+
+    def test_l3a_timing_counts_every_config_as_a_trial(self) -> None:
+        base = 1577836800000
+        weeks = 24
+        anchors = [base + i * WEEK_MS for i in range(weeks)]
+        supply_points = [SupplyPoint(anchors[i], 1.0e11 + i * 1.0e9) for i in range(weeks)]
+        price_points = [SupplyPoint(anchors[i], 30_000.0 + (i % 5) * 100.0) for i in range(weeks)]
+        result = evaluate_l3a_stablecoin_timing(
+            supply_series=supply_points,
+            price_series=price_points,
+            anchors_ms=anchors,
+            signal_lookback_weeks_grid=[2, 4],
+            horizon_weeks_grid=[1, 2],
+            cost_per_side_pct=0.0006,
+        )
+        self.assertEqual(len(result["cells"]), 4)
+        self.assertEqual(result["deflated_sharpe"]["trial_count"], 4)
+
+    def test_panel_effective_breadth_reflects_correlation(self) -> None:
+        # Independent zig-zags -> breadth near N; identical series -> breadth near 1.
+        a = [(-1.0) ** i * 0.01 for i in range(20)]
+        b = [(-1.0) ** (i // 2) * 0.01 for i in range(20)]
+        independent = _panel_effective_breadth({"A": a, "B": b})
+        self.assertGreater(independent["effective_breadth"], 1.5)
+        identical = _panel_effective_breadth({"A": a, "B": list(a)})
+        self.assertLess(identical["effective_breadth"], 1.1)
+
+    def test_l3b_recovers_positive_cross_sectional_ic(self) -> None:
+        base = 1577836800000
+        weeks = 30
+        anchors = [base + i * WEEK_MS for i in range(weeks)]
+        tokens = ["AAA/USDT", "BBB/USDT", "CCC/USDT", "DDD/USDT"]
+        tvl_series = {}
+        price_series = {}
+        for rank, token in enumerate(tokens):
+            # Each token has a constant per-week TVL growth; higher growth -> higher
+            # next-week return, so cross-sectional rank-IC should be strongly positive.
+            growth = 0.01 * (rank + 1)
+            tvl_points = [SupplyPoint(anchors[0], 1.0e8)]
+            price_points = [SupplyPoint(anchors[0], 100.0)]
+            for i in range(1, weeks):
+                tvl_points.append(SupplyPoint(anchors[i], tvl_points[-1].value * math.exp(growth)))
+                price_points.append(SupplyPoint(anchors[i], price_points[-1].value * (1.0 + growth)))
+            tvl_series[token] = tvl_points
+            price_series[token] = price_points
+        result = evaluate_l3b_chain_tvl_cross_section(
+            tvl_series_by_token=tvl_series,
+            price_series_by_token=price_series,
+            anchors_ms=anchors,
+            signal_lookback_weeks_grid=[1],
+            horizon_weeks_grid=[1],
+            cost_per_side_pct=0.0,
+            top_fraction=0.25,
+            min_cross_section_tokens=4,
+        )
+        best = result["best_cell"]
+        self.assertIsNotNone(best)
+        self.assertGreater(best["rank_ic_mean"], 0.9)
+        self.assertIn("effective_breadth", result)
+        self.assertEqual(result["token_count"], 4)
+        self.assertNotIn("period_returns_by_timestamp", best)
+        self.assertIn(result["decision"], {"advance_to_s2", "falsified_l3b"})
+
+
+class L1CrossAssetTests(unittest.TestCase):
+    """L1 data-layer + breadth kill-test (offline; Tiingo fetcher injected)."""
+
+    def test_normalize_tiingo_eod_uses_adjusted_close_and_sorts(self) -> None:
+        rows = [
+            {"date": "2015-01-05T00:00:00.000Z", "close": 11.0, "adjClose": 110.0},
+            {"date": "2015-01-02T00:00:00.000Z", "close": 10.0, "adjClose": 100.0},
+            {"date": "2015-01-06T00:00:00.000Z", "adjClose": 0.0},  # non-positive -> skip
+            {"date": "bad", "adjClose": 999.0},  # unparseable -> skip
+        ]
+        series = normalize_tiingo_eod(rows)
+        self.assertEqual([point.value for point in series], [100.0, 110.0])
+        self.assertLess(series[0].timestamp_ms, series[1].timestamp_ms)
+
+    def test_breadth_scan_reports_high_breadth_for_uncorrelated_panel(self) -> None:
+        base = 1577836800000  # 2020-01-01
+        weeks = 32
+        anchors = [base + i * WEEK_MS for i in range(weeks)]
+        # Near-orthogonal Walsh sign sequences -> weekly returns are decorrelated, so
+        # effective breadth should approach the panel size (3), not collapse to ~1.6.
+        sign_pattern = {
+            "AAA": lambda i: (-1) ** i,
+            "BBB": lambda i: (-1) ** (i // 2),
+            "CCC": lambda i: (-1) ** (i // 4),
+        }
+        rows_by_ticker = {}
+        for ticker, sign in sign_pattern.items():
+            price = 100.0
+            rows = []
+            for i in range(weeks):
+                price *= 1.0 + 0.02 * sign(i)
+                iso = datetime.fromtimestamp(anchors[i] / 1000, tz=timezone.utc).isoformat()
+                rows.append({"date": iso, "adjClose": price})
+            rows_by_ticker[ticker] = rows
+
+        def _fetcher(url: str):
+            for ticker, rows in rows_by_ticker.items():
+                if f"/{ticker.lower()}/" in url:
+                    return rows
+            return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            result = L1CrossAssetBreadthService(settings).run(
+                start_ms=base,
+                end_ms=base + (weeks - 1) * WEEK_MS,
+                tickers=list(sign_pattern),
+                fetcher=_fetcher,
+            )
+        self.assertNotIn("error", result)
+        self.assertEqual(result["panel_size_in_breadth"], 3)
+        self.assertGreater(result["effective_breadth"]["effective_breadth"], 2.0)
+        self.assertIn(result["decision"], {"breadth_supports_l1", "breadth_ceiling_holds"})
+
+    def test_breadth_scan_reports_missing_key_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            result = L1CrossAssetBreadthService(settings).run(
+                start_ms=1577836800000,
+                end_ms=1577836800000 + 10 * WEEK_MS,
+                tickers=["SPY", "TLT"],
+            )
+        self.assertEqual(result["error"], "missing_tiingo_api_key")
+
+    def test_tsmom_rewards_a_persistent_trend_and_counts_lookbacks_as_trials(self) -> None:
+        base = 1577836800000
+        weeks = 120
+        anchors = [base + i * WEEK_MS for i in range(weeks)]
+        # Two steadily trending instruments (one up, one down) with small wiggles:
+        # a long/short trend follower should capture both -> positive net Sharpe.
+        up = [SupplyPoint(anchors[0], 100.0)]
+        down = [SupplyPoint(anchors[0], 100.0)]
+        for i in range(1, weeks):
+            wiggle = 0.005 * ((-1.0) ** i)
+            up.append(SupplyPoint(anchors[i], up[-1].value * (1.0 + 0.01 + wiggle)))
+            down.append(SupplyPoint(anchors[i], down[-1].value * (1.0 - 0.01 + wiggle)))
+        result = evaluate_l1_timeseries_momentum(
+            price_series_by_ticker={"UP": up, "DOWN": down},
+            anchors_ms=anchors,
+            lookback_weeks_grid=[13, 26],
+            vol_lookback_weeks=13,
+            cost_per_side_pct=0.0,
+        )
+        self.assertEqual(len(result["cells"]), 2)
+        self.assertEqual(result["deflated_sharpe"]["trial_count"], 2)
+        self.assertGreater(result["best_cell"]["net_sum_return_pct"], 0.0)
+        self.assertNotIn("period_returns_by_timestamp", result["best_cell"])
+        self.assertIn(result["decision"], {"advance_to_s3", "tsmom_below_gate"})
+        self.assertIsNotNone(result["ic_required_breadth_adjusted"])
+
+    def test_tsmom_ensemble_blends_lookbacks_and_reports_folds(self) -> None:
+        base = 1577836800000
+        weeks = 160
+        anchors = [base + i * WEEK_MS for i in range(weeks)]
+        up = [SupplyPoint(anchors[0], 100.0)]
+        down = [SupplyPoint(anchors[0], 100.0)]
+        for i in range(1, weeks):
+            wiggle = 0.005 * ((-1.0) ** i)
+            up.append(SupplyPoint(anchors[i], up[-1].value * (1.0 + 0.01 + wiggle)))
+            down.append(SupplyPoint(anchors[i], down[-1].value * (1.0 - 0.01 + wiggle)))
+        result = evaluate_l1_tsmom_ensemble(
+            price_series_by_ticker={"UP": up, "DOWN": down},
+            anchors_ms=anchors,
+            lookback_weeks_grid=[13, 26, 39, 52],
+            vol_lookback_weeks=13,
+            cost_per_side_pct=0.0,
+            n_folds=5,
+        )
+        self.assertEqual(result["mode"], "ensemble")
+        self.assertEqual(result["lookback_weeks_grid"], [13, 26, 39, 52])
+        self.assertGreater(result["net_sum_return_pct"], 0.0)
+        self.assertEqual(result["fold_count"], 5)
+        self.assertIn("passes_s2", result["kill_test"])
+        self.assertIn(result["decision"], {"advance_to_s3", "tsmom_ensemble_below_gate"})
+
+
+class L4CrossExchangeTests(unittest.TestCase):
+    """L4 cross-exchange funding-spread kill-test (offline; funding fetcher injected)."""
+
+    BUCKET = 8 * 60 * 60 * 1000  # 8h
+
+    def _rows(self, base: int, rates: list[float]) -> list[dict[str, object]]:
+        return [
+            {"timestamp_ms": base + i * self.BUCKET, "funding_rate": rate}
+            for i, rate in enumerate(rates)
+        ]
+
+    def test_persistent_cross_venue_spread_yields_positive_net_capture(self) -> None:
+        base = 1577836800000  # 2020-01-01
+        buckets = 60
+        # venueA funding stays the highest (short it), venueB the lowest (long it): the
+        # pair never flips -> only the first entry pays legs. A small wiggle keeps a nonzero
+        # Sharpe so DSR/PBO are defined.
+        a_rates = [0.0002 + 0.00003 * ((-1.0) ** i) for i in range(buckets)]
+        b_rates = [-0.0001 for _ in range(buckets)]
+        funding_by_venue = {
+            "venueA": {"BTC/USDT:USDT": self._rows(base, a_rates), "ETH/USDT:USDT": self._rows(base, a_rates)},
+            "venueB": {"BTC/USDT:USDT": self._rows(base, b_rates), "ETH/USDT:USDT": self._rows(base, b_rates)},
+        }
+        result = evaluate_l4_cross_exchange_funding(
+            funding_by_venue=funding_by_venue,
+            symbols=["BTC/USDT:USDT", "ETH/USDT:USDT"],
+            start_ms=base,
+            end_ms=base + (buckets - 1) * self.BUCKET,
+            cost_per_side_pct=0.0,
+        )
+        self.assertEqual(len(result["cells"]), 2)
+        self.assertGreater(result["portfolio_net_annualized_capture_pct"], 0.0)
+        self.assertEqual(result["deflated_sharpe"]["trial_count"], 2)
+        self.assertEqual(result["cells"][0]["pair_changes"], 0)  # stable pair
+        self.assertGreater(result["break_even_cost_per_side"], 0.0)
+        self.assertNotIn("period_returns_by_timestamp", result["cells"][0])
+        self.assertIn(result["decision"], {"advance_to_s2", "cross_exchange_spread_below_gate"})
+
+    def test_churning_pair_with_cost_falls_below_gate(self) -> None:
+        base = 1577836800000
+        buckets = 60
+        # The richest venue flips every bucket -> the delta-neutral pair churns, paying a
+        # 4-leg round-trip each bucket. A realistic per-leg cost then eats the thin spread.
+        a_rates = [0.0002 if i % 2 == 0 else -0.0002 for i in range(buckets)]
+        b_rates = [-0.0002 if i % 2 == 0 else 0.0002 for i in range(buckets)]
+        funding_by_venue = {
+            "venueA": {"BTC/USDT:USDT": self._rows(base, a_rates)},
+            "venueB": {"BTC/USDT:USDT": self._rows(base, b_rates)},
+        }
+        result = evaluate_l4_cross_exchange_funding(
+            funding_by_venue=funding_by_venue,
+            symbols=["BTC/USDT:USDT"],
+            start_ms=base,
+            end_ms=base + (buckets - 1) * self.BUCKET,
+            cost_per_side_pct=0.0004,
+            taker_cost_per_side_pct=0.0004,
+        )
+        self.assertGreater(result["cells"][0]["pair_changes"], buckets // 3)  # heavy churn
+        self.assertLess(result["portfolio_net_annualized_capture_pct"], 0.0)
+        self.assertEqual(result["decision"], "cross_exchange_spread_below_gate")
+        self.assertIsNotNone(result["required_maker_fill"])
+
+    def test_funding_interval_is_normalized_to_8h_equivalent(self) -> None:
+        base = 1577836800000
+        hour = 60 * 60 * 1000
+        buckets = 30
+        # venueA settles every 8h at +0.0001 (8h-equivalent = 0.0001). venueH settles hourly
+        # at +0.00005; its 8h-equivalent is 8x = 0.0004 -> venueH must be the *short* (rich)
+        # leg, which only holds if the hourly rate is scaled to the 8h basis (not compared raw,
+        # where 0.00005 < 0.0001 would wrongly flip the pair).
+        a_rows = [{"timestamp_ms": base + i * self.BUCKET, "funding_rate": 0.0001} for i in range(buckets)]
+        h_rows = [{"timestamp_ms": base + i * hour, "funding_rate": 0.00005} for i in range(buckets * 8)]
+        result = evaluate_l4_cross_exchange_funding(
+            funding_by_venue={
+                "venueA": {"BTC/USDT:USDT": a_rows},
+                "venueH": {"BTC/USDT:USDT": h_rows},
+            },
+            symbols=["BTC/USDT:USDT"],
+            start_ms=base,
+            end_ms=base + (buckets - 1) * self.BUCKET,
+            cost_per_side_pct=0.0,
+        )
+        cell = result["cells"][0]
+        self.assertEqual(cell["venue_funding_interval_ms"]["venueA"], self.BUCKET)
+        self.assertEqual(cell["venue_funding_interval_ms"]["venueH"], hour)
+        # 8h-equivalent spread = 0.0004 - 0.0001 = 0.0003 per bucket, pair stable.
+        self.assertEqual(cell["pair_changes"], 0)
+        self.assertAlmostEqual(cell["gross_sum_capture_pct"] / cell["bucket_count"], 0.0003, places=6)
+
+    def test_service_runs_end_to_end_with_injected_fetcher(self) -> None:
+        base = 1577836800000
+        buckets = 40
+        rate_map = {
+            "venueA": [0.0002 + 0.00002 * ((-1.0) ** i) for i in range(buckets)],
+            "venueB": [-0.0001 for _ in range(buckets)],
+            "venueC": [0.00005 for _ in range(buckets)],
+        }
+
+        def _fetcher(venue: str, symbol: str):
+            return [
+                {"timestamp": base + i * self.BUCKET, "fundingRate": rate, "symbol": symbol}
+                for i, rate in enumerate(rate_map[venue])
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            result = L4CrossExchangeFundingService(settings).run(
+                start_ms=base,
+                end_ms=base + (buckets - 1) * self.BUCKET,
+                venues=["venueA", "venueB", "venueC"],
+                symbols=["BTC/USDT:USDT"],
+                cost_per_side_pct=0.0,
+                fetcher=_fetcher,
+            )
+        self.assertNotIn("error", result)
+        self.assertEqual(result["version"], "l4_cross_exchange_v1")
+        self.assertEqual(result["venue_status"], {"venueA": "ok", "venueB": "ok", "venueC": "ok"})
+        self.assertIn(result["decision"], {"advance_to_s2", "cross_exchange_spread_below_gate"})
+
+    def test_service_guards_against_too_few_reachable_venues(self) -> None:
+        base = 1577836800000
+
+        def _fetcher(venue: str, symbol: str):
+            if venue == "venueA":
+                return [{"timestamp": base, "fundingRate": 0.0001, "symbol": symbol}]
+            raise RuntimeError("unreachable from host")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            result = L4CrossExchangeFundingService(settings).run(
+                start_ms=base,
+                end_ms=base + 10 * self.BUCKET,
+                venues=["venueA", "venueB"],
+                symbols=["BTC/USDT:USDT"],
+                fetcher=_fetcher,
+            )
+        self.assertEqual(result["error"], "insufficient_reachable_venues")
+        self.assertEqual(result["venue_status"]["venueB"], "unreachable")
 
 
 if __name__ == "__main__":

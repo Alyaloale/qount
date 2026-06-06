@@ -1124,3 +1124,37 @@ meta-label 思路、purged-CV + embargo、Deflated Sharpe、PBO/CSCV、effective
 
 **止盈不放宽任何纪律**：§6 / §10.7 全部继承；live 关闭、不 forward paper、不放宽 broad gate、
 validation_v1 once-only 资格继续保留。止盈是停止投入，不是放松边界。
+
+### 11.9 三条结构性重启线 + 全局诚实止盈（2026-06-06，项目所有者确认）
+
+§11.8 止盈后，按本节「唯一合法重启触发=结构性新输入」依次试了三条结构性重启线，各攻
+`IR = IC × √BR` 的不同项或游戏本身。三条都**先证伪再投入、纯数据/零新场的最便宜 kill-test 优先**，
+结果统一指回同一类结构性/成本墙：
+
+```text
+L3 换 IC 来源(非价量慢数据 + AI)  = 证伪
+   L3a 稳定币供给→BTC 周线择时: 无稳定样本外 IC(全窗 |IC| 0.054 < 0.083、子窗符号翻转 + PBO 0.64)
+   L3b 链 TVL 横截面: 找到真信号(IC 0.075, t=3.5, 符号稳、DSR/PBO 过)但 token 收益 eff-breadth 仅 1.68
+       → 要求 IC 仍 ~0.15、真信号只有一半 → 广度天花板在新数据源原样复现
+L1 攻 BR(跨资产趋势, 正面动 universe) = 固化暂停(部分成功)
+   S1 广度: 21-ETF 跨资产 eff-breadth 2.97 > 2.5 → 真逃逸 majors 广度天花板(§7/L3 都缺的那一项)
+   S2 趋势: 找到项目首个真实、稳健、正、经济一致的 edge(跨资产 TSMOM, gross Sharpe 0.55, 4/5 折正,
+            2022 crisis-alpha), 但零售 ETF 净 Sharpe ~0.36–0.42 < 0.5 券商门控, DSR/PBO 不过
+   → 绑定限制从「广度」迁移到「零售 ETF 的 edge 量级」; 真 CTA 量级需期货券商(L1-S5, 未授权)
+L4 换游戏(市场中性跨所 funding 套利, 不预测方向) = 证伪
+   S1: 跨所 funding spread 真实为正(毛年化 +7.4%, 6 币全正)但 break-even 仅 2.7bps/腿、pair 每 ~12h 翻转,
+       taker 成本下净年化 −1.6, required_maker_fill ~0.93, DSR 0.0 → 单所 CARRY 的 maker 墙跨所原样重现
+```
+
+**判定**：三条线分别证明了——换信息源绕不开广度天花板(L3)、正面抬 BR 能逃天花板但零售 universe 的
+edge 量级不够(L1)、换成不预测方向的市场中性套利则被套利者压到成本地板 + 换手墙(L4)。**「慢 +
+延迟无关 + 零售可得 + 低换手」这个操作者约束盒子里,可触及的择时/套利盈利路径已系统性穷尽。**
+
+**决策（2026-06-06，项目所有者确认）：接受 §7 全局诚实止盈。** 不再开新研究线。**固化的研究价值**:
+§11.8 的整套反过拟合 harness + 本节三条重启线各自的 kill-test 工具(`l3_information_edge` /
+`l1_cross_asset` / `l4_cross_exchange` + breadth-adjusted 要求 IC / 跨所 spread + maker-fill 诊断)
+与诚实证据链。**唯一合法的下一次重启触发仍是所有者授权的结构性新基建**——期货券商(把 L1 的真 edge
+量级补到券商档,L1-S5)/ 期权场(L5 波动率变现)/ 多所账户(L4-S2 maker 执行)——**当前一个都不追**。
+
+**止盈不放宽任何纪律**：live 关闭、不 forward paper、不放宽 broad gate、validation_v1 once-only
+资格继续保留。L1 是暂停非删除(真 edge 留待券商档复跑),L3/L4 是证伪。

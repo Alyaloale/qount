@@ -100,6 +100,452 @@
 
 ## 2026-06-06
 
+### 全局决策(所有者确认):接受 §7 全局诚实止盈,三条重启线走完
+
+无代码改动(纯对账)。§7 原始止盈后,按 §11.8「唯一合法重启=结构性新输入」依次试了三条结构性重启线,
+各攻 `IR=IC×√BR` 的不同项或游戏本身,**全部撞到同一类结构性/成本墙**:
+
+```text
+L3 换 IC 来源(非价量慢数据)   = 证伪：广度天花板在新数据源原样复现(L3b 真信号 IC 0.075 但 eff-breadth 1.68)
+L1 攻 BR(跨资产趋势)          = 固化暂停：真逃逸广度天花板(eff-breadth 2.97)、找到项目首个真 edge，
+                                  但零售 ETF 净 Sharpe ~0.4 < 0.5 券商门控；真量级需期货券商(未授权)
+L4 换游戏(市场中性跨所套利)   = 证伪：跨所 spread 真实(毛 +7.4%/yr)但贴 maker 成本地板(回本 2.7bps)
+                                  + 每 ~12h 翻转，换手吃光，required_maker_fill ~0.93(CARRY maker 墙跨所重现)
+```
+
+所有者从「L5 / L2 / L4-S2 / 接受全局止盈」中选**接受全局止盈**。
+
+**固化的研究价值**(项目真成果):整套反过拟合 harness(triple-barrier / purged-CV / DSR / PBO /
+effective-breadth / breadth-adjusted 要求 IC)、kill-test 方法论(最便宜的证伪优先、纯数据零新场先证伪)、
+三条重启线的诚实证据链。**唯一合法的下一次重启触发仍是所有者授权的结构性新基建**:期货券商(L1-S5)/
+期权场(L5)/ 多所账户(L4-S2)——**当前一个都不追**。这是停止投入,不放宽任何纪律:live 仍关闭、
+不 forward paper、不放宽 broad gate、`validation_v1` once-only 资格继续保留。对账见 `profit-engineering-plan.md §11.8`。
+
+### L4 跨所套利重启线:S1 跨所 funding spread kill-test 证伪
+
+所有者从 L4/L5/L2 选 **L4 跨所套利(换「游戏」=市场中性,不预测方向)**。命门:跨所 funding spread 的
+「幅度 × 持续性」能否跨过双所往返成本——纯数据、零新场、零下单。
+
+变更:
+
+```text
+docs/l4-cross-exchange-plan.md（新建 L4 计划文档）
+src/qount/l4_cross_exchange.py（数据层 + evaluate_l4_cross_exchange_funding + L4CrossExchangeFundingService）
+src/qount/main.py（新增命令 l4-cross-exchange-funding-scan）
+tests/test_strategy_optimization.py（新增 L4CrossExchangeTests，5 单测）
+```
+
+设计:ccxt 拉多所 perp funding 历史(复用 `normalize_funding_history`)、`state/` 缓存、**按各所原生
+结算间隔(相邻时间戳中位推得)归一到 8h 当量**(否则 1h 的 Hyperliquid 与 8h 的 Binance 费率量级错配会
+冒充 spread)、as-of 对齐到 8h bucket、每 bucket 取 `spread=max−min` 做多最低所/做空最高所(净 delta≈0)、
+pair 翻转付 4 腿往返、复用 §7 的 `_sharpe`/DSR/PBO。修了一个口径 bug:spread 恒 ≥0 → `required_maker_fill`
+数学上恒 ≤1,不能当生死门,改成「实测成本后净 capture>0 + DSR/PBO」为门,required_maker_fill/break-even 降为诊断。
+
+基建发现(类比 L1 的 Tiingo):**三所 Binance/Bybit/OKX 均需配置代理(直连全 NetworkError),跑命令前
+必须 `set -a && source .env && set +a`,否则 `Settings.from_env` 拿不到代理 → 全所 unreachable**(第一遍
+默认含 Hyperliquid 的实跑就栽在这 + Hyperliquid USDC 符号);Hyperliquid 实测可达但 USDC 结算(不同符号/基差)
++ 1h funding,推迟 S2。验证:`local/WSL unittest=269 OK（264 → +5）`。
+
+WSL 实跑(120d discovery、binance/bybit/okx、6 USDT 永续、261 共同 8h bucket、taker 0.0004):
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260606T113148Z-l4-cross-exchange-funding-scan/
+毛年化 spread=+0.074（6 币毛值全正，真实跨所定价不一致）
+break_even_cost_per_side=0.000027（2.7bps/腿）
+pair_changes≈165/261（mean_hold≈1.5 bucket≈12h，最优 pair 每 ~12h 翻转）
+净年化（taker 0.0004）=−1.6  组合 Sharpe 深负  required_maker_fill≈0.93
+DSR=0.0（最佳 per-period 净 Sharpe −1.1 < 噪声期望最大 0.107）  PBO=0.083（低但因净负无意义）
+decision=cross_exchange_spread_below_gate
+```
+
+读法:**跨所 funding spread 真实为正(毛 +7.4%/yr),但已被套利者压到 ~maker 成本地板(回本 2.7bps),
+且残差每 ~12h 均值翻转 → 4 腿换手吃光毛值。** taker 成本下深负、要 93% 腿 maker 成交才回本——单所
+CARRY 的 maker 墙跨所原样重现。绑定限制是「spread 已贴成本地板 + 换手过快」,非方法。只有 co-located
+maker/返佣 HFT(另一种操作者、需多所账户基建)够得着;对本「慢 + 延迟无关」操作者证伪,正是计划 §5/§1
+预判的成本墙。S1 未过 → 不进 S2。**L4 落在终局决策点**(退出转 L5/L2 / L4-S2 maker 执行研究需多所账户)。
+硬约束全不变,未碰 `validation_v1`、未下任何单、未开多所账户。
+
+### L1 终局决策(所有者确认):固化为部分成功,暂停
+
+无代码改动(纯文档对账)。L1 跑到终局决策点:S1 广度过(eff-breadth 2.97)、S2 趋势真实但净年化
+Sharpe ~0.36–0.42 < 0.5 门控且 DSR 0.856/PBO 0.627 不过、40-ETF 扩容确认零售 universe 在
+eff-breadth ~3 / Sharpe ~0.4 处饱和。三条文档内合法路径(S5 券商 / 固化 / 转 L5),**所有者选固化**。
+
+对账理由:
+- **不开券商**:L1 计划 §3 规定「开券商(S5)只在 S1–S4 全过之后」,S2 未过 → 不在 sub-gate 证据上
+  开真期货券商、不掏真实资金/建新工程轮。
+- **不内部堆参**:在同批已看 ETF 上继续加旋钮/扩标的是 §5 禁止的「L1 内部堆参当重启」;40-ETF 已是
+  最后一个零售杠杆且不升反降,L1 内部可触及路径穷尽。
+
+固化内容:L1 是本项目**第一个真实、稳健、正、经济一致的 edge**(21-ETF 跨资产 TSMOM,gross Sharpe
+0.55、净 0.36–0.42、4/5 时间折正、2022 利率趋势 crisis-alpha、与 crypto 无关),并**经验证实了 §2
+广度逃逸论点**——结构性低相关跨资产 universe 把 majors 广度天花板从 1.6 抬到 2.97,绑定约束随之从
+「广度」迁移到「零售 ETF 的 edge 量级」。**暂停而非删除**:S2 门控原样保留,未来开期货券商(独立
+工程轮)或拿到结构性更优 universe 时,从 S3 续跑。
+
+这是停止在 L1 上投入,不放宽任何纪律:live 仍关闭、不 forward paper、不放宽 broad gate、
+`validation_v1` once-only 资格继续保留。下一次重启需新的结构性输入(L5 换预测目标=波动率 / L4
+跨所套利),非 L1 内部微调。对账见 current.md 与 l1-cross-asset-plan.md §3/§5。
+
+### L1 S2 扩 40-ETF:零售 universe 天花板确认(扩不升反降)
+
+无新代码(仅 `_tiingo_get_json` 加 3 次重试抗 SSL 瞬断,40 标的顺序拉取需要)。`local/WSL
+unittest=264 OK`。按所有者选择,开券商前用最后一个零成本杠杆——把 universe 从 21 扩到 40 ETF
+(加 11→ 国家/板块股 EWZ/EWG/INDA/EWT/EWA/XLE/XLU、更多债 BWX/EMLC/MBB/PFF/BKLN/BNDX、
+更多商品 CORN/WEAT/CPER/PPLT/PALL/GDX),重跑 S2 单一 + ensemble(2014-2026):
+
+```text
+breadth_40etf=/home/alyaloale/Code/qount/state/research_runs/...l1-cross-asset-breadth-scan(40)
+21-ETF: eff_breadth=2.973 r̄=0.303 | best 单一净 Sharpe=0.421 | ensemble=0.363
+40-ETF: eff_breadth=2.805 r̄=0.340 | best 单一净 Sharpe=0.318 DSR=0.759 PBO=0.571 | ensemble=0.227
+```
+
+读法：**扩 ETF 不升反降——零售 universe 天花板确认。** 加 19 个 ETF 让有效广度略降
+(2.973→2.805)、Sharpe 下降,因为零售 ETF 聚成同样 ~3 个宏观因子(股 beta / 利率 / 商品-美元),
+加相关标的抬不动独立因子数(`40/(1+39×0.34)=2.8`)。**零售 ETF universe 在 effective-breadth
+~3、净 Sharpe ~0.4 处饱和。** 最后一个零售杠杆已用尽:要突破只能换真正不同的工具=真期货
+universe(单名商品 / 利率曲线各点),那需要券商(S5)。**L1 终局收窄为:S5 券商 / 固化部分成功
+/ 转 L5。** 硬约束全不变,未碰 `validation_v1`、未开任何券商。
+
+### L1 S2 ensemble:确认 edge 真实稳健但量级仍低于门控(零售 ETF 天花板)
+
+变更：
+
+```text
+src/qount/l1_cross_asset.py（新增 evaluate_l1_tsmom_ensemble + _fold_sharpes；service 加 ensemble 模式）
+src/qount/main.py（l1-cross-asset-tsmom-scan 加 --ensemble / --n-folds）
+tests/test_strategy_optimization.py（+1 单测：ensemble 混合 lookback + 报 folds）
+```
+
+所有者从 S2 后续选 **lookback 等权 ensemble**(无参,直接回应 PBO=0.63「别选单一 lookback」)。
+信号层混合:`ensemble_signal_i = mean_L sign(trailing_L)` ∈ [-1,1] → 反波动率定权 → 归一。
+单一无参 config,无 lookback 选择 → 不算 DSR/PBO,改用连续 purged 时间折判稳健性。
+
+验证：`local/WSL unittest=264 OK（263 → +1）`。
+
+WSL 实跑(21-ETF、753 周、cost 0.0006/side、grid {13,26,39,52}、vol_lb 26、5 折)：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260606T064415Z-l1-cross-asset-tsmom-scan/
+NET 年化 Sharpe=0.363（gross 0.553）  avg_weekly_turnover=0.253
+folds 正 4/5（需 3）: 0.867 / 0.106 / 0.345 / -0.042 / 0.998（fold3≈2023 whipsaw 年负）
+yearly: 多数正,2023=-0.081 最差;2019/2022/2024 最好
+decision=tsmom_ensemble_below_gate（ir_pass=False 0.363<0.5, net_pass=True, fold_pass=True）
+```
+
+读法：ensemble 净 Sharpe(0.363)**反而略低于最佳单一 lookback(lb39w 0.421)**——等权纳入较弱
+的快周期(lb13w 单独仅 0.10)把混合拉低;gross 略升(0.553)。所以 PBO 高不是过拟合噪声,而是
+快/慢周期质量不齐;ensemble 解决了"选哪个 lookback"(4/5 折稳健为正),但**没提升量级**。
+
+**L1 S2 完整定论:跨资产趋势是整个项目第一个真实、稳健、正、经济一致的 edge**(gross Sharpe
+0.55、4/5 时间折为正、2022 利率趋势 crisis-alpha、与 crypto 无关的 diversifier),不同于此前
+所有证伪。**但零售 ETF universe 上净 Sharpe 只有 ~0.36–0.42,低于开券商所需 0.5 门控**;绑定
+限制是「原始 edge 量级 × 零售 universe」,非方法——经典 CTA 的 0.7–1.0 Sharpe 需 50–100 个期货
+(券商,S5,刻意推迟)。S2(含 ensemble)按预设门控未过 → 不进 S3。L1 落在「广度命门已过 +
+趋势真实正但零售档量级不足」的终局,下一步是所有者决策(S5 券商 / 固化为部分成功 / 转 L5)。
+硬约束全不变,未碰 `validation_v1`、未开任何券商。
+
+### L1 S2 趋势 kill-test:跨资产 TSMOM 真实正 edge 但低于门控
+
+变更：
+
+```text
+src/qount/l1_cross_asset.py（抽出 fetch_cross_asset_panel；新增 evaluate_l1_timeseries_momentum
+                            + L1TimeSeriesMomentumService）
+src/qount/main.py（新增 research-only 命令 l1-cross-asset-tsmom-scan）
+tests/test_strategy_optimization.py（+1 单测：持续趋势→正净 Sharpe、lookback 计 trial）
+```
+
+S1 广度通过后做 S2:在 21-ETF 跨资产面板上做经典时序动量(Moskowitz-Ooi-Pedersen 风格)——
+每标的 position=sign(trailing L 周收益),按 trailing 已实现波动率反比定权(决策时点、防泄漏),
+跨标的归一到单位 gross,周再平衡;聚合扣费净值喂 §7 的年化 Sharpe / DSR / PBO harness,每个
+lookback 计一个 DSR trial。research-only,无仓位。门控:年化净 IR ≥ 0.5 + DSR ≥ 0.95 + PBO < 0.5。
+
+验证：
+
+```text
+local unittest=263 OK（262 → +1）
+sync-to-wsl.sh --install=OK
+WSL unittest=263 OK
+```
+
+WSL 实跑(21-ETF、753 周 2012-2026、cost 0.0006/side、vol_lb 26 周、lookback {13,26,39,52})：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260606T063553Z-l1-cross-asset-tsmom-scan/
+effective_breadth=2.973  BR_annual≈155  required_IC≈0.080
+best 年化净 Sharpe=0.421（lb39w，gross 0.542）；4 lookback 净 Sharpe 全正 0.10/0.33/0.42/0.40
+DSR=0.856（< 0.95）  PBO=0.627（> 0.5）  net 全正
+逐年(lb39w): 多数年正,2013/2016/2018/2020/2023 负,集中在 2019/2022(+0.068,利率趋势)/2024
+decision=tsmom_below_gate（ir_pass=False, dsr_pass=False, pbo_pass=False, net_pass=True）
+```
+
+读法：**与之前所有路本质不同——跨资产趋势是真实、正、经济一致的 edge**(4 lookback 全正、
+2022 利率趋势 crisis-alpha),不是 L3a 式符号翻转噪声。**但在零售 ETF universe 上只有 ~0.42
+净 Sharpe,低于预设 IR 门控 0.5;DSR/PBO 不过**(部分因 4 lookback 近乎等价、选不出单一最优——
+PBO 高的正确回应是 ensemble 而非选一个)。绑定限制从「广度」变成「**零售 ETF 的原始 edge 量级**」:
+真 CTA 用 50–100 个期货跨更多板块,广度与 Sharpe 都更高,而那需要券商(S5,刻意推迟)。S2 按
+预设门控未过 → 不进 S3。下一步是所有者决策(见下方注):(a) lookback 等权 ensemble(无参、直接
+回应 PBO);(b) 接受 ~0.42 Sharpe 作零售-ETF 天花板,决定是否值得 paper/券商;(c) 停。硬约束
+全不变,未碰 `validation_v1`、未开任何券商。
+
+### L1 S1 广度 kill-test 通过:跨资产 universe 逃逸 majors 广度天花板
+
+变更：
+
+```text
+src/qount/l1_cross_asset.py（新模块：Tiingo EOD fetch/缓存/复权归一化 + 广度 kill-test service）
+src/qount/main.py（新增 research-only 命令 l1-cross-asset-breadth-scan）
+src/qount/settings.py（新增 tiingo_api_key，默认 None，从 QOUNT_TIINGO_API_KEY 读）
+tests/test_strategy_optimization.py（新增 L1CrossAssetTests，3 单测）
+docs/l1-cross-asset-plan.md（新计划文档）
+```
+
+所有者从 L1/L4/L5 选 **L1 跨资产趋势(正面攻 BR)**。L1 命门:跨资产 universe 的有效广度是否
+≫1.6。纯数据、零新场:拉免费跨资产日线 EOD(Tiingo,复权 adjClose)→ as-of 周线 → 量
+`_panel_effective_breadth`(复用 §7 harness)。research-only,无仓位、不算 IC。
+
+**关键基建发现:** 跨资产 TradFi 免费免-key 源从生产主机全不可用——Stooq 反爬 JS 页、Yahoo 429、
+FRED 超时;Tiingo/AV/TwelveData/FMP 可达需 key。**选 Tiingo**(已配 `QOUNT_TIINGO_API_KEY`),
+缺 key 命令不崩溃返回提示。
+
+WSL 实跑(广度随 universe 正确变宽单调改善)：
+
+```text
+crypto majors 基线(§7): N=12 r̄≈0.63 effective_breadth≈1.6   ← 天花板
+L1 最小 13-ETF(SPY/EFA/EEM/TLT/IEF/LQD/HYG/GLD/SLV/DBC/USO/UUP/VNQ, 2010-2026, 857 周):
+    r̄=0.354  effective_breadth=2.477  → 临界(< 2.5, breadth_ceiling_holds)
+L1 完整 21-ETF 跨资产(+IWM/EWJ/FXI/SHY/EMB/TIP/UNG/DBA, 2012-2026, 753 周):
+    r̄=0.303  effective_breadth=2.973  → breadth_supports_l1 ✅
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260606T062015Z-l1-cross-asset-breadth-scan/
+```
+
+验证：
+
+```text
+local unittest=262 OK（259 → +3）
+sync-to-wsl.sh --install=OK
+WSL unittest=262 OK
+Tiingo SPY 实拉 schema=date(ISO)+adjClose,与归一化一致
+```
+
+单测(3,离线注入 fetcher)：Tiingo adjClose 归一化/排序/跳过坏行;近正交 Walsh 面板
+effective_breadth > 2.0;缺 key 返回 error 不崩溃。
+
+读法：**L1 命门论点成立。** 随 universe 从 crypto majors → 13-ETF → 21-ETF 正确变宽,
+r̄ 0.63→0.354→0.303、有效广度 1.6→2.48→2.97(~1.86× crypto 天花板)单调改善——**真正跨资产
+的 universe 结构性逃逸了 majors 广度天花板**(这正是 §7 / L3 都缺的那一项)。门控 2.5 未动,
+只按论点本意把欠采样的 13-ETF 探针补成真实 CTA 风格 universe(加 natgas/ags/TIPS/EM 债/短端/
+多股区域)。含义:eff_breadth 2.97 × ~52 周 → BR≈154 → **要求 IC≈0.081**(可达区,远好于横截面
+0.15)。**S1 通过 → 进 S2**(ts_mom 聚合 IR / 扣费净值 / DSR / PBO)。诚实保留:广度过线是必要
+非充分,趋势扣费后 IR 是否真过线是 S2 才知道;**开券商只在 S1–S4 全过后**。硬约束全不变,未碰
+`validation_v1`。
+
+变更：
+
+```text
+src/qount/l1_cross_asset.py（新模块：Tiingo EOD fetch/缓存/复权归一化 + 广度 kill-test service）
+src/qount/main.py（新增 research-only 命令 l1-cross-asset-breadth-scan）
+src/qount/settings.py（新增 tiingo_api_key，默认 None，从 QOUNT_TIINGO_API_KEY 读）
+tests/test_strategy_optimization.py（新增 L1CrossAssetTests，3 单测）
+docs/l1-cross-asset-plan.md（新计划文档）
+```
+
+所有者从 L1/L4/L5 选 **L1 跨资产趋势(正面攻 BR)**。按 §1 的命门——L1 整条论点只赌
+「跨资产 universe 的有效广度是否 ≫1.6」——先做**纯数据、零新场**的广度 kill-test:拉免费
+跨资产日线 EOD 面板(SPY/EFA/EEM/TLT/IEF/LQD/HYG/GLD/SLV/DBC/USO/UUP/VNQ),as-of 周线,
+量 `_panel_effective_breadth`(复用 §7 harness)。research-only,无仓位、不算 IC。
+
+**关键基建发现(已在 WSL 实测可达性):** 跨资产 TradFi **免费免-key 源从生产主机全部不可用**——
+Stooq 返回反爬 JS 挑战页、Yahoo Finance 429 限流(直连+代理均是)、FRED 超时(网络路径被挡)。
+可达且可用的是**需免费 key 的提供商**:Tiingo(200 实测可达、免费档 1000 req/天)、Alpha
+Vantage / Twelve Data / FMP(均可达需 key)。**选 Tiingo**;缺 key 时命令不崩溃,返回
+`error=missing_tiingo_api_key` 提示。所有者去拿 key,本轮先**离线预建适配层**。
+
+验证：
+
+```text
+local unittest=262 OK（259 → +3）
+sync-to-wsl.sh --install=OK
+WSL unittest=262 OK
+缺 key CLI 路径=干净返回 missing_tiingo_api_key（不崩溃）
+```
+
+单测(3,全离线注入 fetcher,不联网/不需 key)：Tiingo EOD 用 adjClose 归一化/排序/跳过坏行;
+近正交 Walsh 面板的 effective_breadth > 2.0(去相关→广度高,正是 L1 要验证的);缺 key 返回
+error 不崩溃。
+
+读法：L1 数据层 + 广度 kill-test 已就绪,**等所有者把 `QOUNT_TIINGO_API_KEY` 放进 `.env`** 即可
+跑真实广度检查。门控:effective_breadth > 2.5 → 广度论点成立、进 S2(ts_mom IR/DSR/PBO);
+≲1.6 → 与 majors 无异、廉价证伪、转 L5。**开券商只在 S1–S4 全过之后,绝不提前。** 硬约束全不变。
+
+### L3 全线证伪 → 按 §8/§7 退出:L3b 链 TVL 横截面证实"广度幻觉"
+
+变更：
+
+```text
+src/qount/l3_information_edge.py（新增 evaluate_l3b_chain_tvl_cross_section + L3ChainTvlCrossSectionService
+                                 + 链 TVL fetch/缓存 + _panel_effective_breadth）
+src/qount/main.py（新增 research-only 命令 l3-chain-tvl-scan）
+tests/test_strategy_optimization.py（+2 单测：effective-breadth 随相关变化 / 横截面强正 IC 还原）
+```
+
+按所有者选择,L3a 证伪后做 L3b(链上横截面)。计划 §2 硬性要求:**effective_breadth 与
+rank-IC 二者一起判生死**。信号=DefiLlama 链 TVL log-增速(lookback 4/8/13 周),横截面排序
+12 个"链 token"(ETH/SOL/BNB/AVAX/ARB/SUI/TRX/OP/APT/NEAR/POL/ADA,各自映射到 DefiLlama 链
+TVL),预测 token t→t+h(1/2/4 周)forward return。复用 §7 harness(per-anchor Spearman →
+rank_ic_mean、`_panel_effective_breadth` N/(1+(N-1)r̄)、DSR、PBO)。BTC 同款期货 fapi 价格。
+research-only。门控:|IC| ≥ 0.15(§10.2 横截面参考)且 effective_breadth > 2.5(§2 逃逸条件)。
+
+验证：
+
+```text
+local unittest=259 OK（257 → +2）
+sync-to-wsl.sh --install=OK
+WSL unittest=259 OK
+```
+
+WSL 实跑(12 链 TVL + 12 token 期货价格全缓存,2022-06..2026-06 / 209 周)：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260606T052959Z-l3-chain-tvl-scan/
+effective_breadth=1.680  (N=12, mean_abs_pairwise_corr r̄=0.559)  < 逃逸阈 2.5 → breadth_escape=False
+best |rank_ic_mean|=0.0755 (L4w/h4w, t=3.47, 正) < gate 0.15 → ic_pass=False
+全 9 cell rank-IC 均为正、符号稳定; DSR=0.953(过) / PBO=0.361(过) / LS net 全正
+decision=falsified_l3b
+```
+
+读法：**这是比 L3a 更精确、更有意义的证伪,且证实了计划 §2 预警的"广度幻觉"。** 与 L3a 的
+符号翻转噪声不同,L3b 找到一个**真实、符号稳定、统计显著(t=3.5)、DSR/PBO 都过**的弱信号——
+链 TVL 增长确实正向预测 token 收益。**但 token 收益面板的有效广度仍只有 1.68**(r̄=0.559,几乎
+贴着 §7 价量天花板 1.6),远低于 2.5;广度不逃逸 → 要求 IC 仍 ~0.15,真信号 0.075 只有一半。
+**§7 架构级根因在新数据源上原样复现:绑定约束是广度(majors 同涨同跌),不是信号;即便真信号也被
+结构性广度天花板压死。** TVL 增长本身跨链同向(DeFi 周期),signal 维度也不制造正交 dispersion,
+正是广度不逃逸之因。
+
+**结论(按 §8):L3a + L3b 均证伪 → L3 这一信息源整体证伪 → 回到 §7 诚实止盈。** 慢数据换信息源
+没有绕开广度天花板:择时(L3a)无稳定 IC、横截面(L3b)有真 IC 但广度封死。下一次重启需**真正
+结构性新输入**(L1 真低相关 universe / L4 跨所套利不预测方向 / L5 换预测目标),而非 L3 内部继续
+堆特征/调参。固化的反过拟合 + effective-breadth + DSR/PBO harness 现已覆盖价量与非价量两类源,
+是项目主要研究成果。硬约束全不变(live 关闭、不 forward paper、未碰 `validation_v1`)。
+
+### L3 S1 kill-test:稳定币供给增速 → BTC 周线择时(证伪)
+
+变更：
+
+```text
+src/qount/l3_information_edge.py（新增 evaluate_l3a_stablecoin_timing + L3StablecoinTimingService）
+src/qount/main.py（新增 research-only 命令 l3-stablecoin-timing-scan）
+tests/test_strategy_optimization.py（+3 单测：close 归一化 / 强正 IC 还原 / 每 config 计 trial）
+```
+
+按 `l3-information-edge-plan.md` §4/§5 的 S1 做 L3a 决定生死的一刀:稳定币供给 log-增速
+(lookback 4/8/13 周)在 t 是否横向时序预测 BTC t→t+h(h=1..4 周)的 forward return。复用 §7
+已落地的反过拟合 harness——Spearman rank-IC、`compute_directional_deflated_sharpe`(DSR)、
+`compute_directional_pbo`(PBO/CSCV)、`_sharpe`,周线 cadence 标 `7d`(annualization 365/7)。
+12 个 (L×h) config **全部计入 DSR trial**(多 horizon = 多 trial)。BTC 价格走期货 fapi
+(现货 api.binance.com 在生产主机被墙;永续周线 close 等价、且与全研究线一致)。research-only,
+无仓位、不碰 live。门控:breadth-adjusted 要求 IC ≈0.083(§2,IR=1 / ~150 周 √BR≈12)。
+
+验证：
+
+```text
+local unittest=257 OK（254 → +3）
+sync-to-wsl.sh --install=OK
+WSL unittest=257 OK
+```
+
+WSL 实跑两窗口(供给/价格均缓存命中,价格 2260 日度 bar)：
+
+```text
+artifact_full=/home/alyaloale/Code/qount/state/research_runs/20260606T051647Z-l3-stablecoin-timing-scan/
+artifact_sub =/home/alyaloale/Code/qount/state/research_runs/20260606T051746Z-l3-stablecoin-timing-scan/
+窗口 2020-07..2026-06 (309 周): best |rank_ic|=0.0543(L8w/h4w,正) < gate 0.083 → ic_pass=False
+  所有 cell net 正,但退化:供给增速几乎恒正 → sign≈+1 → 策略≈恒做多 BTC,net 正是 beta 非择时;
+  DSR=0.957 / PBO=0.282 因 12 config 高度雷同(都 long BTC)而虚高,不具判别力。decision=falsified_l3a
+窗口 2022-06..2026-06 (209 周): best |rank_ic|=0.1537(L13w/h4w)过门控,但 **符号为负**
+  (-0.154,与"供给=干火药→涨"先验相反)、top3 全负;DSR=0.666(<0.95)、PBO=0.643(>0.5,高过拟合)
+  → decision=falsified_l3a
+```
+
+读法：**L3a 证伪**。决定性指标是 rank-IC(Spearman,对单调变换不变,故 z-score 救不了——只有
+真正不同的信号如加速度/跨稳定币背离才算新信号,属 S2,而 S2 仅在 S1 正时才开)。两窗口给出
+互补证伪:(a) 全窗口 |IC| 0.054 低于门控,净正只是退化恒做多的 BTC beta;(b) 子窗口 |IC| 虽过
+门控却**符号翻转**且 PBO 0.64(过拟合)。**符号在窗口间翻转 = 无稳定、符号一致、样本外的预测关系**
+——稳定币供给与 BTC 同骑一条流动性周期(内生共动,非外生预测),lead/lag 随 regime 翻号。这与 §7
+价量横截面 IC ~0.05 天花板同源。下一步按 §5/§8:测 L3b(链上横截面,但相关天花板仍在、且共动顾虑
+同样适用),或若经济动机耗尽则 L3 也按 §7 退出。硬约束全不变,未碰 `validation_v1`。
+
+### L3 S0.1 数据接入层:DefiLlama 稳定币供给(fetch / 缓存 / as-of 归一化)
+
+变更：
+
+```text
+src/qount/l3_information_edge.py（新模块：fetch + state 缓存 + as-of 无前视归一化）
+src/qount/main.py（新增 research-only 命令 l3-stablecoin-fetch）
+tests/test_strategy_optimization.py（新增 L3InformationEdgeTests，5 个单测）
+```
+
+按 `l3-information-edge-plan.md` §5 的 S0.1（数据接入层，无策略行为变化）落地 L3 第一线的
+数据骨架：拉 DefiLlama 聚合稳定币总供给(`totalCirculatingUSD.peggedUSD`)、缓存到 `state/`
+供离线复跑、归一化成排序去重的日度序列、以严格 as-of(无前视)join 到周线锚点。只用 stdlib
+`urllib`(走 settings 代理),不引入新依赖;research-only,live / `run-once` 不 import 本模块、
+行为不变。**只做数据层,不算 IC、不下注**——IC kill-test 是 S1。
+
+单测(5)：归一化排序/去重/跳过坏行 + 秒→毫秒;as-of join 取 ≤ 锚点最近一笔且不泄漏未来、
+锚点前返回 None、末点向后 carry;weekly_anchors + resample 对齐;缓存命中短路 fetcher
+(网络绝不触发);fetch 写缓存后二次命中 + service summary 字段。
+
+验证：
+
+```text
+local unittest=254 OK（249 旧 + 5 新）
+sync-to-wsl.sh --install=OK
+WSL unittest=254 OK
+```
+
+WSL 端到端真实拉取(DefiLlama 实网 + 缓存命中两条路径都验证)：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260606T045947Z-l3-stablecoin-fetch/l3_stablecoin_fetch.json
+cache=state/l3_cache/defillama_stablecoin_supply.json
+fetched_from=network（首跑） / cache（二跑，未走网络）
+raw_point_count=3112  normalized_point_count=3112（零丢点）
+first_obs=2017-11-29  last_obs=2026-06-06  latest_supply_usd=314,644,712,883
+window 2022-06-01..2026-06-01: weekly_anchor_count=209 weekly_covered=209（全覆盖）
+  weekly_log_growth_mean=+0.00336（约 0.34%/周供给增速）
+full history 2017-11-29..2026-06-01: weekly_anchor_count=444 weekly_covered=444
+```
+
+读法：数据层成立。周线覆盖无缺口,3112 日度观测归一化零丢失,as-of resample 209/209 与
+444/444 全覆盖。可用周线广度比计划估的 150–200 更宽——近 4 年窗口 209 周(√209≈14),全历史
+444 周(2017–2020 是不同 regime,慎用)。下一步 **S1 kill-test**:稳定币供给增速对 BTC 周线
+forward-return 的时序 rank-IC + DSR/PBO,门控 breadth-adjusted 要求 IC ≈0.083。硬约束全不变,
+未碰 `validation_v1`。
+
+### 重启方向设计:L3 换信息源(链上/流/叙事 + AI)
+
+§7 止盈后,按 §11.8「唯一合法重启触发=结构性新输入」做重设计。先用基本定律把可盈利空间
+框死(必须结构性换掉 BR/IC/游戏之一),给出五条杠杆并权衡:
+
+```text
+L1 跨资产趋势(低相关 universe 抬 BR)   —— 教科书正解,但需新交易所/经纪+跨资产基建
+L2 事件驱动(广度来自独立事件)          —— 绕开相关天花板,慢版事件 HFT 不玩
+L3 换信息源(非价量慢数据+AI 攻 IC)     —— 最贴操作者优势(慢+AI+耐心),kill-test 廉价  ★选中
+L4 跨所 funding/基差套利(不预测方向)   —— 多场资本+执行受限(>100% maker fill)
+L5 换预测目标(预测波动率而非方向)      —— 需期权场变现
+```
+
+所有者选 **L3**。新建计划文档 `docs/l3-information-edge-plan.md`:把信息源从价量换成非价量
+慢数据(稳定币供给/链上流/TVL/衍生品持仓)、horizon 抬到日/周线、AI 从最终 gate 挪到慢特征/
+regime 标注层(§P5 本来方向)。关键诚实点:**L3 不自动修广度**,故分两子路——
+**L3a 市场择时**(广度来自时间 ~150 周、要求 IC ≈0.083、单一最液体标的执行最干净)优先;
+**L3b 横截面**(相关天花板仍在,要求 IC ~0.15,需信号维度 effective-breadth>2.5 才成立)次之。
+第一刀 kill-test:DefiLlama 稳定币供给对 BTC 周线 forward-return 的时序 rank-IC + DSR/PBO,
+门控 breadth-adjusted 要求 IC ≈0.083。周线样本少(~150–200 obs)是头号过拟合风险,对策是
+经济预设假设(非网格搜索)+ 复用 §7 已落地的 DSR/PBO/purged-CV/effective-breadth harness。
+仍 research-only、硬约束全不变;两子路都证伪则 L3 也按 §7 退出。**尚未开工。**
+
 ### 架构级根因:横截面广度天花板 ≈ 1.6,§10.2 破局数字被经验证伪
 
 无新代码 / 无新扫描——直接读 funding artifact 已报的 `effective_breadth`(标准公式
