@@ -91,8 +91,89 @@
   `validation_v1` once-only 日期。**关闭该候选的 S2 晋级路径**;研究转向 §10 换频段 / 换特征源
   (微结构 / funding / 时序基础模型特征),或按 §7 接受研究价值、停止追盈利。详见
   `profit-engineering-plan.md §11.7`。硬边界不变(live 关闭、不 forward paper、不放宽 broad gate)。
+- 2026-06-06 §10 换特征源第一刀 kill-test:**funding 作横截面预测特征 = 证伪**。新增
+  `xs_funding` / `xs_funding_rev`(funding as-of join 无前视当信号,复用 IC/DSR/PBO harness)。
+  top12 120 天 discovery post-cost:rank-IC 全 ≤ `0.030`(< 价量动量 `0.052` < 要求 `0.06`);
+  唯一正 cell `1d xs_funding_rev h6` 的 rank-IC ≈ `0.005` ≈ 0(噪声/overlap);DSR ≈ `0.25`
+  (best per-period sharpe `0.094` < 噪声期望最大 `0.156`);PBO ≈ 0.49–0.55;4h/8h 全被成本打负。
+  继 CARRY 现金流后,funding 第二种用法也证伪,最便宜新源耗尽,压向 §7 诚实止盈。只跑 discovery。
 
 ## 2026-06-06
+
+### 架构级根因:横截面广度天花板 ≈ 1.6,§10.2 破局数字被经验证伪
+
+无新代码 / 无新扫描——直接读 funding artifact 已报的 `effective_breadth`(标准公式
+`N/(1+(N-1)·r̄)`),查 §10.2「日频横截面 ~10 币 → BR~300 → 要求 IC 0.06」的前提是否成立。
+
+```text
+top12 平均绝对两两相关 r̄ ≈ 0.628（4h 0.620 / 8h 0.635 / 1d 0.628）
+有效广度: N=12 → 1.52 ; N=20 → 1.55 ; N=30 → 1.56 ; N=100 → 1.58 ; N=1e6 → 1.59
+渐近天花板 1/r̄ ≈ 1.59  → 扩币在数学上救不了（N→∞ 仍 < 1.6）
+要求 IC(Grinold IR=IC·√BR, IR=1):
+  §10.2 假设 ~10 币  BR≈300  √BR=17.3  IC_req=0.058
+  真实   ~1.5 币    BR≈ 46  √BR= 6.8  IC_req=0.148
+观测最强横截面 IC: xs_mom 0.052 / xs_funding 0.030 → 离要求 ~3x 缺口
+```
+
+结论：加密 majors 同涨同跌,横截面把"12 币"折成 ~1.6 个有效独立资产,§10 押注的广度杠杆
+**结构性不存在**;要求 IC 被打回 ~0.15 的"5m 不可达"区间——正是 §10 想逃离的天花板。这是
+**架构级 §7 证据**:xs_mom / ts_mom / xs_funding 全部过不了线是同一个根因(广度,不是特征),
+换特征源 / 扩币都改变不了。
+
+**2026-06-06 项目级决策(所有者确认):执行 §7 诚实止盈,停止追盈利。** latency-insensitive
+可触及路径(横截面/日频时序/CARRY)均穷尽且证伪,广度杠杆结构性不存在 → 满足 §7 全局终止条件。
+固化整套反过拟合 harness 作为研究成果,停止在择时盈利上继续投入;重启触发条件应是结构性新输入
+(真正低相关 universe / 新资产类别 / 可执行低延迟微结构通道),而非继续在已穷尽空间搜索。
+硬约束全不变(live 关闭、不 forward paper、不放宽 broad gate、validation_v1 once-only)。
+详见 `profit-engineering-plan.md §11.8`。
+
+### §10 换特征源 kill-test:funding 作预测特征(证伪)
+
+变更：
+
+```text
+src/qount/strategy_selection.py（新增 xs_funding / xs_funding_rev 族 + 共享聚合重构）
+src/qount/main.py（--families 增 xs_funding/xs_funding_rev、新增 --carry-tilt-signal）
+tests/test_strategy_optimization.py（as-of 无前视 / 跳过缺 funding / rank-IC 还原 / basis 字段）
+```
+
+按 §10 / §11.7 走"换特征源"的第一刀:把 funding 当**横截面预测特征**(问"funding 在 t
+是否横截面预测 t→t+h 的 forward return"),区别于已被 basis-tail 证伪的 CARRY 现金流用法。
+实现:`_asof_value` 严格 as-of join(取 fundingTime ≤ bar 的最近一笔,无前视)→
+`build_carry_tilt_samples`(signal=funding_rate,`xs_funding_rev` 取负)→
+`evaluate_cross_sectional_carry_tilt` 复用与价量族**同一套**横截面 IC / 多空 / 周期收益聚合
+(抽出 `_aggregate_directional_cross_sections`),故 DSR/PBO 对 funding 与价信号一视同仁。
+carry-tilt cell 独立成自己的 trial set 算 DSR/PBO,不与价量网格混合稀释多重检验惩罚。
+research-only,不改 PnL / live;默认 `--families` 不含新族,opt-in。
+
+验证：
+
+```text
+local unittest=249 OK（245 旧 + 4 新）
+sync-to-wsl.sh --install=OK
+WSL unittest=249 OK
+```
+
+读数（top12 `BTC/ETH/ZEC/SOL/HYPE/WLD/XRP/BNB/NEAR/DOGE/ADA/SUI`、120 天 discovery、
+post-cost、{4h,8h,1d}×{xs_funding,xs_funding_rev}×holding{1,3,6}=18 cell）：
+
+```text
+artifact=/home/alyaloale/Code/qount/state/research_runs/20260605T231910Z-strategy-selection-scan-qount-s1-carry-tilt-funding-top12real-120d-20260606/qount-s1-carry-tilt-funding-top12real-120d-20260606.json
+rank_ic: 全 |IC| ≤ 0.030（最强 4h/h3 xs_funding +0.030）
+best_cell: 1d xs_funding_rev h6  sum=+1.0530  sharpe=+1.7894  但 rank_ic≈+0.0052≈0
+           （相邻 holding 不一致 h1 负 / h3 +0.50 / h6 +1.05 → 1d 119 重叠横截面噪声）
+carry_tilt_DSR=0.2495（best per-period sharpe 0.0937 < 噪声期望最大 0.1559）
+carry_tilt_PBO: 4h=0.246 / 8h=0.552 / 1d=0.488（8h/1d ≈ 抛硬币）
+4h/8h 全部 post-cost 负（高换手 × 微弱 edge → 成本主导）
+```
+
+另跑 4 币薄广度交叉验证(`...funding-top12-120d-20260606`，`multi-symbol` profile 实际仅
+4 币 SOL/XRP/BTC/ETH):rank-IC 更弱、DSR ≈ `0.068`、PBO 顶 `0.687`,结论一致。
+
+结论：funding-as-feature 的横截面预测内容比价量动量更弱、DSR/PBO 不过关、post-cost 无稳健
+正 cell。继 CARRY 现金流(basis-tail 证伪)之后,funding 这一新信息源**两种用法均证伪**;
+最便宜的新源耗尽。剩余 §11.7 named 源(微结构无廉价历史盘口、时序基础模型需重 ML 栈/libomp)
+都不便宜。强化 §7 诚实止盈分支。硬约束全不变,未碰 `validation_v1` once-only。
 
 ### `4h xs_mom lb24/h6` 候选 §7 诚实退出
 

@@ -28,6 +28,7 @@ from .strategy_selection import DEFAULT_CARRY_BASIS_SOURCE
 from .strategy_selection import DEFAULT_CARRY_CAPITAL_MODEL
 from .strategy_selection import DEFAULT_CARRY_EXECUTION_COST_MODEL
 from .strategy_selection import DEFAULT_STRATEGY_SCAN_FAMILIES
+from .strategy_selection import STRATEGY_SCAN_FAMILY_CHOICES
 from .strategy_selection import DEFAULT_STRATEGY_SCAN_FREQUENCIES
 from .strategy_selection import DEFAULT_DIRECTIONAL_BARRIER_VOL_LOOKBACK_BARS
 from .strategy_selection import DEFAULT_DIRECTIONAL_EVALUATION_MODE
@@ -280,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
     strategy_scan = subparsers.add_parser("strategy-selection-scan", help="Research-only S1' frequency x strategy-family scan over discovery data.")
     strategy_scan.add_argument("--symbols", nargs="+", default=None, help="Optional symbol filter, for example SOL/USDT XRP/USDT BTC/USDT ETH/USDT.")
     strategy_scan.add_argument("--frequencies", nargs="+", default=list(DEFAULT_STRATEGY_SCAN_FREQUENCIES), help="Timeframes to scan, default: 5m 1h 4h 1d.")
-    strategy_scan.add_argument("--families", nargs="+", choices=DEFAULT_STRATEGY_SCAN_FAMILIES, default=list(DEFAULT_STRATEGY_SCAN_FAMILIES), help="Strategy families to scan.")
+    strategy_scan.add_argument("--families", nargs="+", choices=STRATEGY_SCAN_FAMILY_CHOICES, default=list(DEFAULT_STRATEGY_SCAN_FAMILIES), help="Strategy families to scan. xs_funding / xs_funding_rev test funding-as-feature.")
     strategy_scan.add_argument("--start", default=None, help="Optional discovery scan start time. Defaults to end minus --lookback-days.")
     strategy_scan.add_argument("--end", default=DEFAULT_DISCOVERY_END_UTC.isoformat(), help="Discovery scan end time; default freezes at validation_v1 boundary.")
     strategy_scan.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
@@ -424,6 +425,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Research-only post-only diagnostic taker order cost; used only to compute required maker fill rate.",
+    )
+    strategy_scan.add_argument(
+        "--carry-tilt-signal",
+        choices=["funding_rate", "basis_pct"],
+        default="funding_rate",
+        help="Field ranked cross-sectionally by the xs_funding / xs_funding_rev families.",
     )
     strategy_scan.add_argument("--output-path", default=None, help="Optional output path for the scan JSON.")
     _add_research_profile_arg(strategy_scan)
@@ -720,6 +727,7 @@ def main() -> None:
             carry_basis_entry_max_abs_pct=args.carry_basis_entry_max_abs_pct,
             carry_maker_order_cost_pct=args.carry_maker_order_cost_pct,
             carry_taker_order_cost_pct=args.carry_taker_order_cost_pct,
+            carry_tilt_signal_field=args.carry_tilt_signal,
             holdout_role=args.holdout_role,
         )
         result = write_research_json_artifact(

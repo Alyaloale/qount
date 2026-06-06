@@ -71,8 +71,10 @@ from qount.strategy_selection import BarrierVolConfig
 from qount.strategy_selection import compute_directional_deflated_sharpe
 from qount.strategy_selection import compute_directional_pbo
 from qount.strategy_selection import build_directional_samples
+from qount.strategy_selection import build_carry_tilt_samples
 from qount.strategy_selection import _recent_return_std
 from qount.strategy_selection import evaluate_carry_family
+from qount.strategy_selection import evaluate_cross_sectional_carry_tilt
 from qount.strategy_selection import evaluate_cross_sectional_family
 from qount.strategy_selection import evaluate_cross_sectional_portfolio_replay
 from qount.strategy_selection import enrich_funding_with_premium_index_basis
@@ -1460,6 +1462,135 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertEqual(filtered["directional_regime_gated_cross_sections"], 1)
         self.assertEqual(filtered["turnover_events"], 2)
         self.assertAlmostEqual(filtered["directional_regime_min_dispersion_pct"], 0.04)
+
+    def test_carry_tilt_signal_uses_asof_funding_without_lookahead(self) -> None:
+        # The decision bar at ts=3_600_000 may only see funding settled at or
+        # before it (rate 0.005), never the future settlement (rate 0.090).
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [3_600_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [7_200_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+            ]
+        }
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [
+                {"timestamp_ms": 1_000_000, "funding_rate": 0.005, "basis_pct": 0.001},
+                {"timestamp_ms": 5_000_000, "funding_rate": 0.090, "basis_pct": 0.050},
+            ]
+        }
+        samples = build_carry_tilt_samples(
+            rows_by_symbol,
+            funding_by_symbol,
+            family="xs_funding",
+            holding_bars=1,
+            start_ms=3_600_000,
+            end_ms=3_600_000,
+        )
+        self.assertEqual(len(samples), 1)
+        self.assertAlmostEqual(samples[0].signal, 0.005)
+        self.assertAlmostEqual(samples[0].future_return_pct, 0.10)
+
+        rev_samples = build_carry_tilt_samples(
+            rows_by_symbol,
+            funding_by_symbol,
+            family="xs_funding_rev",
+            holding_bars=1,
+            start_ms=3_600_000,
+            end_ms=3_600_000,
+        )
+        self.assertAlmostEqual(rev_samples[0].signal, -0.005)
+
+    def test_carry_tilt_skips_symbols_without_funding_history(self) -> None:
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+            ],
+            "BBB/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 102.0, 102.0, 102.0, 102.0, 1000.0],
+            ],
+        }
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [{"timestamp_ms": 0, "funding_rate": 0.004, "basis_pct": 0.001}],
+        }
+        samples = build_carry_tilt_samples(
+            rows_by_symbol,
+            funding_by_symbol,
+            family="xs_funding",
+            holding_bars=1,
+            start_ms=0,
+            end_ms=0,
+        )
+        self.assertEqual({sample.symbol for sample in samples}, {"AAA/USDT:USDT"})
+
+    def test_carry_tilt_rank_ic_recovers_constructed_funding_edge(self) -> None:
+        # Cross-section where funding rank == forward-return rank: positive
+        # funding predicts the winner. xs_funding should score rank_ic ~ +1 and
+        # the reversal family the mirror -1.
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [3_600_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [7_200_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+            ],
+            "BBB/USDT:USDT": [
+                [3_600_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [7_200_000, 102.0, 102.0, 102.0, 102.0, 1000.0],
+            ],
+            "CCC/USDT:USDT": [
+                [3_600_000, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [7_200_000, 95.0, 95.0, 95.0, 95.0, 1000.0],
+            ],
+        }
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [{"timestamp_ms": 0, "funding_rate": 0.010, "basis_pct": 0.01}],
+            "BBB/USDT:USDT": [{"timestamp_ms": 0, "funding_rate": 0.000, "basis_pct": 0.00}],
+            "CCC/USDT:USDT": [{"timestamp_ms": 0, "funding_rate": -0.010, "basis_pct": -0.01}],
+        }
+        common = dict(
+            frequency="1h",
+            holding_bars=1,
+            start_ms=3_600_000,
+            end_ms=3_600_000,
+            min_cross_section_symbols=3,
+            top_fraction=0.34,
+            cost_per_directional_bet_pct=0.0,
+        )
+
+        result = evaluate_cross_sectional_carry_tilt(
+            rows_by_symbol, funding_by_symbol, family="xs_funding", **common
+        )
+        self.assertEqual(result["family"], "xs_funding")
+        self.assertEqual(result["cross_section_count"], 1)
+        self.assertGreater(result["rank_ic_mean"], 0.9)
+        self.assertGreater(result["portfolio_sum_return_pct"], 0.0)
+
+        rev = evaluate_cross_sectional_carry_tilt(
+            rows_by_symbol, funding_by_symbol, family="xs_funding_rev", **common
+        )
+        self.assertLess(rev["rank_ic_mean"], -0.9)
+
+    def test_carry_tilt_basis_signal_field_is_selectable(self) -> None:
+        rows_by_symbol = {
+            "AAA/USDT:USDT": [
+                [0, 100.0, 100.0, 100.0, 100.0, 1000.0],
+                [60_000, 110.0, 110.0, 110.0, 110.0, 1000.0],
+            ]
+        }
+        funding_by_symbol = {
+            "AAA/USDT:USDT": [{"timestamp_ms": 0, "funding_rate": 0.003, "basis_pct": 0.012}],
+        }
+        samples = build_carry_tilt_samples(
+            rows_by_symbol,
+            funding_by_symbol,
+            family="xs_funding",
+            holding_bars=1,
+            start_ms=0,
+            end_ms=0,
+            signal_field="basis_pct",
+        )
+        self.assertEqual(len(samples), 1)
+        self.assertAlmostEqual(samples[0].signal, 0.012)
 
     def test_strategy_selection_fetch_ohlcv_keeps_ccxt_close_column(self) -> None:
         exchange = FakeExchange(

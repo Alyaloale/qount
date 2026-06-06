@@ -19,6 +19,9 @@ from .trade_policy import timeframe_to_ms
 STRATEGY_SELECTION_VERSION = "strategy_selection_scan_v1"
 DEFAULT_STRATEGY_SCAN_FREQUENCIES = ("5m", "1h", "4h", "1d")
 DEFAULT_STRATEGY_SCAN_FAMILIES = ("xs_mom", "xs_rev", "ts_mom", "carry")
+# Opt-in funding-as-feature families (kept out of the default so existing scans
+# are unchanged; enabled explicitly via --families xs_funding xs_funding_rev).
+STRATEGY_SCAN_FAMILY_CHOICES = DEFAULT_STRATEGY_SCAN_FAMILIES + ("xs_funding", "xs_funding_rev")
 DEFAULT_CARRY_BASIS_SOURCE = "funding_history"
 DEFAULT_CARRY_EXECUTION_COST_MODEL = "directional_round_trip"
 DEFAULT_CARRY_CAPITAL_MODEL = "perp_notional"
@@ -420,6 +423,82 @@ def build_directional_samples(
     return samples
 
 
+def _asof_value(sorted_funding_rows: list[dict[str, Any]], timestamp_ms: int, field: str) -> float | None:
+    """As-of join: value of ``field`` from the most recent funding row settled at
+    or before ``timestamp_ms``.
+
+    ``sorted_funding_rows`` must be ascending by ``timestamp_ms``. Strictly no
+    look-ahead — funding settled after the decision bar is never visible. Returns
+    None when no settlement precedes the bar or the field is missing.
+    """
+
+    chosen: float | None = None
+    for row in sorted_funding_rows:
+        row_ts = row.get("timestamp_ms")
+        if row_ts is None or int(row_ts) > timestamp_ms:
+            break
+        value = row.get(field)
+        if value is not None:
+            chosen = _safe_float(value)
+    return chosen
+
+
+def build_carry_tilt_samples(
+    rows_by_symbol: dict[str, list[list[float]]],
+    funding_by_symbol: dict[str, list[dict[str, Any]]],
+    *,
+    family: str,
+    holding_bars: int,
+    start_ms: int,
+    end_ms: int,
+    signal_field: str = "funding_rate",
+) -> list[StrategySample]:
+    """Cross-sectional samples whose signal is the as-of funding rate (or basis).
+
+    Tests whether funding / basis carries cross-sectional predictive content for
+    forward close-to-close returns — funding used as a *feature*, not as the
+    structural cash-flow harvested by ``evaluate_carry_family``. ``xs_funding``
+    longs high funding; ``xs_funding_rev`` negates the signal (carry-reversal).
+    Symbols without any settled funding before the decision bar are skipped.
+    """
+
+    samples: list[StrategySample] = []
+    for symbol, rows in rows_by_symbol.items():
+        sorted_rows = sorted(rows, key=lambda row: int(row[0]))
+        funding_rows = sorted(
+            funding_by_symbol.get(symbol, []), key=lambda item: int(item["timestamp_ms"])
+        )
+        if not funding_rows:
+            continue
+        for index in range(0, len(sorted_rows) - max(holding_bars, 1)):
+            current = sorted_rows[index]
+            timestamp_ms = int(current[0])
+            if timestamp_ms < start_ms or timestamp_ms > end_ms:
+                continue
+            current_close = _safe_float(current[4])
+            future_close = _safe_float(sorted_rows[index + holding_bars][4])
+            if current_close <= 0.0 or future_close <= 0.0:
+                continue
+            raw_signal = _asof_value(funding_rows, timestamp_ms, signal_field)
+            if raw_signal is None:
+                continue
+            future_return = (future_close / current_close) - 1.0
+            signal = -raw_signal if family == "xs_funding_rev" else raw_signal
+            samples.append(
+                StrategySample(
+                    timestamp_ms=timestamp_ms,
+                    symbol=symbol,
+                    signal=signal,
+                    future_return_pct=future_return,
+                    long_return_pct=future_return,
+                    short_return_pct=-future_return,
+                    long_exit_reason="time",
+                    short_exit_reason="time",
+                )
+            )
+    return samples
+
+
 def _recent_return_std(rows: list[list[float]], index: int, lookback: int) -> float | None:
     """Sample std of close-to-close returns over the lookback bars ending at ``index``.
 
@@ -708,37 +787,23 @@ def _attach_directional_purged_cv(
     }
 
 
-def evaluate_cross_sectional_family(
-    rows_by_symbol: dict[str, list[list[float]]],
+def _aggregate_directional_cross_sections(
+    samples: list[StrategySample],
     *,
-    family: str,
     frequency: str,
-    signal_lookback_bars: int,
     holding_bars: int,
-    start_ms: int,
-    end_ms: int,
     min_cross_section_symbols: int,
     top_fraction: float,
     cost_per_directional_bet_pct: float,
-    overlap_mode: str = DEFAULT_DIRECTIONAL_OVERLAP_MODE,
-    exit_mode: str = DEFAULT_DIRECTIONAL_EXIT_MODE,
-    take_profit_pct: float = 0.0,
-    stop_loss_pct: float = 0.0,
-    barrier_vol: BarrierVolConfig | None = None,
-    regime_min_dispersion_pct: float = 0.0,
+    overlap_mode: str,
+    regime_min_dispersion_pct: float,
 ) -> dict[str, object]:
-    samples = build_directional_samples(
-        rows_by_symbol,
-        family=family,
-        signal_lookback_bars=signal_lookback_bars,
-        holding_bars=holding_bars,
-        start_ms=start_ms,
-        end_ms=end_ms,
-        exit_mode=exit_mode,
-        take_profit_pct=take_profit_pct,
-        stop_loss_pct=stop_loss_pct,
-        barrier_vol=barrier_vol,
-    )
+    """Shared per-timestamp cross-sectional aggregation: rank-IC, long/short net
+    returns, period-return series and turnover. Used by both the price-signal
+    families and the funding-signal carry-tilt family so the IC / DSR / PBO read
+    is computed identically regardless of where the signal came from.
+    """
+
     by_timestamp: dict[int, list[StrategySample]] = {}
     for sample in samples:
         by_timestamp.setdefault(sample.timestamp_ms, []).append(sample)
@@ -785,19 +850,8 @@ def evaluate_cross_sectional_family(
         turnover_events += 2 * side_count
 
     return {
-        "frequency": frequency,
-        "family": family,
-        "signal_lookback_bars": signal_lookback_bars,
-        "holding_bars": holding_bars,
-        "directional_overlap_mode": overlap_mode,
-        "directional_exit_mode": exit_mode,
-        "directional_take_profit_pct": take_profit_pct,
-        "directional_stop_loss_pct": stop_loss_pct,
-        **_barrier_vol_fields(barrier_vol),
-        "directional_regime_min_dispersion_pct": regime_min_dispersion_pct,
         "directional_regime_gated_cross_sections": regime_gated_cross_sections,
         "period_returns_by_timestamp": period_returns_by_timestamp,
-        "sample_count": len(samples),
         "cross_section_count": len(portfolio_returns),
         "rank_ic_mean": None if not ic_values else _mean(ic_values),
         "rank_ic_t_stat": _t_stat(ic_values),
@@ -808,6 +862,119 @@ def evaluate_cross_sectional_family(
         "portfolio_period_count": len(portfolio_returns),
         "turnover_events": turnover_events,
         "directional_exit_reason_counts": exit_reason_counts,
+    }
+
+
+def evaluate_cross_sectional_family(
+    rows_by_symbol: dict[str, list[list[float]]],
+    *,
+    family: str,
+    frequency: str,
+    signal_lookback_bars: int,
+    holding_bars: int,
+    start_ms: int,
+    end_ms: int,
+    min_cross_section_symbols: int,
+    top_fraction: float,
+    cost_per_directional_bet_pct: float,
+    overlap_mode: str = DEFAULT_DIRECTIONAL_OVERLAP_MODE,
+    exit_mode: str = DEFAULT_DIRECTIONAL_EXIT_MODE,
+    take_profit_pct: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    barrier_vol: BarrierVolConfig | None = None,
+    regime_min_dispersion_pct: float = 0.0,
+) -> dict[str, object]:
+    samples = build_directional_samples(
+        rows_by_symbol,
+        family=family,
+        signal_lookback_bars=signal_lookback_bars,
+        holding_bars=holding_bars,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        exit_mode=exit_mode,
+        take_profit_pct=take_profit_pct,
+        stop_loss_pct=stop_loss_pct,
+        barrier_vol=barrier_vol,
+    )
+    aggregate = _aggregate_directional_cross_sections(
+        samples,
+        frequency=frequency,
+        holding_bars=holding_bars,
+        min_cross_section_symbols=min_cross_section_symbols,
+        top_fraction=top_fraction,
+        cost_per_directional_bet_pct=cost_per_directional_bet_pct,
+        overlap_mode=overlap_mode,
+        regime_min_dispersion_pct=regime_min_dispersion_pct,
+    )
+    return {
+        "frequency": frequency,
+        "family": family,
+        "signal_lookback_bars": signal_lookback_bars,
+        "holding_bars": holding_bars,
+        "directional_overlap_mode": overlap_mode,
+        "directional_exit_mode": exit_mode,
+        "directional_take_profit_pct": take_profit_pct,
+        "directional_stop_loss_pct": stop_loss_pct,
+        **_barrier_vol_fields(barrier_vol),
+        "directional_regime_min_dispersion_pct": regime_min_dispersion_pct,
+        **aggregate,
+        "sample_count": len(samples),
+        "cost_per_directional_bet_pct": cost_per_directional_bet_pct,
+        "effective_breadth": _effective_breadth(rows_by_symbol),
+    }
+
+
+def evaluate_cross_sectional_carry_tilt(
+    rows_by_symbol: dict[str, list[list[float]]],
+    funding_by_symbol: dict[str, list[dict[str, Any]]],
+    *,
+    family: str,
+    frequency: str,
+    holding_bars: int,
+    start_ms: int,
+    end_ms: int,
+    min_cross_section_symbols: int,
+    top_fraction: float,
+    cost_per_directional_bet_pct: float,
+    overlap_mode: str = DEFAULT_DIRECTIONAL_OVERLAP_MODE,
+    regime_min_dispersion_pct: float = 0.0,
+    signal_field: str = "funding_rate",
+) -> dict[str, object]:
+    """S1' new-source kill-test: rank funding (or basis) cross-sectionally against
+    forward close-to-close returns. Reuses the shared IC / portfolio aggregation so
+    DSR / PBO downstream treat funding exactly like a price signal.
+    """
+
+    samples = build_carry_tilt_samples(
+        rows_by_symbol,
+        funding_by_symbol,
+        family=family,
+        holding_bars=holding_bars,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        signal_field=signal_field,
+    )
+    aggregate = _aggregate_directional_cross_sections(
+        samples,
+        frequency=frequency,
+        holding_bars=holding_bars,
+        min_cross_section_symbols=min_cross_section_symbols,
+        top_fraction=top_fraction,
+        cost_per_directional_bet_pct=cost_per_directional_bet_pct,
+        overlap_mode=overlap_mode,
+        regime_min_dispersion_pct=regime_min_dispersion_pct,
+    )
+    return {
+        "frequency": frequency,
+        "family": family,
+        "carry_tilt_signal_field": signal_field,
+        "signal_lookback_bars": 0,
+        "holding_bars": holding_bars,
+        "directional_overlap_mode": overlap_mode,
+        "directional_exit_mode": "time",
+        "directional_regime_min_dispersion_pct": regime_min_dispersion_pct,
+        **aggregate,
+        "sample_count": len(samples),
         "cost_per_directional_bet_pct": cost_per_directional_bet_pct,
         "effective_breadth": _effective_breadth(rows_by_symbol),
     }
@@ -1709,6 +1876,7 @@ class StrategySelectionScanService:
         carry_basis_entry_max_abs_pct: float | None = None,
         carry_maker_order_cost_pct: float | None = None,
         carry_taker_order_cost_pct: float | None = None,
+        carry_tilt_signal_field: str = "funding_rate",
         holdout_role: str = "discovery",
     ) -> dict[str, object]:
         exchange = self.public_exchange or build_exchange(self.settings, private=False)
@@ -1734,8 +1902,26 @@ class StrategySelectionScanService:
         holding_values = [int(value) for value in _grid_values(holding_bars, holding_grid_bars, default=1)]
 
         directional_families = [family for family in families if family in {"xs_mom", "xs_rev", "ts_mom"}]
+        carry_tilt_families = [family for family in families if family in {"xs_funding", "xs_funding_rev"}]
+        carry_tilt_funding_by_symbol: dict[str, list[dict[str, Any]]] = {}
+        if carry_tilt_families:
+            # As-of join needs a settlement before the first bar; fetch a small
+            # funding buffer ahead of the holdout window so leading bars are usable.
+            funding_lookback_ms = timeframe_to_ms("8h") * 3
+            carry_tilt_funding_by_symbol = {
+                symbol: self._fetch_funding_history(
+                    exchange=exchange,
+                    symbol=symbol,
+                    start_ms=start_ms - funding_lookback_ms,
+                    end_ms=end_ms,
+                )
+                for symbol in resolved_symbols
+            }
+            fetch_summary["carry_tilt_funding"] = {
+                symbol: len(rows) for symbol, rows in carry_tilt_funding_by_symbol.items()
+            }
         for frequency in frequencies:
-            if not directional_families:
+            if not directional_families and not carry_tilt_families:
                 continue
             timeframe_ms = timeframe_to_ms(frequency)
             fetch_start_ms = start_ms - (max(max(signal_lookback_values), 1) * timeframe_ms)
@@ -1844,6 +2030,25 @@ class StrategySelectionScanService:
                                 embargo_bars=directional_embargo_bars,
                             )
                             cells.append(cell)
+            for directional_holding in holding_values:
+                for family in carry_tilt_families:
+                    cells.append(
+                        evaluate_cross_sectional_carry_tilt(
+                            rows_by_symbol,
+                            carry_tilt_funding_by_symbol,
+                            family=family,
+                            frequency=frequency,
+                            holding_bars=directional_holding,
+                            start_ms=start_ms,
+                            end_ms=end_ms,
+                            min_cross_section_symbols=min_cross_section_symbols,
+                            top_fraction=top_fraction,
+                            cost_per_directional_bet_pct=cost_per_directional_bet_pct,
+                            overlap_mode=directional_overlap_mode,
+                            regime_min_dispersion_pct=directional_regime_dispersion,
+                            signal_field=carry_tilt_signal_field,
+                        )
+                    )
 
         if "carry" in families:
             funding_by_symbol = {
@@ -1918,6 +2123,12 @@ class StrategySelectionScanService:
         directional_cells = [cell for cell in cells if cell.get("family") in {"xs_mom", "xs_rev", "ts_mom"}]
         directional_deflated_sharpe = compute_directional_deflated_sharpe(directional_cells)
         directional_pbo = compute_directional_pbo(directional_cells)
+        # Carry-tilt (funding-as-feature) is a separate experiment; deflate it over
+        # its own trial set so the multiple-testing penalty is not diluted by the
+        # price-signal grid.
+        carry_tilt_cells = [cell for cell in cells if cell.get("family") in {"xs_funding", "xs_funding_rev"}]
+        carry_tilt_deflated_sharpe = compute_directional_deflated_sharpe(carry_tilt_cells)
+        carry_tilt_pbo = compute_directional_pbo(carry_tilt_cells)
         # period_returns_by_timestamp is an in-memory series for DSR/PBO only; drop it
         # before serialization to keep artifacts compact.
         for cell in cells:
@@ -1980,6 +2191,9 @@ class StrategySelectionScanService:
             "decision": _decision_from_best_cell(best_cell),
             "directional_deflated_sharpe": directional_deflated_sharpe,
             "directional_pbo": directional_pbo,
+            "carry_tilt_signal_field": carry_tilt_signal_field,
+            "carry_tilt_deflated_sharpe": carry_tilt_deflated_sharpe,
+            "carry_tilt_pbo": carry_tilt_pbo,
         }
 
 

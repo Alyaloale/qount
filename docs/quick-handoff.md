@@ -638,16 +638,21 @@ python -m qount.main walk-forward \
 
 ## 下一步执行顺序
 
-> **2026-06-06 决策**：`4h xs_mom lb24/h6` 候选已按 §7 **诚实退出**（DSR ≈ 0.082、无可执行
-> exit 跑赢持有、~82% 收益来自单月）。**不要再在这个候选上做 exit / regime / 阈值复核，也
-> 不要为它消耗 once-only 日期。** 完整退出依据见 profit-engineering-plan.md §11.7。
+> **2026-06-06 项目级决策（所有者确认）：执行 §7 诚实止盈，停止追盈利。** 根因是架构级广度
+> 天花板——加密 majors r̄≈0.63，横截面有效广度仅 ~1.5、渐近天花板 `1/r̄≈1.6`（扩币救不了），
+> 要求 IC 实际 ≈0.15、观测最强仅 0.05。横截面（XS-MOM/REV/funding）广度封死、日频 TS-MOM
+> 已证伪、CARRY 已证伪。完整对账见 profit-engineering-plan.md §11.8。**不要再开新的特征 /
+> 频段搜索**——那只会触发 §7 多重检验假象。
 
-1. **不要**重复 `4h xs_mom` 的任何 exit / regime / purged-CV / triple-barrier 复核——N1 已
-   关闭，该候选 S2 晋级路径已关闭。
-2. 研究转向 profit-engineering-plan.md §10 的**换频段 / 换特征源**：微结构（盘口/成交不平衡）、
-   funding/basis 作为预测特征、或时序基础模型特征 overlay（offline）。对新信息源先跑最便宜的
-   kill-test（横截面 IC / DSR），不成立就按 §7 接受研究价值、停止追盈利。
-3. 不要重复 WLD/SOL entry-only basis filter，也不要重复 top12 1d TS-MOM sanity；两者已证不够。
-4. S-CARRY 只能等新的完整独立日期复核 WLD/SOL，或重做更真实的 hedge timing / basis 风险模型。
-5. 5m 预测族只保留 cost-stress 证据；除非执行成本实测突破，否则不继续 5m GBDT。
-6. 只有 `G_paper` 通过后才讨论 forward paper；只有 forward paper 后才讨论 `G_live`。
+1. **默认不再跑新研究扫描。** 整套反过拟合 harness（triple-barrier、purged-CV+embargo、DSR、
+   PBO/CSCV、effective-breadth、频段×族选择扫描）已作为研究成果固化；维护可跑回归测试，但不
+   在已穷尽的特征/频段空间继续找 edge。
+2. **重启的唯一触发条件是结构性新输入**：真正低相关的新 universe / 新资产类别，或可执行的低延迟
+   微结构通道。普通的「再换一个特征 / 再加一个币」不构成重启理由（广度天花板与多重检验都封死）。
+3. 已证伪、**不要重复**：`4h xs_mom` 的 exit/regime/barrier/purged-CV 复核；funding/basis 作
+   预测特征（xs_funding/xs_funding_rev）；WLD/SOL entry-only basis filter；top12 1d TS-MOM；
+   S-CARRY 现金流。
+4. 硬纪律全不变：live 关闭、不 forward paper、不放宽 broad gate、`validation_v1` once-only 资格
+   继续保留。止盈是停止投入，不是放松边界。
+5. 只有 `G_paper` 通过后才讨论 forward paper；只有 forward paper 后才讨论 `G_live`——当前无
+   promotion 证据，二者都不触发。

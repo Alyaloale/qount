@@ -1,6 +1,6 @@
 # qount 当前状态
 
-更新时间：2026-06-05
+更新时间：2026-06-06
 
 当前版本：`0.2.0`
 
@@ -19,8 +19,17 @@ bottom_line + future + ETH/USDT + 1 position
 hourly model off
 setup model phase6 on
 live disabled
+§7 profit-pursuit halted (2026-06-06, owner-confirmed)
 ```
 
+- **2026-06-06 项目级决策(所有者确认):执行 §7 诚实止盈,停止追盈利。** 根因是架构级广度
+  天花板——加密 majors r̄≈0.63,横截面有效广度仅 ~1.5、渐近天花板 `1/r̄≈1.6`(扩币救不了),
+  §10.2 破局所需 IC 实际 ≈0.15、观测最强仅 0.05;横截面(XS-MOM/REV/funding)广度封死、
+  日频 TS-MOM 已证伪、CARRY 已证伪——latency-insensitive 可触及路径穷尽,满足 §7 全局终止
+  条件。**固化研究价值**(triple-barrier / purged-CV / DSR / PBO / effective-breadth 整套
+  反过拟合 harness)作为成果,停止在择时盈利上继续投入。**这是停止投入,不放宽任何纪律**:
+  live 仍关闭、不 forward paper、不放宽 broad gate、`validation_v1` once-only 资格继续保留。
+  对账见 [profit-engineering-plan.md](profit-engineering-plan.md) §11.8。
 - 生产真相仍是 WSL：`/home/alyaloale/Code/qount`。
 - Mac 工作区是编辑和 git 表面：`/Users/alyaloale/Code/qount`。
 - live 继续关闭：`QOUNT_LIVE_ENABLE=false`；`live-guard-status` 当前 `ok=false`，
@@ -66,6 +75,34 @@ live disabled
   晋级路径**,研究转向 §10 的换频段 / 换特征源(微结构 / funding / 时序基础模型特征),或按 §7
   接受研究价值、停止追盈利。纪律不变:不在已看 2–5 月上加任何旋钮,`validation_v1` once-only
   资格留给未来真正够厚的独立窗口。对账见 §11.7。
+- **2026-06-06 §10 换特征源第一刀 kill-test:funding 作横截面预测特征 = 证伪。** 新增
+  `xs_funding` / `xs_funding_rev` 两族(funding 以 as-of join 无前视对齐到每根 bar 当信号,
+  区别于已被 basis-tail 证伪的 CARRY 现金流用法),复用横截面 IC / DSR / PBO harness。top12、
+  120 天 discovery、post-cost、{4h,8h,1d}×{2 族}×holding{1,3,6}=18 cell:
+  (a) **rank-IC 全 ≤ 0.030**(最强 4h/h3 仅 `+0.030`)——比已嫌弱的价量动量 `0.052` 还弱,
+  远低于 §10.2 要求的 `0.06`;(b) 唯一正 cell `1d xs_funding_rev h6`(sum `+1.05`、sharpe
+  `1.79`)的 rank-IC ≈ `0.005` ≈ 0,且相邻 holding 不一致(h1 负 / h3 `+0.50` / h6 `+1.05`),
+  是 1d 仅 119 个重叠横截面上的噪声/overlap 假象;(c) **carry-tilt DSR ≈ `0.25`**,best
+  per-period Sharpe `0.094` < 噪声期望最大值 `0.156`——选择优势与噪声不可区分;(d) **PBO
+  ≈ 0.49–0.55**(8h/1d 相关频段),高过拟合概率;(e) 4h/8h 全被成本打负。继 CARRY 现金流
+  之后,**funding 这一新信息源的第二种用法也证伪**,最便宜的新源耗尽,进一步压向 §7 诚实止盈。
+  artifact:`state/research_runs/20260605T231910Z-...-s1-carry-tilt-funding-top12real-120d-20260606`
+  (另有 4 币薄广度交叉验证 `...-funding-top12-120d-...`,结论一致)。只跑 discovery,未碰
+  `validation_v1`。basis_pct 与 funding 经济上近共线;carry-tilt 路径暂未接 premium-index
+  enrichment,如要确认性复核需补该 plumbing,优先级低。
+- **2026-06-06 架构级根因诊断:横截面广度是幻觉,§10.2 破局数字被经验证伪。** 不再机械试
+  第三种特征源,先查 §10.2 整套破局逻辑的前提——「日频横截面 ~10 币 → BR~300 → 要求 IC 0.06」
+  ——是否成立。直接读 funding artifact 已报的 `effective_breadth`(标准公式
+  `N/(1+(N-1)·r̄)`):top12 的平均绝对两两相关 **r̄ ≈ 0.63**,**有效广度仅 ≈ 1.5**(4h 1.53 /
+  8h 1.50 / 1d 1.52)。关键:有效广度随 N→∞ 收敛到 `1/r̄ ≈ 1.6`,即 **N=12 给 1.52、N=100 万
+  也只有 1.59——扩币在数学上救不了**。把真实有效广度代回 Grinold(IR=IC·√BR、IR=1 口径):
+  §10.2 假设 ~10 币给要求 IC `0.058`;真实 ~1.5 币使 BR 缩 ~6.5×、√BR 从 17 掉到 6.8,
+  **要求 IC 实际 ≈ 0.148**。而观测最强横截面 IC 只有 xs_mom `0.052` / xs_funding `0.030`,
+  **离真实要求约 3× 缺口**。结论:加密 majors 同涨同跌,横截面把"多币"折成 ~1.6 个有效独立
+  资产,§10 押注的广度杠杆**结构性不存在**;要求 IC 被打回 ~0.15 的"5m 不可达"区间——这正是
+  §10 想逃离的天花板。这是**架构级 §7 证据**:换特征源 / 扩币都改变不了广度天花板,xs_mom /
+  ts_mom / xs_funding 全部过不了线是同一个根因。**2026-06-06 所有者已据此确认执行项目级 §7
+  诚实止盈**(见上方「当前结论」)。对账见 §11.8。
 
 ## 当前能力
 
