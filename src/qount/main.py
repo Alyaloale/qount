@@ -4,8 +4,6 @@ import argparse
 from typing import Any
 from dataclasses import replace
 import json
-import os
-import sys
 from pathlib import Path
 
 from .ai_hold_baseline import AI_HOLD_BASELINE_PROMPT_VARIANTS
@@ -13,10 +11,6 @@ from .ai_hold_baseline import AIHoldBaselineService
 from .artifacts import write_research_json_artifact
 from .backtest import BacktestService
 from .backtest import parse_backtest_datetime
-from .cta_data import load_panel as cta_load_panel
-from .cta_sim import SimConfig as CtaSimConfig
-from .cta_sim import render_summary as cta_render_summary
-from .cta_sim import run_paper_sim as cta_run_paper_sim
 from .hourly_model import HourlySignalModelService
 from .idle_window_diagnostic import IdleWindowDiagnosticService
 from .l3_information_edge import DEFILLAMA_STABLECOIN_CHARTS_URL
@@ -533,35 +527,14 @@ def build_parser() -> argparse.ArgumentParser:
     l4_funding.add_argument("--force-refresh", action="store_true", help="Ignore caches and re-fetch funding history.")
     l4_funding.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
     l4_funding.add_argument("--output-path", default=None, help="Optional output path for the kill-test JSON.")
-    cta_sim = subparsers.add_parser(
+    # Delegated to `qount.cta_sim` (single source of truth for the full arg set: all data
+    # sources, --mode, --gate-scan, --walk-forward). main() intercepts argv before argparse
+    # and forwards; this stub only keeps the subcommand visible in `--help`.
+    subparsers.add_parser(
         "cta-paper-sim",
-        help="Offline CTA-R paper-sim: cross-asset trend on a synthetic (or CSV) panel through the full signal/portfolio/risk/execution chain.",
+        add_help=False,
+        help="Offline CTA-R sim/gate/walk-forward (delegates to `python -m qount.cta_sim`; run that for full --help).",
     )
-    cta_sim.add_argument("--data-source", choices=["synthetic", "csv", "tiingo", "ibkr", "norgate", "tqsdk"], default="synthetic", help="Where prices come from.")
-    cta_sim.add_argument("--days", type=int, default=1500, help="Synthetic trading days (synthetic source only).")
-    cta_sim.add_argument("--seed", type=int, default=7, help="Synthetic data RNG seed.")
-    cta_sim.add_argument("--prices-csv", default=None, help="Wide price CSV (date + ticker columns) for --data-source csv.")
-    cta_sim.add_argument("--tickers", nargs="+", default=None, help="Override the ticker/symbol panel (tiingo).")
-    cta_sim.add_argument("--tiingo-api-key", default=None, help="Tiingo key (else settings/env QOUNT_TIINGO_API_KEY).")
-    cta_sim.add_argument("--start-date", default="2010-01-01", help="History start date for tiingo/norgate (YYYY-MM-DD).")
-    cta_sim.add_argument("--ibkr-host", default="127.0.0.1", help="IBKR TWS/Gateway host.")
-    cta_sim.add_argument("--ibkr-port", type=int, default=7497, help="IBKR API port (paper TWS 7497, paper Gateway 4002).")
-    cta_sim.add_argument("--ibkr-client-id", type=int, default=17, help="IBKR API client id.")
-    cta_sim.add_argument("--ibkr-duration", default="10 Y", help="IBKR historical duration string.")
-    cta_sim.add_argument("--ibkr-bar-size", default="1 day", help="IBKR bar size.")
-    cta_sim.add_argument("--tqsdk-user", default=None, help="TqSdk 天勤 account (else settings/env QOUNT_TQSDK_USER).")
-    cta_sim.add_argument("--tqsdk-pass", default=None, help="TqSdk 天勤 password (else settings/env QOUNT_TQSDK_PASS).")
-    cta_sim.add_argument("--tqsdk-bars", type=int, default=2000, help="Daily bars to pull per domestic contract.")
-    cta_sim.add_argument("--lookback-days", nargs="+", type=int, default=None, help="Trend lookbacks in trading days; default 63 126 252.")
-    cta_sim.add_argument("--vol-lookback-days", type=int, default=63, help="Trailing days for inverse-vol sizing and the vol-target estimate.")
-    cta_sim.add_argument("--rebalance-days", type=int, default=5, help="Rebalance cadence in trading days.")
-    cta_sim.add_argument("--target-vol", type=float, default=0.12, help="Annualized portfolio volatility target.")
-    cta_sim.add_argument("--max-leverage", type=float, default=3.0, help="Cap on gross leverage.")
-    cta_sim.add_argument("--cost-per-side-pct", type=float, default=0.0002, help="Per-side turnover cost.")
-    cta_sim.add_argument("--dd-threshold", type=float, default=0.10, help="Drawdown depth at which de-leveraging starts.")
-    cta_sim.add_argument("--dd-factor", type=float, default=0.5, help="Leverage multiplier while in drawdown.")
-    cta_sim.add_argument("--gate-scan", action="store_true", help="Run the parameter grid through the DSR/PBO/time-fold gate and emit a pass/fail verdict instead of a single sim.")
-    cta_sim.add_argument("--output-path", default=None, help="Optional output path for the sim JSON.")
     dashboard = subparsers.add_parser("dashboard-snapshot", help="Return a single aggregated monitoring snapshot.")
     dashboard.add_argument("--review-limit", type=int, default=10)
     dashboard.add_argument("--review-horizon-bars", type=int, default=1)
@@ -572,6 +545,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    # The CTA-R sim is self-contained and settings-free; delegate to its full CLI (single
+    # source of truth) before building the heavy parser / loading Settings.
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "cta-paper-sim":
+        from .cta_sim import main as cta_sim_main
+
+        raise SystemExit(cta_sim_main(sys.argv[2:]))
+
     parser = build_parser()
     args = parser.parse_args()
     settings = Settings.from_env()
@@ -995,62 +977,7 @@ def main() -> None:
             default_filename="l4_cross_exchange_funding_scan.json",
             explicit_path=args.output_path,
         )
-    elif args.command == "cta-paper-sim":
-        prices, data_source = cta_load_panel(
-            args.data_source,
-            days=args.days,
-            seed=args.seed,
-            prices_csv=args.prices_csv,
-            tickers=args.tickers,
-            api_key=args.tiingo_api_key or settings.tiingo_api_key,
-            start_date=args.start_date,
-            host=args.ibkr_host,
-            port=args.ibkr_port,
-            client_id=args.ibkr_client_id,
-            duration=args.ibkr_duration,
-            bar_size=args.ibkr_bar_size,
-            tqsdk_user=args.tqsdk_user or os.environ.get("QOUNT_TQSDK_USER"),
-            tqsdk_password=args.tqsdk_pass or os.environ.get("QOUNT_TQSDK_PASS"),
-            tqsdk_bars=args.tqsdk_bars,
-        )
-        if args.gate_scan:
-            from .cta_eval import render_gate_summary as cta_render_gate_summary
-            from .cta_eval import run_gate_scan as cta_run_gate_scan
-
-            result = cta_run_gate_scan(prices)
-            result["data_source"] = data_source
-            print(cta_render_gate_summary(result), file=sys.stderr)
-            result = write_research_json_artifact(
-                settings,
-                result,
-                kind="cta-gate-scan",
-                path_key="output_path",
-                default_filename="cta_gate_scan.json",
-                explicit_path=args.output_path,
-            )
-        else:
-            config = CtaSimConfig(
-                lookback_days=tuple(args.lookback_days) if args.lookback_days else (63, 126, 252),
-                vol_lookback_days=args.vol_lookback_days,
-                rebalance_days=args.rebalance_days,
-                target_vol=args.target_vol,
-                max_leverage=args.max_leverage,
-                cost_per_side_pct=args.cost_per_side_pct,
-                dd_threshold=args.dd_threshold,
-                dd_factor=args.dd_factor,
-            )
-            result = cta_run_paper_sim(prices, config)
-            result.pop("net_daily_returns", None)  # keep the single-run artifact lean
-            result["data_source"] = data_source
-            print(cta_render_summary(result), file=sys.stderr)
-            result = write_research_json_artifact(
-                settings,
-                result,
-                kind="cta-paper-sim",
-                path_key="output_path",
-                default_filename="cta_paper_sim.json",
-                explicit_path=args.output_path,
-            )
+    # "cta-paper-sim" is handled by the early delegation at the top of main().
     elif args.command == "dashboard-snapshot":
         result = orchestrator.dashboard_snapshot(
             review_limit=args.review_limit,
