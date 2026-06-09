@@ -32,6 +32,9 @@ from qount.cta_data import save_etf_cache
 from qount.cta_data import fetch_norgate_panel
 from qount.cta_data import fetch_tiingo_panel
 from qount.cta_data import fetch_tqsdk_panel
+from qount.cta_data import align_prices_and_carry
+from qount.cta_data import annualized_roll_yield
+from qount.cta_data import build_term_structure_carry
 from qount.cta_data import load_panel
 
 
@@ -415,6 +418,50 @@ class LoadPanelDispatchTest(unittest.TestCase):
     def test_unknown_source_raises(self) -> None:
         with self.assertRaises(ValueError):
             load_panel("bogus")
+
+
+class TermStructureCarryTest(unittest.TestCase):
+    def test_roll_yield_sign_and_annualization(self) -> None:
+        # Backwardation: near 102 > far 100, 30 vs 60 dte -> positive, annualized over 30d gap.
+        ry = annualized_roll_yield(102.0, 100.0, 30, 60)
+        self.assertAlmostEqual(ry, (102.0 / 100.0 - 1.0) * 365.0 / 30.0, places=9)
+        self.assertGreater(ry, 0.0)
+        # Contango: near < far -> negative.
+        self.assertLess(annualized_roll_yield(98.0, 100.0, 30, 60), 0.0)
+        # Degenerate tenor gap / bad price -> None.
+        self.assertIsNone(annualized_roll_yield(100.0, 100.0, 60, 60))
+        self.assertIsNone(annualized_roll_yield(100.0, 0.0, 30, 60))
+
+    def test_build_carry_picks_nearest_two_above_min_dte(self) -> None:
+        contracts = {
+            "F1": {"expire": "2024-01-20", "closes": {"2024-01-02": 105.0, "2024-01-03": 104.0}},
+            "F2": {"expire": "2024-02-20", "closes": {"2024-01-02": 100.0, "2024-01-03": 100.0}},
+            "F3": {"expire": "2024-03-20", "closes": {"2024-01-02": 99.0}},
+        }
+        carry = build_term_structure_carry(contracts, ["2024-01-02", "2024-01-03"], min_dte_days=5)
+        # 01-02: near F1(18d,105) vs far F2(49d,100) -> backwardation positive
+        self.assertIn("2024-01-02", carry)
+        self.assertGreater(carry["2024-01-02"], 0.0)
+
+    def test_build_carry_drops_about_to_deliver_front(self) -> None:
+        # F1 has only 3 dte (< min_dte 10) -> skipped; only F2,F3 remain -> they set the curve.
+        contracts = {
+            "F1": {"expire": "2024-01-05", "closes": {"2024-01-02": 200.0}},
+            "F2": {"expire": "2024-02-20", "closes": {"2024-01-02": 100.0}},
+            "F3": {"expire": "2024-03-20", "closes": {"2024-01-02": 101.0}},
+        }
+        carry = build_term_structure_carry(contracts, ["2024-01-02"], min_dte_days=10)
+        # near=F2(100), far=F3(101) -> contango (negative), F1's 200 ignored
+        self.assertLess(carry["2024-01-02"], 0.0)
+
+    def test_align_prices_and_carry_lays_carry_on_price_axis(self) -> None:
+        prices, carry = align_prices_and_carry(
+            {"A": {"d1": 10.0, "d2": 11.0, "d3": 12.0}, "B": {"d1": 5.0, "d2": 5.5, "d3": 6.0}},
+            {"A": {"d2": 0.1}, "B": {"d1": -0.2, "d3": 0.3}},
+        )
+        self.assertEqual(prices["A"], [10.0, 11.0, 12.0])
+        self.assertEqual(carry["A"], [None, 0.1, None])  # carry None where missing
+        self.assertEqual(carry["B"], [-0.2, None, 0.3])
 
 
 if __name__ == "__main__":

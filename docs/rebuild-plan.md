@@ -303,7 +303,7 @@ DSR = 0.992 (≥0.95)  PBO = 0.230 (<0.5)  5 折全正 [0.90,0.96,0.57,0.96,0.39
 
 **诚实 caveat(两项伪样本外检验):**
 - 现实成本 5bps/腿(全历史):Sharpe **0.68**、CAGR 7.5%、最大回撤 **−23%** —— 扛得住成本。
-- **近期 2022+(实际交易 2023–2026):Sharpe −0.03、总收益 −2.3%** —— 走平。强 Sharpe 前置在 2010–2022;2023–2026 趋势策略普遍难做,本策略同步走平。**edge 真但不平稳**:需准备 1–2 年横盘 + 20%+ 回撤(印证 §8)。
+- **近期 2022+(实际交易 2023–2026):Sharpe −0.03、总收益 −2.3%** —— 走平。强 Sharpe 前置在 2010–2022;2023–2026 趋势策略普遍难做,本策略同步走平。**edge 真但不平稳**:需准备 1–2 年横盘 + 20%+ 回撤(印证 §8)。**【2026-06-09 修正:此走平是 Tiingo 13-ETF 美股 universe 的结果,不可推广到实际可交易的 akshare 8-ETF 篮子——后者按年诊断 2023–2026 每年都正,见 §11.6。】**
 - **$500 现金跑不出该 Sharpe**:12% 波动目标需 ~1.5–2x 杠杆,现金 ETF 账户做不到 → 要这个量级必须上期货(IBKR micros)。
 
 artifact:`state/research_runs/manual-cta-gate-tiingo.json`(WSL)。结论:**方法被真实数据验证;不立刻赚钱;真正变现需期货账户。** 下一步 Phase 2(carry sleeve)或先上 IBKR paper 接真期货 micros 复核。
@@ -420,6 +420,103 @@ ETF 跨资产 long-only lev1(现金账户,2496 eval 日):
 **诚实边界:** ① 进取 OOS 一折为负,比稳健更挑时点;② 仍是 2014–2026 含黄金牛+美股牛三顺风,进取里黄金/美股权重更大、顺风依赖更重;③ QDII(513100/513500)溢价/限购在进取档影响更大(权重升);④ **现金账户无杠杆 → 风险天花板≈满仓风险资产的 ~22% 波动 / −22% 回撤,再高需两融(¥50万门槛,非小资金)**;⑤ 默认 2bps 成本,真实 5–10bps。artifacts:`state/research_runs/manual-cta-walkforward-akshare-{conservative,balanced,aggressive}.json`(WSL)。**结论:三档风险模式落地,小资金高风险高收益对应进取档(~17% CAGR/−22% DD/无国债),且不靠做空或杠杆。下一步:上 IBKR/券商 paper 或小额实盘验证执行/QDII 溢价/真实成本(铁律:先 paper 再 live)。**
 
 **与跨资产对照(§11):** 同一引擎在 Tiingo 13-ETF(股/债/金/汇/商品)上 breadth 2.62、PASS;加密单独跑 breadth 1.64、BELOW GATE。差别不在方法,在 universe 广度——跨资产类别才逃得出天花板。**结论:加密的合法位置是跨资产组合里的 1–2 个低相关分散 sleeve(§1 既有定位),不单独做 Binance 方向策略。** artifact:`state/research_runs/manual-cta-gate-binance.json`(WSL)。LLM 新闻/regime overlay 仍按 §6 留作后期"减风险器"(须先证明降回撤),不进信号层。
+
+### 11.6 按年×按资产归因诊断(2026-06-09,akshare 8-ETF,修正「走平」结论)
+
+工具:`scripts/research/cta_yearly_attribution.py`(read-only,复用引擎 `_target_weights`/`SimConfig` 原样函数,直接读 `state/etf_cache` 拿对齐日期 + 收盘)。目的:判定 §11 那条「2023–2026 走平」是趋势旱季还是 edge 结构性衰减。fixed config(lb 63/126/252、reb21、cash long-only cap1.0)。
+
+**按年净收益/Sharpe(2014–2026):** 2015 +29.3%/1.25、2017 +19.9%/1.94、2020 +29.2%/1.00、2022 −0.8%、**2023 +8.2%/2.66、2024 +9.8%/2.77、2025 +5.8%/0.94、2026(半年) +3.2%/2.22**。**2023–2026 每年都正,2023/24 还是好年——这个篮子根本没走平**(§11 的走平是 Tiingo 美股 universe)。
+
+**按资产 gross 贡献:**
+
+| 资产 | 类别 | 2014–2022 | 2023–2026 |
+|---|---|---|---|
+| 中证500 510500 | A股 | +43.2% | +0.4% |
+| 上证50 510050 | A股 | +11.0% | +0.2% |
+| 沪深300 510300 | A股 | +6.9% | −0.1% |
+| 纳指 513100 | 海外 | +12.2% | +2.9% |
+| 黄金 518880 | 黄金 | +3.5% | **+10.4%** |
+| 国债 511010 | 债 | +12.2% | **+7.8%** |
+| 标普 513500 | 海外 | +1.9% | +3.2% |
+| 合计 | | +93.9% | +26.5% |
+
+**判词:门控通过 ✅。** 2014–2022 靠 A股股票(中证500 一个 +43%)扛;**2023–2026 A股股票全归零,趋势正确撤出股票、轮进黄金(+10.4%)+国债(+7.8%)+海外,于是每年照赚——这是跨资产趋势按设计 regime 轮动、广度 3.11 真分散,不是衰减。**
+
+**修正后的远期预期(写进决策):** ① **~7–9%/yr,不是回测头条 11–12%**(后者被 2015/2020 两个 A股大牛 +29% 灌高,近 4 年没有);② **近 4 年发动机=黄金+国债(~60% 贡献),金价已大涨/国债吃利率牛 → 若金或利率反转,当前驱动减弱,要等 A股股票趋势接力**(新依赖点,需盯);③ 准备 −15% 级回撤;④ Sharpe 与本金无关,¥100万 体量无容量压力、两融不划算。
+
+### 11.7 操作化(②)+ 半自动组合跟踪(2026-06-09,所有者选「手动同步仓位 + 自动跟踪收益 + 提醒手动调仓」)
+
+**8 ETF 境内可买性:** 全是普通现金账户 T+1 可买卖,买 ETF 不需要创业板/科创权限;唯一注意 513100/513500 是 QDII(溢价/限购,二级市场买卖不受限)。**A股 散户无开放 retail API**——合法程序化下单要 QMT(MiniQMT/xtquant)或 Ptrade + 券商量化权限(¥1M 够门槛)+ 程序化交易报备(2024 新规,月频很轻)。**所有者决定不全自动下单**(月频 12 次/年,全自动 ROI 低、增量风险高),改人在环里的半自动。
+
+**交付物(research-only,不下单,不碰券商 API):**
+- `scripts/research/cta_target_weights.py`:给定最新价 → 当前目标权重 → ¥金额/手数/残留现金的调仓表。
+- `src/qount/cta_portfolio.py`(`python -m qount.cta_portfolio`,纯 stdlib,可单测,`tests/test_cta_portfolio.py` 12 项):
+  - `init`:建本地持仓文件 `state/cta_portfolio/positions.json`(全现金起步);
+  - `status [--refresh]`:估值/盈亏(总+分仓)+ 当前 vs 目标权重 + **调仓提醒**(cadence 21 交易日 OR 权重漂移≥5% 触发)+ 触发时打印买/卖手数清单;
+  - `record-fill`:成交后一条命令同步本地持仓(blend 成本/扣现金);`mark-rebalanced`:盖调仓时间戳。
+- `scripts/research/cta_yearly_attribution.py`:§11.6 的按年×按资产归因诊断。
+
+**用法闭环:** 月度(或漂移触发)`status` → 照清单挂限价单 → 每笔 `record-fill` → `mark-rebalanced`。
+
+**实时价 + Mac 桌面面板(2026-06-09 续):** ① **重要接缝**:缓存是 qfq 复权序列(只用于算信号/目标权重),其绝对价位 ≠ 可交易价;**估值/盈亏/下单手数必须用原始价**。东财 push2 从该 WSL 被断连,**新浪 `hq.sinajs.cn` / 腾讯 `qt.gtimg.cn` 直连可用**(域内、stdlib urllib、无代理无依赖)→ `fetch_spot_sina`(GBK 解析现价/昨收)。② `status` 默认用新浪实时原始价估值(取不到回退缓存收盘并标注),新增 `--json`(机器可读)+ 今日盈亏。③ **Mac 菜单栏面板** `scripts/desktop/ctar.5m.py`(SwiftBar/xbar 插件):Mac ssh→WSL 跑 `status --json` → 菜单栏显示今日盈亏、下拉显示分仓盈亏+目标权重+调仓订单;**到点/漂移触发时变红 + 弹 macOS 通知(每日去重)= 提醒推送 (a) 已落地**。`tests/test_cta_portfolio.py` 15 项(含新浪解析)。
+
+**下一步 ③ paper/小额**:用这套小额跑 1–2 月,核 QDII 溢价/调仓滑点/跟踪误差 vs 回测。
+
+### 11.8 模拟盘开跑 + Mac 桌面组件 + 本地复盘 + 自动调仓(2026-06-09)
+
+**模拟盘已开跑**:`positions.json` 加 `paper` 标志(init 默认 true=模拟自动调仓;`go-live` 切 false=实盘手动);
+`paper-rebalance` 按实时价一键模拟成交;¥100万 已建成进取档目标仓(6 ETF)。**本地复盘记录**:`equity.csv`
+(每日净值,面板/daily 每刷新 upsert 一行)+ `trades.jsonl`(每笔成交,标 paper/live)+ `review` 命令(收益/峰谷/
+最大回撤 + 流水)。**实时价接缝**:缓存是 qfq 复权(只算信号),估值/下单用**原始价**——东财被该 WSL 挡,改新浪
+`hq.sinajs.cn` 直连(`fetch_spot_sina`,stdlib/域内/无代理)。**自动化**:`daily` 命令(刷新+落净值+paper 到点
+自动调仓/live 仅提醒);WSL 空闲会关机故 cron 不可靠,**调度放常开的 Mac**——launchd `com.qount.ctar-daily`
+每日 15:35 ssh→WSL 跑 daily。**Mac 桌面组件**:`scripts/desktop/ctar.jsx`(Übersicht,常驻桌面,显示总盈亏¥/
+收益率/今日盈亏/**净值曲线 SVG**/分仓权重/调仓徽标)+ 取数 `ctar_fetch.sh`;另有 SwiftBar 菜单栏版 `ctar.5m.py`。
+**日线缓存推进(stdlib,无 akshare):** `fetch_daily_sina`(新浪日线 kline,raw OHLC)+ `splice_daily`(纯函数:
+锚定 cache 与 raw 的最新重叠日,按 raw 收益率比例把 cache 复权水平向前延伸 → **无接缝**,不论 cache 复权基准如何);
+`_refresh_prices` 改用它,`daily`/`status --refresh` 每天把 8 只 ETF 缓存推进到最新(已验证 06-02→06-09 衔接平滑,
+缓存复权价只算信号、估值/下单仍用新浪实时原始价)。caveat:锚点后若有分红会注微小跳变(这些 ETF 1–2 月窗口内罕见)。
+`tests/test_cta_portfolio.py` 20 测。**全链路闭合,无遗留缺口。**
+
+### 11.9 拓宽 ETF 篮子攻广度 = 证伪(2026-06-09,所有者选「拓宽广度」方向)
+
+所有者要"提高收益",在三条合法杠杆(①加 carry sleeve 需期货 / ②拓宽 ETF 广度 / ③先验成本)中选 **②**。诚实测法:商品是当前 8-ETF 篮子缺的结构性新资产类别(现有 股/金/债/海外股,无商品),`ETF_ASSET_CLASS` 早已预注册 `159980.SZ`有色/`159981.SZ`能化/`159985.SZ`豆粕→`commodity` 但未进 `AKSHARE_DEFAULT_UNIVERSE`。**按经济先验选(三个低相关商品子板块),不挑回测,让门控判生死、好坏认账。**
+
+**数据**:三只商品期货 ETF 均 2019 末上市,缓存/zip 种子都没有;**零依赖**走 `fetch_daily_sina`(新浪日线,域内,东财 push2 在该 WSL 被墙)拉到 ~1560 bars。商品期货 ETF 不分红 → raw close 的收益率==复权,raw 直接可用。**生产安全**:`cta_portfolio._load_panel` 是 `glob("*.csv")` 扫整个 `state/etf_cache/`——往生产缓存塞标的会让运行中的模拟盘悄悄改仓,故研究全程用独立 `state/etf_cache_wide/`,**没碰生产缓存**。
+
+**apples-to-apples(同窗口 2020-01-17.. 1543 bars,long-only lev1):**
+
+| | 有效广度 | 门控 | wf ensemble | wf OOS | fixed |
+|---|---|---|---|---|---|
+| BASE8 | 2.71 | PASS | 1.91 / 8.0% | 2.60 / 9.7% | 2.20 / 8.8% |
+| WIDE11(+商品) | **3.37** | PASS | 1.64 / 7.5% | 2.19 / 8.8% | 1.85 / 8.1% |
+
+进取档(剔国债/cap0.35)同窗口复核同向:无商品 wf OOS CAGR 23.3% → +商品 18.0%;仅回撤平滑 1–2pt。
+
+**判词:证伪,不改生产篮子。** 广度真从 2.71 升到 3.37(§0 论点再次成立),但收益/Sharpe 两个风险模式、三个 selection-free 读数**全线轻微下降**。根因:**广度不是这个篮子收益的绑定约束**——BASE8 早以 breadth 2.71/DSR 0.997/PBO 0.004 轻松过门控,过线后"再加广度"≠"再加收益";2020–2026 是金+债+海外单边牛,集中在强趋势品种本就更赚,国内商品这段震荡弱趋势只起稀释。**不挑(不试"只留有色"/特殊权重 = 过拟合陷阱)。** ②路径关闭,真正抬收益只剩 ①carry sleeve(期货账户)或诚实接受零售现金 ETF 的 edge 量级天花板(§0/§11)。artifact `state/research_runs/manual-cta-wide-commodity.json`(WSL)。硬约束全不变,未碰生产缓存/`positions.json`。
+
+### 11.10 ①carry sleeve:tqsdk 境内期货数据层跑通 + 趋势/carry 门控判决(2026-06-09,所有者授权开免费天勤账户)
+
+所有者选 ①carry sleeve,提供免费天勤账户 → 写入 WSL `.env`(`QOUNT_TQSDK_USER/PASS`,gitignore)。**新增 carry sleeve(代码本来没有)**:`cta_sim` 加 `signal="carry"` 分支(期限结构 roll yield 的 sign × 反波动率,与趋势共用组合/风控,**趋势路径逐位不变**)+ 合成 carry 市场;`cta_eval` 加 carry 网格(平滑×vol×再平衡)+ walk-forward;`cta_data` 加期限结构 carry 构建器(纯函数:每日近月/次近月年化 roll yield `(near/far-1)·365/gap`)+ `fetch_tqsdk_carry_panel`(逐合约日线带缓存,live+expired 重建历史)。**Mac+WSL 86 单测全过**。
+
+**运维坑(记 quick-handoff):天勤是域内服务器,必须取消代理直连**——`.env` 的 `HTTP(S)_PROXY` 是 Binance 专用,不 `unset` 会让 `auth.shinnytech.com` 走代理超时(`ProxyError`)。`adj_type` None/F/B 实测无差异(KQ.m@ 已是干净连续、非 raw 跳空)。
+
+**判决(16 跨板块商品主连,2022-06.. ,long/short,扣费):**
+
+| sleeve | 有效广度 | 门控 | walk-forward(ens/wf/fixed) |
+|---|---|---|---|
+| 趋势 | 3.46 | BELOW(DSR 0.854<0.95) | NOT ROBUST(0.25/0.40/0.47,全<0.5) |
+| carry(经典:long backwardation) | 3.36 | BELOW 五项全挂(Sharpe **−1.01**) | NOT ROBUST(−1.38/−1.06/−1.26) |
+| carry(符号翻转) | 3.36 | BELOW(DSR 0.983✓ 仅 PBO 0.607✗) | **ROBUST**(1.17/0.75/1.15) |
+
+**诚实判词:**
+1. **趋势单 sleeve ~0.4**,和计划 §4 预期一致(广度 3.46 真分散,但 edge 量级不够)。
+2. **经典 carry(long backwardation)在中国商品 2022-26 彻底证伪**——截面 rank-IC **−0.038**(894 截面)、Sharpe −1,**符号是反的**(高 carry/backwardation → 次期收益更低)。
+3. **翻转后信号是真的**(DSR 0.983、selection-free ROBUST Sharpe 1.17),PBO 0.607 是 §11.3 同型"配置全优"虚高。**但符号是看了数据才翻的 = 1-bit 过拟合**——按本项目纪律,**不能因为回测变好就翻符号当 edge**。这是一个真实但**仅在样本内**的 lead,**不可晋级**,需要:(a) 给"中国商品 carry 反向"一个事前经济理由(零售主导/金融化/近月投机溢价),(b) 用符号从未碰过的独立窗口(如 2018–2021)做真 OOS,(c) 用持仓量加权的流动主力合约重构 near/far(现按日历最近两月,近月可能偏薄)。
+
+artifacts:`state/research_runs/manual-cta-tqsdk-commodity-{trend,carry}.json`(WSL)。硬约束全不变:research-only、未下单(天勤模拟账户未交易)、未碰生产。**carry sleeve 代码已固化为可复用资产**(对 IBKR 期货同样适用)。
+
+**OOS 验证(2026-06-09 续):反向 carry = 符号 OOS 成立但量级 sub-gate,不晋级。** 所有者选"做真 OOS"。事前钉死:(a) 经济理由=中国商品零售/投机主导,陡 backwardation=近月拥挤多头→均值回归跑输→**事前承诺反向符号**(拥挤反转);(b) 独立窗口=从未碰过的 max-history..2022-05-31(免费天勤回到 ~2020,600 bars,与样本内 2022-06+ 不相交);(c) OI 加权流动主力重构留作符号活下来后的精修。给 `fetch_tqsdk_carry_panel` 加 `end_date`(纯构建函数不动,86 测过)。**OOS 实跑:① 原始 carry→fwd21d 截面 rank-IC=−0.0147(符号仍负,反向方向 OOS 成立——不是 2022-26 纯巧合),但量级是样本内 −0.038 的 ~40%;② 反向 carry 门控 BELOW(best 0.85、DSR 0.593<0.95、PBO 0.33✓、folds 0.80✓);③ selection-free walk-forward NOT ROBUST(ensemble 0.48<0.5 / wf 0.64 / fixed 0.90)。** 判词:**符号方向真实且 OOS 持续,但样本内 1.17 是 regime 灌高,OOS 只剩弱 tilt、不过门控**——撞回 §8/L1 同一堵墙:**信号真、零售单 sleeve 量级不够(趋势~0.4、反向 carry OOS~0.48,皆<0.5)**。按纪律 sub-gate 不晋级。固化:tqsdk 数据层 + carry sleeve + 期限结构 harness 作可复用资产;国内商品单 sleeve 追盈利按 §7/§8 同型止盈。下一次抬量级仍需结构性新输入(多 sleeve 风险平价组合需各 sleeve 先独立过线 / 真期货组合规模)。artifact `state/research_runs/manual-cta-tqsdk-carry-oos.json`(WSL)。
 
 ---
 

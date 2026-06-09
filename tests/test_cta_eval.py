@@ -14,6 +14,7 @@ if "ccxt" not in sys.modules:
 
 from qount.cta_eval import annualized_sharpe
 from qount.cta_eval import deflated_sharpe
+from qount.cta_eval import default_carry_grid
 from qount.cta_eval import default_grid
 from qount.cta_eval import pbo_cscv
 from qount.cta_eval import per_period_sharpe
@@ -21,6 +22,7 @@ from qount.cta_eval import run_gate_scan
 from qount.cta_eval import run_walkforward_eval
 from qount.cta_eval import time_fold_sharpes
 from qount.cta_sim import DEFAULT_UNIVERSE
+from qount.cta_sim import generate_synthetic_carry_market
 from qount.cta_sim import generate_synthetic_panel
 
 
@@ -155,6 +157,28 @@ class WalkForwardEvalTest(unittest.TestCase):
         prices = generate_synthetic_panel(DEFAULT_UNIVERSE, n_days=130, seed=1)
         result = run_walkforward_eval(prices)
         self.assertEqual(result["decision"], "insufficient_configs")
+
+
+class CarryGateTest(unittest.TestCase):
+    def test_carry_grid_is_carry_signal(self) -> None:
+        grid = default_carry_grid()
+        self.assertEqual(len(grid), 12)
+        self.assertTrue(all(c.signal == "carry" for c in grid))
+
+    def test_gate_scan_uses_carry_panel(self) -> None:
+        prices, carry = generate_synthetic_carry_market(DEFAULT_UNIVERSE, n_days=1500, seed=5)
+        res = run_gate_scan(prices, long_only=False, max_leverage=3.0, carry=carry)
+        self.assertIn(res["decision"], ("passes_gate", "below_gate"))
+        self.assertGreater(res["evaluated_configs"], 0)
+        self.assertEqual(res["best_cell"]["signal"], "carry")
+        # carry-rich synthetic: the best cell must at least be profitable.
+        self.assertGreater(res["best_cell"]["total_return_pct"], 0.0)
+
+    def test_walkforward_uses_carry_panel(self) -> None:
+        prices, carry = generate_synthetic_carry_market(DEFAULT_UNIVERSE, n_days=1500, seed=7)
+        res = run_walkforward_eval(prices, long_only=False, max_leverage=3.0, carry=carry)
+        self.assertIsNotNone(res["ensemble"])
+        self.assertGreater(res["ensemble"]["ann_sharpe"], 0.0)
 
 
 if __name__ == "__main__":

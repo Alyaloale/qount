@@ -527,6 +527,70 @@ def build_parser() -> argparse.ArgumentParser:
     l4_funding.add_argument("--force-refresh", action="store_true", help="Ignore caches and re-fetch funding history.")
     l4_funding.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
     l4_funding.add_argument("--output-path", default=None, help="Optional output path for the kill-test JSON.")
+    l6_ic = subparsers.add_parser(
+        "l6-microstructure-ic-scan",
+        help="Research-only L6 Phase 1 kill-test: A-share Level-2 order-flow IC-vs-horizon decay across T+0 ETFs + DSR/PBO + break-even.",
+    )
+    l6_ic.add_argument("--data-dir", required=True, help="Directory of per-instrument Wind tick folders (e.g. state/l6_l2_raw/20260407).")
+    l6_ic.add_argument("--symbols", nargs="+", required=True, help="Instrument folder names (e.g. 159919.SZ 159915.SZ).")
+    l6_ic.add_argument("--horizons-ms", nargs="+", type=int, default=None, help="Forward-return horizons in ms; default 3s..30min grid.")
+    l6_ic.add_argument("--cost-per-side-pct", type=float, default=0.0005, help="T+0 ETF per-side round-trip cost; default 5bps.")
+    l6_ic.add_argument("--ic-gate", type=float, default=0.05, help="Breadth-adjusted required rank-IC; default 0.05 (daily ceiling).")
+    l6_ic.add_argument("--holdout-role", choices=["discovery", "validation_v1", "unknown"], default="discovery")
+    l6_ic.add_argument("--output-path", default=None, help="Optional output path for the kill-test JSON.")
+    l6_daily = subparsers.add_parser(
+        "l6-daily-features",
+        help="Research-only L6-daily ETL: per-(stock) L2-derived daily informed-flow features for one trading day.",
+    )
+    l6_daily.add_argument("--day-dir", required=True, help="Directory of per-instrument Wind tick folders for one day.")
+    l6_daily.add_argument("--symbols", nargs="+", default=None, help="Instrument folder names; omit with --all-symbols.")
+    l6_daily.add_argument("--all-symbols", action="store_true", help="Enumerate every <code>.SZ/.SH folder in --day-dir.")
+    l6_daily.add_argument("--output-path", default=None, help="Optional output path for the daily feature panel JSON.")
+    l6_d1 = subparsers.add_parser(
+        "l6-daily-d1-scan",
+        help="Research-only L6-daily D1: cross-day cross-section rank-IC of daily informed-flow features.",
+    )
+    l6_d1.add_argument("--panel-dir", required=True, help="Dir holding D0 panels (l6_daily_<date>/l6_daily_<date>.json).")
+    l6_d1.add_argument("--universe", choices=["etf", "all"], default="etf", help="Cross-section universe; default etf.")
+    l6_d1.add_argument("--active-top-n", type=int, default=None, help="Keep only top-N by turnover proxy per day.")
+    l6_d1.add_argument("--holding", type=int, default=1, help="Forward horizon in trading days; default 1.")
+    l6_d1.add_argument("--top-fraction", type=float, default=0.2, help="Long-short decile fraction; default 0.2.")
+    l6_d1.add_argument("--output-path", default=None, help="Optional output path for the D1 scan JSON.")
+    l6_d2 = subparsers.add_parser(
+        "l6-daily-d2-scan",
+        help="Research-only L6-daily D2: incremental rank-IC of a feature vs the price/volume baseline.",
+    )
+    l6_d2.add_argument("--panel-dir", required=True, help="Dir holding D0 panels (l6_daily_<date>/...json).")
+    l6_d2.add_argument("--target-feature", default="close_auction_imbalance", help="Feature to test for increment.")
+    l6_d2.add_argument("--baseline-lookback", type=int, default=1, help="Trailing-return lookback (price/volume baseline).")
+    l6_d2.add_argument("--universe", choices=["etf", "all"], default="etf")
+    l6_d2.add_argument("--active-top-n", type=int, default=None)
+    l6_d2.add_argument("--holding", type=int, default=1)
+    l6_d2.add_argument("--output-path", default=None, help="Optional output path for the D2 scan JSON.")
+    l6_d4 = subparsers.add_parser(
+        "l6-daily-d4-scan",
+        help="Research-only L6-daily D4: linear multi-feature composite cross-section IC vs breadth requirement.",
+    )
+    l6_d4.add_argument("--panel-dir", required=True, help="Dir holding D0 panels (l6_daily_<date>/...json).")
+    l6_d4.add_argument("--universe", choices=["etf", "all"], default="etf")
+    l6_d4.add_argument("--active-top-n", type=int, default=None)
+    l6_d4.add_argument("--holding", type=int, default=1)
+    l6_d4.add_argument("--weight-mode", choices=["sign_equal", "ic_weighted"], default="sign_equal")
+    l6_d4.add_argument("--purged-cv", action="store_true", help="Also report leave-one-section-out OOS composite IC.")
+    l6_d4.add_argument("--embargo", type=int, default=1, help="Sections to embargo around the held-out one (purged-cv).")
+    l6_d4.add_argument("--output-path", default=None, help="Optional output path for the D4 scan JSON.")
+    l6_t0 = subparsers.add_parser(
+        "l6-t0-exec-scan",
+        help="Research-only L6 line B: overnight-vs-intraday split of the close_auction reversal, net of ETF T+0 cost.",
+    )
+    l6_t0.add_argument("--panel-dir", required=True, help="Dir holding panels WITH day_open (l6_daily_<date>/...json).")
+    l6_t0.add_argument("--feature", default="close_auction_imbalance", help="Signal feature; default close_auction_imbalance.")
+    l6_t0.add_argument("--universe", choices=["etf", "all"], default="etf")
+    l6_t0.add_argument("--active-top-n", type=int, default=None, help="Keep only top-N by turnover proxy per day.")
+    l6_t0.add_argument("--top-fraction", type=float, default=0.2, help="Long-short tail fraction; default 0.2.")
+    l6_t0.add_argument("--round-trip-cost-bps", type=float, default=6.0, help="Flat-cost fallback (bps) when panels lack quoted spreads; default 6.")
+    l6_t0.add_argument("--commission-roundtrip-bps", type=float, default=2.5, help="Per-ETF round-trip commission (bps) for empirical taker/auction nets; default 2.5.")
+    l6_t0.add_argument("--output-path", default=None, help="Optional output path for the T0 exec scan JSON.")
     # Delegated to `qount.cta_sim` (single source of truth for the full arg set: all data
     # sources, --mode, --gate-scan, --walk-forward). main() intercepts argv before argparse
     # and forwards; this stub only keeps the subcommand visible in `--help`.
@@ -975,6 +1039,163 @@ def main() -> None:
             kind="l4-cross-exchange-funding-scan",
             path_key="output_path",
             default_filename="l4_cross_exchange_funding_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l6-microstructure-ic-scan":
+        from .l6_microstructure import HORIZONS_MS
+        from .l6_microstructure import run_l6_microstructure_ic_scan
+
+        result = run_l6_microstructure_ic_scan(
+            args.data_dir,
+            args.symbols,
+            horizons_ms=tuple(args.horizons_ms) if args.horizons_ms else HORIZONS_MS,
+            cost_per_side_pct=args.cost_per_side_pct,
+            ic_gate=args.ic_gate,
+            holdout_role=args.holdout_role,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l6-microstructure-ic-scan",
+            path_key="output_path",
+            default_filename="l6_microstructure_ic_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l6-daily-features":
+        import re as _re
+
+        from .l6_microstructure import DAILY_FEATURES
+        from .l6_microstructure import L6_MICROSTRUCTURE_VERSION
+        from .l6_microstructure import compute_daily_feature_panel
+
+        day_dir = Path(args.day_dir)
+        if args.all_symbols:
+            symbols = sorted(p.name for p in day_dir.iterdir()
+                             if p.is_dir() and _re.fullmatch(r"\d+\.(SZ|SH)", p.name))
+        elif args.symbols:
+            symbols = args.symbols
+        else:
+            parser.error("l6-daily-features needs --symbols or --all-symbols")
+        panel = compute_daily_feature_panel(day_dir, symbols)
+        result = {
+            "version": L6_MICROSTRUCTURE_VERSION,
+            "day_dir": str(day_dir),
+            "feature_names": list(DAILY_FEATURES),
+            "n_symbols_requested": len(symbols),
+            "n_symbols_scored": len(panel),
+            "features": panel,
+        }
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l6-daily-features",
+            path_key="output_path",
+            default_filename="l6_daily_features.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l6-daily-d1-scan":
+        import glob
+
+        from .l6_microstructure import evaluate_l6_daily_d1
+        from .l6_microstructure import load_daily_panels
+
+        paths = sorted(glob.glob(str(Path(args.panel_dir) / "**" / "l6_daily_*.json"), recursive=True))
+        if not paths:
+            parser.error(f"no l6_daily_*.json panels under {args.panel_dir}")
+        panels = load_daily_panels(paths)
+        result = evaluate_l6_daily_d1(
+            panels,
+            universe=args.universe,
+            active_top_n=args.active_top_n,
+            holding=args.holding,
+            top_fraction=args.top_fraction,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l6-daily-d1-scan",
+            path_key="output_path",
+            default_filename="l6_daily_d1_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l6-daily-d2-scan":
+        import glob
+
+        from .l6_microstructure import evaluate_l6_daily_d2
+        from .l6_microstructure import load_daily_panels
+
+        paths = sorted(glob.glob(str(Path(args.panel_dir) / "**" / "l6_daily_*.json"), recursive=True))
+        if not paths:
+            parser.error(f"no l6_daily_*.json panels under {args.panel_dir}")
+        panels = load_daily_panels(paths)
+        result = evaluate_l6_daily_d2(
+            panels,
+            target_feature=args.target_feature,
+            baseline_lookback=args.baseline_lookback,
+            universe=args.universe,
+            active_top_n=args.active_top_n,
+            holding=args.holding,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l6-daily-d2-scan",
+            path_key="output_path",
+            default_filename="l6_daily_d2_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l6-daily-d4-scan":
+        import glob
+
+        from .l6_microstructure import evaluate_l6_daily_d4
+        from .l6_microstructure import load_daily_panels
+
+        paths = sorted(glob.glob(str(Path(args.panel_dir) / "**" / "l6_daily_*.json"), recursive=True))
+        if not paths:
+            parser.error(f"no l6_daily_*.json panels under {args.panel_dir}")
+        panels = load_daily_panels(paths)
+        result = evaluate_l6_daily_d4(
+            panels,
+            universe=args.universe,
+            active_top_n=args.active_top_n,
+            holding=args.holding,
+            weight_mode=args.weight_mode,
+            purged_cv=args.purged_cv,
+            embargo=args.embargo,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l6-daily-d4-scan",
+            path_key="output_path",
+            default_filename="l6_daily_d4_scan.json",
+            explicit_path=args.output_path,
+        )
+    elif args.command == "l6-t0-exec-scan":
+        import glob
+
+        from .l6_microstructure import evaluate_l6_t0_execution
+        from .l6_microstructure import load_daily_panels
+
+        paths = sorted(glob.glob(str(Path(args.panel_dir) / "**" / "l6_daily_*.json"), recursive=True))
+        if not paths:
+            parser.error(f"no l6_daily_*.json panels under {args.panel_dir}")
+        panels = load_daily_panels(paths)
+        result = evaluate_l6_t0_execution(
+            panels,
+            feature=args.feature,
+            universe=args.universe,
+            active_top_n=args.active_top_n,
+            top_fraction=args.top_fraction,
+            round_trip_cost_bps=args.round_trip_cost_bps,
+            commission_roundtrip_bps=args.commission_roundtrip_bps,
+        )
+        result = write_research_json_artifact(
+            settings,
+            result,
+            kind="l6-t0-exec-scan",
+            path_key="output_path",
+            default_filename="l6_t0_exec_scan.json",
             explicit_path=args.output_path,
         )
     # "cta-paper-sim" is handled by the early delegation at the top of main().

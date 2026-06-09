@@ -22,7 +22,9 @@ from qount.cta_sim import DEFAULT_UNIVERSE
 from qount.cta_sim import MODE_PRESETS
 from qount.cta_sim import SimConfig
 from qount.cta_sim import _cap_unit_weights
+from qount.cta_sim import _carry_signal
 from qount.cta_sim import _target_weights
+from qount.cta_sim import generate_synthetic_carry_market
 from qount.cta_sim import generate_synthetic_panel
 from qount.cta_sim import load_prices_csv
 from qount.cta_sim import render_summary
@@ -230,6 +232,53 @@ class LoadPricesCsvTest(unittest.TestCase):
             path.write_text("date,X\n2020-01-01,10\n2020-01-02,\n2020-01-03,12\n", encoding="utf-8")
             prices = load_prices_csv(path)
             self.assertEqual(prices["X"], [10.0, 10.0, 12.0])
+
+
+class CarrySleeveTest(unittest.TestCase):
+    def test_carry_signal_is_sign_of_trailing_average(self) -> None:
+        series = [None, 0.1, 0.2, -0.05, -0.4]
+        # smooth_days=2 over the last two known values (-0.05, -0.4) -> negative -> -1
+        self.assertEqual(_carry_signal(series, 4, 2), -1.0)
+        # smooth_days=1 at t=2 sees +0.2 -> +1
+        self.assertEqual(_carry_signal(series, 2, 1), 1.0)
+        self.assertIsNone(_carry_signal([None, None], 1, 3))
+
+    def test_synthetic_carry_market_shape_and_determinism(self) -> None:
+        p1, c1 = generate_synthetic_carry_market(DEFAULT_UNIVERSE, n_days=400, seed=3)
+        p2, c2 = generate_synthetic_carry_market(DEFAULT_UNIVERSE, n_days=400, seed=3)
+        self.assertEqual(p1, p2)
+        self.assertEqual(c1, c2)
+        for name in p1:
+            self.assertEqual(len(p1[name]), 400)
+            self.assertEqual(len(c1[name]), 400)  # carry aligned to prices
+            self.assertTrue(all(v > 0 for v in p1[name]))
+
+    def test_carry_signal_has_real_edge(self) -> None:
+        # Carry-rich market: a fixed long/short carry config must end up in profit.
+        prices, carry = generate_synthetic_carry_market(DEFAULT_UNIVERSE, n_days=1500, seed=5)
+        cfg = SimConfig(signal="carry", carry_smooth_days=5, lookback_days=(1,),
+                        vol_lookback_days=63, rebalance_days=5, max_leverage=3.0)
+        res = run_paper_sim(prices, cfg, carry)
+        self.assertGreater(res["final_equity"], 1.0)
+        self.assertGreater(res["sharpe"], 0.5)
+
+    def test_carry_requires_panel(self) -> None:
+        prices, _ = generate_synthetic_carry_market(DEFAULT_UNIVERSE, n_days=400, seed=1)
+        with self.assertRaises(ValueError):
+            run_paper_sim(prices, SimConfig(signal="carry", lookback_days=(1,)))
+
+    def test_carry_no_lookahead(self) -> None:
+        prices, carry = generate_synthetic_carry_market(DEFAULT_UNIVERSE, n_days=600, seed=6)
+        cfg = SimConfig(signal="carry", carry_smooth_days=5, lookback_days=(1,))
+        rets = _rets_from_prices(prices)
+        t = 400
+        before = _target_weights(prices, rets, t, cfg, 1.0, 1.0, carry)
+        future_carry = {n: list(s) for n, s in carry.items()}
+        for n in future_carry:
+            for k in range(t + 1, len(future_carry[n])):
+                future_carry[n][k] = (future_carry[n][k] or 0.0) + 9.9
+        after = _target_weights(prices, rets, t, cfg, 1.0, 1.0, future_carry)
+        self.assertEqual(before, after)
 
 
 class CliSmokeTest(unittest.TestCase):

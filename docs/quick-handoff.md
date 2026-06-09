@@ -492,6 +492,25 @@ WSL 测试：
 这两个脚本使用 here-doc 进入 WSL，避免 Mac -> Windows PowerShell -> WSL 多层引号把
 `-p 'test*.py'` 吞掉。脚本不会修改 WSL `.env`、不会启动 timer、不会打开 live。
 
+## 从 Mac 在 WSL 上跑长任务(L6 跑批等)的坑
+
+- **后台进程不持久**:`ssh home "wsl.exe bash -lc 'tmux new -d ...'"` 起的 tmux / nohup 后台
+  进程,在 ssh 命令一返回后会被 WSL 连同 `/tmp` 一起回收(WSL 会话结束即拆)。只有从 Windows 侧
+  交互式 WSL 终端起、且该终端常开,后台才活。**从 Mac 远程驱动时,可靠做法是前台阻塞跑**:
+  ```bash
+  ssh -o ClearAllForwardings=yes home 'wsl.exe bash -s' <<'EOF'
+  cd ~/Code/qount && bash scripts/research/l6_pipeline.sh 2>&1 | tee /tmp/l6_pipeline.log
+  EOF
+  ```
+  ssh 连接全程挂着 = WSL 不回收,任务能跑完。命令行工具会把长任务转后台,但本地 ssh 进程仍挂着,
+  同样保活。
+- **嵌套引号**:走 `'wsl.exe bash -s' <<'EOF' ... EOF`(quoted heredoc)最稳,`$VAR` / `$(...)`
+  在 WSL 侧展开,不被 Mac/PowerShell 层吃掉;`wsl.exe bash -lc '...'` 里带 `$` 容易被吞。
+- **`l6_pipeline.sh`(external 消费模式)**:`.7z` 下到 `/mnt/d/BaiduNetdiskDownload/` →
+  `touch .../.l6_download_done` 让它处理完自退。失败的 `.7z`(损坏 / etl 错 / scored<6000 / xz 坏)
+  自动移入 `_bad/`,不再重试。合法的低标的交易日(源数据本身 <6000,如 20260210=5178)登记到脚本里
+  `LOW_OK_DATES` 白名单即可放行。幂等:archive 已存在的日子自动 SKIP。
+
 ## 标准研究命令
 
 端到端 backtest：

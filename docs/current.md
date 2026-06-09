@@ -1,6 +1,6 @@
 # qount 当前状态
 
-更新时间：2026-06-06
+更新时间：2026-06-09
 
 当前版本：`0.2.0`
 
@@ -12,7 +12,8 @@
 [profit-engineering-plan.md](profit-engineering-plan.md)，§7 止盈后的重启设计（换信息源/L3,已证伪）看
 [l3-information-edge-plan.md](l3-information-edge-plan.md)，跨资产趋势重启线（L1,攻 BR,首个真 edge 但
 已固化暂停）看 [l1-cross-asset-plan.md](l1-cross-asset-plan.md)，跨所套利重启线（L4,换游戏,S1 已证伪）看
-[l4-cross-exchange-plan.md](l4-cross-exchange-plan.md)。
+[l4-cross-exchange-plan.md](l4-cross-exchange-plan.md)，A股 L2 微观结构重启线（L6,换信息源攻 IC,
+当前在推进）看 [l6-microstructure-plan.md](l6-microstructure-plan.md)。
 
 ## 当前结论
 
@@ -232,6 +233,108 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
   maker 执行)——**当前一个都不追**。**这是停止投入,不放宽任何纪律**:live 仍关闭、不 forward paper、
   不放宽 broad gate、`validation_v1` once-only 资格继续保留。对账见
   [profit-engineering-plan.md](profit-engineering-plan.md) §11.8。
+- **2026-06-08 重启线 L6(A股 L2 微观结构,换信息源攻 IC 项):所有者授权,主线 L6-daily,D0 完成。**
+  §11.8 规定唯一合法重启是「结构性新输入」;所有者提供 A股 逐笔委托级 Level-2(Wind 三件套,
+  6TB/网盘),首个真正的结构性新数据源。**日内线 Phase 1(单日 20260407,15 ETF)实测**:订单流
+  IC 真高(`micro_price_dev @1m` rank-IC +0.139,符号稳)——项目首次用新数据把 IC 抬过日频 0.05
+  天花板,但每个可操作档(≥1m)净收益全负(振幅 ~0.8bp < T+0 往返成本 ~5–10bp),高振幅 IC 在
+  亚分钟需 co-location=慢操作者够不着(L4 延迟墙变体)。**主线转 L6-daily**(所有者选定):用 L2
+  重建**日线知情流**特征预测次日/次周截面收益——成本无关(日移动 1–3% >> 10bp)、全个股截面广度
+  友好(~7 >> ETF 1.7)、数据极便宜(6TB → MB 级小面板)。**D0 完成**(写日线特征+ETL+单测,单日
+  全截面验证分布合理、无前视):全个股 ETL 跑两天,20260407 scored 7762/7778(99.8%)、20260408
+  7714/7715(100%),五特征(`aggressive_ofi`/`large_aggr_ofi`/`late_minus_early_flow`/
+  `close_auction_imbalance`/`cancel_imbalance`,全 L2 衍生、区别于已证伪的券商粗主力)分布合理
+  (均值近 0、饱和率 0.3%–7.4% 且集中在低流动性微盘)。本地 363 OK + WSL 363 OK。原始 85G 经一次
+  ETL 塌成日线面板(几 MB);两天各 1356 只 T+0 ETF 原始三件套归档 `~/Desktop/l6_etf_raw/`
+  (日内 Phase 1/2 素材),全个股原始删除(所有者授权、网盘有备份)释放 ~63G。下一步 **D1**(生死第一
+  刀,需多日数据):跨日全个股截面 rank-IC + 符号稳 + DSR/PBO + 有效广度,门控截面 IC > 0.06;
+  当前仅 2 天无法测预测力,需继续攒日。**D2 增量门**:须证明对「价量动量+粗主力」有增量 IC,否则
+  只是换皮重测拥挤因子。硬约束全不变,research-only、未碰 `validation_v1`、未下单。计划见
+  [l6-microstructure-plan.md](l6-microstructure-plan.md) §4b。artifact
+  `state/research_runs/20260608T040443Z-...` 与 `...042318Z-...`。
+- **2026-06-08(续)L6 扩到 4 天 L2 + 所有者选 ETF 版 L6-daily。** L2 知情流扩到 0403/0407/0408/0409
+  (清明休市除外),全个股日线 panel 四份(99.8%–100%),个股主线数据继续累积。**所有者方向:做
+  ETF 版 L6-daily**(universe 换 T+0 ETF:ETF L2 知情流 → ETF 次日收益);标签 blocker 解除——panel
+  自带 `day_close`,forward-return 跨天直接算,不需外部日线。ETF 管线已验证(1356 全打分),但两个
+  隐忧:流动性长尾(近半成交<500 笔、竞价饱和 18–20%)+ ETF 截面广度历史 ~1.7(正是主线选全个股
+  =~7 要逃的天花板);ETF 版真实权衡=**广度↓(致命) vs T+0 日内可兑现↑(个股 T+1 大半 alpha 不可
+  兑现,ETF 版唯一救赎)**,生死靠活跃子集 `_panel_effective_breadth` 实测。**数据工程**:每天 38–47G
+  全市场原始 → 几 MB panel;ETF 原始 4 天 21.5G 压缩 8.7%(1.87G)归档 Windows `D:\qount_l2_archive\`
+  (字节+zstd 校验),全个股原始删、本地 ETF 删,Windows+网盘双备份。
+- **2026-06-08(续2)L2 扩到 4 月全月 17 个连续交易日 + 全 Windows 存储。** 从 4 天扩到 **17 天**
+  (0401–0424,除清明/周末),每天 panel scored 99.7%–100%。新增并行 ETL 基建(不改核心):
+  `scripts/research/l6_parallel_etl.py`(multiprocessing,单天 34min→32核 ~5min)+
+  `scripts/research/l6_wsl_batch.sh`(WSL 单天串行流水线,py7zr 解压→并行 ETL→xz 压缩归档→校验后
+  删 .7z,幂等可重入)。跨主机:Mac 2 天 + WSL 11 天。**所有者原则「Mac 不做数据存储」已落实**:
+  ETF L2 压缩归档 17 个/7.8G 全在 Windows `D:\qount_l2_archive\`(6 `.tar.zst`+11 `.tar.xz`),
+  全个股 panel 17 天全在 WSL `state/research_runs/l6_daily_*`(Mac 6 天已迁入 WSL、本地删),源 .7z
+  全删,Mac 纯编辑面零数据;WSL ext4 在 D 盘(372G free)。**下一步 D1 可正式做**:17 天=16 个
+  T→T+1 截面(接近 20–40 天门槛),写跨日 ETF 截面 rank-IC + 符号稳 + 活跃子集 eff-breadth
+  (先单测、本地→WSL),17 天 panel 已在 WSL 生产真相上可直接跑。硬约束全不变。
+- **2026-06-08(续3)ETF 版 D1 跨日截面 IC kill-test:below_gate,但 close_auction 是首个真实显著
+  信号。** 工具 `evaluate_l6_daily_d1` + 命令 `l6-daily-d1-scan`(local/WSL 367 OK)。17 天/16 截面
+  实跑:**广度天花板经验证实**——ETF 截面 eff-breadth **1.69**(§7/L1/L3b 反复撞的 ~1.7),全个股
+  **2.50**(印证主线选全个股,但 < L1 2.97)。**`close_auction_imbalance` = 项目首个真实、显著
+  (t=-4.95)、符号稳(0.87)的日线 L2 信号**(收盘竞价买压→次日反转),ETF IC -0.037;按 Grinold
+  breadth 1.69 → 要求 IC ≈0.049,实测 0.037=0.76×(接近不够),全个股要求 0.040/实测 0.017(广度高
+  但信号弱)。四 universe 全 below_gate(DSR 0.36–0.62/PBO 0.27–0.43)。与 L3b 同型(真信号但广度封死)
+  但没那么悲观:close_auction t 更硬、ETF 0.037 距要求仅 0.76×、且 **ETF T+0 可兑现**(个股 T+1 致命伤
+  在 ETF 不存在)。16 天仍薄。下一步待所有者决策(攒天/D2 增量/D4 组合/深挖 close_auction/§7 停)。
+- **2026-06-08(续4)D2 增量门:close_auction 在 ETF 上通过 —— 价量没有的真新信息(项目首次)。**
+  工具 `evaluate_l6_daily_d2` + 命令 `l6-daily-d2-scan`(local/WSL 370 OK)。偏 rank-IC 控制 trailing
+  收益(价量基线):ETF close_auction raw IC -0.036 → **控制价量后 partial IC -0.034(t-3.51)、保留
+  94.6%**,价量基线自己 IC +0.019(t0.23,几乎无预测力),共线度仅 -0.04。**close_auction 是价量根本
+  没有的真新信息,非换皮重测反转因子**。换信息源尝试里 L3b 信号被广度死、funding 弱,**close_auction
+  是首个同过 D1(真实显著)+ D2(价量增量)的信号,核心假设「L2 真知情流 ≠ 价量」首次经验证实**。
+  张力仍在:|IC| 0.036 < breadth(1.69)调整要求 0.049、14 截面偏薄。下一步待所有者决策(攒天 / D4
+  多特征组合 / 深挖 close_auction 反转+ETF T+0 执行)。硬约束全不变,未碰 `validation_v1`。
+- **2026-06-08(续5)D4 多特征线性组合:临界,接近但未干净突破。** 工具 `evaluate_l6_daily_d4` +
+  命令 `l6-daily-d4-scan`(local/WSL 372 OK)。5 特征 z-score 符号对齐/IC 加权合成,对比广度调整要求
+  `1/√(eff_breadth·250)≈0.049`:组合把信号从单 close_auction 0.036 抬到 **全体 ic_weighted 0.042
+  (t4.15/sign0.81,但<0.049 且 in-sample 权重)/ 活跃top300 0.057(>0.048 破线但 t 仅 2.11)**;无
+  「破线+t硬+全universe+非in-sample」四者兼得。**信号真实、组合有帮助,但量级卡在广度(1.69)要求
+  0.049 临界线**,再次印证广度是绑定约束。16 截面薄、ic_weighted 需 purged-CV。下一步待所有者决策
+  (攒天到~40+purged-CV / 接受临界按 §7 固化 / 深挖 close_auction+T+0 执行)。硬约束全不变。
+- **2026-06-08(续6)D4 purged-CV 推翻 in-sample:组合提升是过拟合。** 给 D4 加 `--purged-cv`
+  (leave-one-section-out+embargo)。WSL 实跑:**所有配置 OOS composite IC 崩到 ~0 甚至翻负**——ETF
+  全体 ic_weighted in-sample 0.042(t4.15)→ **OOS -0.004(保留比 -0.09)**;sign_equal/top300 OOS 均
+  翻负。**in-sample 0.042-0.057 几乎全是 16 截面权重选择的过拟合假象**(反过拟合 harness 的价值)。
+  **修正净结论**:单 close_auction 真实(D1/D2 无权重选择)但量级 0.036<0.049;D4 组合救不了(引入
+  权重选择即过拟合、OOS 崩);绑定约束仍是广度,组合突破这条路在现有数据上关闭。下一步待所有者决策
+  (攒天到~40 / 深挖 close_auction 单信号+ETF T+0 执行 / 接受按 §7 同型固化停)。硬约束全不变。
+- **2026-06-09 L2 数据从 17 天扩到 53 天(2/3/4 月)——D1「16 截面偏薄」解除。** 隔夜跑批管线
+  (`scripts/research/l6_pipeline.sh`,external 消费模式)收下 2/3/4 月连续交易日,全个股日线 panel
+  落 WSL `state/research_runs/l6_daily_*`,每天 scored 99.7%–100%。两个坏文件单独处理:**20260311**
+  原 .7z 损坏(`LZMAError`)、重下后 DONE(scored 7487);**20260210** 是合法低标的日(稳定 5178,
+  邻日 ~7500;ETF 归档空 116B=该日几无 T+0 ETF),加白名单 `LOW_OK_DATES` 放行、DONE。**panel 总数
+  = 53 天 → D1 有 52 个 T→T+1 截面,远超 20–40 门槛**;之前续3–续6 的 D1/D2/D4 结论都建在 16 截面上,
+  现在 close_auction 单信号(D1/D2 真实但量级 0.036<广度要求 0.049)与 D4 purged-CV 可在厚样本上正经
+  重跑——这是下一步(尚未重跑)。**管线加固(只改运维脚本、不碰 `l6_microstructure.py`)**:四个失败
+  分支(extract/etl/scored<6000/xz)从「原地留 .7z」改成移入 `$SRCDIR/_bad/`,根除坏文件让
+  `processor` `while true` 死循环空转的 bug;新增 `LOW_OK_DATES` 低标的日白名单跳过 <6000 守卫。
+  **运维坑(记 quick-handoff)**:`ssh → wsl.exe bash -lc 'tmux ...'` 起的后台进程不持久(ssh 一返回
+  WSL 即回收),可靠做法是**前台阻塞跑**(ssh 全程挂着 = WSL 不回收)。硬约束全不变,research-only、
+  未碰 `validation_v1`、未下单。
+- **2026-06-09 L6 厚样本重测 + close_auction T+0 执行实测 → 撞回 maker 墙,所有者授权 L6 同型固化止盈。**
+  ① **52 天 D1/D2/D4 重跑**:加厚样本把 close_auction 信号打回——ETF D1 IC 从 17 天 0.037 缩到 **0.021
+  (t−3.38,符号 0.69)**,距广度要求(eff-breadth 1.85→0.046)从 0.76× 退到 **0.44×**;D2 增量仍过
+  (控制价量后 partial 保留 103%,确属价量正交的真新信息);D4 组合 OOS(purged-CV)崩到 0.006/翻负。
+  广度墙(~1.85)未动、信号离它更远。② **换问题做执行线 B**(`evaluate_l6_t0_execution` + 命令
+  `l6-t0-exec-scan`,绕开 IR=IC√BR 截面下界):信号在 T 收盘竞价测得、最早 T+1 开盘可动 → 唯一可兑现
+  是 T+1 open→close 日内 T+0。**把次日反转拆成隔夜/日内/收收**:发现 **收盘竞价买压→隔夜跳空续涨
+  (IC+0.045/t8.5)→日内反转(IC−0.029/t4.5)**,D1 的 close-to-close(−0.019)是两段反向力量的净残值;
+  `capturable_frac≈2`(只吃日内 T+0 比持有过夜好一倍,隔夜那段反向)。③ **实测成本定生死**(给特征加
+  `day_open`/`quoted_spread_bps`、重 ETL 46 天 ETF panel):日内 gross +7.6~9.9bp(t>2.4)真实,但
+  **交易尾价差 ~13–14bp → taker 往返成本 ~31bp → net −23bp(t−7),taker 彻底死**;唯一"幸存"的竞价
+  撮合(仅佣金)net +2.6/+4.9bp 但 **t<1.3 不显著**。**价差-信号陷阱**:信号活在不流动 ETF(强尾价差
+  14.4bp/gross+9.9bp),一上流动 top100(价差 5.7bp)信号塌成 +2.3bp/t0.26——**edge 本质是薄 ETF 的
+  流动性提供溢价,taker 拿不走;要拿只能做 maker = L4/§3-Phase4 的 maker 墙**。④ **净结论**:close_auction
+  是项目迄今最干净的信号(真实+显著+价量正交+隔夜/日内结构清楚),但不可 taker 兑现、edge=流动性溢价、
+  收敛到已知撞死的 maker 墙。**所有者授权 A:B 诚实止盈、L6 与 §7/L1/L3b/L4 同型固化**(stop investing,
+  不放宽任何纪律:live 关闭、不 forward paper、不放宽 broad gate、`validation_v1` once-only 保留)。
+  沉淀=D0–D4 + T0 隔夜/日内分解 + 实测 taker/auction 成本的反过拟合 harness。artifact
+  `state/research_runs/20260609T065032Z/065033Z-l6-t0-exec-scan`。计划见
+  [l6-microstructure-plan.md](l6-microstructure-plan.md) §5。
 
 ## 当前能力
 
@@ -297,6 +400,18 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
   归一到 8h 当量、as-of 对齐到 8h bucket、取 `spread=max−min` 的市场中性 pair、算扣费净 capture /
   break-even / required_maker_fill / pair 持续性 + 复用 §7 的 `_sharpe`/DSR/PBO;research-only、
   无仓位、不下单。三所需配置代理 + 跑前 `source .env`;不足两所可达返回 guard 不崩溃。已用于证伪 L4 S1。
+- L6 微观结构数据/特征层:`src/qount/l6_microstructure.py`,解析 A股 逐笔 Level-2 Wind 三件套
+  (十档盘口 `行情.csv`、逐笔成交 `逐笔成交.csv`、逐笔委托 `逐笔委托.csv`),交易所语义感知
+  (深市撤单在成交文件 `成交代码=C`、沪市在委托文件 `委托类型=D`,按内容非后缀判别)、严格 as-of
+  无前视对齐;stdlib only、live/`run-once` 不 import。
+  - 日内 Phase 1 kill-test:命令 `l6-microstructure-ic-scan` + `run_l6_microstructure_ic_scan`,
+    订单流特征(`ofi`/`depth_imbalance`/`micro_price_dev`/`trade_sign_imbalance`)对前向 mid 收益的
+    rank-IC-vs-horizon 衰减 + 扣费 LS + DSR/PBO;已实测 IC 真高但可操作档净负(延迟墙)。
+  - L6-daily 主线 ETL:命令 `l6-daily-features` + `compute_daily_feature_panel` /
+    `daily_flow_features`,把全市场逐笔塌成每(股,日)五个日线知情流特征向量(`aggressive_ofi` /
+    `large_aggr_ofi` / `late_minus_early_flow` / `close_auction_imbalance` / `cancel_imbalance`,
+    区别于券商粗主力净流入),`--all-symbols` 枚举全市场;research-only、不算 IC、不下注。D0 已用
+    20260407/08 全个股截面验证(99.8%/100% 覆盖、分布合理)。
 - `pyproject.toml` 已有 research optional extra：默认提供 `numpy` / `scikit-learn`；
   `lightgbm` 单独放在 `research-lightgbm`，因为 Mac cp314 wheel 可安装但当前缺
   `libomp.dylib`，检查脚本会把它报告为可选不可用。验证入口：

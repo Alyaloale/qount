@@ -153,6 +153,47 @@ def generate_synthetic_panel(
     return prices
 
 
+def generate_synthetic_carry_market(
+    universe: tuple[AssetSpec, ...] | list[AssetSpec],
+    n_days: int,
+    seed: int,
+    *,
+    carry_premium: float = 3.0,
+    start_price: float = 100.0,
+) -> tuple[dict[str, list[float]], dict[str, list[float | None]]]:
+    """Synthetic ``(prices, carry)`` where the carry panel predicts forward returns.
+
+    Each asset carries a slow, persistent annualized roll-yield state; the day ``t``->``t+1``
+    return earns ``carry_premium * carry[t] / 252`` plus a per-class block-correlated shock.
+    There is **no trend regime drift** here, so the trend sleeve sees ~noise while the carry
+    sleeve has a real, harvestable spread -- the mirror of ``generate_synthetic_panel`` (which
+    is trend-rich, carry-flat). ``carry[name][t]`` is decision-time (known at the close of
+    ``t``) and drives the return realized over ``t``->``t+1``, so there is no lookahead.
+    """
+
+    if n_days < 2:
+        raise ValueError("n_days must be >= 2")
+    rng = random.Random(seed)
+    classes = sorted({a.asset_class for a in universe})
+    prices: dict[str, list[float]] = {a.name: [start_price] for a in universe}
+    carry: dict[str, list[float | None]] = {
+        a.name: [rng.gauss(0.0, 0.15)] for a in universe
+    }
+    for _ in range(n_days - 1):
+        class_factor = {c: rng.gauss(0.0, 1.0) for c in classes}
+        for a in universe:
+            cur_carry = float(carry[a.name][-1])  # carry known at end of the current last day
+            idio = rng.gauss(0.0, 1.0)
+            load = max(0.0, min(1.0, a.class_load))
+            shock = load * class_factor[a.asset_class] + math.sqrt(1.0 - load * load) * idio
+            daily_vol = a.annual_vol / math.sqrt(TRADING_DAYS_PER_YEAR)
+            ret = carry_premium * cur_carry / TRADING_DAYS_PER_YEAR + daily_vol * shock
+            prev = prices[a.name][-1]
+            prices[a.name].append(max(prev * (1.0 + ret), 1e-9))
+            carry[a.name].append(0.985 * cur_carry + 0.015 * rng.gauss(0.0, 0.15))
+    return prices, carry
+
+
 def load_prices_csv(path: str | Path) -> dict[str, list[float]]:
     """Load a wide price table: first column = date, remaining columns = tickers.
 
@@ -212,6 +253,8 @@ class SimConfig:
     dd_factor: float = 0.5  # leverage multiplier while in drawdown
     long_only: bool = False  # if True, drop short legs (negative trend -> 0 weight)
     max_weight: float = 1.0  # per-asset cap as a fraction of gross (1.0 = no cap)
+    signal: str = "trend"  # "trend" (multi-lookback TSMOM) or "carry" (roll-yield sleeve)
+    carry_smooth_days: int = 5  # carry sleeve: trailing window over which to average carry
 
 
 # Risk-appetite presets for a cash A-share ETF account (long-only, no leverage). They set
@@ -253,6 +296,26 @@ def _max_drawdown(equity_curve: list[float]) -> float:
 
 def _sign(x: float) -> float:
     return 1.0 if x > 0 else (-1.0 if x < 0 else 0.0)
+
+
+def _carry_signal(carry_series: list[float | None], t: int, smooth_days: int) -> float | None:
+    """Decision-time carry signal in {-1, 0, +1}: sign of the trailing-averaged carry.
+
+    ``carry_series[t]`` is the annualized roll-yield observable at the close of day ``t``
+    (positive = backwardation = long, negative = contango = short). Averaging over the last
+    ``smooth_days`` damps single-day curve noise; the sign keeps it a robust CTA bet (same
+    degrees of freedom as the trend sign-ensemble). Returns ``None`` if no carry is known yet.
+    """
+
+    lo = max(0, t - max(1, smooth_days) + 1)
+    window = [
+        carry_series[k]
+        for k in range(lo, t + 1)
+        if k < len(carry_series) and carry_series[k] is not None
+    ]
+    if not window:
+        return None
+    return _sign(_mean(window))
 
 
 def _cap_unit_weights(weights: dict[str, float], cap: float) -> dict[str, float]:
@@ -305,8 +368,16 @@ def _target_weights(
     config: SimConfig,
     equity: float,
     peak_equity: float,
+    carry: dict[str, list[float | None]] | None = None,
 ) -> dict[str, float]:
-    """Weights decided at end of day ``t`` using only data through ``t``."""
+    """Weights decided at end of day ``t`` using only data through ``t``.
+
+    The signal sleeve is ``config.signal``: ``"trend"`` (multi-lookback TSMOM ensemble,
+    default) or ``"carry"`` (sign of the trailing-averaged roll yield from the ``carry``
+    panel). Both share the identical inverse-vol weighting, gross-normalize, per-asset cap,
+    portfolio vol-target and drawdown de-leverage below -- only the per-asset signal differs,
+    so a carry sleeve can later be risk-combined with trend (plan §5).
+    """
 
     names = list(prices)
     raw: dict[str, float] = {}
@@ -320,23 +391,30 @@ def _target_weights(
         vol = _std_sample(window)
         if vol <= 0.0:
             continue
-        # Multi-lookback trend ensemble in [-1, 1].
-        signs: list[float] = []
-        for lookback in config.lookback_days:
-            if t - lookback < 0:
+        if config.signal == "carry":
+            if carry is None or name not in carry:
                 continue
-            p_now = prices[name][t]
-            p_then = prices[name][t - lookback]
-            if p_then > 0.0:
-                signs.append(_sign(p_now / p_then - 1.0))
-        if not signs:
+            signal = _carry_signal(carry[name], t, config.carry_smooth_days)
+            if signal is None:
+                continue
+        else:
+            # Multi-lookback trend ensemble in [-1, 1].
+            signs: list[float] = []
+            for lookback in config.lookback_days:
+                if t - lookback < 0:
+                    continue
+                p_now = prices[name][t]
+                p_then = prices[name][t - lookback]
+                if p_then > 0.0:
+                    signs.append(_sign(p_now / p_then - 1.0))
+            if not signs:
+                continue
+            signal = _mean(signs)
+        if config.long_only and signal < 0.0:
+            signal = 0.0  # cash account can't short: drop the short leg
+        if signal == 0.0:
             continue
-        ensemble = _mean(signs)
-        if config.long_only and ensemble < 0.0:
-            ensemble = 0.0  # cash A-share account can't short: drop the short leg
-        if ensemble == 0.0:
-            continue
-        raw[name] = ensemble / vol
+        raw[name] = signal / vol
 
     gross = sum(abs(w) for w in raw.values())
     if gross <= 0.0:
@@ -374,8 +452,16 @@ def _target_weights(
 # --------------------------------------------------------------------------------------
 
 
-def run_paper_sim(prices: dict[str, list[float]], config: SimConfig | None = None) -> dict[str, Any]:
-    """Run the full sim and return a metrics + equity-curve result dict."""
+def run_paper_sim(
+    prices: dict[str, list[float]],
+    config: SimConfig | None = None,
+    carry: dict[str, list[float | None]] | None = None,
+) -> dict[str, Any]:
+    """Run the full sim and return a metrics + equity-curve result dict.
+
+    ``carry`` is the per-asset annualized roll-yield panel (aligned to ``prices``); it is
+    required when ``config.signal == 'carry'`` and ignored for the default trend sleeve.
+    """
 
     config = config or SimConfig()
     names = list(prices)
@@ -386,6 +472,12 @@ def run_paper_sim(prices: dict[str, list[float]], config: SimConfig | None = Non
         raise ValueError("all price series must be the same length")
     if length < max(config.lookback_days) + config.rebalance_days + 2:
         raise ValueError("not enough price history for the configured lookbacks")
+    if config.signal == "carry":
+        if not carry:
+            raise ValueError("config.signal='carry' needs a carry panel")
+        for name in names:
+            if name in carry and len(carry[name]) != length:
+                raise ValueError("each carry series must match the price series length")
 
     rets: dict[str, list[float | None]] = {}
     for name in names:
@@ -416,7 +508,7 @@ def run_paper_sim(prices: dict[str, list[float]], config: SimConfig | None = Non
 
         # Rebalance at end of day t (data through t), effective from t+1.
         if t >= warmup and t % config.rebalance_days == 0:
-            new_weights = _target_weights(prices, rets, t, config, equity, peak_equity)
+            new_weights = _target_weights(prices, rets, t, config, equity, peak_equity, carry)
             union = set(new_weights) | set(weights)
             turnover = sum(abs(new_weights.get(n, 0.0) - weights.get(n, 0.0)) for n in union)
             equity *= 1.0 - config.cost_per_side_pct * turnover

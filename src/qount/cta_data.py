@@ -411,6 +411,201 @@ def fetch_tqsdk_panel(
 
 
 # --------------------------------------------------------------------------------------
+# Futures term-structure carry (roll yield) -- pure builder + tqsdk adapter
+# --------------------------------------------------------------------------------------
+
+
+def _days_between(date_iso: str, expire_iso: str) -> int | None:
+    """Calendar days from ``date_iso`` to ``expire_iso`` (both YYYY-MM-DD); None if unparseable."""
+
+    import datetime as _dt
+
+    try:
+        d0 = _dt.date.fromisoformat(date_iso[:10])
+        d1 = _dt.date.fromisoformat(expire_iso[:10])
+    except (ValueError, TypeError):
+        return None
+    return (d1 - d0).days
+
+
+def annualized_roll_yield(
+    near_close: float, far_close: float, near_dte: int, far_dte: int
+) -> float | None:
+    """Annualized roll yield between the near and the deferred contract.
+
+    ``(near/far - 1) * 365 / (far_dte - near_dte)``. Positive = backwardation (near richer
+    than far -> long earns roll as the far converges up); negative = contango (short).
+    Returns None if the tenor gap or a price is non-positive.
+    """
+
+    gap = far_dte - near_dte
+    if gap <= 0 or far_close <= 0.0 or near_close <= 0.0:
+        return None
+    return (near_close / far_close - 1.0) * 365.0 / gap
+
+
+def build_term_structure_carry(
+    contracts: dict[str, dict[str, Any]],
+    dates: list[str],
+    *,
+    min_dte_days: int = 10,
+) -> dict[str, float]:
+    """Daily annualized carry from the two nearest non-expiring contracts of one product.
+
+    ``contracts``: ``{symbol: {"expire": "YYYY-MM-DD", "closes": {date: close}}}``. Per date,
+    take the contracts that traded that date with at least ``min_dte_days`` to expiry (drops
+    the about-to-deliver, illiquid front), sort by days-to-expiry, and roll-yield the nearest
+    two. Returns ``{date: annualized_carry}`` (only dates with >= 2 usable contracts).
+    """
+
+    out: dict[str, float] = {}
+    for date in dates:
+        usable: list[tuple[int, float]] = []
+        for contract in contracts.values():
+            close = contract.get("closes", {}).get(date)
+            if not isinstance(close, (int, float)) or close <= 0.0:
+                continue
+            dte = _days_between(date, contract.get("expire", ""))
+            if dte is None or dte < min_dte_days:
+                continue
+            usable.append((dte, float(close)))
+        if len(usable) < 2:
+            continue
+        usable.sort(key=lambda item: item[0])
+        (near_dte, near_px), (far_dte, far_px) = usable[0], usable[1]
+        carry = annualized_roll_yield(near_px, far_px, near_dte, far_dte)
+        if carry is not None:
+            out[date] = carry
+    return out
+
+
+def align_prices_and_carry(
+    price_by_symbol: dict[str, dict[str, float]],
+    carry_by_symbol: dict[str, dict[str, float]],
+) -> tuple[dict[str, list[float]], dict[str, list[float | None]]]:
+    """Align price + carry onto the symbols' common PRICE dates (carry None where missing).
+
+    Prices drive the date axis (intersection across symbols, like ``align_on_common_dates``);
+    the carry panel is laid on the same axis with ``None`` wherever a date has no carry, which
+    the carry sleeve skips at decision time. Returns ``(prices, carry)`` ready for the sim.
+    """
+
+    names = list(price_by_symbol)
+    if len(names) < 2:
+        raise ValueError("need >= 2 symbols for a carry panel")
+    common: set[str] | None = None
+    for name in names:
+        dates = set(price_by_symbol[name])
+        common = dates if common is None else (common & dates)
+    ordered = sorted(common or set())
+    if len(ordered) < 2:
+        raise ValueError(f"only {len(ordered)} common price dates across {len(names)} symbols")
+    prices = {n: [price_by_symbol[n][d] for d in ordered] for n in names}
+    carry = {
+        n: [carry_by_symbol.get(n, {}).get(d) for d in ordered] for n in names
+    }
+    return prices, carry
+
+
+def fetch_tqsdk_carry_panel(
+    symbols: tuple[str, ...] | list[str] | None = None,
+    *,
+    user: str | None,
+    password: str | None,
+    bars: int = 2000,
+    min_dte_days: int = 10,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    cache_dir: str = "state/tqsdk_carry_cache",
+) -> tuple[dict[str, list[float]], dict[str, list[float | None]]]:
+    """Build ``(prices, carry)`` panels for domestic futures via TqSdk term structure.
+
+    For each ``KQ.m@EX.product`` symbol: the main-continuous daily closes are the price axis,
+    and the carry series is the roll yield of the two nearest live/expired contracts at each
+    date (``build_term_structure_carry``). Per-contract daily klines are cached under
+    ``cache_dir`` so re-runs are cheap. Needs a free 天勤 account; **route direct, not via the
+    Binance proxy** (unset HTTP(S)_PROXY first). Returns panels aligned on common price dates.
+    """
+
+    if not user or not password:
+        raise ValueError(
+            "missing TqSdk credentials: set QOUNT_TQSDK_USER / QOUNT_TQSDK_PASS (free 天勤 "
+            "account at shinnytech.com)"
+        )
+    try:
+        from tqsdk import TqApi  # type: ignore
+        from tqsdk import TqAuth  # type: ignore
+    except ImportError as error:  # pragma: no cover - env without tqsdk
+        raise RuntimeError(
+            "domestic futures carry source needs tqsdk: pip install tqsdk"
+        ) from error
+
+    import datetime as _dt
+    import json as _json
+
+    symbols = list(symbols) if symbols else list(TQSDK_DEFAULT_FUTURES)
+    cutoff = (start_date or "")[:10]
+    end_cut = (end_date or "")[:10]
+    cache = Path(cache_dir)
+    cache.mkdir(parents=True, exist_ok=True)
+
+    def _to_date(ns_or_ts: float, *, ns: bool) -> str:  # pragma: no cover - needs network
+        seconds = (ns_or_ts / 1e9) if ns else float(ns_or_ts)
+        return _dt.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d")
+
+    api = TqApi(auth=TqAuth(user, password))  # pragma: no cover - needs account + network
+    price_by_symbol: dict[str, dict[str, float]] = {}
+    carry_by_symbol: dict[str, dict[str, float]] = {}
+    try:  # pragma: no cover - needs account + network
+        for symbol in symbols:
+            _, _, ex_product = symbol.partition("@")
+            exchange, _, product = ex_product.partition(".")
+            # main-continuous price axis
+            mk = api.get_kline_serial(symbol, 24 * 60 * 60, bars)
+            closes: dict[str, float] = {}
+            for ns, close in zip(mk["datetime"], mk["close"]):
+                if close == close and float(close) > 0:  # not NaN
+                    closes[_to_date(int(ns), ns=True)] = float(close)
+            if cutoff or end_cut:
+                closes = {
+                    d: c for d, c in closes.items()
+                    if (not cutoff or d >= cutoff) and (not end_cut or d <= end_cut)
+                }
+            price_by_symbol[symbol] = closes
+            min_price_date = min(closes) if closes else "2000-01-01"
+            # per-contract klines (cached) -> term-structure carry
+            contracts: dict[str, dict[str, Any]] = {}
+            live = api.query_quotes(ins_class="FUTURE", product_id=product, expired=False) or []
+            expired = api.query_quotes(ins_class="FUTURE", product_id=product, expired=True) or []
+            for csym in sorted(set(live) | set(expired)):
+                cpath = cache / f"{csym}.json"
+                if cpath.exists():
+                    contracts[csym] = _json.loads(cpath.read_text(encoding="utf-8"))
+                    continue
+                quote = api.get_quote(csym)
+                exp = quote.expire_datetime
+                if not exp:
+                    continue
+                exp_date = _to_date(float(exp), ns=False)
+                if exp_date < min_price_date:  # contract delivered before our window starts
+                    continue
+                ck = api.get_kline_serial(csym, 24 * 60 * 60, bars)
+                ccloses: dict[str, float] = {}
+                for ns, close in zip(ck["datetime"], ck["close"]):
+                    if close == close and float(close) > 0:
+                        ccloses[_to_date(int(ns), ns=True)] = float(close)
+                rec = {"expire": exp_date, "closes": ccloses}
+                cpath.write_text(_json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+                contracts[csym] = rec
+            carry_by_symbol[symbol] = build_term_structure_carry(
+                contracts, sorted(closes), min_dte_days=min_dte_days
+            )
+    finally:  # pragma: no cover - needs account + network
+        api.close()
+    return align_prices_and_carry(price_by_symbol, carry_by_symbol)
+
+
+# --------------------------------------------------------------------------------------
 # Binance (crypto OHLCV via ccxt)
 # --------------------------------------------------------------------------------------
 

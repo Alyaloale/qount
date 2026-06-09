@@ -232,6 +232,36 @@ def default_grid(
     return grid
 
 
+def default_carry_grid(
+    *, long_only: bool = False, max_leverage: float = 3.0, max_weight: float = 1.0
+) -> list[SimConfig]:
+    """Coarse carry-sleeve grid (carry smoothing x vol x rebalance), mirroring ``default_grid``.
+
+    The carry signal does not use price lookbacks, so the searched dimension is the carry
+    smoothing window instead. ``lookback_days=(1,)`` keeps ``run_paper_sim``'s history guard
+    happy while the trend lookbacks stay unused. 12 cells, same as the trend grid, so DSR
+    deflates against a comparable trial count.
+    """
+
+    grid: list[SimConfig] = []
+    for smooth in (1, 5, 10):
+        for vol_lb in (42, 63):
+            for rebalance in (5, 21):
+                grid.append(
+                    SimConfig(
+                        signal="carry",
+                        carry_smooth_days=smooth,
+                        lookback_days=(1,),
+                        vol_lookback_days=vol_lb,
+                        rebalance_days=rebalance,
+                        max_leverage=max_leverage,
+                        long_only=long_only,
+                        max_weight=max_weight,
+                    )
+                )
+    return grid
+
+
 def run_gate_scan(
     prices: dict[str, list[float]],
     grid: list[SimConfig] | None = None,
@@ -241,19 +271,28 @@ def run_gate_scan(
     long_only: bool = False,
     max_leverage: float = 3.0,
     max_weight: float = 1.0,
+    carry: dict[str, list[float | None]] | None = None,
 ) -> dict[str, Any]:
-    """Run the grid, apply DSR/PBO/folds, and return a pass/fail verdict."""
+    """Run the grid, apply DSR/PBO/folds, and return a pass/fail verdict.
 
-    grid = grid or default_grid(
-        long_only=long_only, max_leverage=max_leverage, max_weight=max_weight
-    )
+    When ``carry`` is given (and no explicit ``grid``), the carry-sleeve grid is used and the
+    carry panel is threaded into every cell -- so the same DSR/PBO/fold harness judges the
+    carry edge exactly as it judges trend.
+    """
+
+    if grid is None:
+        grid = (
+            default_carry_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
+            if carry is not None
+            else default_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
+        )
     cells: list[dict[str, Any]] = []
     returns_by_config: list[dict[int, float]] = []
     breadth: dict[str, Any] | None = None
     skipped = 0
     for config in grid:
         try:
-            res = run_paper_sim(prices, config)
+            res = run_paper_sim(prices, config, carry)
         except ValueError:
             skipped += 1  # not enough history for this config on this panel
             continue
@@ -265,6 +304,8 @@ def run_gate_scan(
         returns_by_config.append({i: r for i, r in enumerate(net)})
         cells.append(
             {
+                "signal": config.signal,
+                "carry_smooth_days": config.carry_smooth_days,
                 "lookback_days": list(config.lookback_days),
                 "vol_lookback_days": config.vol_lookback_days,
                 "rebalance_days": config.rebalance_days,
@@ -415,17 +456,24 @@ def run_walkforward_eval(
     max_leverage: float = 3.0,
     max_weight: float = 1.0,
     fixed_config: SimConfig | None = None,
+    carry: dict[str, list[float | None]] | None = None,
 ) -> dict[str, Any]:
-    """Selection-free robustness: equal-weight ensemble + past-only walk-forward + fixed cfg."""
+    """Selection-free robustness: equal-weight ensemble + past-only walk-forward + fixed cfg.
 
-    grid = default_grid(
-        long_only=long_only, max_leverage=max_leverage, max_weight=max_weight
+    Pass ``carry`` to evaluate the carry sleeve (carry grid + carry fixed config) instead of
+    trend; the selection-free reads are identical in spirit.
+    """
+
+    grid = (
+        default_carry_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
+        if carry is not None
+        else default_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
     )
     nets: list[list[float]] = []
     warmups: list[int] = []
     for config in grid:
         try:
-            res = run_paper_sim(prices, config)
+            res = run_paper_sim(prices, config, carry)
         except ValueError:
             continue
         nets.append(res["net_daily_returns"])
@@ -465,16 +513,31 @@ def run_walkforward_eval(
                 }
             )
 
-    # Fixed a-priori config (NOT the in-sample winner): a standard medium-term ensemble.
-    fixed = fixed_config or SimConfig(
-        lookback_days=(63, 126, 252),
-        vol_lookback_days=63,
-        rebalance_days=21,
-        long_only=long_only,
-        max_leverage=max_leverage,
-        max_weight=max_weight,
-    )
-    fixed_net = run_paper_sim(prices, fixed)["net_daily_returns"][:length][start:]
+    # Fixed a-priori config (NOT the in-sample winner): a standard medium-term ensemble,
+    # or a standard carry config when evaluating the carry sleeve.
+    if fixed_config is not None:
+        fixed = fixed_config
+    elif carry is not None:
+        fixed = SimConfig(
+            signal="carry",
+            carry_smooth_days=5,
+            lookback_days=(1,),
+            vol_lookback_days=63,
+            rebalance_days=21,
+            long_only=long_only,
+            max_leverage=max_leverage,
+            max_weight=max_weight,
+        )
+    else:
+        fixed = SimConfig(
+            lookback_days=(63, 126, 252),
+            vol_lookback_days=63,
+            rebalance_days=21,
+            long_only=long_only,
+            max_leverage=max_leverage,
+            max_weight=max_weight,
+        )
+    fixed_net = run_paper_sim(prices, fixed, carry)["net_daily_returns"][:length][start:]
 
     ens_stats = _return_stats(ensemble, n_folds=n_folds)
     wf_stats = _return_stats(walk_forward, n_folds=n_folds)
