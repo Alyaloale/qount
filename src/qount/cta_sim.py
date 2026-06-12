@@ -255,6 +255,14 @@ class SimConfig:
     max_weight: float = 1.0  # per-asset cap as a fraction of gross (1.0 = no cap)
     signal: str = "trend"  # "trend" (multi-lookback TSMOM) or "carry" (roll-yield sleeve)
     carry_smooth_days: int = 5  # carry sleeve: trailing window over which to average carry
+    # Valuation filter (V-GATE, docs/cta-r-value-gate-plan.md). Default OFF -> byte-identical
+    # to the validated engine. When on, an equity sleeve whose PE or PB sits at/above
+    # ``value_gate_pct`` of its trailing ``value_gate_lookback_days`` window is dropped
+    # (weight 0) before gross-normalization. Non-equity sleeves (gold/bond/QDII: no PE/PB)
+    # pass through untouched.
+    value_gate: bool = False
+    value_gate_pct: float = 0.80  # percentile at/above which an equity sleeve is "expensive"
+    value_gate_lookback_days: int = 756  # trailing window for the valuation percentile (~3y)
 
 
 # Risk-appetite presets for a cash A-share ETF account (long-only, no leverage). They set
@@ -356,6 +364,59 @@ def _cap_unit_weights(weights: dict[str, float], cap: float) -> dict[str, float]
     return w
 
 
+def _percentile_rank(window: list[float], value: float) -> float:
+    """Fraction of ``window`` values <= ``value`` (0..1). Empty window -> 0.0 (treat as cheap).
+
+    Used by the valuation filter: a high rank means today's PE/PB is near the top of its own
+    trailing history, i.e. the sleeve is "expensive" relative to where it has traded.
+    """
+
+    if not window:
+        return 0.0
+    return sum(1 for v in window if v <= value) / len(window)
+
+
+def _value_gated(
+    valuation: dict[str, dict[str, list[float | None]]] | None,
+    name: str,
+    t: int,
+    config: SimConfig,
+) -> tuple[bool, str]:
+    """Decide if ``name`` is gated out at end of day ``t`` by its valuation percentile.
+
+    Decision-time only (window through ``t``). Returns ``(gated, status)`` where status is:
+      - ``"no_data"``  : no valuation series for this name (gold/bond/QDII) -> pass through.
+      - ``"missing"``  : has a series but no usable PE/PB at ``t`` -> pass through (conservative:
+                          a data hole must not look "cheap" or "expensive"). Counted for audit.
+      - ``"expensive"``: current PE or PB percentile >= ``value_gate_pct`` -> gated (weight 0).
+      - ``"ok"``       : below threshold -> kept.
+    Only ``"expensive"`` sets ``gated=True``. PE/PB are OR'd: either one being rich gates the name.
+    """
+
+    if valuation is None or name not in valuation:
+        return False, "no_data"
+    lo = max(0, t - config.value_gate_lookback_days + 1)
+    gated = False
+    saw_any = False
+    for metric in ("pe", "pb"):
+        series = valuation[name].get(metric)
+        if not series or t >= len(series) or series[t] is None or series[t] <= 0.0:
+            continue
+        window = [
+            series[k]
+            for k in range(lo, t + 1)
+            if k < len(series) and series[k] is not None and series[k] > 0.0
+        ]
+        if len(window) < 2:
+            continue
+        saw_any = True
+        if _percentile_rank(window, series[t]) >= config.value_gate_pct:
+            gated = True
+    if not saw_any:
+        return False, "missing"
+    return (gated, "expensive" if gated else "ok")
+
+
 # --------------------------------------------------------------------------------------
 # Signal + portfolio + risk (decision-time only, no lookahead)
 # --------------------------------------------------------------------------------------
@@ -369,6 +430,7 @@ def _target_weights(
     equity: float,
     peak_equity: float,
     carry: dict[str, list[float | None]] | None = None,
+    valuation: dict[str, dict[str, list[float | None]]] | None = None,
 ) -> dict[str, float]:
     """Weights decided at end of day ``t`` using only data through ``t``.
 
@@ -416,6 +478,14 @@ def _target_weights(
             continue
         raw[name] = signal / vol
 
+    # Valuation filter (V-GATE): drop "expensive" equity sleeves before gross-normalization,
+    # so the surviving names redistribute to sum(|w|)=1. Gated only when explicitly on; the
+    # skipped block keeps the default path byte-identical to the validated engine.
+    if config.value_gate and raw:
+        for name in list(raw):
+            if _value_gated(valuation, name, t, config)[0]:
+                del raw[name]
+
     gross = sum(abs(w) for w in raw.values())
     if gross <= 0.0:
         return {}
@@ -456,6 +526,7 @@ def run_paper_sim(
     prices: dict[str, list[float]],
     config: SimConfig | None = None,
     carry: dict[str, list[float | None]] | None = None,
+    valuation: dict[str, dict[str, list[float | None]]] | None = None,
 ) -> dict[str, Any]:
     """Run the full sim and return a metrics + equity-curve result dict.
 
@@ -508,7 +579,9 @@ def run_paper_sim(
 
         # Rebalance at end of day t (data through t), effective from t+1.
         if t >= warmup and t % config.rebalance_days == 0:
-            new_weights = _target_weights(prices, rets, t, config, equity, peak_equity, carry)
+            new_weights = _target_weights(
+                prices, rets, t, config, equity, peak_equity, carry, valuation
+            )
             union = set(new_weights) | set(weights)
             turnover = sum(abs(new_weights.get(n, 0.0) - weights.get(n, 0.0)) for n in union)
             equity *= 1.0 - config.cost_per_side_pct * turnover
