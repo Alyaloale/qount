@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 线 D §18 / B2: daily X4 paper-sim forward run. Reference copy; the live job is installed at
+     ~/Library/LaunchAgents/com.qount.x4-paper.plist. Runs every day at 10:00 local (~02:00 UTC,
+     after the prior day's binance.vision 1d dump publishes). Crypto is 7d/wk so no Weekday filter. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.qount.x4-paper</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/alyaloale/Code/qount/scripts/desktop/x4_paper_daily.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>10</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>StandardErrorPath</key>
+    <string>/Users/alyaloale/Library/Logs/x4_paper.err</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
