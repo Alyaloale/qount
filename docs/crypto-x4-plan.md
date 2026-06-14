@@ -150,10 +150,271 @@
 
 - ❌ 把本线结果写回 `current.md` / `update-log.md` / 线 B / 线 C 文档(只写本文件);
 - ❌ 用本线模拟盘结果动线 A 主线资本 / 放宽线 A 任何门;
-- ❌ 接交易所私有 API 下真单(本线是纯模拟实验;真上小资金须 owner 另行显式授权 + 单独决策);
+- ⚠️ 接交易所私有 API 下真单:**原为禁,2026-06-14 owner 显式授权 ~$415(3000 RMB)小资金现货 pilot → 解除(见 §21)**;
+  仍守:纯现货(无清算)、独立开关 `QOUNT_X4_LIVE_ENABLE`(不碰线 A 的 `QOUNT_LIVE_ENABLE`)、硬资金上限、默认 dry;
 - ❌ 四策略用不同费用/本金/窗口对比(破坏赛马公平 = 报告作废);
 - ❌ 事后挑参数让曲线好看后当 edge 兜售(回测好看是 owner 目标,但报告须标注单 regime / 费拖 / 软对脆弱);
 - ❌ 原地改线 B/C 模块(只 import 复用)。
+
+---
+
+## 22. Phase 2:动态币池引擎 + walk-forward(2026-06-14)——严格无前视下,动态选币证伪,固定 TOP7 胜
+
+owner(以研究负责人身份)定路线图 3→2→1:先上线基线、**再做动态币池引擎(Phase 2,他的 ★★★★★)**、最后才考虑
+B+D。命题:趋势系统该「跟随当前资金流向」而非死抱过去赢家,固定币池原罪=永远持有老赢家;若动态 TOP7 能在**严格
+无前视 + ragged listing + 防幸存者**下维持 TOP5 那档效率,才可能把 Sharpe 推到下一层级。
+
+### 22.1 引擎 + 偏差防御(`src/qount/x4/dynuniverse.py`,纯件不改冻结模块)
+
+`run_dynamic_trend_portfolio`:月度按 trailing 美元成交额从宽候选池重排 TOP-K,跑同一 per-coin S3 趋势 sleeve,
+逆波动率合成 + BTC 大盘闸 + **换手成本**(换成员收 `turnover_fee`,仅闸开/真持仓时收,现金态轮换免费)。三偏差
+**由构造防御**:① look-ahead——月初按**上月末为止**数据排名、交易下月;② listing 穿越——coin 在 asof 日须有
+≥`min_history` 根历史才进候选,上市前绝不用;③ 退市/幸存者——数据停更(stale)的币自动掉出,候选池显式纳入
+DECLINED+LATE。+10 单测(`test_x4_dynuniverse.py`,覆盖三防御)→ **x4 共 165 全绿**。
+
+### 22.2 数据(`x4_universe_probe.py`)——池子有真牙齿,非幸存者受限
+
+候选 48/48 全有 UM 1d 数据,**34 个非幸存币**。关键:**LUNAUSDT 仅 17 个月**(2022-05 崩盘退市的老 Terra,真死币)、
+MATIC(→POL 改名掉队)、FTT(交易所暴雷)、SUI/ARB/OP/TIA/WIF/PEPE(晚上市新龙头)全入池。**动态账本真的重仓了
+它们**(下表诊断:持 ≥1 非幸存币占 79%–100% 月份),故本测**非幸存者受限**——是干净的真检验。
+
+### 22.3 walk-forward 结果(`x4_dynuniverse.py`,2021-01..2026-05,净换手)——证伪
+
+| 引擎 | total | full S/DD | train S/DD | test S/DD | 持非幸存币月份占比 |
+|---|---|---|---|---|---|
+| **固定 TOP7(基线)** | +86% | **0.89/−20.6%** | **0.66/−12.9%** | **1.13/−20.6%** | — |
+| 动态 TOP5 | +47% | 0.65/−14.7% | 0.56/−13.4% | 0.75/−14.7% | 79% |
+| 动态 TOP7 | +44% | 0.64/−16.7% | 0.37/−16.7% | 0.89/−11.2% | 96% |
+| 动态 TOP10 | +61% | 0.82/−12.6% | 0.62/−12.6% | 1.02/−11.1% | 100% |
+
+**判定 = 证伪(命题反了)**:① **每个动态变体在 full/train/test 三段 Sharpe 全部低于固定 TOP7**;动态 TOP7
+(0.64)够不到固定 TOP5(0.99)也打不过固定 TOP7(0.89)→ 动态选币**朝错误方向移动效率前沿**。② **机制**:
+按成交额排名 = 追入「刚被关注/刚 pump」的名字(高 $vol = 近期热度)= §16.1 截面动量陷阱的成交额版,在 pump 末段
+买顶(SUI/WIF/PEPE/ARB 进池即接近顶部然后 chop/dump);**固定 TOP7 的 BTC/ETH/SOL 等结构性主流币才是最干净的
+趋势载体,且在加密里并未像担心的那样衰减——主流币持续是 beta,「持有过去赢家」恰好对**。③ **动态唯一的好处是
+maxDD 更低(−12.6%~−16.7% vs −20.6%),但那是「持更多币=广度」降 DD,不是动态选择加 alpha**(固定 TOP10-14 同样会
+低 DD;§21 已证固定 TOP14 Sharpe 0.87 也低于 TOP5/7)。
+
+### 22.4 结论(里程碑)+ owner 命题对账
+
+**§21+§22 合成结论**:edge 在**「固定 + 高质量少数主流币(TOP5-7)」**,不在**「广度」**也不在**「动态轮换」**——
+轮换追噪声、广度摊薄趋势。owner「边际来自交易什么而非信号增强」的直觉**半对**:§21 证固定 TOP5(0.99)≫ TOP14
+(0.87)= 资产**质量/集中**真的重要;但由此外推「动态选币会更好」**被 §22 证伪**——不是「选择」(主动轮换)有用,
+而是「静态锁定结构主流」最好。owner 自己那句「大多数看似合理的增强最后只带来边际改善(甚至变差)」在此精确兑现,
+且这次是 ★★★★★ 的头号假设被**干净数据**否决。**与线 A/B/C/D 全弧第 N 次同型**:广度/选择从来不是约束,edge 量级
+(锁定结构主流的趋势)才是。**realizable 最优仍 = §21 固定 TOP7 纯现货 S7-mini**;A 证伪,代码留存为「动态币池证伪
++ 可复用 PIT/ragged 引擎」资产。**E 低波因子不再做**(owner 正确指出与逆波动率重复下注;且 §22 已证选币方向无 alpha)。
+
+---
+
+## 21. 小资金现货 LIVE pilot(2026-06-14)——S7-mini 7 币 + ccxt 自动下单(owner 授权 ~$415)
+
+owner 决定上**真钱小资金 ~$415(3000 RMB)**,先抓趋势、暂不要 carry 压舱石,问「能不能结合两线优化出
+7 币小资金策略 + 接 API 自动下单」。本节 = 优化 RUN + 实盘执行模块 + 隔离/安全设计。
+
+### 21.1 小资金优化 RUN(`scripts/research/x4_smallcap.py`)——两个真发现
+
+扫**币数**(a priori 按流动性定档,非回测挑曲线)×**杠杆**(2x vs 现货 1x),S7 inverse_vol + BTC 大盘闸,
+2021-01..2026-05(1d):
+
+| 币池 | 杠杆 | total | Sharpe | maxDD |
+|---|---|---|---|---|
+| S3-BTC 单标的(基线) | 2x | +87% | 0.74 | −19% |
+| TOP4(BTC/ETH/BNB/SOL) | spot 1x | +98% | **0.96** | −19% |
+| TOP5(+XRP) | spot 1x | +101% | **0.99** | −20% |
+| **TOP7(+ADA/LINK)** | **spot 1x** | **+86%** | **0.89** | −21% |
+| TOP10 | spot 1x | +84% | 0.87 | −23% |
+| TOP14(原 S7) | spot 1x | +80% | 0.87 | −21% |
+
+- **优化 1:缩币是改进不是妥协**——5-7 个最流动币(0.89-0.99)**反打过** 14 币(0.87);原池被低流动山寨稀释。
+- **优化 2:现货 1x ≡ 2x 杠杆**(数字几乎一致)——证实 §19.7「vol_target=2% 把仓位压在 1x 下、杠杆 cap 不绑定」
+  → **纯现货跑零损失,且无清算风险**。对 $415 决定性。
+- **定档 = TOP7 纯现货**(BTC/ETH/BNB/SOL/XRP/ADA/LINK),不选 TOP5 最高分(守不事后挑曲线纪律;0.89 vs 0.99 是
+  样本内噪声,§17 头条被近期牛灌高,**诚实前向锚 ~0.6-0.7 / maxDD ~−20%**)。
+
+### 21.2 实盘执行模块(`src/qount/x4/live.py` + `scripts/desktop/x4_live.py`)
+
+**隔离(守线 A)**:**只复用通用 ccxt 件 `exchange_utils.build_exchange`**,**不走线 A 的 `Executor`**(冻结、
+`QOUNT_LIVE_ENABLE=false` 不动);本线自带开关 **`QOUNT_X4_LIVE_ENABLE`**(默认关)。
+
+**安全护栏**:① 纯现货 → 无杠杆/无清算/不可能负余额;② 硬上限 `capital_usdt`(总)+ `max_order_usdt`(单笔),
+代码层拒超;③ **对账式下单**(读真实余额 → 比目标 → 只下差额,band 闸控)→ **幂等**(同账重跑 = no-op,不重复成交);
+④ 三档 dry/live + 开关双锁;⑤ 市价单:BUY 用 `quoteOrderQty`(花 $X)、SELL 用 base 量按 stepSize 向下取整;
+⑥ LOT_SIZE / MIN_NOTIONAL 过滤跳 dust。owner 选 **市价单 + 全自动 launchd**。
+
+**目标权重**复用 §20.5 `_held_coins` 规则(per-coin SMA200 + 20/100 cross + BTC 大盘闸 + 逆波动率 parity),
+提进 `live.target_weights`(纯件,无 look-ahead)。
+
+**单测**:`tests/test_x4_live.py` +21(目标权重/闸、对账 diff/band/双上限/lot 取整/min-notional/卖不超持仓、
+dry-不发单/live-无开关被拦/有开关才发)→ **x4 共 147 全绿;rv 56 回归绿**。
+
+**dry-run 端到端验证(2026-06-14)**:bar 2026-06-12 → **gate=SHUT(BTC 在 200MA 下)→ 0 目标 → 0 单**,7 币全
+skip,落 `state/x4/live/latest.json`。公共行情读取正常(无需代理),私有余额无 key 报 AuthenticationError → 按空仓
+处理(设计如此)。**数据→闸→目标→读交易所→对账→日志全链路在 $0 市场风险下跑通。**
+
+### 21.3 诚实定性 + 待办
+
+**$415 上接 API 的价值 = 把下单/对账/护栏链路在亏得起的钱上跑通,不是那 ~$25/yr 的 edge**(薄 carry 同型)。
+**当前 BTC 在 200MA 下 = 大盘闸关 = 接上也下 0 单**,正是低风险 burn-in 窗口:先验证读/对账路径,等 BTC 站上
+200MA 再真开仓。**待办(需 owner 动手)**:① 建 Binance API key(**只开现货交易、关提现**、IP 白名单)→ 设
+`QOUNT_BINANCE_API_KEY/SECRET`;② dry 跑几日确认订单清单合理;③ 设 `QOUNT_X4_LIVE_ENABLE=1` + 接 launchd 每日;
+④ carry 压舱石(ETH cash-and-carry)留到资金放大到 ~$2-3k 再叠(BTC 季度 $100/张在 $415 下太粗;§20 已实现可复用)。
+
+### 21.4 reviewer 增强候选 B/C/D 诚实检验(2026-06-14)——三个引擎开关 + train/test 切分
+
+owner 转述一份外部 review,提 5 个增强(A 动态币池 / B 广度闸替代纯 BTC 闸 / C ADX 滤波 / D 相关性惩罚 /
+E 低波动因子),并正确点出真问题:「**哪些真提升 Sharpe、哪些只是回测优化**」。落三个**默认关**引擎开关(不动现有行为/
+155 单测全绿):`run_trend_portfolio(breadth_gate/breadth_combine)`(B)、`TrendFollow(adx_min/adx_period)`(C)、
+`combine(scheme="inverse_vol_corr")`(D,逆波动率÷avg_corr,floor 0.2)。runner `x4_smallcap_optim.py` **逐个 vs
+TOP7 spot 基线,切净值曲线 train(21-23)/test(24-26) 避预热偏差**,预注册判据 = **真改进须 train 且 test 都打过
+基线 Sharpe 且 DD 不显著恶化**。
+
+| 变体 | total | full S/DD | train S/DD | test S/DD | 判 |
+|---|---|---|---|---|---|
+| BASELINE TOP7 spot | +86% | 0.89/−20.6% | 0.66/−12.9% | 1.13/−20.6% | — |
+| **B 广度-OR 0.5** | +93% | 0.94 | **0.75** | 1.13 | **弱 regime+(牛市中性)** |
+| B 广度-AND 0.5 | +40% | 0.55 | 0.32 | 0.77 | worse |
+| B 广度-only 0.5 | +45% | 0.59 | 0.42 | 0.77 | worse |
+| C ADX≥20 | +74% | 0.88/−18.8% | 0.72/**−8.3%** | 1.03 | 降 DD/Sharpe 持平(风控档非 alpha) |
+| C ADX≥25 | +46% | 0.65 | 0.58 | 0.73 | worse |
+| **D 相关性惩罚** | +91% | 0.94 | **0.76** | 1.13 | **弱 regime+(牛市中性)** |
+| **B-OR + D 组合** | +97% | **0.98** | **0.83** | 1.13/−20.2% | **弱 regime+,两杠杆叠加** |
+
+**诚实结论**:① **B 广度-OR + D 相关性惩罚 = 唯一两个站得住的**,但**不是 REAL(两 regime 都打过),而是「只改善
+2021-23 弱 regime(chop/熊),牛市完全中性、DD 中性」**——且**方向与 curve-fit 相反**(curve-fit 是把近期牛灌高,
+这俩在牛市 test 恒 1.13 没动、只把 chop 的 0.66 抬到 0.75/0.76,组合叠到 0.83)。机制成立(BTC 横盘时广度-OR 捕 ALT
+趋势、相关性惩罚把权重从 BTC/ETH/SOL 抱团里摊开),低下行风险,**采纳为 S7-mini 可部署默认(诚实标注:已证收益只在
+chop/熊单 regime)**。② **C ADX = 风控档非 alpha**:把熊期 DD −12.9%→−8.3% 砍掉不少、但牛市 Sharpe 1.13→1.03,
+net headline 持平 = sizing 型取舍;**怕回撤可开 ADX≥20,默认关**(ADX≥25 过度,worse)。③ **广度-AND/only、ADX≥25
+全 worse**——去掉 BTC 闸保护或过滤过猛都伤。④ **A 动态币池 + E 低波动币池 = 需引擎支持时变 universe 成员(ragged
+listing),当前 `run_trend_portfolio` 固定币池做不了,且静态用全样本选币=look-ahead**;记为下一轮引擎工作(E 部分
+冗余,逆波动率已 low-vol 倾斜)。**元结论同 §14/§16.1/§19**:5 个增强无一产生跨 regime 的 robust Sharpe;baseline
+(双闸+逆波动率)已近可实现天花板,最佳两个只在弱 regime 加边际、牛市中性。
+
+### 21.5 固定 TOP7 基线上线(2026-06-14)——launchd 部署 + 仓库外 arming
+
+经 §22 证伪动态币池、§21.4 证 B/C/D 只弱 regime 边际后,owner 定**上线 §21 固定 TOP7 纯现货 S7-mini**(BTC/ETH/
+BNB/SOL/XRP/ADA/LINK · spot · 1x · 逆波动率 · BTC 200d 闸)= 未被任何增强击败的 realizable 最优。策略代码即
+`x4/live.py`(`SMALLCAP_UNIVERSE` + `target_weights` 已是此规格),**无需改策略**,只补自动化:
+- `scripts/desktop/x4_live_daily.sh`(wrapper:跑 `x4_live.py live` + 日志 `~/Library/Logs/x4_live.log` + 失败
+  osascript 告警)+ `com.qount.x4-live.plist`(launchd 每日 10:05 本地 ≈ 02:05 UTC,对齐 x4-paper 后 5 分钟,7 天/周)。
+- **安全 arming**:密钥 + 开关放**仓库外** `~/.config/qount/x4_live.env`(chmod 600,wrapper 存在才 source);
+  文件不存在 → 跑 `live` 但 `QOUNT_X4_LIVE_ENABLE` 未设 → place_orders 打印拟下单、**发 0 单**。arm = 建该文件
+  (`QOUNT_BINANCE_API_KEY/SECRET` 现货交易只读不提现 + IP 白名单,`QOUNT_X4_LIVE_ENABLE=1`)。
+- **已 `launchctl load -w` + kickstart 端到端验证**:`com.qount.x4-live` 注册、跑通,`state/x4/live/latest.json` =
+  `mode=live, armed=false, gate_open=false(BTC 在 200MA 下), 0 orders`。**当前未 arm + 闸关 = 双重零风险 burn-in**:
+  自动累积拟下单记录,owner 建 env 文件即 arm,BTC 站上 200MA 即真开仓。停用:`launchctl unload
+  ~/Library/LaunchAgents/com.qount.x4-live.plist`。
+
+**切线收尾(2026-06-14)**:owner 定**停掉旧 3 线 paper + 把新实盘上面板**。① `launchctl unload
+~/Library/LaunchAgents/com.qount.x4-paper.plist` 停掉 §18/§19.7/§20.4 的三条模拟 track(3 腿/S7/C×D combo;源码与
+`state/x4/paper/` 历史保留,随时可重 load)。② Übersicht 面板换装:撤下 `x4paper.jsx`(3 线持仓面板)、装上
+`x4live.jsx` + `x4live_fetch.sh`(读 `state/x4/live/latest.json`,纯本地只读),显示武装状态 / BTC 大盘闸及距离
+(当前 BTC 63.5k vs 200MA 77.9k = −18.4%,闸关)/ 资金部署 / 持仓(闸开时按逆波动率)/ 当日订单(未武装标"拟")。
+`x4_live.py` 快照富化(+`capital/deployed/cash/btc_px/btc_sma200/btc_to_sma/holdings`)供面板用。`ctar.jsx`(线 A)不动。
+
+**代理坑修复(2026-06-14,境内必读)**:owner 报浏览器打不开币安。诊断=本机跑 Clash 代理 `127.0.0.1:7897`,**终端有
+`HTTP_PROXY` 故 curl 币安全域名 200/202 通,但浏览器走规则模式 binance 落 DIRECT → GFW 墙网站**(修:Clash 开系统代理/
+全局/加 binance 规则)。**关键连带坑:launchd 不继承 shell 的 `HTTP(S)_PROXY`** → 实测之前 kickstart 真的 ccxt
+`RequestTimeout: api.binance.com/exchangeInfo`(无代理连不上)。**修复(`x4_live_daily.sh`)**:① 头注释标坑;
+② source env 文件后**归一化代理变量**(从 `QOUNT_HTTPS_PROXY/HTTPS_PROXY/HTTP_PROXY/ALL_PROXY` 取到的统一导出给
+curl + ccxt,`build_exchange` 读 `QOUNT_HTTPS_PROXY`);③ **预检** `curl api.binance.com/api/v3/ping`,连不上则
+`[ALERT]`+osascript 通知+`exit 1`**跳过本次,不盲目下单**(实测无代理路径 = 干净告警退出,非 ccxt traceback)。
+**arm 时须把代理也写进 `~/.config/qount/x4_live.env`**(`export HTTPS_PROXY=http://127.0.0.1:7897`),否则 launchd
+跑不通。**运维提醒:本套靠本地代理连币安,代理一断真单推不出 → wrapper 失败通知会触发,Clash 须常驻。**
+
+**反爬 / 节点 / IP 白名单坑(2026-06-14,境内建 key 必读)**:owner 系统代理(Clash 设上 7897)后浏览器仍打不开币安。
+诊断到底层:**①交易 API `api.binance.com` 在该节点 HTTP 200 返真数据(BTC 价)= bot 完全正常,只用 API 不受影响;
+②网页 `www`/`accounts.binance.com` HTTP 202 + 0 字节 = 币安反爬拦截该出口 IP**(台湾电信数据中心 IP `1.168.186.131`,
+共享机房 IP 被风控标记 → 空挑战页 → 浏览器空白)。**与 Safari/Clash 规则/系统代理全无关**——curl 和浏览器拿到同一个
+空 202,换浏览器/重启/刷 DNS 都没用,加 Clash 规则也没用(规则已全放行,curl 走代理证实 binance 全域名可达)。**建 key
+两条路**:① Clash 换节点(多试几个,只需一个网页端没被反爬标记的出口)→ 开 `accounts.binance.com`;② **手机币安 App
+建 key(住宅 IP 不被反爬,最省事,绕开桌面节点)**。**IP 白名单坑**:代理出口是共享/可能轮换的节点 IP,若给 key 绑 IP
+白名单而节点 IP 一变 → bot API 调用被拒(每天可能断)。两选:用**固定出口 IP** 的机场专线节点再绑白名单;或 **$415 小
+资金先不绑 IP 白名单**,靠「只勾现货交易 + 关提现」保证安全(最坏 key 泄露也只能交易不能提币)。
+
+---
+
+## 20. C×D 合成账 kill-test(2026-06-13)——趋势(线 D)+ carry(线 C)压舱石,PASS
+
+承上一轮元判断:三条加密线只活下来两个**赚不同钱**的 edge,而且**尾部指向相反**——线 D 的 S7 趋势是方向性
+crypto-beta(诚实前向 ~0.70、maxDD −21% 调参砍不掉,死法=暴跌),线 C 的 RV-C BTC/ETH dated cash-and-carry 是
+delta-neutral(Sharpe ~1.4、薄 +6.4%/yr、回撤极小,尾部=向上逼空)。**命题**:一个容量受限的小 carry sleeve 当
+**压舱石**(线 A「金/债压舱石」同型),应同时抬合成 Sharpe + 砍趋势自己砍不掉的尾。
+
+### 20.1 工程(复用,不改 C/D 模块)
+
+纯件 `src/qount/x4/combo.py`:`align_curves`(两引擎不同数据源/不同 bar 数 → 按 UTC 时间戳取交集 + 各自归一化到
+初始本金,按 ts 配对使两引擎半根 bar 约定差无影响)、`combine_fixed`(**固定权重**逐 bar 再平衡——carry 容量受限,
+a priori 按容量定占比比让 inverse_vol 给薄低波 sleeve 灌权重更诚实)、`kill_verdict`。复用 `x4.portfolio`
+(correlation/sharpe_of)+ `rv.stats`,**未改线 B/C/D 任何模块**。**+9 单测 → x4 共 126 全绿;rv 53 / grid 106 回归绿。**
+runner `scripts/research/x4_combo.py`:TREND=S7(inverse_vol/BTC闸/vt2% 可部署档)+ CARRY=RV-C BTC+ETH(always-on
+maker inverse L=3 认证档,两腿等权合成)。**预注册杀线**:在**可部署 carry 权重(≤40%,容量封顶)**下,合成必须
+**同时**打过 trend-alone 的 Sharpe **且** maxDD 更浅;否则合成无意义,杀。
+
+### 20.2 实测结果(2021-01..2026-03,1898 共同日 bar)——PASS
+
+`corr(TREND, CARRY) = −0.196`(**负相关**,比预期的零相关更好,印证反向尾部命题):
+
+| 账本 | total | Sharpe | maxDD |
+|---|---|---|---|
+| TREND alone(S7) | +80.2% | 0.89 | −21.4% |
+| CARRY alone(BTC+ETH) | +33.5% | 1.28 | −5.1% |
+| **80/20** | +71.4% | 1.00 | −15.9% | **PASS** |
+| **70/30** | +66.8% | 1.08 | −13.1% | **PASS** |
+| **60/40** | +62.2% | **1.18** | **−10.2%** | **PASS** |
+| 50/50 | +57.5% | 1.31 | −7.2% | PASS |
+
+**所有 carry 权重全过双门。** 可部署 40% carry:Sharpe **0.89→1.18(+0.30)**、maxDD **−21.4%→−10.2%(尾砍近半)**。
+代价 = 绝对收益 +80%→+62%(40% 本金从趋势发动机挪进薄 carry,放弃部分上行)——但这正是预注册接受的取舍:**用
+absolute upside 换 risk-adjusted return + 砍尾**,杀线只要 Sharpe↑ 且 maxDD↓,达成。artifact 落
+`state/x4/research_runs/combo_*.json`。
+
+### 20.3 结论与诚实 caveat
+
+**C×D 合成账 = PASS:carry 压舱石真能给 S7 趋势抬 Sharpe(0.89→1.18 @40%)+ 砍尾近半(−21%→−10%),负相关
+−0.20 是结构性的(方向 vs 中性),非样本运气。** 这是跨三线**第一次把两个独立认证的 edge 拼成一本更优的账**,
+完全在隔离边界内(纯件复用、未改 C/D 模块)。**诚实 caveat(写进 runner 输出)**:两条 sleeve **都隐性做多同一个
+「crypto 还活着 / contango 持续」宏观因子**——carry 在持续 backwardation 段会转负(§7.9)、趋势靠闸空仓零收益,
+**多年加密寒冬下两者会同时变薄**。所以正交性**在短期尾部(崩盘 vs 逼空)是真的,在多年 regime 层是假的**:合成账
+改善 Sharpe 与短期回撤,**但不是全天候**。与线 A「远期诚实 ~7-9% 非头条、近年靠金+债需盯反转」同型。
+
+### 20.4 forward paper 化(2026-06-13)——第三条 track 上线
+
+60/40 合成账已 forward paper 化(§18/§19.7 同构,纯模拟无真单):`x4_paper.py` 加 `forward-combo` 模式
+(每日重跑 S7 趋势 + RV-C BTC+ETH carry 两 sleeve → `align_curves` 按 ts 交集 → `combine_fixed` 60/40 →
+快照落**独立** `state/x4/paper/combo_snapshots.jsonl` / `combo_latest.json`,不撞前两条 track)。
+`x4_paper_daily.sh` 加第三条 `run_track forward-combo`,launchd 每日三条 track 各查独立 marker、任一失败告警。
+combo 60/40 = **$162,393 / +62.4% / Sharpe 1.16 / maxDD −10.2%**(corr −0.20、trend-alone 0.87/−21.4%、
+carry-alone 1.27/−5.1%),与 §20.2 in-sample 一致;daily wrapper 三 track 0 ALERT。
+
+**combo 日更(2026-06-13,修掉月更约束)**:carry 的 dated 合约 leg 原只读 monthly dump(§18 日包 fallback 只惠及
+spot/um),曾使 combo 卡在上月末。**实测 Binance 也发 dated 合约的 per-day dump**(2026-06-10/11/12 全 HTTP 200,
+6 月月包 404)→ 给 `rv.data` 加 dated 日包 fallback(`dated_day_url`/`download_dated_day`/`_download_dated_month_daily`,
+镜像 §18;**仅对当前进行中月触发**,过去 404 月是合约未上市不浪费请求)。**+3 单测 → rv 共 56 全绿;x4 126/grid 106
+回归绿**。combo 现推进到 bar 2026-06-12,**三条 track 全部日更对齐**。caveat 收窄为只剩"非全天候"(两 sleeve 同多
+crypto-beta 宏观因子)。
+
+**桌面面板(线 A 同型,Übersicht)**:owner 实际跑的宿主是 **Übersicht**(线 A 用的是 `ctar.jsx` 组件,非 SwiftBar
+——SwiftBar 未安装)。故主面板 = `scripts/desktop/x4paper.jsx`(Übersicht 桌面组件)+ `x4paper_fetch.sh`(取数)。
+与线 A 的 `ctar.jsx` 关键区别=**数据全在 Mac 本地**(`state/x4/paper/*latest.json`),**无需 ssh 读 WSL**,纯本地只读。
+显示:大字 combo 总收益、前向净值曲线(自部署起成形)、三条 track 的净值/总收益/Sharpe/maxDD + 当前持仓态(3 腿空仓
+闸防御 / S7 趋势空仓 BTC 闸关 / combo 趋势空仓+carry 恒在场)+ corr + 数据 bar 新鲜度;可拖动记住位置。装入
+`~/Library/Application Support/Übersicht/widgets/`。snapshot 补 `trend_flat` 字段(BTC 末根 vs SMA200,便宜)供面板
+显示实时空仓态。(SwiftBar 形态 `x4paper.5m.py` 已删——owner 未装 SwiftBar,避免混淆。)
+
+### 20.5 面板改"以今天为准"的实际持仓(2026-06-13)
+
+owner:面板别显示**回测收益**(+62.4% 是 2021-26 样本内,误导),要**以今天为部署起点**显示**实际持仓的价格/数量/
+收益**。新增 `x4_paper.py holdings` 模式 + `holdings_latest.json`:① **前向锚**=首次运行 pin `deploy_date`=今日、
+`anchor_bar`=最新 bar,各账 equity 曲线**重基到 deploy 当根 $100k** → 前向收益**今日起从 0 累积**(非回测);
+② **实际持仓**=combo 的 carry 4 腿(BTC/ETH 现货多 + 当前活跃 dated 合约 `BTCUSD_260626`/`ETHUSD_260626` 空,各
+$20k 名义、按当前日收盘价标数量)+ 趋势持仓(当前 BTC 在 200MA 下→**趋势空仓**,持仓 0)+ 现金;**carry delta-neutral
+记一次资金**(40%=$40k,空腿是对冲不额外占资金,不重复计 → 现金 = 趋势 60% = $60k)。面板 `x4paper.jsx` 重写为
+**持仓表**(方向/币种/数量/现价/市值)+ 自部署收益 + 现金,**不再显示回测净值/收益**;`x4paper_fetch.sh` 改读
+`holdings_latest.json`。daily wrapper 加第四条 `run_track holdings`,0 ALERT。**当前实测**(deploy 2026-06-13):combo
+前向 +0.00%/$100k(今日起算)、现金 $60k、4 腿 carry 在场(基差极薄 dated≈现货 +0.04%)、趋势空仓待 BTC 站上 200MA。
+三 track + holdings 转纯 OOS 运营。
 
 ---
 
@@ -666,6 +927,7 @@ S2 样本内调参、2021 顶部年是不可过拟合的残余)。脚本配置�
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-06-13 | v1.9(§20) | **C×D 合成账 kill-test:趋势(线 D S7)+ carry(线 C RV-C)压舱石 = PASS**。命题=两个独立认证 edge 尾部相反(趋势死暴跌、carry 尾在向上逼空)→ 小 carry sleeve 当压舱石(线 A「金/债压舱石」同型)。纯件 `x4/combo.py`(`align_curves` 按 ts 交集+归一化、`combine_fixed` 固定权重再平衡=容量受限 sleeve 的诚实 sizing、`kill_verdict`),复用 `x4.portfolio`/`rv.stats` **未改 C/D 模块**;**+9 单测 → x4 共 126 全绿;rv 53/grid 106 回归绿**。runner `x4_combo.py`(TREND=S7 vt2% 可部署档 + CARRY=RV-C BTC+ETH always-on maker inverse L=3)。**实测(1898 共同日 bar,corr −0.196 负相关)**:全 carry 权重过双门;可部署 **40% carry → Sharpe 0.89→1.18(+0.30)、maxDD −21.4%→−10.2%(尾砍近半)**,代价是总收益 +80%→+62%(换 risk-adjusted)。**跨三线首次把两 edge 拼成更优一本账**。诚实 caveat:两 sleeve 都隐性做多「crypto 活着/contango」宏观因子→短期尾部正交真、多年 regime 层假,**非全天候**。**§20.4 forward 化 + 日更 + 面板**:`x4_paper.py` 加 `forward-combo`(每日重跑两 sleeve→align→combine 60/40,独立 `combo_*.json`)+ `x4_paper_daily.sh` 第三条 track。**combo 日更**:实测 Binance 也发 dated 合约 per-day dump→给 `rv.data` 加 dated 日包 fallback(`dated_day_url` 等,镜像 §18,仅当前月触发),combo 从卡上月末→推进到 bar 2026-06-12,三 track 全日更对齐;**+3 单测 → rv 56/x4 126/grid 106 全绿**。**桌面面板** `scripts/desktop/x4paper.5m.py`(SwiftBar/xbar,线 A 同型但**数据本地无需 ssh**):菜单栏锚 combo,展开三 track 净值/Sharpe/maxDD+持仓态+corr+新鲜度;snapshot 补 `trend_flat`。combo $162,393/+62.4%/1.16/−10.2%,daily 0 ALERT,三 track 转纯 OOS。详见 §20。 |
 | 2026-06-13 | v1.7(§19) | **S7-TREND-PORT 多币趋势组合预注册 + 引擎实现(先写单测)**。review owner「聚类选币 + 协方差 top5」→ 否定(§16.1 的 −86% 是**带每币 SMA200 闸**发生的,选币本身负 alpha、naive 等权持有 0.77>选币 0.71、协方差是 error-maximizer、聚类=BTC-beta 噪声、幸存者偏差灌高)。**命题翻转**:不选币,把 §17 唯一过样本外的 S3 趋势**铺到多币上、逆波动率合成**(已证真信号 × 真分散)。落 `sma_regime_mask`(纯件 BTC 大盘闸)+ `run_trend_portfolio`(每币独立 run_directional+TrendFollow → combine inverse_vol → 大盘闸 risk-off overlay),复用 run_directional/TrendFollow/combine 不改。预注册杀线:Sharpe 同时 > 0.70(S3-BTC)且 > 0.77(naive 等权持有)且 maxDD < −25%;幸存者偏差前置。**+12 单测 → x4 共 117 全绿;grid 106 / rv 53 回归绿。** **研究 RUN(`x4_trendport.py`)完成 → 严格杀线 FAIL(尾部):S7 inverse_vol/BTC闸 Sharpe 0.88 同时打过 S3(0.70)和等权持有(0.77)= 命题成立,但 maxDD −30.5% 未达 −25% 且 ≈ 单 BTC −28.9%(分散没砍尾,crypto-beta 一起跌=§19.4 先验兑现)。幸存者偏差强信号:加 ICP 重伤币,等权持有 0.77→0.16 崩、S7 0.88→1.02 反升(趋势闸退出垂死币)→ 等权持有 0.77 本身是幸存者偏差产物。S3-on-BTC 仍 maxDD 之王;S7 留作高 Sharpe 候选。头条 0.88 仍样本内牛市灌高。** 详见 §19.6。 |
 | 2026-06-13 | v1.8(§19.7) | **S7 可部署 size 定档 + forward paper 化**。杠杆/vol_target 扫描证 **Sharpe 是杠杆不变量(~0.87 恒定)、−30% 尾是 crypto-beta 结构问题砍不掉**→停 in-sample 优化(再调=雕单窗口)。定档 **vol_target=2.0%**:+80.2%/0.87/maxDD **−21.4%**,过 −25% 门(诚实:过门来自 sizing 非 alpha)。**A forward 化**:`x4_paper.py` 加 `forward-s7`(独立 `s7_snapshots.jsonl`/`s7_latest.json`,走日包 fallback 每日推进)+ `x4_paper_daily.sh` 抽 `run_track` 跑两条 track。端到端验证:S7 推进 bar 2026-06-12,$180,213/+80.2%/0.87/−21.4%、BTC 闸 49% 在场,daily wrapper 无 ALERT。前向锚 §17 的 ~0.70。详见 §19.7。 |
 | 2026-06-13 | v1.6(§18 ops) | **日包 fallback 修复:前向真正每日推进**。根因=`grid.data.load_klines` 只读 monthly dump,当月月包未发布 → `skip_missing` 跳过整月 → forward 卡在上月末(实测连跑两次停 2026-05-31,「每日」实为「每月」)。修复:月包缺失回退 per-day dump(`day_url`/`download_day`/`_download_month_daily`,只到今天 UTC、逐日缓存、未发布日 404 跳过,`skip_missing` 语义保留);`x4_paper.py`/launchd 未改,数据层透明生效。**+3 单测 → grid 106 全绿;x4 105/线 C 53 回归绿**。`forward` 现推进到 bar 2026-06-12。caveat:funding 仍仅 monthly(binance 无 funding 日包),当月回退 0,carry 上仓时偏乐观。6 月实测:BTC 在 200MA 下震荡 −15%,三腿全空仓→组合 $172,903 零波动=SMA200 闸防御如期(判据③兑现)。详见 §18。 |

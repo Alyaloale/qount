@@ -1,8 +1,12 @@
 #!/bin/bash
 # Daily X4 paper-sim forward run (线 D §18 / B2 + §19.7), triggered by launchd on the always-on Mac.
-# Runs TWO forward paper tracks, each NO real orders -- pure simulation:
-#   1) forward     : the 3-sleeve (S1+S3+S4; S2 excluded) BTC portfolio  -> snapshots.jsonl + latest.json
-#   2) forward-s7  : the S7-TREND-PORT 14-coin trend portfolio (§19.7)    -> s7_snapshots.jsonl + s7_latest.json
+# Runs the forward paper tracks + the holdings book, each NO real orders -- pure simulation:
+#   1) forward       : the 3-sleeve (S1+S3+S4; S2 excluded) BTC portfolio   -> snapshots.jsonl + latest.json
+#   2) forward-s7    : the S7-TREND-PORT 14-coin trend portfolio (§19.7)     -> s7_snapshots.jsonl + s7_latest.json
+#   3) forward-combo : the §20 C×D combo (60/40 S7-trend / RV-C-carry)       -> combo_snapshots.jsonl + combo_latest.json
+#                      (carry leg now uses §20.4 dated day-dump fallback -> refreshes DAILY like the others)
+#   4) holdings      : as-of-today forward book (§20.5) -- actual positions  -> holdings_latest.json
+#                      (price/qty/value of the combo's carry legs + trend coins + cash; forward P&L from deploy)
 # Crypto trades 7d/wk, so this runs every day (unlike the weekday-only ctar_daily job).
 # Alerts (macOS notification) if EITHER run errors. Logs to ~/Library/Logs/x4_paper.log.
 set -u
@@ -24,5 +28,7 @@ run_track() {
   fi
 }
 
-run_track forward     "[X4-PAPER forward]"
-run_track forward-s7  "[X4-PAPER forward-s7]"
+run_track forward       "[X4-PAPER forward]"
+run_track forward-s7    "[X4-PAPER forward-s7]"
+run_track forward-combo "[X4-PAPER forward-combo]"
+run_track holdings      "[X4-PAPER holdings]"

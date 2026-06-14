@@ -12,6 +12,7 @@ import tempfile
 import unittest
 import zipfile
 
+from qount.rv.data import dated_day_url
 from qount.rv.data import dated_month_url
 from qount.rv.data import dated_symbol
 from qount.rv.data import expiry_ms
@@ -65,6 +66,53 @@ class TestUrlConstruction(unittest.TestCase):
             "https://data.binance.vision/data/futures/cm/monthly/klines/"
             "BTCUSD_210625/1d/BTCUSD_210625-1d-2021-05.zip",
         )
+
+    def test_dated_day_url(self) -> None:
+        url = dated_day_url("BTCUSD_260626", "1d", 2026, 6, 12)
+        self.assertEqual(
+            url,
+            "https://data.binance.vision/data/futures/cm/daily/klines/"
+            "BTCUSD_260626/1d/BTCUSD_260626-1d-2026-06-12.zip",
+        )
+
+
+class TestDatedDayFallback(unittest.TestCase):
+    """§20.4 daily-refresh: the in-progress month has no monthly dump, so assemble from per-day dumps."""
+
+    def test_current_month_falls_back_to_daily(self) -> None:
+        today = _dt.datetime.now(_dt.UTC).date()
+        cy, cm = today.year, today.month
+        calls: list[str] = []
+
+        def fetch(url: str) -> bytes:
+            calls.append(url)
+            if "/monthly/" in url:
+                raise RuntimeError("404")  # in-progress month: monthly not published yet
+            if url.endswith(f"-{cy:04d}-{cm:02d}-01.zip"):
+                return _kline_zip([(1_700_000_000_000, 123.0)])
+            raise RuntimeError("404")      # other days not published yet
+
+        with tempfile.TemporaryDirectory() as d:
+            bars = load_dated_klines("BTCUSD_260626", start=(cy, cm), end=(cy, cm),
+                                     cache_dir=d, fetch=fetch)
+        self.assertEqual(len(bars), 1)
+        self.assertEqual(bars[0].close, 123.0)
+        self.assertTrue(any("/monthly/" in u for u in calls))  # monthly tried first
+        self.assertTrue(any("/daily/" in u for u in calls))    # then daily fallback engaged
+
+    def test_past_month_404_does_not_trigger_daily(self) -> None:
+        calls: list[str] = []
+
+        def fetch(url: str) -> bytes:
+            calls.append(url)
+            raise RuntimeError("404")
+
+        with tempfile.TemporaryDirectory() as d:
+            bars = load_dated_klines("BTCUSD_210625", start=(2021, 1), end=(2021, 1),
+                                     cache_dir=d, fetch=fetch, skip_missing=True)
+        self.assertEqual(bars, [])
+        # a past unlisted month must NOT fan out into per-day requests (they'd just 404 too)
+        self.assertTrue(all("/daily/" not in u for u in calls))
 
 
 class TestLoadDatedKlines(unittest.TestCase):

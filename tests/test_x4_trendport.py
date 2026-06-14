@@ -130,5 +130,80 @@ class TestTrendPortfolio(unittest.TestCase):
             run_trend_portfolio({}, master_gate_sym=None, **_PARAMS)
 
 
+class TestBreadthGate(unittest.TestCase):
+    """§21.B breadth gate: risk-on if BTC>SMA OR enough of the universe is in uptrend."""
+
+    def test_breadth_or_keeps_alt_when_btc_down(self) -> None:
+        # BTC falling (BTC-only gate would flatten), but ALTs rising -> breadth>0.5 -> OR keeps on.
+        univ = {"BTCUSDT": _falling(), "AUSDT": _rising(step=1.0), "BUSDT": _rising(step=2.0)}
+        btc_only = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5, **_PARAMS)
+        breadth_or = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5,
+                                         breadth_gate=0.5, breadth_combine="or", **_PARAMS)
+        # BTC-only sits in cash; OR-breadth captures the rising ALTs -> strictly more terminal equity.
+        self.assertAlmostEqual(btc_only.equity_curve[-1], 100_000.0, delta=1.0)
+        self.assertGreater(breadth_or.equity_curve[-1], btc_only.equity_curve[-1] + 1.0)
+
+    def test_breadth_and_stricter_than_btc_only(self) -> None:
+        # AND requires BOTH BTC up and breadth broad -> active fraction <= BTC-only.
+        univ = {"BTCUSDT": _rising(step=1.5), "AUSDT": _falling(), "BUSDT": _falling()}
+        btc_only = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5, **_PARAMS)
+        breadth_and = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5,
+                                          breadth_gate=0.5, breadth_combine="and", **_PARAMS)
+        self.assertLessEqual(breadth_and.extra["gate_active_frac"],
+                             btc_only.extra["gate_active_frac"] + 1e-9)
+
+    def test_breadth_only_ignores_btc(self) -> None:
+        univ = {"BTCUSDT": _falling(), "AUSDT": _rising(), "BUSDT": _rising(step=2.0)}
+        res = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5,
+                                  breadth_gate=0.5, breadth_combine="breadth", **_PARAMS)
+        # ALTs (2/3 of universe) rising -> breadth gate open despite BTC down.
+        self.assertGreater(res.equity_curve[-1], 100_000.0 + 1.0)
+
+
+class TestAdxFilter(unittest.TestCase):
+    """§21.C ADX chop filter on TrendFollow."""
+
+    def test_adx_high_threshold_suppresses_entry(self) -> None:
+        # An impossibly high ADX floor blocks every long -> flat -> equity stays at initial capital.
+        univ = {"AUSDT": _rising(step=1.0), "BUSDT": _rising(step=2.0)}
+        res = run_trend_portfolio(univ, master_gate_sym=None, adx_min=200.0, **_PARAMS)
+        self.assertTrue(all(abs(e - 100_000.0) < 1e-6 for e in res.equity_curve))
+
+    def test_adx_zero_is_baseline(self) -> None:
+        univ = {"AUSDT": _rising(step=1.0), "BUSDT": _rising(step=2.0)}
+        base = run_trend_portfolio(univ, master_gate_sym=None, **_PARAMS)
+        adx0 = run_trend_portfolio(univ, master_gate_sym=None, adx_min=0.0, **_PARAMS)
+        for a, b in zip(base.equity_curve, adx0.equity_curve):
+            self.assertAlmostEqual(a, b, places=6)
+
+    def test_adx_trend_passes_strong_move(self) -> None:
+        # A clean monotone uptrend has high ADX -> a modest floor lets the long through.
+        bars = _bars([100.0 * (1.02 ** i) for i in range(60)])
+        tf = TrendFollow(fast=2, slow=4, allow_short=False, regime_sma=5, adx_min=20.0, adx_period=14)
+        sig = [tf.on_bar(b) for b in bars]
+        self.assertEqual(sig[-1], 1.0)  # strong trend -> ADX clears 20 -> long
+
+
+class TestCorrPenaltyWeighting(unittest.TestCase):
+    """§21.D correlation-penalty weighting in combine."""
+
+    def test_corr_penalty_runs_and_normalizes(self) -> None:
+        univ = {"AUSDT": _rising(step=1.0), "BUSDT": _rising(step=2.0), "CUSDT": _rising(step=1.5)}
+        res = run_trend_portfolio(univ, master_gate_sym=None, weighting="inverse_vol_corr",
+                                  vol_lookback=10, **_PARAMS)
+        self.assertEqual(len(res.equity_curve), len(_rising()))
+        self.assertGreater(res.equity_curve[-1], 0.0)
+
+    def test_corr_penalty_single_sleeve_equals_inverse_vol(self) -> None:
+        # one sleeve -> nothing to penalize -> identical to plain inverse_vol
+        univ = {"AUSDT": _rising(step=1.0)}
+        a = run_trend_portfolio(univ, master_gate_sym=None, weighting="inverse_vol_corr",
+                                vol_lookback=10, **_PARAMS)
+        b = run_trend_portfolio(univ, master_gate_sym=None, weighting="inverse_vol",
+                                vol_lookback=10, **_PARAMS)
+        for x, y in zip(a.equity_curve, b.equity_curve):
+            self.assertAlmostEqual(x, y, places=6)
+
+
 if __name__ == "__main__":
     unittest.main()

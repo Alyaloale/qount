@@ -14,6 +14,7 @@ spot loader directly (``BTCUSDT`` etc.). Caches live under ``state/rv_c/`` so li
 
 from __future__ import annotations
 
+import calendar as _cal
 import datetime as _dt
 from typing import Callable
 
@@ -81,6 +82,64 @@ def dated_month_url(symbol: str, interval: str, year: int, month: int) -> str:
     return f"{_BASE}/{_CM}/monthly/klines/{symbol}/{interval}/{name}"
 
 
+def dated_day_url(symbol: str, interval: str, year: int, month: int, day: int) -> str:
+    name = f"{symbol}-{interval}-{year:04d}-{month:02d}-{day:02d}.zip"
+    return f"{_BASE}/{_CM}/daily/klines/{symbol}/{interval}/{name}"
+
+
+def download_dated_day(
+    symbol: str,
+    interval: str,
+    year: int,
+    month: int,
+    day: int,
+    *,
+    cache_dir: str = DEFAULT_CACHE_DIR,
+    fetch: Callable[[str], bytes] | None = None,
+) -> bytes:
+    """Return one dated contract's per-day kline zip bytes, caching to ``cache_dir``.
+
+    Fills the in-progress month, whose monthly dump only publishes after month-end (Binance DOES
+    publish per-day dated dumps -- verified 2026-06). A past day's dump is immutable -> cacheable.
+    """
+
+    name = f"cm-{symbol}-{interval}-{year:04d}-{month:02d}-{day:02d}.zip"
+    return _cached_download(
+        dated_day_url(symbol, interval, year, month, day), name, cache_dir, fetch
+    )
+
+
+def _download_dated_month_daily(
+    symbol: str,
+    interval: str,
+    year: int,
+    month: int,
+    *,
+    cache_dir: str,
+    fetch: Callable[[str], bytes] | None,
+) -> list[Bar]:
+    """Assemble a dated contract's month from per-day dumps (fallback when the monthly zip is absent).
+
+    Mirrors line B's ``grid.data._download_month_daily`` (§18). Iterates only days up to today (UTC);
+    future days and today-before-publish 404 and are skipped. Returns ``[]`` when nothing is available
+    (e.g. an unlisted month), so ``load_dated_klines`` falls back to its normal missing handling.
+    """
+
+    today = _dt.datetime.now(_dt.UTC).date()
+    if (year, month) > (today.year, today.month):
+        return []
+    last_day = today.day if (year, month) == (today.year, today.month) else _cal.monthrange(year, month)[1]
+    bars: list[Bar] = []
+    for day in range(1, last_day + 1):
+        try:
+            blob = download_dated_day(symbol, interval, year, month, day,
+                                      cache_dir=cache_dir, fetch=fetch)
+        except Exception:
+            continue  # this day's dump not published yet (or genuinely missing)
+        bars.extend(parse_zip_bytes(blob))
+    return bars
+
+
 def _iter_months(start: tuple[int, int], end: tuple[int, int]):
     y, m = start
     ey, em = end
@@ -107,6 +166,7 @@ def load_dated_klines(
     expected to 404 -- ``skip_missing`` defaults ``True`` here (unlike spot/um).
     """
 
+    today = _dt.datetime.now(_dt.UTC).date()
     seen: dict[int, Bar] = {}
     for year, month in _iter_months(start, end):
         name = f"cm-{symbol}-{interval}-{year:04d}-{month:02d}.zip"
@@ -115,6 +175,14 @@ def load_dated_klines(
                 dated_month_url(symbol, interval, year, month), name, cache_dir, fetch
             )
         except Exception:
+            # The in-progress current month has no monthly dump yet -> assemble from per-day dumps
+            # (§18 pattern). Only the current month; past 404s are unlisted contract months, where the
+            # daily fallback would just 404 too. A genuinely-listed current month gives daily refresh.
+            if (year, month) == (today.year, today.month):
+                for bar in _download_dated_month_daily(symbol, interval, year, month,
+                                                       cache_dir=cache_dir, fetch=fetch):
+                    seen[bar.ts_ms] = bar
+                continue
             if skip_missing:
                 continue
             raise

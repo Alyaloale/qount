@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 线 D §21: daily X4 small-cap LIVE spot run (fixed TOP7 S7-mini). Reference copy; the live job is
+     installed at ~/Library/LaunchAgents/com.qount.x4-live.plist. Runs every day at 10:05 local
+     (~02:05 UTC, just after x4-paper at 10:00 and after the prior day's 1d dump publishes). Crypto is
+     7d/wk so no Weekday filter. SAFE BY DEFAULT: order placement is self-gated by QOUNT_X4_LIVE_ENABLE
+     (set in ~/.config/qount/x4_live.env, sourced by the wrapper). Unarmed -> logs intended, sends nothing. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.qount.x4-live</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/alyaloale/Code/qount/scripts/desktop/x4_live_daily.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>10</integer>
+        <key>Minute</key><integer>5</integer>
+    </dict>
+    <key>StandardErrorPath</key>
+    <string>/Users/alyaloale/Library/Logs/x4_live.err</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

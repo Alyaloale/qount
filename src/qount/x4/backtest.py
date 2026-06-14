@@ -495,10 +495,14 @@ def run_trend_portfolio(
     fast: int = 20,
     slow: int = 100,
     regime_sma: int = 200,
+    adx_min: float = 0.0,
+    adx_period: int = 14,
     weighting: str = "inverse_vol",
     vol_lookback: int = 30,
     master_gate_sym: str | None = "BTCUSDT",
     master_gate_sma: int = 200,
+    breadth_gate: float | None = None,
+    breadth_combine: str = "or",
     initial_capital: float = 100_000.0,
     taker_fee: float = 0.0005,
     slippage: float = 0.0002,
@@ -538,7 +542,8 @@ def run_trend_portfolio(
     for s in syms:
         res = run_directional(
             bars_by_sym[s],
-            TrendFollow(fast=fast, slow=slow, allow_short=False, regime_sma=regime_sma),
+            TrendFollow(fast=fast, slow=slow, allow_short=False, regime_sma=regime_sma,
+                        adx_min=adx_min, adx_period=adx_period),
             initial_capital=initial_capital, taker_fee=taker_fee, slippage=slippage,
             rebalance_band=rebalance_band, vol_target=vol_target, max_leverage=max_leverage,
             chandelier_mult=chandelier_mult, chandelier_lookback=chandelier_lookback,
@@ -552,8 +557,32 @@ def run_trend_portfolio(
                    initial_capital=initial_capital)
 
     gate_active_frac = 1.0
-    if master_gate_sym is not None:
-        mask = sma_regime_mask([b.close for b in bars_by_sym[master_gate_sym]], master_gate_sma)
+    if master_gate_sym is not None or breadth_gate is not None:
+        n = len(port)
+        # BTC leader mask (all-on when no master gate)
+        if master_gate_sym is not None:
+            btc_mask = sma_regime_mask([b.close for b in bars_by_sym[master_gate_sym]], master_gate_sma)
+        else:
+            btc_mask = [True] * n
+        # breadth mask: fraction of the universe above its own regime SMA >= threshold (§21.B)
+        if breadth_gate is not None:
+            per_coin = [sma_regime_mask([b.close for b in bars_by_sym[s]], regime_sma) for s in syms]
+            breadth_mask = []
+            for t in range(n):
+                frac = sum(1 for m in per_coin if m[t]) / len(per_coin)
+                breadth_mask.append(frac >= breadth_gate)
+        else:
+            breadth_mask = [True] * n
+
+        if breadth_gate is None:
+            mask = btc_mask
+        elif master_gate_sym is None or breadth_combine == "breadth":
+            mask = breadth_mask
+        elif breadth_combine == "and":
+            mask = [a and b for a, b in zip(btc_mask, breadth_mask)]
+        else:  # "or" (default): risk-on if BTC up OR breadth broad -> avoids BTC dictatorship
+            mask = [a or b for a, b in zip(btc_mask, breadth_mask)]
+
         gated = [initial_capital]
         active = 0
         for t in range(len(port) - 1):
@@ -561,7 +590,7 @@ def run_trend_portfolio(
             if mask[t]:
                 active += 1
             else:
-                r = 0.0          # leader below its SMA at bar t -> cash for the t -> t+1 step
+                r = 0.0          # gate shut at bar t -> cash for the t -> t+1 step
             gated.append(gated[-1] * (1.0 + r))
         port = gated
         gate_active_frac = active / max(1, len(port) - 1)

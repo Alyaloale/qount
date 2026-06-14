@@ -44,7 +44,7 @@ class TrendFollow:
     """
 
     def __init__(self, *, fast: int = 20, slow: int = 100, allow_short: bool = True,
-                 regime_sma: int = 0) -> None:
+                 regime_sma: int = 0, adx_min: float = 0.0, adx_period: int = 14) -> None:
         if fast < 1 or slow <= fast:
             raise ValueError(f"need 1 <= fast < slow, got fast={fast}, slow={slow}")
         self.name = "S3-CTA"
@@ -54,10 +54,42 @@ class TrendFollow:
         # regime_sma>0: a long-term trend gate -- a long is only held above this SMA (sidesteps
         # bear-market bull traps, e.g. 2022). 0 = off.
         self.regime_sma = regime_sma
-        self._closes: deque[float] = deque(maxlen=max(slow, regime_sma))
+        # adx_min>0: require ADX >= adx_min to take a long (§21.C chop filter). 0 = off.
+        self.adx_min = adx_min
+        self.adx_period = adx_period
+        need = max(slow, regime_sma, (2 * adx_period + 2) if adx_min else 0)
+        self._closes: deque[float] = deque(maxlen=need)
+        self._highs: deque[float] = deque(maxlen=need)
+        self._lows: deque[float] = deque(maxlen=need)
+
+    def _adx(self) -> float | None:
+        """Wilder-style ADX from the rolling window (None until warm). No look-ahead (uses closed bars)."""
+        n = self.adx_period
+        highs, lows, closes = list(self._highs), list(self._lows), list(self._closes)
+        if len(closes) < 2 * n + 1:
+            return None
+        trs, pdm, mdm = [], [], []
+        for i in range(1, len(closes)):
+            up, dn = highs[i] - highs[i - 1], lows[i - 1] - lows[i]
+            pdm.append(up if (up > dn and up > 0) else 0.0)
+            mdm.append(dn if (dn > up and dn > 0) else 0.0)
+            trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]),
+                           abs(lows[i] - closes[i - 1])))
+        dxs = []
+        for j in range(n - 1, len(trs)):
+            atr = sum(trs[j - n + 1:j + 1])
+            pdi = 100 * sum(pdm[j - n + 1:j + 1]) / atr if atr > 0 else 0.0
+            mdi = 100 * sum(mdm[j - n + 1:j + 1]) / atr if atr > 0 else 0.0
+            denom = pdi + mdi
+            dxs.append(100 * abs(pdi - mdi) / denom if denom > 0 else 0.0)
+        if len(dxs) < n:
+            return None
+        return sum(dxs[-n:]) / n
 
     def on_bar(self, bar: Bar) -> float:
         self._closes.append(bar.close)
+        self._highs.append(bar.high)
+        self._lows.append(bar.low)
         if len(self._closes) < self.slow:
             return 0.0
         closes = list(self._closes)
@@ -68,6 +100,10 @@ class TrendFollow:
                 return 0.0  # regime warm-up: flat
             if bar.close <= sum(closes[-self.regime_sma:]) / self.regime_sma:
                 return 0.0  # below the long-term trend: don't fight the regime (no long, no short)
+        if self.adx_min:
+            adx = self._adx()
+            if adx is None or adx < self.adx_min:
+                return 0.0  # warm-up or too choppy: skip the long (no whipsaw entry)
         if fast_ma > slow_ma:
             return 1.0
         return -1.0 if self.allow_short else 0.0

@@ -67,8 +67,17 @@ def combine(
     port = [initial_capital]
 
     for t in range(t_steps):
-        if scheme == "inverse_vol" and all(len(windows[n]) >= 2 for n in names):
+        warm = all(len(windows[n]) >= 2 for n in names)
+        if scheme in ("inverse_vol", "inverse_vol_corr") and warm:
             invs = {n: (1.0 / _std(windows[n]) if _std(windows[n]) > 0 else 0.0) for n in names}
+            if scheme == "inverse_vol_corr" and len(names) > 1:
+                # correlation penalty (§21.D): down-weight sleeves correlated with the rest, so a
+                # cluster of co-moving coins (BTC/ETH/SOL) can't crowd the book. avg_corr in [-1,1];
+                # floored at 0.2 so a true diversifier just keeps full inverse-vol weight (no blow-up).
+                for n in names:
+                    cs = [correlation(list(windows[n]), list(windows[m])) for m in names if m != n]
+                    avg_corr = sum(cs) / len(cs) if cs else 0.0
+                    invs[n] = invs[n] / max(avg_corr, 0.2)
             s = sum(invs.values())
             w = {n: (invs[n] / s if s > 0 else 1.0 / len(names)) for n in names}
         else:

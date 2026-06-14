@@ -291,6 +291,15 @@ BTC/ETH,Sharpe 薄(~1.0-1.3 年化、~5-6.4%/yr w/ maker),广度不成立、LINK
 **A1 终判:basis-conditional 不 work,always-on cash-and-carry 已是这条 edge 的最优形态。无需 S3(无任何阈值
 改善,没什么可认证)。** 这也再次确认:**没有隐藏的「巨猛」——连唯一合法的优化都只是把 always-on 重新证明为最优。**
 
+### 7.10 RV-C 作为线 D 趋势的压舱石(C×D 合成账,2026-06-13)——认证 carry 找到最佳用途
+
+A1 证明 carry 自身已到顶(薄、窄、always-on 最优),但**它真正的价值不是单独跑,是当线 D 趋势的压舱石**。详见
+`docs/crypto-x4-plan.md §20`:RV-C BTC+ETH(always-on maker inverse L=3)与线 D S7 趋势 **corr −0.196 负相关**
+(中性 vs 方向,尾部相反=逼空 vs 暴跌),合成账(纯件 `x4/combo.py` 复用 `rv.stats` 不改本线模块)在可部署
+**40% carry 权重**下把趋势 **Sharpe 0.89→1.18、maxDD −21.4%→−10.2%(尾砍近半)**,**kill-test PASS**。**这是 RV-C
+这条窄薄真 edge 的最佳归宿——单独 +6.4%/yr 不性感,但作压舱石给趋势抬 Sharpe + 砍尾价值真实。** caveat:两者
+都隐性多「crypto 活着/contango」宏观因子,短期尾部正交真、多年 regime 假,非全天候。
+
 ---
 
 ## 6. 变更记录
