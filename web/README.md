@@ -6,30 +6,32 @@
 ## 架构
 
 ```
-A股 CTA-R(模拟)   WSL `home` ──ssh──> Mac ──scp──┐
-加密 X4 paper(模拟)Mac 本地 state/x4/paper/ ─────┤──> VPS /var/www/qount/data/
-加密 X4 live(实盘) VPS 本地(x4_live_cron 写)──cp─┘
-                                                  │
+加密 X4 live (实盘)  VPS 本地 x4_live_cron.sh  (每日 10:30) ──┐
+加密 X4 paper(模拟) VPS 本地 x4_paper_cron.sh (每日 10:00) ──┤──> VPS /var/www/qount/data/
+A股 CTA-R  (模拟)   WSL `home` ──ssh──> Mac ──scp(每5分)──────┘
+                                                              │
    Caddy  qount.alyaloale.com  (basic_auth + 自动 HTTPS)  →  /var/www/qount
    前端   index.html + app.js + style.css,JS 每 60s 拉 data/*.json 渲染
 ```
 
 三个数据文件(VPS `/var/www/qount/data/`):
-- `cta.json`     — `qount.cta_portfolio status --json` 输出(A股,模拟盘,新浪实时估值)
-- `x4_paper.json`— 打包 `state/x4/paper/{holdings,latest,s7_latest,combo_latest}.json`(加密模拟盘前向 3 本 book)
-- `x4_live.json` — `state/x4/live/latest.json`(加密实盘小仓,真实下单)
+- `x4_live.json` — `state/x4/live/latest.json`(加密实盘小仓,真实下单);`x4_live_cron.sh` 末尾 `cp` 发布。
+- `x4_paper.json`— 打包 `state/x4/paper/{holdings,latest,s7_latest,combo_latest}.json`(加密模拟盘前向 3 本 book);**2026-06-15 迁至 VPS**,由 `x4_paper_cron.sh` 自产自发(此前在 Mac)。
+- `cta.json`     — `qount.cta_portfolio status --json`(A股,模拟盘,新浪实时估值);引擎/数据在 WSL,VPS 墙外取不到境内行情,故仍由 Mac 中继。
 
-## 文件清单(本仓库 `web/`)
+> **谁是常开的**:加密 live + paper 全在 VPS,7×24 不依赖 Mac;只有 A股(WSL 上算)需要 Mac + 家里机器在线。
+
+## 文件清单(本仓库)
 
 | 文件 | 作用 | 部署位置 |
 |---|---|---|
-| `site/index.html` `site/app.js` `site/style.css` | 静态前端 | VPS `/var/www/qount/` |
-| `push_dashboard.sh` | Mac 端:取 A股(WSL)+ 打包 paper → scp 上 VPS | Mac 本地运行 |
-| `com.qount.dashboard.plist` | launchd:每 300s 跑 push_dashboard.sh | `~/Library/LaunchAgents/` |
-| `Caddyfile.qount` | Caddy 站点块**模板**(hash 占位,真值在 VPS) | append 到 VPS `/etc/caddy/Caddyfile` |
-
-实盘数据发布由 `scripts/desktop/x4_live_cron.sh` 末尾的 `cp ... /var/www/qount/data/x4_live.json` 完成
-(VPS crontab 每天 10:30)。
+| `web/site/{index.html,app.js,style.css}` | 静态前端 | VPS `/var/www/qount/` |
+| `web/push_dashboard.sh` | Mac 端:取 A股(WSL)→ scp 上 VPS(只管 cta.json) | Mac 本地 |
+| `web/com.qount.dashboard.plist` | launchd:每 300s 跑 push_dashboard.sh | Mac `~/Library/LaunchAgents/` |
+| `web/Caddyfile.qount` | Caddy 站点块**模板**(hash 占位,真值在 VPS) | append 到 VPS `/etc/caddy/Caddyfile` |
+| `scripts/desktop/x4_live_cron.sh` | VPS:实盘小仓 + 发布 x4_live.json | VPS crontab `30 10 * * *` |
+| `scripts/desktop/x4_paper_cron.sh` | VPS:4 条 paper track + 发布 x4_paper.json | VPS crontab `0 10 * * *` |
+| `scripts/desktop/x4_paper_daily.sh` + `com.qount.x4-paper.plist` | (已弃用)Mac 版 paper 跑批,2026-06-15 迁 VPS 后 unload | 保留作回滚参考 |
 
 ## 访问
 
