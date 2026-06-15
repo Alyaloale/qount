@@ -1,0 +1,18 @@
+# Caddy 站点块模板 — append 到 VPS /etc/caddy/Caddyfile(与现有 api.alyaloale.com 块并列)。
+# basic_auth 的 hash 用 `caddy hash-password --plaintext '你的密码'` 生成后替换 PLACEHOLDER。
+# 真实 hash 只存在 VPS 的 Caddyfile,不入仓库。
+
+qount.alyaloale.com {
+	root * /var/www/qount
+	encode gzip zstd
+	basic_auth {
+		qount $2a$14$REPLACE_WITH_BCRYPT_HASH_FROM_caddy_hash-password
+	}
+	header {
+		Cache-Control "no-store"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+	}
+	file_server
+}
