@@ -828,6 +828,135 @@ TP 检,每笔满扣往返费;+9 单测 → x4 共 **62 全绿**)。`scripts/rese
 的执行皮(网格/分钟 scalp)一律被费吃穿——bake-off 已答尽,再优化是雕花。** S5 代码定性为可复用「微观信号
 不可兑现」证据资产,不删。
 
+### 11.1 三态震荡闸重测(2026-06-16)——震荡因子真砍换手 98%,但同把毛 edge 砍光,FAIL
+
+owner 观察「分钟币常有三态:震荡/上升/下跌,只在上升态做短线」→ 这是 S5 唯一没显式做的一处(震荡因子)。
+新增纯件 `EfficiencyRegime`(Kaufman 效率比 = 窗口净位移/路径长度 ∈[0,1];高=趋势、低=震荡,叠净位移符号
+→ 三态 +1/0/−1)+ `GatedVelocityScalper`(只在 +1 上升态放行脉冲信号,震荡/下跌空仓);+8 单测 → x4 共
+**173 全绿**。runner `scripts/research/x4_scalp_regime.py` 固定 §11 最优慢配置(vw20/al10 tp1.0%/sl0.5%),
+只变 regime 闸,在**无摩擦/maker/taker 三档**对照 BTC 2024-03(同 §11 牛月,最有利环境):
+
+| 闸 | 往返 | 胜率 | 无摩擦 | maker 1bp | taker+slip |
+|---|---|---|---|---|---|
+| bare(裸 S5) | 453 | 35.8% | +17.06%(费0%) | +6.91%(费9%) | **−37.98%**(费36%) |
+| er30/0.30 | 229 | 34.5% | +3.74% | −0.91% | −24.78% |
+| er30/0.40 | 144 | 36.1% | +5.80% | +2.79% | −13.59% |
+| er60/0.40 | 32 | 40.6% | +3.47% | +2.81% | **−1.06%**(费3%) |
+| er60/0.50 | 7 | 28.6% | −0.51% | −0.65% | −1.49% |
+
+**终判 = FAIL(三条,诚实写死)**:
+1. **震荡闸是真的——往返砍 98%(453→7)、费从 36% 塌到 1%、taker 从 −38% 拉到 −1%(近平)**。owner 的三态直觉
+   方向正确:不在震荡里乱打,确实把费血止住。
+2. **但闸把毛 edge 砍得比费更狠**。裸 S5 无摩擦 +17.06%(≈ buy&hold +16.46%);收紧到能近平 taker 的 er60/0.40,
+   无摩擦只剩 +3.47%——**因为毛 edge 本就是 buy&hold 的趋势暴露代理(§11 终判 1),少打=少暴露=毛收益同比蒸发**。
+   把 taker 逼向 0 的唯一方法就是把毛收益也逼向 0 = 等于「几乎不交易」,收敛回 S3 日线趋势拿住。
+3. **没有任何配置在 taker 转正;闸甚至让 maker 更差**(最佳 gated maker +2.81% < 裸 maker +6.91%,毛缩得比费多)。
+   = 在最有利的牛月都救不活 → 震荡/熊月只会更没上升态可捕。**§11 主结论原样成立:加密能拿的钱是日线趋势拿住
+   (S3),不是分钟见好就收;震荡因子能止损不能造 alpha。** caveat:单月 2024-03(与 §11 同口径,favorable-case
+   证伪——最强反证)。`EfficiencyRegime`/`GatedVelocityScalper` 定性为可复用「震荡闸真砍换手但同砍 beta」证据资产。
+
+### 11.2 日内多周期趋势(15m/1h 趋势 + 多空 + 见好就收反手)重测(2026-06-16)——周期×方向横比,确认 §9/§10 杀手
+
+owner 细化想法:**读 1h/15m 趋势定方向做多/做空,趋势翻转立刻平仓反手(见好就收),逐币动态阈值结合波动/大盘**。
+这恰是 §9/§10 已测过的两根承重柱(1h 周期 = 噪声反复打脸;做空结构性上涨资产被挤)。**纯复用**(S3 `TrendFollow`
+交叉本身就翻转反手 = 见好就收;`run_directional` 的 `vol_target` = 逐币 ATR 波动率定仓 = 「逐币动态阈值结合
+波动」;`chandelier` = 区间跟踪止损)→ runner `scripts/research/x4_timeframe.py` 把同一趋势策略在
+**{日线/1h/15m} × {只做多/多空}** 横比 BTC+ETH(2021-01..2026-05,1x,fast20/slow100,只变周期与方向):
+
+| sym | tf | dir | total | Sharpe | maxDD | trades |
+|---|---|---|---|---|---|---|
+| BTC | 1d | long-only | **+68.3%** | 0.45 | −43.2% | 59 |
+| BTC | 1d | long+short | −9.9% | 0.24 | −60.6% | 955 |
+| BTC | 1h | long-only | +69.5% | 0.44 | −64.0% | 1,625 |
+| BTC | 1h | long+short | **−62.2%** | −0.01 | −78.5% | 24,396 |
+| BTC | 15m | long-only | −48.2% | −0.10 | −73.5% | 6,732 |
+| BTC | 15m | long+short | **−97.3%** | −0.79 | −98.5% | 98,133 |
+| ETH | 1d | long-only | +14.8% | 0.31 | −72.6% | 66 |
+| ETH | 1h | long-only | +65.1% | 0.44 | −61.7% | 1,898 |
+| ETH | 15m | long-only | +79.5% | 0.47 | −58.2% | 7,662 |
+| ETH | 15m | long+short | −88.5% | −0.10 | −96.2% | 98,560 |
+
+**判决(三条)**:① **做空 = 最大杀手**——每个 long+short 全灾难(−10%~−97%):做空长期上涨资产被挤 + 翻转反手在日内
+产 2.4 万~9.8 万笔吃 taker 绞死;owner 的「做多/做空」开关就是把 +68% 变 −62% 的那一下(§10「long-bias 是修复」
+原样复现)。② **越日内越差**:15m+多空 = 全表最惨(BTC −97.3%/9.8 万笔),连纯做多 15m 都把 BTC 打到 −48%(假信号
+翻倍)。③ **能赚的仍是日线/1h 纯做多(~+68%/Sharpe 0.44-0.47)= S3/S7**;且**日线 59 笔做到 Sharpe 0.45,1h 1625
+笔、15m 6732 笔 Sharpe 一点没涨 → 日内化只多交易/多回撤/多脆弱不多 Sharpe**。owner 想法里「新」的部分(日内周期 +
+见好就收反手做空)恰是最致命部分;能赚的「纯趋势做多」日线已用 59 笔做完。逐币 vol-parity / 区间止损是 refinement
+(§12/§14 已证=鲁棒/风控非 alpha),翻不正负的内核。**realizable 最优仍 = 固定 TOP7 主流币日线纯做多(在跑 pilot)。**
+
+### 11.3 稳健评价因子做空"确认的下跌趋势"——评价因子越好做空腿亏越多(2026-06-16)
+
+owner 进一步澄清:**不是趋势一动就反手,而是先用评价因子高置信判定上升/下降趋势,再顺大方向持有**(上升做多、
+下降做空,很少换向)。§11.2 的 20/100 快交叉乱翻(2.4-9.8 万笔)不是这个意思。隔离测剩下的真问题:**用稳健、5 年
+只换几次向的分类器(50/200 金叉死叉 = 最真的「确定上升还是下降」),做空腿赚不赚?** runner `x4_regime_short.py`
+日线 BTC/ETH/BNB/SOL,vol-parity(逐币动态阈值),把**做空腿净贡献 shortΔ = (long+short) − (long-only)** 单独剥出:
+
+| sym | 分类器 | long-only | long+short | shortΔ |
+|---|---|---|---|---|
+| BTC | fast 20/100 | +48.6% | +15.0% | −33.5% |
+| BTC | **robust 50/200** | +29.4% | −27.5% | **−57.0%** |
+| ETH | fast 20/100 | +17.6% | −24.1% | −41.7% |
+| ETH | robust 50/200 | +14.2% | −27.4% | −41.6% |
+| BNB | fast 20/100 | +81.4% | +60.5% | −20.8% |
+| BNB | **robust 50/200** | +33.2% | −22.0% | **−55.2%** |
+| SOL | fast 20/100 | +36.2% | −16.8% | −53.0% |
+| SOL | robust 50/200 | +48.4% | −0.7% | −49.2% |
+
+**判决:shortΔ 全 4 币全分类器皆负,且越稳健的分类器做空腿亏越多**(BTC −33.5%→−57.0%、BNB −20.8%→−55.2%)。
+**机制 = 结构性,非调参缺失**:高置信、少换向的下跌判定(死叉)**必然滞后**——跌势确认时大跌已发生大半,做空恰好
+**空在底部区域,被 crypto 标志性 V 型反转/逼空打爆**(2022 熊→2023 反弹:死叉底部做空全吐回)。**评价因子越好=越晚=
+越空在底接逼空。** 这正解释 §10「long-bias = 结构修复非侥幸」:加密资产长期上涨+暴跌后剧烈反转,做空「确认的下降
+趋势」在数学上就是空底接逼空。**叠加:评价因子用于「选币」也已证伪(§16.1 S6 −86%、§22 动态币池)→ 评价因子无论
+用于「判方向做空」还是「选币」,在 crypto 都是负贡献。** realizable 最优仍 = 固定 TOP7 主流币日线纯做多(在跑 pilot)。
+
+### 11.4 整理区间突破 + 多周期同向确认(15m 早抓 + 小时趋势过滤)——假突破吃穿,多周期闸救不了(2026-06-16)
+
+owner 再细化(最站得住的一版):**识别震荡整理区间,价格脱离震荡(突破)时在 15m 早抓那段趋势,只做与小时级趋势同向
+的突破(多周期确认过滤假突破)**。精确映射 S4 `MomentumBreakout`:Donchian 突破=脱离前 `lookback` 区间;`regime_sma`=
+高周期趋势闸=「符合小时级趋势」;long-only;突破后持有到反向破=做那段趋势。15m 上 1h=4 bar,故 regime_sma∈{16,48,96}≈
+{4h,12h,24h} 递增确认强度。runner `x4_breakout_mtf.py`,BTC/ETH/SOL,vol-parity,对日线基线:
+
+| sym | tf | 1h-gate | total | Sharpe | maxDD | trades |
+|---|---|---|---|---|---|---|
+| BTC | 1d | 日线基线 | **+38.4%** | 0.49 | −25.2% | 591 |
+| BTC | 15m | none | −92.7% | −1.08 | −94.2% | 9,212 |
+| BTC | 15m | 4h | **−97.2%** | −2.20 | −97.7% | 14,128 |
+| BTC | 15m | 24h | −88.1% | −0.99 | −90.8% | 9,370 |
+| ETH | 1d | 日线基线 | **+83.2%** | 0.85 | −15.4% | 548 |
+| ETH | 15m | none | −75.6% | −0.31 | −87.0% | 11,082 |
+| ETH | 15m | 24h | −65.8% | −0.25 | −81.1% | 10,828 |
+| SOL | 1d | 日线基线 | **+66.0%** | 0.71 | −33.0% | 652 |
+| SOL | 15m | none | −28.4% | 0.27 | −89.3% | 19,304 |
+| SOL | 15m | 24h | −14.0% | 0.27 | −86.3% | 17,534 |
+
+**判决(两条)**:① **15m 突破全负(−14%~−97%)vs 日线突破 +38%~+83%**——§9「突破在震荡市被假突破+费绞杀」复现:
+15m 上「脱离震荡」绝大多数是假突破(捅出区间又缩回),9k-19k 笔被假突破+费绞杀;**日线突破赚正是因为日线天然滤掉
+分钟噪声**。② **多周期确认不救反害**:「4h 确认」档全表最惨(BTC −97.2%/ETH −95.1%/SOL −96.2%),因 regime_sma 在 15m
+上自己也抖→加滞后+额外进出 churn,滤掉的假突破不抵它的拖累;只有最强 24h 闸把交易压下点但「早抓」意义已失且照样亏。
+**核心:整理区间突破+趋势确认本身对,但只在日线成立(基线行 +38%~+83%/591 笔)= 即 §10.1 winner shape;为「早抓」
+下沉 15m=掉进假突破区,多周期确认在 15m 上确认信号自身即噪声救不了。owner「分钟突破一般和小时趋势符合」被证伪:
+15m 尺度突破与后续趋势的符合率低到被费吃穿,正因 15m 突破多是假的。** realizable 最优仍=固定 TOP7 主流日线纯做多 pilot。
+
+### 11.5 §11 收口(2026-06-16)——owner 四条细化想法全 FAIL,同根因,该线封板
+
+§11.1–§11.4 把 owner 在 S5 主结论后提的四条「再细化一下也许能活」想法各做成隔离 runner 真跑,四脚本
+(`x4_scalp_regime` / `x4_timeframe` / `x4_regime_short` / `x4_breakout_mtf`)**2026-06-16 复跑一遍,数字与上表逐行吻合
+(独立复现)**;`EfficiencyRegime`/`GatedVelocityScalper` 两纯件 +8 单测 → **x4 共 173 全绿**。**四条全 FAIL**:
+
+| 子节 | owner 细化想法 | 判决 | 同根因映射 |
+|---|---|---|---|
+| 11.1 | 加震荡因子,只在上升态做分钟 scalp | 闸真砍换手 98%,但同把毛 edge 砍光,taker 仍负 | 毛 edge = buy&hold 代理,少打=少暴露;闸能止损不能造 alpha |
+| 11.2 | 读 1h/15m 趋势做多/做空,翻转见好就收 | long+short 全灾难(−10%~−97%),日内化只多换手不多 Sharpe | 做空结构性上涨被挤 + 日内 = 噪声反复打脸(§9/§10) |
+| 11.3 | 稳健评价因子高置信判方向,顺势做空确认下跌 | shortΔ 全币全分类器皆负,越稳健做空越亏 | 死叉滞后→空在底接 V 反转/逼空(§10 long-bias 是结构修复) |
+| 11.4 | 15m 早抓整理突破,只取与小时趋势同向 | 15m 突破全负,多周期确认不救反害(4h 闸最惨) | 假突破吃穿,15m 上确认信号自身即噪声(§9 突破被费绞杀) |
+
+**统一根因(四条共一个)**:加密能拿的钱是**日线尺度、纯做多、拿住趋势**(S3/S7,在跑 pilot);任何往
+**更短周期 / 加做空 / 更花执行皮**的方向走,都撞同一面墙——**日内是噪声、做空是接逼空、微观信号是 buy&hold
+代理且被 taker 费吃穿**。这与 §11 主结论、§16.1(选币负 alpha)、§22(动态币池证伪)、线 A-L6(微观 taker 不可
+兑现)第 N 次同型。**§11 该线封板:不再开分钟/日内/做空/突破皮的变体研究**;四 runner + 两纯件定性为可复用
+「分钟/日内/做空在 crypto 被结构性证伪」证据资产,不删。realizable 最优锁定 = **固定 TOP7 主流币日线纯做多
+(§21 在跑 live pilot)+ 放大本金后叠 §20 carry 压舱石**。
+
 ---
 
 ## 9. B1/B1-b headline 实测(2026-06-12)——四策略全 5 年可信终表
@@ -927,6 +1056,9 @@ S2 样本内调参、2021 顶部年是不可过拟合的残余)。脚本配置�
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-06-16 | 研究(§11.1-11.4) | **owner 加密分钟/日内级择时探索 = 四轮新实测 + 早期共六角度全证伪,门=日线纯做多**(详见 §11.1-11.4)。owner 反复细化「分钟/15m 震荡-趋势短线」,逐版用其确切设定真跑(非引用旧结论):**§11.1 三态震荡闸**(新纯件 `EfficiencyRegime` Kaufman 效率比三态 + `GatedVelocityScalper`,+8 单测→x4 共 **173 全绿**;runner `x4_scalp_regime.py`)= 往返砍 98% 但毛 edge 同步砍光、taker 仍负;**§11.2 周期×方向**(runner `x4_timeframe.py`,纯复用 TrendFollow/run_directional)= 做空全灾难 −62%~−97%、越日内越差、日线 59 笔 Sharpe 0.45 而 1h/15m 多交易不多 Sharpe;**§11.3 稳健评价因子做空**(runner `x4_regime_short.py`,剥离 shortΔ)= 全 4 币做空腿皆负且**评价因子越稳健亏越多**(死叉滞后→空底接逼空,§10 long-bias=结构修复实锤);**§11.4 整理突破+多周期确认**(runner `x4_breakout_mtf.py`,MomentumBreakout 15m+regime_sma 当小时闸)= 15m 突破全负 −14%~−97% vs 日线 +38%~+83%,多周期闸不救反害(4h 档全表最惨)。**元结论:加密散户能拿的钱在日线纯做多趋势(=在跑 pilot),频率越高/越双向/越想早抓越被假突破+噪声+费吃穿;评价因子无论判方向做空(§11.3)还是选币(§16.1/§22)在 crypto 都是负贡献。** 四个 runner + 两纯件留存为「分钟级择时证伪」证据资产,未改任何既有策略模块。 |
+| 2026-06-16 | ops(实盘核实) | **核实 §21 实盘 pilot 运行态 = VPS 健康,Mac 旧面已弃用(更正部署面误判)**。owner 问实盘是否在 VPS,核实(06-15 迁移后)**加密 live+paper 全在 VPS(`root@8.220.130.35`,墙外静态 IP 直连币安无代理)**:VPS crontab `*/10 x4_live_cron.sh` + `0 10 x4_paper_cron.sh`,**实测 2026-06-16 18:50 live 跑通**——armed / gate=SHUT(BTC −14.5%<200MA)/ $415 全现金 / 0 单 / 无 ALERT / 每 10 分钟推进 + 发布 `x4_live.json`→看板。**关键更正**:Mac 上 `x4_live_daily.sh`+launchd `com.qount.x4-live` 是**已弃用旧面**(不该加载,本地 `latest.json` 是陈旧副本);**坑=key 的 IP 白名单绑死 VPS 静态 IP→在 Mac 跑(走 Clash 台湾代理出口 `1.168.187.194`)必报 -2015/-2008,是预期保护非 key 坏**。验实盘须 SSH VPS 看 cron/log/latest.json,勿在 Mac 跑。**无需任何修复,pilot 武装待命等 BTC 站上 200MA 开仓。** |
+| 2026-06-15 | ops(看板) | **收益看板两项修复(qount.alyaloale.com,只读展示,不碰交易逻辑)**。① **BTC 价格/均线"不更新"**:根因非前端(JS 每 60s no-store 拉取正常),是 `x4_live.py` 面板的 `btc_px` 取**日线收盘** `btc_closes[-1]`(日内不动)+ cron **每日仅一次**(10:30 CST)。修复=`btc_px` 改用**已抓的实时 ticker** `prices["BTCUSDT"]`(BTC 在 universe,零新增请求),**新增 `btc_close` 字段**,`btc_sma200`/`btc_to_sma` 仍走收盘口径 → **闸门/策略语义不变**;VPS crontab `30 10` → `*/10`(每 10 分钟);`orders.jsonl` 加守卫(仅真有调仓事件才追加,`latest.json` 每次刷新)避免提频灌爆审计日志。前端 BTC 卡片标「现价 ●实时 / 200日线·收盘」。实测 btc_px 与币安 ticker 完全一致、ts 实时。**bar 滞后**查清=`load_klines` 走 data.binance.vision 归档(daily dump 发布滞后 ~1 天),对 200d SMA 可忽略,**不改**(改实时 OHLCV 会丢回测可复现性)。② **收益曲线升级为带数轴+悬停的交互图**(纯手写 SVG,**零第三方库**,满足境内无 CDN):Y 轴 ¥/$ 刻度+网格、X 轴日期、鼠标十字准星+高亮点+气泡(日期/净值),窄 book 卡用 compact viewBox 防字号被缩糊。**后端 `x4_paper.py` 加 `_curve_payload()`**:回测净值降采样 ≤150 点,只塞 `*_latest.json`(不进 jsonl),三 track 经 cron 打包进 `x4_paper.json`(实测各 150 点,文件 13.7KB)。**诚实语义区分**:A股=前向真实日净值(cta.json,累积中);加密三本=**回测净值·样本内**(前向才 2 天无历史),UI 明确标注不当前向战绩。改动文件:`scripts/desktop/x4_live.py`、`scripts/research/x4_paper.py`、`web/site/{app.js,style.css}`,均已部署 VPS 验证;x4_live 21 单测 / papersim+trendport 26 单测回归绿。 |
 | 2026-06-15 | ops(§21.5 反转) | **重新启用三条 paper forward track,用于收益看板展示**。§21.5(2026-06-14)曾 `launchctl unload com.qount.x4-paper` 停掉 3 腿 / S7 / C×D combo 三条模拟 track(切线去跑 VPS 实盘小仓)。因新建只读收益看板 **qount.alyaloale.com**(仓库 `web/`,线 D/A 跨线展示,Caddy basic_auth + 自动 HTTPS)需展示「前向」收益,owner 定**重新开启前向跑批**:`launchctl load -w ~/Library/LaunchAgents/com.qount.x4-paper.plist`(恢复每日 10:00),kickstart 跑通 4 个 track(forward / forward-s7 / forward-combo / holdings)无 ALERT,数据从 bar 2026-06-12 推进到 **2026-06-13** 并推上 VPS。**实盘小仓(§21)不受影响照常**;源码 / 历史快照本就保留,本次仅恢复调度。**同日再迁移:加密 paper 从 Mac 搬到 VPS 常驻**——owner 定让模拟盘也 7×24(Mac 关机也照跑)。新增 `scripts/desktop/x4_paper_cron.sh`(Linux 版,4 track + 打包发布 `x4_paper.json`,纯 stdlib 直连 binance.vision 无代理);rsync `src/qount` + 搬 `state/x4/paper/`(保住 deploy 锚点 06-13)到 VPS;VPS crontab 加 `0 10 * * *`(paper,live 仍 `30 10`);Mac `com.qount.x4-paper` unload(-w 持久禁用,plist 留作回滚),`push_dashboard.sh` 改为**只推 cta.json**(VPS 自产 x4_paper.json,避免 Mac 冻结数据覆盖)。**自此加密 live+paper 全在 VPS 常开,仅 A股(WSL 上算)依赖 Mac+家里机器在线**。看板数据流:VPS 自产 x4_live/x4_paper,Mac `com.qount.dashboard` 每 5 分钟只中继 A股。详见仓库 `web/README.md`。 |
 | 2026-06-13 | v1.9(§20) | **C×D 合成账 kill-test:趋势(线 D S7)+ carry(线 C RV-C)压舱石 = PASS**。命题=两个独立认证 edge 尾部相反(趋势死暴跌、carry 尾在向上逼空)→ 小 carry sleeve 当压舱石(线 A「金/债压舱石」同型)。纯件 `x4/combo.py`(`align_curves` 按 ts 交集+归一化、`combine_fixed` 固定权重再平衡=容量受限 sleeve 的诚实 sizing、`kill_verdict`),复用 `x4.portfolio`/`rv.stats` **未改 C/D 模块**;**+9 单测 → x4 共 126 全绿;rv 53/grid 106 回归绿**。runner `x4_combo.py`(TREND=S7 vt2% 可部署档 + CARRY=RV-C BTC+ETH always-on maker inverse L=3)。**实测(1898 共同日 bar,corr −0.196 负相关)**:全 carry 权重过双门;可部署 **40% carry → Sharpe 0.89→1.18(+0.30)、maxDD −21.4%→−10.2%(尾砍近半)**,代价是总收益 +80%→+62%(换 risk-adjusted)。**跨三线首次把两 edge 拼成更优一本账**。诚实 caveat:两 sleeve 都隐性做多「crypto 活着/contango」宏观因子→短期尾部正交真、多年 regime 层假,**非全天候**。**§20.4 forward 化 + 日更 + 面板**:`x4_paper.py` 加 `forward-combo`(每日重跑两 sleeve→align→combine 60/40,独立 `combo_*.json`)+ `x4_paper_daily.sh` 第三条 track。**combo 日更**:实测 Binance 也发 dated 合约 per-day dump→给 `rv.data` 加 dated 日包 fallback(`dated_day_url` 等,镜像 §18,仅当前月触发),combo 从卡上月末→推进到 bar 2026-06-12,三 track 全日更对齐;**+3 单测 → rv 56/x4 126/grid 106 全绿**。**桌面面板** `scripts/desktop/x4paper.5m.py`(SwiftBar/xbar,线 A 同型但**数据本地无需 ssh**):菜单栏锚 combo,展开三 track 净值/Sharpe/maxDD+持仓态+corr+新鲜度;snapshot 补 `trend_flat`。combo $162,393/+62.4%/1.16/−10.2%,daily 0 ALERT,三 track 转纯 OOS。详见 §20。 |
 | 2026-06-13 | v1.7(§19) | **S7-TREND-PORT 多币趋势组合预注册 + 引擎实现(先写单测)**。review owner「聚类选币 + 协方差 top5」→ 否定(§16.1 的 −86% 是**带每币 SMA200 闸**发生的,选币本身负 alpha、naive 等权持有 0.77>选币 0.71、协方差是 error-maximizer、聚类=BTC-beta 噪声、幸存者偏差灌高)。**命题翻转**:不选币,把 §17 唯一过样本外的 S3 趋势**铺到多币上、逆波动率合成**(已证真信号 × 真分散)。落 `sma_regime_mask`(纯件 BTC 大盘闸)+ `run_trend_portfolio`(每币独立 run_directional+TrendFollow → combine inverse_vol → 大盘闸 risk-off overlay),复用 run_directional/TrendFollow/combine 不改。预注册杀线:Sharpe 同时 > 0.70(S3-BTC)且 > 0.77(naive 等权持有)且 maxDD < −25%;幸存者偏差前置。**+12 单测 → x4 共 117 全绿;grid 106 / rv 53 回归绿。** **研究 RUN(`x4_trendport.py`)完成 → 严格杀线 FAIL(尾部):S7 inverse_vol/BTC闸 Sharpe 0.88 同时打过 S3(0.70)和等权持有(0.77)= 命题成立,但 maxDD −30.5% 未达 −25% 且 ≈ 单 BTC −28.9%(分散没砍尾,crypto-beta 一起跌=§19.4 先验兑现)。幸存者偏差强信号:加 ICP 重伤币,等权持有 0.77→0.16 崩、S7 0.88→1.02 反升(趋势闸退出垂死币)→ 等权持有 0.77 本身是幸存者偏差产物。S3-on-BTC 仍 maxDD 之王;S7 留作高 Sharpe 候选。头条 0.88 仍样本内牛市灌高。** 详见 §19.6。 |

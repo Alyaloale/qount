@@ -284,6 +284,68 @@ class VelocityScalper:
         return 1.0 if (v_now > self.vel_threshold and accel > 0.0) else 0.0
 
 
+class EfficiencyRegime:
+    """Three-state regime classifier on Kaufman's Efficiency Ratio (§11 震荡闸 re-test).
+
+    The owner's 震荡因子: most minute moves are *chop* (price wanders, net displacement ≈ 0). The
+    Efficiency Ratio measures how *directional* the last ``window`` bars were — net displacement
+    divided by total path length, in ``[0, 1]``. High ER = a clean trend (the path went somewhere);
+    low ER = chop (lots of motion, no displacement). Combined with the sign of the net move this
+    gives three states: ``+1`` = trending **up**, ``-1`` = trending **down**, ``0`` = chop.
+
+    Used as a gate (not an entry): the long-only scalper should only fire in the ``+1`` state and sit
+    out chop/down — the lever that can cut the round-trip count that killed S5 (plan §11). Warm-up
+    (fewer than ``window+1`` closes) returns ``0`` (chop) so it never trades before it can classify.
+    """
+
+    def __init__(self, *, window: int = 30, er_threshold: float = 0.35) -> None:
+        if window < 2:
+            raise ValueError(f"window must be >= 2, got {window}")
+        if not 0.0 <= er_threshold <= 1.0:
+            raise ValueError(f"er_threshold must be in [0,1], got {er_threshold}")
+        self.name = "EFF-REGIME"
+        self.window = window
+        self.er_threshold = er_threshold
+        self._closes: deque[float] = deque(maxlen=window + 1)
+
+    def on_bar(self, bar: Bar) -> int:
+        self._closes.append(bar.close)
+        if len(self._closes) < self.window + 1:
+            return 0  # warm-up = chop (never trade before we can classify)
+        c = list(self._closes)
+        net = c[-1] - c[-1 - self.window]
+        path = sum(abs(c[i] - c[i - 1]) for i in range(len(c) - self.window, len(c)))
+        if path <= 0.0:
+            return 0  # flat line = chop
+        er = abs(net) / path
+        if er < self.er_threshold:
+            return 0  # chop: motion without displacement
+        return 1 if net > 0.0 else -1
+
+
+class GatedVelocityScalper:
+    """S5-VEL-G: the velocity scalper gated by a three-state regime filter (§11 震荡闸 re-test).
+
+    Composes :class:`VelocityScalper` (the impulse entry signal) with :class:`EfficiencyRegime` (the
+    震荡因子 gate): emit the scalper's entry signal **only** when the regime is trending up (``+1``);
+    sit flat in chop (``0``) and down (``-1``). The thesis under test (plan §11): the chop gate cuts
+    the round-trip count enough to survive maker fees — taker is expected to stay dead. Pure
+    composition: both inner pieces see every bar (state), so the gate has no look-ahead.
+    """
+
+    def __init__(self, *, vel_window: int = 5, accel_lag: int = 3, vel_threshold: float = 0.001,
+                 er_window: int = 30, er_threshold: float = 0.35) -> None:
+        self.name = "S5-VEL-G"
+        self.scalper = VelocityScalper(vel_window=vel_window, accel_lag=accel_lag,
+                                       vel_threshold=vel_threshold)
+        self.regime = EfficiencyRegime(window=er_window, er_threshold=er_threshold)
+
+    def on_bar(self, bar: Bar) -> float:
+        signal = self.scalper.on_bar(bar)   # always feed (state)
+        regime = self.regime.on_bar(bar)    # always feed (state)
+        return signal if (signal > 0.0 and regime == 1) else 0.0
+
+
 @dataclass(frozen=True)
 class GridStrategy:
     """S1-GRID config: long-only geometric grid + SMA200 trend gate (plan §2 S1).
