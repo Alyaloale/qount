@@ -512,6 +512,8 @@ def run_trend_portfolio(
     rebalance_band: float = 0.25,
     chandelier_mult: float = 0.0,
     chandelier_lookback: int = 22,
+    dd_derisk_threshold: float = 0.0,
+    dd_derisk_vol_target: float = 0.0,
     funding_by_sym: dict[str, Callable[[Bar], float]] | None = None,
     periods_per_year: float | None = None,
 ) -> X4Result:
@@ -602,12 +604,37 @@ def run_trend_portfolio(
         port = gated
         gate_active_frac = active / max(1, len(port) - 1)
 
+    # T3-8 动态 vol_target: a portfolio-level exposure haircut while in drawdown. When the running
+    # drawdown of the ridden curve exceeds ``dd_derisk_threshold``, scale the book's exposure by
+    # ``dd_derisk_vol_target / vol_target`` (= cutting the vol target, e.g. 3%->2%) for the next step,
+    # restoring full size once recovered. Causal (DD measured through bar t sets exposure for t->t+1).
+    # Exposure ~0.5x sits below the max_leverage cap so a per-sleeve vt cut is ~linear -> this
+    # portfolio-level multiplier faithfully approximates re-vol-targeting each sleeve (and is exactly
+    # how you'd run it live: scale total deployment by a drawdown-based risk budget). 0 = off.
+    derisk_active_frac = 0.0
+    if dd_derisk_threshold > 0 and dd_derisk_vol_target > 0 and vol_target > 0:
+        mult = min(1.0, dd_derisk_vol_target / vol_target)
+        de = [port[0]]
+        peak = port[0]
+        derisked = 0
+        for t in range(len(port) - 1):
+            peak = max(peak, de[-1])
+            dd = (de[-1] / peak - 1.0) if peak > 0 else 0.0
+            r = (port[t + 1] / port[t] - 1.0) if port[t] > 0 else 0.0
+            m = mult if -dd > dd_derisk_threshold else 1.0
+            if m < 1.0:
+                derisked += 1
+            de.append(de[-1] * (1.0 + m * r))
+        port = de
+        derisk_active_frac = derisked / max(1, len(port) - 1)
+
     extra = {
         "sleeves": sleeves,
         "n_syms": len(syms),
         "weighting": weighting,
         "master_gate_sym": master_gate_sym,
         "gate_active_frac": gate_active_frac,
+        "derisk_active_frac": derisk_active_frac,
     }
     return _result("S7-TREND-PORT", port, initial_capital, trades, fees_paid, 0.0,
                    periods_per_year, extra)

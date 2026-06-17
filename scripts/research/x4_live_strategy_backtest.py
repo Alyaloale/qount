@@ -39,6 +39,10 @@ VARIANTS = {
     # 预注册判据(§21.4)= train(≤23) 且 test(≥24) 都打过 LIVE 全配置 Sharpe 且 DD 不显著恶化.
     "+斜率5d": dict(master_gate_slope=5),
     "+斜率20d": dict(master_gate_slope=20),
+    # T3-8: 动态 vol_target — 组合回撤超阈值时把敞口按 derisk_vt/vt 缩(风控杠杆,reviewer 建议 DD>15%→2%).
+    "+动态vt DD15→2%": dict(dd_derisk_threshold=0.15, dd_derisk_vol_target=0.02),
+    "+动态vt DD20→2%": dict(dd_derisk_threshold=0.20, dd_derisk_vol_target=0.02),
+    "+动态vt DD15→1.5%": dict(dd_derisk_threshold=0.15, dd_derisk_vol_target=0.015),
 }
 
 
@@ -120,7 +124,8 @@ def main() -> int:
     print("\n  train(≤2023-12-31) / test(≥2024-01-01) Sharpe (过拟合检验):")
     split = next((i for i, d in enumerate(dates) if d >= "2024-01-01"), n)
     from qount.x4.portfolio import sharpe_of
-    for name in ("LIVE 全配置", "验证基线(都关)", "+斜率5d", "+斜率20d"):
+    for name in ("LIVE 全配置", "验证基线(都关)", "+斜率20d",
+                 "+动态vt DD15→2%", "+动态vt DD20→2%", "+动态vt DD15→1.5%"):
         c = results[name].equity_curve
         tr = sharpe_of(c[:split], periods_per_year=365.0)
         te = sharpe_of(c[split:], periods_per_year=365.0)

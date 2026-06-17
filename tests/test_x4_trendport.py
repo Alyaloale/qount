@@ -18,6 +18,7 @@ from qount.x4.strategies import TrendFollow, sma_regime_mask, sma_slope_up_mask
 # Small windows so synthetic series stay short. Zero fees + no vol-parity -> clean, exact curves.
 _PARAMS = dict(fast=2, slow=4, regime_sma=5, vol_target=0.0, max_leverage=1.0,
                rebalance_band=0.0, chandelier_mult=0.0, taker_fee=0.0, slippage=0.0)
+_NOVT = {k: v for k, v in _PARAMS.items() if k != "vol_target"}  # caller supplies vol_target
 _DAY_MS = 86_400_000
 
 
@@ -103,6 +104,48 @@ class TestMasterGateSlope(unittest.TestCase):
         with_slope = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5,
                                          master_gate_slope=5, **_PARAMS)
         self.assertLessEqual(with_slope.extra["gate_active_frac"], no_slope.extra["gate_active_frac"])
+
+
+class TestDynamicVolTarget(unittest.TestCase):
+    """T3-8: portfolio-level exposure haircut while the ridden curve is in drawdown."""
+
+    def test_derisk_off_is_noop(self) -> None:
+        univ = {"BTCUSDT": _rising(40), "ALTUSDT": _rising(40, base=50.0)}
+        base = run_trend_portfolio(univ, master_gate_sym=None, vol_target=0.03, **_NOVT)
+        off = run_trend_portfolio(univ, master_gate_sym=None, vol_target=0.03,
+                                  dd_derisk_threshold=0.0, dd_derisk_vol_target=0.02, **_NOVT)
+        for a, b in zip(base.equity_curve, off.equity_curve):
+            self.assertAlmostEqual(a, b, places=9)
+        self.assertEqual(off.extra["derisk_active_frac"], 0.0)
+
+    def test_no_drawdown_never_derisks(self) -> None:
+        univ = {"BTCUSDT": _rising(40), "ALTUSDT": _rising(40, base=50.0)}
+        base = run_trend_portfolio(univ, master_gate_sym=None, vol_target=0.03, **_NOVT)
+        deriskd = run_trend_portfolio(univ, master_gate_sym=None, vol_target=0.03,
+                                      dd_derisk_threshold=0.05, dd_derisk_vol_target=0.02, **_NOVT)
+        self.assertEqual(deriskd.extra["derisk_active_frac"], 0.0)
+        for a, b in zip(base.equity_curve, deriskd.equity_curve):
+            self.assertAlmostEqual(a, b, places=9)
+
+    def test_derisk_engages_and_never_worsens_dd(self) -> None:
+        # rise then fall -> the long-only sleeve takes a (shallow) drawdown -> de-risk engages and the
+        # exposure haircut can only make the realized drawdown shallower (never deeper).
+        univ = {"BTCUSDT": _rising(25) + _falling(25, base=145.0),
+                "ALTUSDT": _rising(25, base=50.0) + _falling(25, base=70.0)}
+        base = run_trend_portfolio(univ, master_gate_sym=None, vol_target=0.03,
+                                   dd_derisk_threshold=0.0, dd_derisk_vol_target=0.0, **_NOVT)
+        deriskd = run_trend_portfolio(univ, master_gate_sym=None, vol_target=0.03,
+                                      dd_derisk_threshold=0.005, dd_derisk_vol_target=0.015, **_NOVT)
+        self.assertGreater(deriskd.extra["derisk_active_frac"], 0.0)       # it engaged
+        self.assertGreaterEqual(deriskd.max_drawdown, base.max_drawdown)   # shallower or equal (DD<0)
+
+    def test_lower_threshold_derisks_at_least_as_often(self) -> None:
+        univ = {"BTCUSDT": _rising(25) + _falling(25, base=145.0),
+                "ALTUSDT": _rising(25, base=50.0) + _falling(25, base=70.0)}
+        kw = dict(master_gate_sym=None, vol_target=0.03, dd_derisk_vol_target=0.015, **_NOVT)
+        low = run_trend_portfolio(univ, dd_derisk_threshold=0.005, **kw)
+        high = run_trend_portfolio(univ, dd_derisk_threshold=0.05, **kw)
+        self.assertGreaterEqual(low.extra["derisk_active_frac"], high.extra["derisk_active_frac"])
 
 
 class TestTrendPortfolio(unittest.TestCase):
