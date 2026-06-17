@@ -99,7 +99,10 @@ def main(argv: list[str]) -> int:
                 current[spot_sym] = qty * prices[spot_sym]
         for p in cm_ex.fetch_positions():
             sym = p.get("symbol") or ""
-            if ":" not in sym:
+            # only DATED COIN-M (e.g. "BTC/USD:BTC-260626"); the delivery client also returns USDⓈ-M
+            # ("ETH/USDT:USDT", no "-") and COIN-M perps ("BTC/USD:BTC", no "-") -- skip those, they
+            # are a different venue/leg and would garble from_ccxt_dated.
+            if ":" not in sym or "-" not in sym:
                 continue
             internal = from_ccxt_dated(sym)
             amt = float(p.get("contracts") or 0.0)
