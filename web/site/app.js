@@ -332,6 +332,43 @@ function renderLive(d) {
     <div class="note"><b>实盘</b> · 现货 1x 逆波动率 · 站上 200 日线开仓 · 更新于 ${ago(d.ts)}</div>`;
 }
 
+// ---- 加密 C×D 合成账(趋势 60% + carry 40%) ----
+function renderCxd(d) {
+  store.cxd = d;
+  const body = $("body-cxd");
+  const t = d.trend || {}, c = d.carry || {};
+  const w = d.weights || { trend: 0.6, carry: 0.4 };
+  const tArmed = !!t.armed, cArmed = !!c.armed;
+  const tCap = t.capital || 0, cCap = c.capital || 0;
+  const activeDated = (c.active_dated || []).map((s) => `<span class="coin">${s}</span>`).join("");
+  const delta = c.net_delta || 0;
+
+  body.innerHTML = `
+    <div class="hero">
+      <div class="equity"><span class="cur">$</span>${counted("cxd-eq", d.total_capital || tCap + cCap)}</div>
+      <div class="sub">总本金 · 趋势 $${money(tCap)} (${pct(w.trend, 0)}) + carry $${money(cCap)} (${pct(w.carry, 0)})</div>
+    </div>
+    <div class="chips">
+      <div class="chip"><div class="k">趋势腿 · USDⓈ-M ${t.max_leverage ? t.max_leverage + "x" : ""}</div>
+        <div class="v ${t.gate_open ? "" : "dim"}">${t.gate_open ? "在场" : "空仓(闸关)"}</div></div>
+      <div class="chip"><div class="k">carry 腿 · Δ 中性</div>
+        <div class="v ${Math.abs(delta) < (cCap || 1) * 0.05 ? "" : "neg"}">Δ $${money(delta)}</div></div>
+      <div class="chip"><div class="k">趋势武装</div><div class="v ${tArmed ? "" : "dim"}">${tArmed ? "已武装" : "未武装"}</div></div>
+      <div class="chip"><div class="k">carry 武装</div><div class="v ${cArmed ? "" : "dim"}">${cArmed ? "已武装" : "未武装"}</div></div>
+    </div>
+    <div class="subhead">carry 当前空头 · 季度 COIN-M</div>
+    <div class="uni">${activeDated || '<span class="dim">—</span>'}</div>
+    <div class="insight">
+      <div class="ins-h">合成命题 · 趋势骑牛市 / carry 吃空窗</div>
+      <div class="ins-row">
+        <span>负相关 ρ <b>−0.20</b></span>
+        <span>回测 Sharpe <b>1.18</b>(扣 funding ~0.9)</span>
+        <span>尾砍至 <b>−10%</b></span>
+      </div>
+    </div>
+    <div class="note"><b>实盘</b> · 60% 趋势永续 + 40% carry(现货多+季度空)· 两腿各自武装 · 更新于 ${ago(t.ts || c.ts)}</div>`;
+}
+
 // ---- 加密模拟盘 ----
 function bookCard(name, b, btReturn, btSharpe, btDD, curve) {
   if (!b) return "";
@@ -398,6 +435,7 @@ async function load() {
   const tasks = [
     ["data/cta.json", renderCTA, "body-cta"],
     ["data/x4_live.json", renderLive, "body-live"],
+    ["data/cxd_live.json", renderCxd, "body-cxd"],
     ["data/x4_paper.json", renderPaper, "body-paper"],
   ];
   await Promise.all(tasks.map(async ([path, render, bodyId]) => {
