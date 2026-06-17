@@ -333,6 +333,42 @@ curl + ccxt,`build_exchange` 读 `QOUNT_HTTPS_PROXY`);③ **预检** `curl api.b
 白名单而节点 IP 一变 → bot API 调用被拒(每天可能断)。两选:用**固定出口 IP** 的机场专线节点再绑白名单;或 **$415 小
 资金先不绑 IP 白名单**,靠「只勾现货交易 + 关提现」保证安全(最坏 key 泄露也只能交易不能提币)。
 
+### 21.6 v2 永续 2x + 迁 VPS + 真实 arming(2026-06-16/17)——从 burn-in 到真金趋势独跑
+
+承 §21.5 现货 1x burn-in,owner 定**博收益升级 + 真上线**,这条线现已是真金运营态(线 D 隔离纪律内,小资金实验)。
+
+- **v2 博收益档(2026-06-16)**:`LiveConfig` 从现货 1x → **USDⓈ-M 永续 `market_type="swap"` + `max_leverage=2.0`
+  逐仓**,接进 §21.4 验证过的 **breadth-OR 闸 + 相关性惩罚 + vol_target=3% 波动率平价**,加**盘中 chandelier 8×ATR
+  灾难止损**(`apply_chandelier_stops`,10min 用 LIVE 价追踪+latch;3× 紧档实测 −44pp 是噪声,故设 8× 只防强平不
+  whipsaw)。⚠️ 可强平,旧"现货不可强平"作废,尾 −21%→~−42%。
+- **迁 VPS(墙外 root@8.220.130.35)**:全部部署从 Mac launchd 搬到 VPS crontab(Mac 是 git 表面、改完 scp;VPS 非 git
+  仓,直连币安无需代理),前端站点 `qount.alyaloale.com`(Caddy + HTTP basic auth + noindex)。详见记忆 `crypto-deploy-on-vps`。
+- **🔴 prepare_swap 死锁修复(2026-06-17,commit d816d76)**:arm 后实测 `leverage_unsafe`=全 7 币。根因=旧 verify
+  只靠 `fetch_positions` 回读杠杆,但 **Binance 对空仓账户返回 0 行** → 永远确认不了 2x → 永远拒绝交易(开仓需确认 /
+  确认需持仓的死锁,gate 翻多也下不了第一单)。修复=**主确认改用 `set_leverage` 响应回显的生效杠杆**(权威且空仓可用),
+  持仓回读降为次确认;set 抛错/无回显且读不到才判 unsafe。**教训:Binance USDⓈ-M flat 账户 fetch_positions 不返回行,
+  任何"靠读持仓确认配置"的逻辑在首仓前都失效。**
+- **下单上限随本金缩放(commit 755d9bd)**:`max_order_usdt=830` 是 $415 时代旧值;给 BUY 加 `min(max_order_usdt,
+  capital×leverage)` 钳制,SELL 保持原 cap(不节流减险平仓)。
+- **小资金可达性 = 真实逆波动率权重(commit c2bd386)**:owner 指出"等权份额"不对——实际是逆波动率 rel × vol-parity
+  scale(各币 4~15% 不等)。抽出 `_coin_windows_scales` + `_inverse_vol_parity` 共享件(`target_weights` 行为不变)+
+  新增 `natural_weights`(全 universe 持有的绝对权重);`unreachable_coins(bars,prices,filters,cfg)` 用**真实目标 notional
+  vs 交易所最小下单额**判定,快照带 `capital_blocked`(symbol/min_usdt/target_usdt)+ `buying_power`,看板/runner 如实显示。
+  旧等权近似严重低报(说只 BTC 纳不进),真相:**$115.55 实测真正能下的只有 BNB/SOL/XRP 三币**(BTC 目标$17.8<地板$64.8、
+  ETH/LINK<$20、ADA<$6 全跳过)。纳入 BTC 约需本金 ~$420+。
+- **看板实盘面板改永续显示(commit d816d76)**:`web/site/app.js renderLive` 从"现货 1x"→ USDⓈ-M 永续 2x 真实态(杠杆/
+  市场徽章、部署名义/占用保证金/自由保证金/实际敞口×、盘中止损 + 杠杆未确认 + 本金过小三类告警条);index 标题去"现货"。
+- **杠杆决策(owner 拍板维持)**:**2x cap + vol_target 3% 不动**。**加 max_leverage cap 是惰性操作**(§23):实际敞口由
+  vol_target 平价定,7 币真实 scale 全 0.37~0.79x、无一顶到 2x → 调 cap 仓位不变只多爆仓风险。真旋钮是 vol_target,但
+  收益/回撤同步放大(vt3%=验证档 +135%/−30%,再上=未验证区朝 −50% + 永续清算)。**别用杠杆补本金不足,纳入更多币的
+  正解是加本金。**
+- **当前运营态(2026-06-17)**:已 **ARMED 趋势独跑 $115.55**(`QOUNT_X4_LIVE_ENABLE=1`,cron `QOUNT_X4_CAPITAL=115.55`;
+  capital 由 env 写死、**充值不自动改 sizing**,改本金须改 cron)。专用子账户(无杂仓,仅 LDUSDT/NIL 灰尘),API key 读+
+  现货+合约、**禁提币**、锁 VPS IP。当前 **gate SHUT(BTC 在 200 日线下,7 币全下行)→ 空仓零单**,等 BTC 收上 200MA 自动
+  入场。实测敞口 ~0.5x(vol_target 限制,非满 2x)。**C×D 双腿**:carry 腿(`rv/live.py`)+ cxd 编排器(`cxd_live_cron.sh`)
+  均已建,carry 在资金不够开 1 张 COIN-M 合约时自动跳腿(`CONTRACT_USD`,$100 时只出 ETH-only);**当前 carry 未注资、
+  cron 走趋势独立线,cxd 那条注释留待 spot+COIN-M 钱包注资**。x4 共 47 单测全绿。
+
 ---
 
 ## 20. C×D 合成账 kill-test(2026-06-13)——趋势(线 D)+ carry(线 C)压舱石,PASS
@@ -1056,6 +1092,7 @@ S2 样本内调参、2021 顶部年是不可过拟合的残余)。脚本配置�
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-06-17 | ops(§21.6) | **趋势 pilot 真上线 + 三处工程修复(详见 §21.6)**。承 §21.5 现货 burn-in,owner 升级 v2 博收益(USDⓈ-M 永续 2x 逐仓 + vol_target 3% + breadth-OR + chandelier 8×)、迁全部署到 VPS(`root@8.220.130.35`)、清专用子账户、**ARMED 趋势独跑(本金 $70→充值到 $115.55)**。**🔴 prepare_swap 死锁修复(d816d76)**:Binance 对空仓账户 `fetch_positions` 返 0 行→旧 verify 永远确认不了 2x→永远拒绝交易(gate 翻多也下不了第一单);改用 **set_leverage 回显**主确认(空仓可用)、持仓回读次确认。**下单上限随本金缩放(755d9bd)**:BUY 钳到 `min(max_order_usdt, capital×leverage)`,SELL 不节流。**可达性改真实逆波动率权重(c2bd386)**:owner 指出"等权份额"不对→抽 `_inverse_vol_parity` 共享件(`target_weights` 不变)+ `natural_weights`,`unreachable_coins` 用真实目标 notional vs 交易所最小下单额;**$115.55 实测真正能下只有 BNB/SOL/XRP 三币**(BTC 目标$17.8<地板$64.8、ETH/LINK<$20、ADA<$6 全跳过),纳 BTC 需 ~$420+。看板实盘面板改永续 2x 显示 + 三类告警条。**杠杆决策**:owner 拍板 **2x cap + vt3% 维持**(加 cap 是惰性操作,真 scale 全 0.37~0.79x 无一顶 2x;真旋钮 vol_target 但收益/回撤同放大;别用杠杆补本金)。x4 共 47 单测全绿,全部 scp 部署 VPS 验证。当前 gate SHUT 空仓待 BTC 站上 200MA。 |
 | 2026-06-16 | 研究(§11.1-11.4) | **owner 加密分钟/日内级择时探索 = 四轮新实测 + 早期共六角度全证伪,门=日线纯做多**(详见 §11.1-11.4)。owner 反复细化「分钟/15m 震荡-趋势短线」,逐版用其确切设定真跑(非引用旧结论):**§11.1 三态震荡闸**(新纯件 `EfficiencyRegime` Kaufman 效率比三态 + `GatedVelocityScalper`,+8 单测→x4 共 **173 全绿**;runner `x4_scalp_regime.py`)= 往返砍 98% 但毛 edge 同步砍光、taker 仍负;**§11.2 周期×方向**(runner `x4_timeframe.py`,纯复用 TrendFollow/run_directional)= 做空全灾难 −62%~−97%、越日内越差、日线 59 笔 Sharpe 0.45 而 1h/15m 多交易不多 Sharpe;**§11.3 稳健评价因子做空**(runner `x4_regime_short.py`,剥离 shortΔ)= 全 4 币做空腿皆负且**评价因子越稳健亏越多**(死叉滞后→空底接逼空,§10 long-bias=结构修复实锤);**§11.4 整理突破+多周期确认**(runner `x4_breakout_mtf.py`,MomentumBreakout 15m+regime_sma 当小时闸)= 15m 突破全负 −14%~−97% vs 日线 +38%~+83%,多周期闸不救反害(4h 档全表最惨)。**元结论:加密散户能拿的钱在日线纯做多趋势(=在跑 pilot),频率越高/越双向/越想早抓越被假突破+噪声+费吃穿;评价因子无论判方向做空(§11.3)还是选币(§16.1/§22)在 crypto 都是负贡献。** 四个 runner + 两纯件留存为「分钟级择时证伪」证据资产,未改任何既有策略模块。 |
 | 2026-06-16 | ops(实盘核实) | **核实 §21 实盘 pilot 运行态 = VPS 健康,Mac 旧面已弃用(更正部署面误判)**。owner 问实盘是否在 VPS,核实(06-15 迁移后)**加密 live+paper 全在 VPS(`root@8.220.130.35`,墙外静态 IP 直连币安无代理)**:VPS crontab `*/10 x4_live_cron.sh` + `0 10 x4_paper_cron.sh`,**实测 2026-06-16 18:50 live 跑通**——armed / gate=SHUT(BTC −14.5%<200MA)/ $415 全现金 / 0 单 / 无 ALERT / 每 10 分钟推进 + 发布 `x4_live.json`→看板。**关键更正**:Mac 上 `x4_live_daily.sh`+launchd `com.qount.x4-live` 是**已弃用旧面**(不该加载,本地 `latest.json` 是陈旧副本);**坑=key 的 IP 白名单绑死 VPS 静态 IP→在 Mac 跑(走 Clash 台湾代理出口 `1.168.187.194`)必报 -2015/-2008,是预期保护非 key 坏**。验实盘须 SSH VPS 看 cron/log/latest.json,勿在 Mac 跑。**无需任何修复,pilot 武装待命等 BTC 站上 200MA 开仓。** |
 | 2026-06-15 | ops(看板) | **收益看板两项修复(qount.alyaloale.com,只读展示,不碰交易逻辑)**。① **BTC 价格/均线"不更新"**:根因非前端(JS 每 60s no-store 拉取正常),是 `x4_live.py` 面板的 `btc_px` 取**日线收盘** `btc_closes[-1]`(日内不动)+ cron **每日仅一次**(10:30 CST)。修复=`btc_px` 改用**已抓的实时 ticker** `prices["BTCUSDT"]`(BTC 在 universe,零新增请求),**新增 `btc_close` 字段**,`btc_sma200`/`btc_to_sma` 仍走收盘口径 → **闸门/策略语义不变**;VPS crontab `30 10` → `*/10`(每 10 分钟);`orders.jsonl` 加守卫(仅真有调仓事件才追加,`latest.json` 每次刷新)避免提频灌爆审计日志。前端 BTC 卡片标「现价 ●实时 / 200日线·收盘」。实测 btc_px 与币安 ticker 完全一致、ts 实时。**bar 滞后**查清=`load_klines` 走 data.binance.vision 归档(daily dump 发布滞后 ~1 天),对 200d SMA 可忽略,**不改**(改实时 OHLCV 会丢回测可复现性)。② **收益曲线升级为带数轴+悬停的交互图**(纯手写 SVG,**零第三方库**,满足境内无 CDN):Y 轴 ¥/$ 刻度+网格、X 轴日期、鼠标十字准星+高亮点+气泡(日期/净值),窄 book 卡用 compact viewBox 防字号被缩糊。**后端 `x4_paper.py` 加 `_curve_payload()`**:回测净值降采样 ≤150 点,只塞 `*_latest.json`(不进 jsonl),三 track 经 cron 打包进 `x4_paper.json`(实测各 150 点,文件 13.7KB)。**诚实语义区分**:A股=前向真实日净值(cta.json,累积中);加密三本=**回测净值·样本内**(前向才 2 天无历史),UI 明确标注不当前向战绩。改动文件:`scripts/desktop/x4_live.py`、`scripts/research/x4_paper.py`、`web/site/{app.js,style.css}`,均已部署 VPS 验证;x4_live 21 单测 / papersim+trendport 26 单测回归绿。 |
