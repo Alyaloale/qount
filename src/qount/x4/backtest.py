@@ -501,6 +501,7 @@ def run_trend_portfolio(
     vol_lookback: int = 30,
     master_gate_sym: str | None = "BTCUSDT",
     master_gate_sma: int = 200,
+    master_gate_slope: int = 0,
     breadth_gate: float | None = None,
     breadth_combine: str = "or",
     initial_capital: float = 100_000.0,
@@ -526,7 +527,7 @@ def run_trend_portfolio(
     """
 
     from qount.x4.portfolio import combine
-    from qount.x4.strategies import TrendFollow, sma_regime_mask
+    from qount.x4.strategies import TrendFollow, sma_regime_mask, sma_slope_up_mask
 
     syms = list(bars_by_sym)
     if not syms:
@@ -563,7 +564,11 @@ def run_trend_portfolio(
         n = len(port)
         # BTC leader mask (all-on when no master gate)
         if master_gate_sym is not None:
-            btc_mask = sma_regime_mask([b.close for b in bars_by_sym[master_gate_sym]], master_gate_sma)
+            mc = [b.close for b in bars_by_sym[master_gate_sym]]
+            btc_mask = sma_regime_mask(mc, master_gate_sma)
+            if master_gate_slope > 0:  # T3-4: also require the SMA itself to be rising (slope confirm)
+                slope_mask = sma_slope_up_mask(mc, master_gate_sma, master_gate_slope)
+                btc_mask = [a and b for a, b in zip(btc_mask, slope_mask)]
         else:
             btc_mask = [True] * n
         # breadth mask: fraction of the universe above its own regime SMA >= threshold (§21.B)

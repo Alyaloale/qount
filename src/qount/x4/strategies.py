@@ -227,6 +227,29 @@ def sma_regime_mask(closes: list[float], window: int) -> list[bool]:
     return mask
 
 
+def sma_slope_up_mask(closes: list[float], window: int, lookback: int) -> list[bool]:
+    """Per-bar mask: is the ``window``-SMA *rising* — ``SMA[t] >= SMA[t - lookback]``?
+
+    A slope confirmation for the master gate (T3-4): AND'd with :func:`sma_regime_mask` it requires the
+    long trend itself to be turning up, not merely price poking above a still-falling average — so a
+    bear-to-bull 'fake reclaim' (price whips back and forth across a flat/declining SMA200) no longer
+    opens the book. Uses only ``closes[:t+1]`` (no look-ahead); warm-up (no SMA at ``t`` or
+    ``t-lookback``) is ``False``. ``lookback <= 0`` (or ``window <= 0``) returns all-``True`` (off)."""
+
+    n = len(closes)
+    if lookback <= 0 or window <= 0:
+        return [True] * n
+    sma: list[float | None] = [None] * n
+    for t in range(window - 1, n):
+        sma[t] = sum(closes[t - window + 1:t + 1]) / window
+    mask = [False] * n
+    for t in range(n):
+        prev = t - lookback
+        if prev >= 0 and sma[t] is not None and sma[prev] is not None:
+            mask[t] = sma[t] >= sma[prev]
+    return mask
+
+
 class EnsembleStrategy:
     """Parameter-ensemble wrapper: average the signals of N sub-strategies (§14).
 

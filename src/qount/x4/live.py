@@ -78,6 +78,12 @@ class LiveConfig:
     breadth_combine: str = "or"          # "or" (默认,§21.B) | "and" | "breadth"
     corr_penalty: bool = True            # §21.D: inverse-vol ÷ max(avg pairwise corr, corr_floor)
     corr_floor: float = 0.2
+    # --- T2-2 交易所原生兜底止损: a resting reduce-only STOP_MARKET parked on the exchange at the
+    # Chandelier level, so an intraday crash that gaps through it BETWEEN the 10-min cron runs is
+    # closed by the exchange (not only on the next poll). Tracks the trail up via cancel+replace,
+    # debounced by ``stop_amend_band``. Swap only (perp). ``exchange_stops=False`` tears them down. ---
+    exchange_stops: bool = True
+    stop_amend_band: float = 0.01        # only move the resting stop if the trigger shifts >1% (no churn)
 
 
 @dataclass(frozen=True)
@@ -296,6 +302,84 @@ def apply_chandelier_stops(
             new_state[s] = {"trail_high": trail_high}
     # coins not in `targets` (daily signal already dropped them) fall out of new_state -> latch cleared
     return adjusted, new_state, triggered
+
+
+# ------------------- T2-2: exchange-native resting STOP_MARKET backstop -------------------
+
+@dataclass(frozen=True)
+class StopOrder:
+    symbol: str          # ccxt symbol e.g. "BTC/USDT:USDT"
+    stop_price: float    # trigger price
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class StopCancel:
+    order_id: str
+    symbol: str          # ccxt symbol (binance cancel_order needs it)
+
+
+@dataclass
+class StopOrderPlan:
+    to_place: list[StopOrder] = field(default_factory=list)
+    to_cancel: list[StopCancel] = field(default_factory=list)
+
+
+def chandelier_stop_prices(targets: list[TargetWeight], daily_bars: dict[str, list],
+                           stop_state: dict[str, dict], cfg: LiveConfig) -> dict[str, float]:
+    """The intraday Chandelier stop trigger price per held coin = ``trail_high − mult × ATR``, using
+    the ``trail_high`` that :func:`apply_chandelier_stops` just persisted (call AFTER it, with the
+    adjusted targets + updated state). Latched / flat (weight≤0) / ATR-warm-up / disabled coins yield
+    no price. These feed the exchange-native resting STOP_MARKET so a between-poll crash is closed by
+    the exchange — the local stop can only fire on the next 10-min run."""
+
+    if cfg.chandelier_mult <= 0:
+        return {}
+    out: dict[str, float] = {}
+    for t in targets:
+        if t.weight <= 0:
+            continue
+        st = stop_state.get(t.symbol) or {}
+        trail_high = st.get("trail_high")
+        atr = _atr_last(daily_bars.get(t.symbol, []), cfg.chandelier_lookback)
+        if trail_high is None or atr is None:
+            continue
+        out[t.symbol] = trail_high - cfg.chandelier_mult * atr
+    return out
+
+
+def plan_stop_orders(stop_prices: dict[str, float], positions_base: dict[str, float],
+                     existing: dict[str, dict], cfg: LiveConfig) -> StopOrderPlan:
+    """Idempotent diff of the DESIRED resting stops vs the ones already on the exchange.
+
+    ``stop_prices``: {data_sym: trigger px} from :func:`chandelier_stop_prices`. ``positions_base``:
+    {data_sym: base held} — only coins we ACTUALLY hold get a protective stop. ``existing``: {data_sym:
+    {"id","symbol","stopPrice"}} from :func:`fetch_open_stops`. A stop is (re)placed only when there is
+    none yet OR the trigger moved more than ``stop_amend_band`` (the trail ratchets up, so the resting
+    stop must follow) — a held coin's stop already within band is left untouched (no churn). Coins no
+    longer held / latched / gate-shut (absent from the desired set) have their stale stop cancelled.
+    Swap only; ``exchange_stops=False`` desires nothing (so any existing stops are torn down)."""
+
+    plan = StopOrderPlan()
+    if cfg.market_type != "swap":
+        return plan
+    use = stop_prices if cfg.exchange_stops else {}
+    desired = {s: px for s, px in use.items() if positions_base.get(s, 0.0) > 0 and px > 0}
+    for s, px in desired.items():
+        sym = to_ccxt_symbol(s, cfg.quote, cfg.market_type)
+        ex = existing.get(s)
+        if ex is None:
+            plan.to_place.append(StopOrder(sym, px, reason="arm stop"))
+            continue
+        old = ex.get("stopPrice")
+        if old is None or abs(px - old) > cfg.stop_amend_band * max(abs(old), 1e-9):
+            plan.to_cancel.append(StopCancel(ex["id"], ex.get("symbol", sym)))
+            plan.to_place.append(StopOrder(sym, px, reason=f"trail {old}->{px:.6g}"))
+    for s, ex in existing.items():
+        if s not in desired:
+            sym = to_ccxt_symbol(s, cfg.quote, cfg.market_type)
+            plan.to_cancel.append(StopCancel(ex["id"], ex.get("symbol", sym)))
+    return plan
 
 
 # ----------------------------- pure order reconciliation -----------------------------
@@ -522,3 +606,66 @@ def place_orders(exchange, orders: list[Order], *, mode: str = "dry",
         r = exchange.create_order(o.symbol, "market", o.side, amount, None, params)
         placed.append({"result": r, "order": o})
     return placed
+
+
+def fetch_open_stops(exchange, data_syms: list[str], cfg: LiveConfig) -> dict[str, dict]:
+    """The resting reduce-only / closePosition STOP_MARKET orders currently on the exchange, keyed by
+    data symbol: ``{data_sym: {"id","symbol","stopPrice"}}``. Swap only; a per-symbol read failure is
+    skipped (best-effort — a missed read just means we may re-place, which the band debounces)."""
+
+    if cfg.market_type != "swap":
+        return {}
+    out: dict[str, dict] = {}
+    for s in data_syms:
+        sym = to_ccxt_symbol(s, cfg.quote, cfg.market_type)
+        try:
+            orders = exchange.fetch_open_orders(sym)
+        except Exception:
+            continue
+        for o in orders:
+            info = o.get("info") or {}
+            otype = str(o.get("type") or info.get("type") or "").upper()
+            is_stop = "STOP" in otype
+            is_reduce = bool(o.get("reduceOnly") or str(info.get("reduceOnly")).lower() == "true"
+                             or o.get("closePosition") or str(info.get("closePosition")).lower() == "true")
+            if is_stop and is_reduce:
+                sp = o.get("stopPrice") or o.get("triggerPrice") or info.get("stopPrice")
+                out[s] = {"id": o.get("id"), "symbol": sym,
+                          "stopPrice": float(sp) if sp not in (None, "") else None}
+                break
+    return out
+
+
+def sync_stop_orders(exchange, plan: StopOrderPlan, *, mode: str = "dry",
+                     cfg: LiveConfig | None = None) -> list[dict]:
+    """Cancel stale resting stops, THEN place the new ones (cancel-first so an amended/closePosition
+    stop is not rejected as a duplicate). Same dry/live + :func:`x4_live_enabled` gating as
+    :func:`place_orders`. Each placed order is a ``STOP_MARKET`` with ``closePosition=True`` — it closes
+    the whole leg on trigger and auto-cancels once the position is flat (so the daily-close exit cleans
+    it up), the exchange-side disaster backstop for the 10-min cron gap."""
+
+    acted: list[dict] = []
+    live = (mode == "live") and x4_live_enabled()
+    for c in plan.to_cancel:
+        tag = f"  [{mode}] CANCEL stop {c.symbol} #{c.order_id}"
+        if not live:
+            print(tag + ("  -- BLOCKED: switch off" if mode == "live" else "  -- DRY"))
+            acted.append({"cancel": c, "sent": False})
+            continue
+        try:
+            exchange.cancel_order(c.order_id, c.symbol)
+            acted.append({"cancel": c, "sent": True})
+        except Exception as exc:   # a stale id (already filled/cancelled) is benign — log, continue
+            print(tag + f"  -- cancel failed: {type(exc).__name__}")
+            acted.append({"cancel": c, "error": str(exc)})
+    for o in plan.to_place:
+        tag = f"  [{mode}] STOP {o.symbol} @ {o.stop_price:.6g}  ({o.reason})"
+        if not live:
+            print(tag + ("  -- BLOCKED: switch off" if mode == "live" else "  -- DRY"))
+            acted.append({"place": o, "sent": False})
+            continue
+        print(tag + "  -- SENDING")
+        r = exchange.create_order(o.symbol, "STOP_MARKET", "sell", None, None,
+                                  {"stopPrice": o.stop_price, "closePosition": True})
+        acted.append({"place": o, "result": r})
+    return acted

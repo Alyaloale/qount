@@ -17,12 +17,16 @@ from qount.x4.live import (  # noqa: E402
     SymbolFilter,
     TargetWeight,
     apply_chandelier_stops,
+    chandelier_stop_prices,
     compute_orders,
     fetch_filters,
+    fetch_open_stops,
     gate_is_open,
     place_orders,
+    plan_stop_orders,
     portfolio_gate_open,
     prepare_swap,
+    sync_stop_orders,
     target_weights,
     to_ccxt_symbol,
     unreachable_coins,
@@ -506,6 +510,168 @@ class TestUnreachableCoins(unittest.TestCase):
 
     def test_all_reachable_at_large_capital(self):
         self.assertEqual(unreachable_coins(self._bars(), self._prices, self._filt(), self._cfg(50_000.0)), [])
+
+
+class TestChandelierStopPrices(unittest.TestCase):
+    """T2-2: derive the resting-stop trigger price from the persisted trail_high."""
+
+    def _cfg(self, **over):
+        kw = dict(market_type="swap", chandelier_mult=3.0, chandelier_lookback=3)
+        kw.update(over)
+        return LiveConfig(**kw)
+
+    def _bars(self):
+        return {"ETHUSDT": _bars([100, 101, 102, 103, 104])}   # ATR(3) = 1.0
+
+    def test_trail_high_minus_mult_atr(self):
+        px = chandelier_stop_prices([TargetWeight("ETHUSDT", 0.5)], self._bars(),
+                                    {"ETHUSDT": {"trail_high": 104.0}}, self._cfg())
+        self.assertAlmostEqual(px["ETHUSDT"], 101.0)   # 104 − 3×1
+
+    def test_skips_flat_and_latched(self):
+        # weight 0 (latched/exited) -> no protective stop needed
+        px = chandelier_stop_prices([TargetWeight("ETHUSDT", 0.0)], self._bars(),
+                                    {"ETHUSDT": {"latched": True}}, self._cfg())
+        self.assertEqual(px, {})
+
+    def test_skips_without_trail_high(self):
+        px = chandelier_stop_prices([TargetWeight("ETHUSDT", 0.5)], self._bars(), {}, self._cfg())
+        self.assertEqual(px, {})
+
+    def test_disabled_when_mult_zero(self):
+        px = chandelier_stop_prices([TargetWeight("ETHUSDT", 0.5)], self._bars(),
+                                    {"ETHUSDT": {"trail_high": 104.0}}, self._cfg(chandelier_mult=0.0))
+        self.assertEqual(px, {})
+
+
+class TestPlanStopOrders(unittest.TestCase):
+    """T2-2: idempotent diff of desired resting stops vs what's already on the exchange."""
+
+    SYM = "ETH/USDT:USDT"
+
+    def _cfg(self, **over):
+        kw = dict(market_type="swap", stop_amend_band=0.01)
+        kw.update(over)
+        return LiveConfig(**kw)
+
+    def test_place_when_none_existing(self):
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, {}, self._cfg())
+        self.assertEqual(len(plan.to_place), 1)
+        self.assertEqual(plan.to_place[0].symbol, self.SYM)
+        self.assertAlmostEqual(plan.to_place[0].stop_price, 101.0)
+        self.assertEqual(plan.to_cancel, [])
+
+    def test_within_band_is_noop(self):
+        existing = {"ETHUSDT": {"id": "1", "symbol": self.SYM, "stopPrice": 101.2}}
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, existing, self._cfg())
+        self.assertEqual(plan.to_place, [])   # |101-101.2| < 1% of 101.2 -> leave it (no churn)
+        self.assertEqual(plan.to_cancel, [])
+
+    def test_amends_when_trail_ratchets_beyond_band(self):
+        existing = {"ETHUSDT": {"id": "1", "symbol": self.SYM, "stopPrice": 95.0}}
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, existing, self._cfg())
+        self.assertEqual(len(plan.to_cancel), 1)            # cancel old first
+        self.assertEqual(plan.to_cancel[0].order_id, "1")
+        self.assertEqual(len(plan.to_place), 1)             # then replace higher
+        self.assertAlmostEqual(plan.to_place[0].stop_price, 101.0)
+
+    def test_cancels_when_no_longer_held(self):
+        # daily signal dropped / latched -> not in stop_prices -> cancel the stale resting stop
+        existing = {"ETHUSDT": {"id": "9", "symbol": self.SYM, "stopPrice": 101.0}}
+        plan = plan_stop_orders({}, {"ETHUSDT": 1.0}, existing, self._cfg())
+        self.assertEqual(len(plan.to_cancel), 1)
+        self.assertEqual(plan.to_cancel[0].order_id, "9")
+        self.assertEqual(plan.to_place, [])
+
+    def test_no_place_without_position(self):
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 0.0}, {}, self._cfg())
+        self.assertEqual(plan.to_place, [])
+
+    def test_exchange_stops_off_tears_down(self):
+        existing = {"ETHUSDT": {"id": "1", "symbol": self.SYM, "stopPrice": 101.0}}
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, existing,
+                                self._cfg(exchange_stops=False))
+        self.assertEqual(len(plan.to_cancel), 1)
+        self.assertEqual(plan.to_place, [])
+
+    def test_spot_is_empty(self):
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, {}, self._cfg(market_type="spot"))
+        self.assertEqual(plan.to_place, [])
+        self.assertEqual(plan.to_cancel, [])
+
+
+class _StopMockExchange:
+    def __init__(self, open_orders=None):
+        self._open = open_orders or {}      # ccxt_sym -> list[order dict]
+        self.created = []
+        self.cancelled = []
+
+    def fetch_open_orders(self, symbol):
+        return self._open.get(symbol, [])
+
+    def cancel_order(self, order_id, symbol):
+        self.cancelled.append((order_id, symbol))
+        return {"id": order_id}
+
+    def create_order(self, symbol, type_, side, amount, price, params):
+        self.created.append((symbol, type_, side, amount, params))
+        return {"id": "stop1", "symbol": symbol}
+
+
+class TestStopExchangeLayer(unittest.TestCase):
+    SYM = "ETH/USDT:USDT"
+
+    def _cfg(self, **over):
+        kw = dict(market_type="swap")
+        kw.update(over)
+        return LiveConfig(**kw)
+
+    def test_fetch_open_stops_parses_stop(self):
+        ex = _StopMockExchange({self.SYM: [
+            {"id": "7", "type": "limit", "stopPrice": None, "reduceOnly": False},
+            {"id": "8", "type": "STOP_MARKET", "stopPrice": "99.5", "info": {"closePosition": "true"}},
+        ]})
+        out = fetch_open_stops(ex, ["ETHUSDT"], self._cfg())
+        self.assertIn("ETHUSDT", out)
+        self.assertEqual(out["ETHUSDT"]["id"], "8")
+        self.assertAlmostEqual(out["ETHUSDT"]["stopPrice"], 99.5)
+
+    def test_fetch_open_stops_spot_empty(self):
+        ex = _StopMockExchange()
+        self.assertEqual(fetch_open_stops(ex, ["ETHUSDT"], self._cfg(market_type="spot")), {})
+
+    def test_sync_dry_sends_nothing(self):
+        ex = _StopMockExchange()
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, {}, self._cfg())
+        sync_stop_orders(ex, plan, mode="dry", cfg=self._cfg())
+        self.assertEqual(ex.created, [])
+        self.assertEqual(ex.cancelled, [])
+
+    def test_sync_blocked_without_env(self):
+        import os
+        os.environ.pop("QOUNT_X4_LIVE_ENABLE", None)
+        ex = _StopMockExchange()
+        plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, {}, self._cfg())
+        sync_stop_orders(ex, plan, mode="live", cfg=self._cfg())
+        self.assertEqual(ex.created, [])
+
+    def test_sync_live_cancels_then_places_closeposition(self):
+        import os
+        os.environ["QOUNT_X4_LIVE_ENABLE"] = "1"
+        try:
+            ex = _StopMockExchange()
+            existing = {"ETHUSDT": {"id": "1", "symbol": self.SYM, "stopPrice": 95.0}}
+            plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, existing, self._cfg())
+            sync_stop_orders(ex, plan, mode="live", cfg=self._cfg())
+            self.assertEqual(ex.cancelled, [("1", self.SYM)])        # old stop cancelled first
+            self.assertEqual(len(ex.created), 1)
+            sym, type_, side, amount, params = ex.created[0]
+            self.assertEqual((sym, type_, side), (self.SYM, "STOP_MARKET", "sell"))
+            self.assertIsNone(amount)                                # closePosition -> no amount
+            self.assertTrue(params["closePosition"])
+            self.assertAlmostEqual(params["stopPrice"], 101.0)
+        finally:
+            os.environ.pop("QOUNT_X4_LIVE_ENABLE", None)
 
 
 if __name__ == "__main__":

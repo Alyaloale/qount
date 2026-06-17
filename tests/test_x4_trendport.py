@@ -13,7 +13,7 @@ import unittest
 from qount.grid.data import Bar
 from qount.x4.backtest import run_directional, run_trend_portfolio
 from qount.x4.portfolio import combine
-from qount.x4.strategies import TrendFollow, sma_regime_mask
+from qount.x4.strategies import TrendFollow, sma_regime_mask, sma_slope_up_mask
 
 # Small windows so synthetic series stay short. Zero fees + no vol-parity -> clean, exact curves.
 _PARAMS = dict(fast=2, slow=4, regime_sma=5, vol_target=0.0, max_leverage=1.0,
@@ -56,6 +56,53 @@ class TestSmaRegimeMask(unittest.TestCase):
 
     def test_window_disabled(self) -> None:
         self.assertEqual(sma_regime_mask([5, 1, 9], window=0), [True, True, True])
+
+
+class TestSmaSlopeUpMask(unittest.TestCase):
+    """T3-4: master-gate slope confirmation — is the SMA itself rising vs `lookback` bars ago?"""
+
+    def test_rising_sma_is_true_once_warm(self) -> None:
+        # SMA3 of [1..6] = [_,_,2,3,4,5] -> rising; mask[t]=sma[t]>=sma[t-1]
+        mask = sma_slope_up_mask([1, 2, 3, 4, 5, 6], window=3, lookback=1)
+        self.assertEqual(mask, [False, False, False, True, True, True])
+
+    def test_falling_sma_is_false(self) -> None:
+        mask = sma_slope_up_mask([6, 5, 4, 3, 2, 1], window=3, lookback=1)
+        self.assertFalse(any(mask))   # SMA monotonically falling -> never rising
+
+    def test_lookback_disabled(self) -> None:
+        self.assertEqual(sma_slope_up_mask([5, 1, 9], window=3, lookback=0), [True, True, True])
+
+    def test_no_lookahead(self) -> None:
+        closes = [1, 3, 2, 5, 4, 6, 5, 7]
+        full = sma_slope_up_mask(closes, window=3, lookback=2)
+        for t in range(len(closes)):
+            self.assertEqual(sma_slope_up_mask(closes[: t + 1], window=3, lookback=2), full[: t + 1])
+
+    def test_flat_sma_counts_as_rising(self) -> None:
+        # constant series -> SMA flat -> sma[t] >= sma[t-lookback] holds (>=, not >)
+        mask = sma_slope_up_mask([5, 5, 5, 5, 5], window=2, lookback=1)
+        self.assertTrue(all(mask[2:]))
+
+
+class TestMasterGateSlope(unittest.TestCase):
+    """T3-4: the master_gate_slope switch (0 = off, preserves behavior; >0 = AND slope into BTC gate)."""
+
+    def test_slope_zero_is_noop(self) -> None:
+        univ = {"BTCUSDT": _rising(40), "ALTUSDT": _rising(40, base=50.0)}
+        base = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5, **_PARAMS)
+        slope0 = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5,
+                                     master_gate_slope=0, **_PARAMS)
+        for a, b in zip(base.equity_curve, slope0.equity_curve):
+            self.assertAlmostEqual(a, b, places=9)
+
+    def test_slope_never_increases_gate_active(self) -> None:
+        # ANDing a slope mask can only REMOVE risk-on bars, never add -> active fraction <= no-slope.
+        univ = {"BTCUSDT": _rising(30) + _falling(20, base=170.0), "ALTUSDT": _rising(50, base=50.0)}
+        no_slope = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5, **_PARAMS)
+        with_slope = run_trend_portfolio(univ, master_gate_sym="BTCUSDT", master_gate_sma=5,
+                                         master_gate_slope=5, **_PARAMS)
+        self.assertLessEqual(with_slope.extra["gate_active_frac"], no_slope.extra["gate_active_frac"])
 
 
 class TestTrendPortfolio(unittest.TestCase):

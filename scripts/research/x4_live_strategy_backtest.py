@@ -35,6 +35,10 @@ VARIANTS = {
     "− corr惩罚": dict(weighting="inverse_vol"),
     "− breadth闸": dict(breadth_gate=None),
     "验证基线(都关)": dict(weighting="inverse_vol", breadth_gate=None, chandelier_mult=0.0),
+    # T3-4: MA200 斜率确认 — 总闸额外要求 SMA200 上行(slope lookback 天). reviewer 头号增量,
+    # 预注册判据(§21.4)= train(≤23) 且 test(≥24) 都打过 LIVE 全配置 Sharpe 且 DD 不显著恶化.
+    "+斜率5d": dict(master_gate_slope=5),
+    "+斜率20d": dict(master_gate_slope=20),
 }
 
 
@@ -116,7 +120,7 @@ def main() -> int:
     print("\n  train(≤2023-12-31) / test(≥2024-01-01) Sharpe (过拟合检验):")
     split = next((i for i, d in enumerate(dates) if d >= "2024-01-01"), n)
     from qount.x4.portfolio import sharpe_of
-    for name in ("LIVE 全配置", "验证基线(都关)"):
+    for name in ("LIVE 全配置", "验证基线(都关)", "+斜率5d", "+斜率20d"):
         c = results[name].equity_curve
         tr = sharpe_of(c[:split], periods_per_year=365.0)
         te = sharpe_of(c[split:], periods_per_year=365.0)

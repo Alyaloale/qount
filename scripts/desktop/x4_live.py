@@ -33,10 +33,14 @@ from qount.exchange_utils import build_exchange  # noqa: E402
 from qount.x4.live import (  # noqa: E402
     LiveConfig,
     apply_chandelier_stops,
+    chandelier_stop_prices,
     compute_orders,
     fetch_filters,
+    fetch_open_stops,
     place_orders,
+    plan_stop_orders,
     prepare_swap,
+    sync_stop_orders,
     target_weights,
     to_ccxt_symbol,
     unreachable_coins,
@@ -153,6 +157,21 @@ def main(argv: list[str]) -> int:
 
     placed = place_orders(ex, res.orders, mode=mode, cfg=cfg)
 
+    # T2-2 交易所原生兜底止损: park a reduce-only STOP_MARKET (closePosition) at the Chandelier level
+    # so an intraday crash that gaps through it BETWEEN these 10-min runs is closed by the exchange,
+    # not only on the next poll. Cancel-then-(re)place, debounced by stop_amend_band; closePosition
+    # auto-cancels when the leg goes flat. Swap only; dry/enable-gated like place_orders.
+    resting_stops: dict[str, float] = {}
+    if cfg.market_type == "swap":
+        stop_px = chandelier_stop_prices(tw, aligned, stop_state, cfg)
+        existing_stops = fetch_open_stops(ex, list(cfg.universe), cfg) if mode == "live" else {}
+        stop_plan = plan_stop_orders(stop_px, balances, existing_stops, cfg)
+        sync_stop_orders(ex, stop_plan, mode=mode, cfg=cfg)
+        resting_stops = {s: round(px, 6) for s, px in stop_px.items() if balances.get(s, 0.0) > 0}
+        if resting_stops:
+            print(f"  [stop-guard] 交易所兜底止损 {len(resting_stops)} 腿: "
+                  + ", ".join(f"{s}@{px:.6g}" for s, px in resting_stops.items()))
+
     # The master gate is decided on the DAILY CLOSE (strategy semantics unchanged). For the panel we
     # show the LIVE ticker so the price ticks intraday — BTC is in the universe, so its live `last`
     # was already fetched above (no extra request). SMA + gate distance stay on the close.
@@ -172,6 +191,7 @@ def main(argv: list[str]) -> int:
         "market_type": cfg.market_type, "max_leverage": cfg.max_leverage,
         "vol_target": cfg.vol_target, "chandelier_mult": cfg.chandelier_mult,
         "stopped": stopped, "leverage_unsafe": sorted(unsafe),
+        "resting_stops": resting_stops,   # T2-2 交易所原生兜底止损价 (data_sym -> trigger px)
         "gross_exposure": round(deployed / cfg.capital_usdt, 3) if cfg.capital_usdt else 0.0,  # actual ×
         "capital": cfg.capital_usdt, "deployed": round(deployed, 2),   # deployed NOTIONAL
         "margin_used": round(deployed / cfg.max_leverage, 2) if cfg.max_leverage else round(deployed, 2),
