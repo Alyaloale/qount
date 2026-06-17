@@ -369,6 +369,27 @@ curl + ccxt,`build_exchange` 读 `QOUNT_HTTPS_PROXY`);③ **预检** `curl api.b
   均已建,carry 在资金不够开 1 张 COIN-M 合约时自动跳腿(`CONTRACT_USD`,$100 时只出 ETH-only);**当前 carry 未注资、
   cron 走趋势独立线,cxd 那条注释留待 spot+COIN-M 钱包注资**。x4 共 47 单测全绿。
 
+### 21.7 上规模待建(backlog,gated on 总盘 ≥ ~$2-3k)——闲置现金生息 + 自动再平衡
+
+**为什么 backlog 而非现在做**:当前总盘 $115.55(全在 USDⓈ-M 趋势腿),拆/挪都让两腿 sub-scale,且要加敏感 key
+权限(Universal Transfer / Earn)给一个 armed money-moving bot,$几/yr 的收益不值这风险。规模上来后这两件才划算,
+且应作为**集成进 runner 的一等功能**(同等护栏:硬上限/单笔封顶/dry-run/独立 arm/幂等),不是临时手动操作。
+
+1. **Earn-on-idle-cash(闲置现金生息)**:趋势闸 SHUT 时(熊市干等,= 其护城河的代价)趋势腿现金 0 收益。设计=
+   runner 闸 SHUT 时把闲置 USDT 自 USDⓈ-M 划现货→申购 **Simple Earn Flexible(USDT ~2-5% APY)**;闸 flip 时**先赎回
+   →划回 USDⓈ-M→再 sizing 下单**(活期近实时赎回,但有结算延迟→在闸 flip 当根赎回、下一根建仓,可接受滞后)。
+   **关键约束**:bot 按 USDⓈ-M 余额定仓,钱在 Earn 时 bot 看到 $0 → 不赎回回来就**踏空首单**,故赎回/划回必须是
+   闸控同一条状态机的一部分,不能靠人盯。**性价比**:$115 上仅 ~$2-6/yr(同薄 carry 量级,不值协调风险);$2-3k+
+   才有意义。这是"熊市不干等"问题的**比 carry 更简单的解**(无双场所/无季度 roll),但有同样的"钱必须按时回来"协调难点。
+2. **自动再平衡器(C×D 60/40 维持)**:总盘 ≥ $2-3k 正式跑 `cxd_live_cron` 时,趋势(USDⓈ-M)↔ carry(spot+COIN-M)
+   随 PnL 漂移,需自动按目标配比(60/40)划转维持。要 Universal Transfer 权限;COIN-M 是币本位保证金(转币非 USDT,
+   = 转 USDT→现货→买币→转 COIN-M 多步);带硬上限 + dry-run + 独立 arm。
+
+**两者共性**:都依赖 Binance 万向划转(`ccxt.transfer(币,量,from,to)`,只在自有钱包间挪、不外提,比提币安全但仍是
+敏感权限,当前 key 未开)。**先决条件**:① 总盘上规模;② key 加 Universal Transfer(+ Earn 申赎)权限;③ 当作下单
+同级的 money-moving 路径来建(护栏齐全)。**在此之前**:burn-in 阶段 $115 就放 USDⓈ-M 不生息,当"随时能交易、
+不踏空首单"的成本(~$3/yr);要给闲置现金生息可手动投活期但须自己在闸开前赎回(忘了=踏空)。
+
 ---
 
 ## 20. C×D 合成账 kill-test(2026-06-13)——趋势(线 D)+ carry(线 C)压舱石,PASS
