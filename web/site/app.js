@@ -319,7 +319,7 @@ function renderLive(d) {
   if (d.leverage_unsafe && d.leverage_unsafe.length)
     banners += `<div class="banner warn">⚠ 杠杆未确认为 ${lev}x,已拒绝交易:<b>${d.leverage_unsafe.join("、")}</b>(去交易所手动设逐仓)</div>`;
   if (d.capital_blocked && d.capital_blocked.length)
-    banners += `<div class="banner">ℹ 本金 $${money(d.capital)} 偏小,最小下单额超过等权份额、难按权重纳入:<b>${d.capital_blocked.map((b) => `${b.symbol} ≥$${money(b.min_usdt)}`).join("、")}</b> · 完整 ${(d.universe || UNIVERSE).length} 币分散需 ~$650+</div>`;
+    banners += `<div class="banner">ℹ 本金 $${money(d.capital)} 偏小,以下币按逆波动率权重的目标额低于最小下单额、会被跳过:<b>${d.capital_blocked.map((b) => `${b.symbol}(目标$${money(b.target_usdt)}<地板$${money(b.min_usdt)})`).join("、")}</b> · 实盘为集中子集,非完整 ${(d.universe || UNIVERSE).length} 币</div>`;
 
   const holdHtml = holdings.length
     ? `<div class="subhead">当前持仓 · ${isPerp ? "永续多头(名义)" : "现货"}</div><table class="tbl">

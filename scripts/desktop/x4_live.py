@@ -137,11 +137,12 @@ def main(argv: list[str]) -> int:
             tw = [t for t in tw if t.symbol not in unsafe]
 
     res = compute_orders(tw, balances, prices, filters, cfg)
-    # small-capital honesty: which universe coins can't be held at their weight at this capital
-    blocked = unreachable_coins(filters, prices, cfg)
+    # small-capital honesty: which universe coins can't be held at this capital — judged by the REAL
+    # inverse-vol target notional (not an equal-weight proxy), so the list is faithful to the weighting
+    blocked = unreachable_coins(aligned, prices, filters, cfg)
     if blocked:
-        print(f"  [capital] 本金 ${cfg.capital_usdt:.0f} 过小,以下币最小下单额超过等权份额,难以纳入: "
-              + ", ".join(f"{b['symbol']}(≥${b['min_usdt']:.0f})" for b in blocked))
+        print(f"  [capital] 本金 ${cfg.capital_usdt:.0f} 过小,以下币按逆波动率权重的目标额低于最小下单额,会被跳过: "
+              + ", ".join(f"{b['symbol']}(目标${b['target_usdt']:.0f}<地板${b['min_usdt']:.0f})" for b in blocked))
     # SAFETY: never place orders against an unknown book (would blind-buy full notional).
     if mode == "live" and x4_live_enabled() and not holdings_ok:
         res.orders = []

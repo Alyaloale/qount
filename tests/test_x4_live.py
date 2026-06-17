@@ -477,6 +477,12 @@ class TestChandelierStops(unittest.TestCase):
 
 
 class TestUnreachableCoins(unittest.TestCase):
+    # 3 coins, equal vol so inverse-vol weights ≈ 1/3 each; high price (BTC) -> large min order.
+    def _bars(self):
+        rets = [0.01, -0.01] * 120   # steady low vol, 240 bars (> regime_sma 200)
+        return {s: _bars(_closes_from_rets(start, rets))
+                for s, start in (("BTCUSDT", 64_000.0), ("ETHUSDT", 1_800.0), ("SOLUSDT", 70.0))}
+
     def _filt(self):
         return {
             "BTCUSDT": SymbolFilter(amount_step=1e-3, min_amount=1e-3, min_notional=50.0),  # min 0.001
@@ -487,19 +493,19 @@ class TestUnreachableCoins(unittest.TestCase):
 
     def _cfg(self, cap):
         return LiveConfig(universe=("BTCUSDT", "ETHUSDT", "SOLUSDT"), capital_usdt=cap,
-                          max_leverage=2.0, min_order_usdt=6.0)
+                          max_leverage=2.0, min_order_usdt=6.0, corr_penalty=False)
 
-    def test_btc_unreachable_at_tiny_capital(self):
-        # $70 × 2x = $140 buying power / 3 coins -> $46.7 equal slice. BTC floor = 0.001×64000 = $64 > slice
-        out = unreachable_coins(self._filt(), self._prices, self._cfg(70.0))
+    def test_uses_real_weights_not_equal(self):
+        # at tiny capital the BTC inverse-vol target (~1/3 × scale × $70) is far below its ~$64 min
+        out = unreachable_coins(self._bars(), self._prices, self._filt(), self._cfg(70.0))
         syms = [b["symbol"] for b in out]
-        self.assertIn("BTCUSDT", syms)        # min 0.001 BTC ≈ whole capital -> can't hold at weight
-        self.assertNotIn("SOLUSDT", syms)     # $5 floor fits easily
-        self.assertEqual(out[0]["symbol"], "BTCUSDT")   # sorted by cost desc
+        self.assertIn("BTCUSDT", syms)
+        self.assertNotIn("SOLUSDT", syms)              # $5 floor cleared by its target
+        self.assertIn("target_usdt", out[0])           # reports real target, not just the floor
+        self.assertLess(out[0]["target_usdt"], out[0]["min_usdt"])   # shortfall is real
 
     def test_all_reachable_at_large_capital(self):
-        # $5000 × 2x = $10000 / 3 -> $3333 slice; every floor well below -> nothing blocked
-        self.assertEqual(unreachable_coins(self._filt(), self._prices, self._cfg(5000.0)), [])
+        self.assertEqual(unreachable_coins(self._bars(), self._prices, self._filt(), self._cfg(50_000.0)), [])
 
 
 if __name__ == "__main__":

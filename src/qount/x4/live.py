@@ -157,6 +157,62 @@ def portfolio_gate_open(bars_by_sym: dict[str, list], cfg: LiveConfig) -> bool:
     return btc_on or breadth_on  # "or" (default)
 
 
+def _coin_windows_scales(bars_by_sym: dict[str, list], cfg: LiveConfig, trend_filter: bool
+                         ) -> tuple[dict[str, list[float]], dict[str, float]]:
+    """Per-coin return window (last ``vol_lookback`` daily rets) + vol-parity ``scale`` =
+    ``min(max_leverage, vol_target / atr_pct)``. ``trend_filter`` keeps only coins held by the S7
+    signal (close > SMA``regime_sma`` AND SMA``fast`` > SMA``slow``); False keeps the whole universe."""
+
+    windows: dict[str, list[float]] = {}
+    scale: dict[str, float] = {}
+    need = max(cfg.regime_sma, cfg.slow, cfg.vol_lookback + 1, cfg.atr_lookback + 1)
+    for s in cfg.universe:
+        bars = bars_by_sym.get(s)
+        if not bars:
+            continue
+        c = [b.close for b in bars]
+        if len(c) < need:
+            continue
+        if trend_filter and not (c[-1] > _sma(c, cfg.regime_sma) and _sma(c, cfg.fast) > _sma(c, cfg.slow)):
+            continue
+        windows[s] = [c[i] / c[i - 1] - 1.0 for i in range(len(c) - cfg.vol_lookback, len(c))]
+        atr = ATR(cfg.atr_lookback)
+        a = None
+        for b in bars:
+            a = atr.update(b)
+        atr_pct = (a / c[-1]) if (a is not None and c[-1] > 0) else None
+        scale[s] = min(cfg.max_leverage, cfg.vol_target / atr_pct) if (atr_pct and atr_pct > 0) else 0.0
+    return windows, scale
+
+
+def _inverse_vol_parity(windows: dict[str, list[float]], scale: dict[str, float],
+                        cfg: LiveConfig) -> dict[str, float]:
+    """Inverse-volatility *relative* weights over ``windows`` (1/σ, + §21.4 D correlation penalty,
+    normalized to sum 1) each × its vol-parity ``scale`` -> **absolute** exposure weights (sum = gross,
+    NOT 1). Shared by the live target book and the small-capital reachability estimate so both use the
+    identical (non-equal) weighting."""
+
+    raw: dict[str, float] = {}
+    for s, rets in windows.items():
+        mu = sum(rets) / len(rets)
+        vol = (sum((x - mu) ** 2 for x in rets) / (len(rets) - 1)) ** 0.5 if len(rets) > 1 else 0.0
+        raw[s] = (1.0 / vol) if vol > 0 else 0.0
+    if not raw:
+        return {}
+    # §21.4 D correlation penalty: down-weight coins correlated with the rest (floored, no blow-up)
+    if cfg.corr_penalty and len(raw) > 1:
+        names = list(raw)
+        penalized = {}
+        for n in names:
+            cs = [correlation(windows[n], windows[m]) for m in names if m != n]
+            avg_corr = sum(cs) / len(cs) if cs else 0.0
+            penalized[n] = raw[n] / max(avg_corr, cfg.corr_floor)
+        raw = penalized
+    tot = sum(raw.values())
+    rel = {s: (raw[s] / tot if tot > 0 else 1.0 / len(raw)) for s in raw}  # inverse-vol weight, Σ=1
+    return {s: rel[s] * scale[s] for s in raw}   # absolute exposure = rel × per-coin scale
+
+
 def target_weights(bars_by_sym: dict[str, list], cfg: LiveConfig) -> list[TargetWeight]:
     """Today's S7-mini target weights — mirrors ``x4_paper._held_coins`` / the §19 engine + §21.4 D.
 
@@ -173,45 +229,18 @@ def target_weights(bars_by_sym: dict[str, list], cfg: LiveConfig) -> list[Target
 
     if not portfolio_gate_open(bars_by_sym, cfg):
         return []
+    windows, scale = _coin_windows_scales(bars_by_sym, cfg, trend_filter=True)
+    return [TargetWeight(s, w) for s, w in _inverse_vol_parity(windows, scale, cfg).items()]
 
-    raw: dict[str, float] = {}
-    windows: dict[str, list[float]] = {}
-    scale: dict[str, float] = {}
-    need = max(cfg.regime_sma, cfg.slow, cfg.vol_lookback + 1, cfg.atr_lookback + 1)
-    for s in cfg.universe:
-        bars = bars_by_sym.get(s)
-        if not bars:
-            continue
-        c = [b.close for b in bars]
-        if len(c) < need:
-            continue
-        if c[-1] > _sma(c, cfg.regime_sma) and _sma(c, cfg.fast) > _sma(c, cfg.slow):
-            rets = [c[i] / c[i - 1] - 1.0 for i in range(len(c) - cfg.vol_lookback, len(c))]
-            mu = sum(rets) / len(rets)
-            vol = (sum((x - mu) ** 2 for x in rets) / (len(rets) - 1)) ** 0.5
-            raw[s] = (1.0 / vol) if vol > 0 else 0.0
-            windows[s] = rets
-            atr = ATR(cfg.atr_lookback)
-            a = None
-            for b in bars:
-                a = atr.update(b)
-            atr_pct = (a / c[-1]) if (a is not None and c[-1] > 0) else None
-            scale[s] = min(cfg.max_leverage, cfg.vol_target / atr_pct) if (atr_pct and atr_pct > 0) else 0.0
-    if not raw:
-        return []
-    # §21.4 D correlation penalty: down-weight coins correlated with the rest (floored, no blow-up)
-    if cfg.corr_penalty and len(raw) > 1:
-        names = list(raw)
-        penalized = {}
-        for n in names:
-            cs = [correlation(windows[n], windows[m]) for m in names if m != n]
-            avg_corr = sum(cs) / len(cs) if cs else 0.0
-            penalized[n] = raw[n] / max(avg_corr, cfg.corr_floor)
-        raw = penalized
-    tot = sum(raw.values())
-    rel = {s: (raw[s] / tot if tot > 0 else 1.0 / len(raw)) for s in raw}  # inverse-vol weight, Σ=1
-    # vol-parity sizing (mirror run_directional): absolute exposure = relative weight × per-coin scale
-    return [TargetWeight(s, rel[s] * scale[s]) for s in raw]
+
+def natural_weights(bars_by_sym: dict[str, list], cfg: LiveConfig) -> dict[str, float]:
+    """Each coin's inverse-vol × vol-parity **absolute** weight assuming the WHOLE universe is held
+    (ignores the trend/gate membership filter) — the coin's *typical* allocation when in the book, and
+    the max-dilution (most conservative) case. Used by :func:`unreachable_coins` to judge small-capital
+    reachability with the REAL (non-equal) weighting rather than a 1/n proxy."""
+
+    windows, scale = _coin_windows_scales(bars_by_sym, cfg, trend_filter=False)
+    return _inverse_vol_parity(windows, scale, cfg)
 
 
 def _atr_last(bars: list, lookback: int) -> float | None:
@@ -351,25 +380,29 @@ def compute_orders(
     return res
 
 
-def unreachable_coins(filters: dict[str, SymbolFilter], prices: dict[str, float],
-                      cfg: LiveConfig) -> list[dict]:
-    """Universe coins whose exchange MINIMUM order exceeds an equal-weight slice of buying power
-    (``capital × leverage ÷ n``) — they can't be held at their vol-parity weight, so on a small
-    capital the live book is a concentrated subset of the universe (honest caveat, not a bug; e.g.
-    BTC perp min 0.001 ≈ whole capital at $70). Returns ``[{"symbol", "min_usdt"}]`` sorted by cost."""
+def unreachable_coins(bars_by_sym: dict[str, list], prices: dict[str, float],
+                      filters: dict[str, SymbolFilter], cfg: LiveConfig) -> list[dict]:
+    """Universe coins whose **real** inverse-vol × vol-parity target notional (when held alongside the
+    full universe, :func:`natural_weights`) falls below the exchange MIN order — they'd be skipped as
+    dust, so on a small capital the live book is a concentrated subset (honest caveat, not a bug).
 
-    buying_power = cfg.capital_usdt * max(cfg.max_leverage, 1.0)
-    slice_cap = buying_power / max(1, len(cfg.universe))
+    NOT equal-weight: it uses the actual (non-uniform) inverse-vol weighting, so e.g. at $115 BTC's
+    larger inverse-vol share still only targets ~$18 < its ~$65 min, and ETH/LINK/ADA also fall short
+    — only BNB/SOL/XRP clear their floors. Returns ``[{"symbol","min_usdt","target_usdt"}]`` sorted by
+    shortfall (worst first)."""
+
+    nat = natural_weights(bars_by_sym, cfg)
     out: list[dict] = []
     for s in cfg.universe:
         f = filters.get(s)
         px = prices.get(s, 0.0)
-        if not f or px <= 0:
+        if not f or px <= 0 or s not in nat:
             continue
         floor = max(f.min_amount * px, f.min_notional, cfg.min_order_usdt)
-        if floor > slice_cap:
-            out.append({"symbol": s, "min_usdt": round(floor, 1)})
-    return sorted(out, key=lambda d: -d["min_usdt"])
+        tgt = nat[s] * cfg.capital_usdt
+        if tgt < floor:
+            out.append({"symbol": s, "min_usdt": round(floor, 1), "target_usdt": round(tgt, 1)})
+    return sorted(out, key=lambda d: d["target_usdt"] - d["min_usdt"])
 
 
 def x4_live_enabled() -> bool:
