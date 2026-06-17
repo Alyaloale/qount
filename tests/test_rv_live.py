@@ -66,6 +66,22 @@ class TestTargetLegs(unittest.TestCase):
         for l in dated:
             self.assertAlmostEqual(l.notional_usdt, -375.0, places=6)  # −short, equal -> Δ≈0
 
+    def test_skips_btc_when_below_one_contract(self):
+        # $200 carry slice -> 100 each pair -> N=75 short. BTCUSD=$100/contract -> can't fund 1 ->
+        # skip BTC entirely (no naked spot); ETHUSD=$10/contract -> 75 funds 7 contracts -> kept.
+        cfg = CarryConfig(capital_usdt=200.0, liq_leverage=3.0)
+        legs = target_legs(_ms(2026, 1, 15), cfg)
+        self.assertFalse(any(l.symbol == "BTCUSDT" for l in legs))          # BTC pair dropped
+        self.assertFalse(any(l.symbol.startswith("BTCUSD_") for l in legs))
+        self.assertTrue(any(l.symbol == "ETHUSDT" for l in legs))           # ETH pair kept
+        self.assertTrue(any(l.symbol.startswith("ETHUSD_") for l in legs))
+        self.assertEqual(len(legs), 2)                                      # only ETH spot+dated
+
+    def test_skips_both_when_capital_too_small(self):
+        # $20 carry slice -> 10 each pair -> N=7.5 short -> below ETHUSD $10 too -> both skipped.
+        cfg = CarryConfig(capital_usdt=20.0, liq_leverage=3.0)
+        self.assertEqual(target_legs(_ms(2026, 1, 15), cfg), [])
+
 
 class TestComputeCarryOrders(unittest.TestCase):
     def _cfg(self):

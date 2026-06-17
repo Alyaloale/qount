@@ -34,6 +34,11 @@ _DAY_MS = 86_400_000
 # a-priori BTC/ETH only (§7.8: breadth falsified, LINK/LTC don't survive de-multiple-testing)
 CARRY_PAIRS = (("BTCUSDT", "BTCUSD"), ("ETHUSDT", "ETHUSD"))  # (spot data sym, COIN-M base)
 
+# COIN-M dated contracts are FIXED-USD-value (inverse): the short leg can only be opened in whole
+# contracts. Below 1 contract the pair is not tradeable -> skip it (small-capital safety, e.g. $100
+# total can't fund a $100 BTCUSD short, so it runs ETH-only). Standard Binance multipliers.
+CONTRACT_USD: dict[str, float] = {"BTCUSD": 100.0, "ETHUSD": 10.0}
+
 
 @dataclass(frozen=True)
 class CarryConfig:
@@ -108,12 +113,17 @@ def _per_pair_spot_notional(cfg: CarryConfig) -> float:
 def target_legs(now_ms: int, cfg: CarryConfig) -> list[CarryLeg]:
     """Today's target legs: per pair a +N spot long and a −N short on the active dated contract.
 
-    ``N`` is the delta-neutral notional (:func:`_per_pair_spot_notional`). Empty for a pair whose
-    dated calendar yields no tradeable contract (skipped, not guessed)."""
+    ``N`` is the delta-neutral notional (:func:`_per_pair_spot_notional`). A pair is SKIPPED (no
+    legs) when either its dated calendar yields no tradeable contract, OR its short notional ``N`` is
+    below one whole COIN-M contract (:data:`CONTRACT_USD`) — e.g. at small capital a $75 BTC slice
+    can't open the $100 BTCUSD short, so the orchestrator runs ETH-only instead of half-hedged."""
 
     n = _per_pair_spot_notional(cfg)
     legs: list[CarryLeg] = []
     for spot_sym, base in cfg.pairs:
+        contract = CONTRACT_USD.get(base, 0.0)
+        if contract and abs(n) < contract:
+            continue  # can't fund 1 whole dated contract -> skip both legs (no naked spot)
         ad = active_dated(base, now_ms, cfg)
         if ad is None:
             continue
