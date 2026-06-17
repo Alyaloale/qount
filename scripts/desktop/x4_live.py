@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -63,7 +64,9 @@ def main(argv: list[str]) -> int:
     mode = argv[1] if len(argv) > 1 else "dry"
     if mode not in ("dry", "live"):
         raise SystemExit("usage: x4_live.py [dry|live]")
-    cfg = LiveConfig()
+    # capital overridable via env (C×D orchestrator sets the 60% trend slice); else LiveConfig default
+    _cap = float(os.environ.get("QOUNT_X4_CAPITAL", "0") or 0)
+    cfg = LiveConfig(capital_usdt=_cap) if _cap > 0 else LiveConfig()
 
     aligned = _load_universe(cfg)
     last_date = aligned[cfg.gate_sym][-1].date

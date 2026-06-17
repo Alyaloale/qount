@@ -21,6 +21,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -61,7 +62,9 @@ def main(argv: list[str]) -> int:
     mode = argv[1] if len(argv) > 1 else "dry"
     if mode not in ("dry", "live"):
         raise SystemExit("usage: rv_live.py [dry|live]")
-    cfg = CarryConfig()
+    # capital overridable via env (C×D orchestrator sets the 40% carry slice); else CarryConfig default
+    _cap = float(os.environ.get("QOUNT_RV_CAPITAL", "0") or 0)
+    cfg = CarryConfig(capital_usdt=_cap) if _cap > 0 else CarryConfig()
     now = dt.datetime.now(dt.UTC)
     now_ms = int(now.timestamp() * 1000)
     legs = target_legs(now_ms, cfg)
