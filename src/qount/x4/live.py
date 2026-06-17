@@ -1,19 +1,22 @@
-"""X4 small-cap LIVE spot execution (线 D §21) — reconciliation-based, idempotent, spot-only.
+"""X4 small-cap LIVE execution (线 D §21) — reconciliation-based, idempotent; spot OR leveraged perp.
 
-Owner authorized a ~$415 (3000 RMB) live pilot of the small-cap S7-mini trend portfolio
-(7 liquid coins, spot-only, no carry yet — §21). This module turns today's target weights into
-real Binance spot orders.
+Owner authorized a ~$415 (3000 RMB) live pilot of the small-cap S7-mini trend portfolio (7 liquid
+coins — §21). v2 (博收益): switches to **USDⓈ-M perpetual at ``target_leverage`` (default 2x)** and
+wires the §21.4 train+test-validated breadth-OR gate + correlation penalty into the live weights.
 
 ISOLATION (守线 A 纪律):
   * REUSES only the generic ccxt client builder ``exchange_utils.build_exchange`` — it does NOT route
     through line A's ``Executor`` (frozen, ``QOUNT_LIVE_ENABLE=false`` invariant intact).
   * Own switch ``QOUNT_X4_LIVE_ENABLE`` (default off). Even when on, ``mode="dry"`` places no orders.
 
-SAFETY (真钱第一次):
-  * Spot-only → no margin/futures → cannot be liquidated, cannot go negative.
-  * Hard caps: ``capital_usdt`` total ceiling + ``max_order_usdt`` per order. Code refuses to exceed.
-  * Reconciliation diff is band-gated → reruns are idempotent (no churn, no double-fills).
-  * Market BUY uses ``quoteOrderQty`` (spend exactly $X); SELL uses base amount rounded to lot step.
+⚠️ LEVERAGE RISK (v2,真钱):
+  * ``market_type="swap"`` + ``target_leverage=2.0`` → deployed NOTIONAL = capital × leverage, and the
+    position **CAN be liquidated** (the old spot "cannot go negative" guarantee no longer holds).
+    Doc §23: a leverage *cap* alone is inert (vol_target binds first), so the return only scales because
+    deployment actually exceeds 100% — which also ~doubles the tail (in-sample maxDD −21% → ~−42%).
+  * Hard caps still enforced: ``capital_usdt`` is the MARGIN ceiling; per-order ``max_order_usdt``.
+    Long-only (trend), isolated margin (one coin's liquidation does not cascade).
+  * Requires a Binance **Futures** API key (the spot-only pilot key cannot trade swap).
 
 The pure functions (:func:`target_weights`, :func:`compute_orders`) are network-free and unit-tested;
 the thin ccxt wrappers are mocked in tests. The forward-s7 paper track remains the performance
@@ -25,15 +28,19 @@ import math
 import os
 from dataclasses import dataclass, field
 
+from qount.x4.indicators import ATR  # vol-parity sizing: ATR(14) per coin (mirror run_directional)
+from qount.x4.portfolio import correlation  # §21.4 D correlation penalty (reuse engine's helper)
+
 # ---- a priori liquidity-tiered 7-coin small-cap universe (§21; data symbols, not ccxt) ----
 SMALLCAP_UNIVERSE = ("BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "LINKUSDT")
 
 
-def to_ccxt_symbol(data_sym: str, quote: str = "USDT") -> str:
-    """``"BTCUSDT"`` -> ``"BTC/USDT"`` (ccxt unified). Assumes the quote is the suffix."""
+def to_ccxt_symbol(data_sym: str, quote: str = "USDT", market_type: str = "spot") -> str:
+    """``"BTCUSDT"`` -> ``"BTC/USDT"`` (spot) or ``"BTC/USDT:USDT"`` (USDⓈ-M swap). ccxt unified."""
     if not data_sym.endswith(quote):
         raise ValueError(f"{data_sym!r} does not end with quote {quote!r}")
-    return f"{data_sym[: -len(quote)]}/{quote}"
+    sym = f"{data_sym[: -len(quote)]}/{quote}"
+    return f"{sym}:{quote}" if market_type == "swap" else sym
 
 
 @dataclass(frozen=True)
@@ -41,18 +48,36 @@ class LiveConfig:
     """Small-cap live config. ``capital_usdt`` is a HARD total ceiling enforced in code."""
 
     universe: tuple[str, ...] = SMALLCAP_UNIVERSE
-    capital_usdt: float = 415.0          # total deployable ceiling (3000 RMB ≈ $415)
+    capital_usdt: float = 415.0          # MARGIN ceiling (3000 RMB ≈ $415); notional = this × leverage
     quote: str = "USDT"
     rebalance_band: float = 0.25         # skip a leg if |target-current| < band×max(target,current)
     min_order_usdt: float = 6.0          # skip dust below ~Binance MIN_NOTIONAL ($5) + margin
-    max_order_usdt: float = 415.0        # per-order safety cap
+    max_order_usdt: float = 830.0        # per-order safety cap (= capital × default 2x)
+    # --- v2 博收益: vol-parity sized USDⓈ-M perp (FAITHFUL to the validated engine; ⚠️ liquidation) ---
+    market_type: str = "swap"            # "spot" = cash 1x (旧,不可强平) | "swap" = USDⓈ-M 永续
+    vol_target: float = 0.03             # §23 博收益档 (vt3 = validated +135%/−30%); per-coin risk target
+    max_leverage: float = 2.0            # CAP on per-coin scale = min(max_lev, vol_target/atr_pct)
+    atr_lookback: int = 14               # ATR window for vol-parity (= run_directional default)
+    margin_mode: str = "isolated"        # 逐仓:单币强平不连坐其余腿
+    # 盘中硬止损 (intraday Chandelier): trailing stop on the 10-min LIVE price. Backtest (TOP7
+    # 2021-26) showed a TIGHT stop (3×ATR) costs ~44pp return by whipsawing trends with no stable
+    # optimum -- so this is set WIDE (8×ATR ≈ −28% from the peak) = a DISASTER/liquidation safeguard
+    # only (well inside the 2x −50% liq), ≈neutral on return (+165%/0.99) but pre-empts an intraday
+    # crash before the daily-close exit. NOT a return optimizer. 0 disables.
+    chandelier_mult: float = 8.0         # stop = trailing_high − mult × ATR(chandelier_lookback)
+    chandelier_lookback: int = 22
     # S7-mini signal params (§21 deployable = §19.7 validated)
     fast: int = 20
     slow: int = 100
     regime_sma: int = 200
-    vol_lookback: int = 30
+    vol_lookback: int = 30               # inverse-vol weight window (= engine combine vol_lookback)
     gate_sym: str = "BTCUSDT"
     gate_sma: int = 200
+    # --- §21.4 train+test-validated enhancements (此前未接进 live;只改善 chop/熊 regime,牛市中性) ---
+    breadth_gate: float | None = 0.5     # risk-on if BTC gate OR ≥50% of universe above its regime_sma
+    breadth_combine: str = "or"          # "or" (默认,§21.B) | "and" | "breadth"
+    corr_penalty: bool = True            # §21.D: inverse-vol ÷ max(avg pairwise corr, corr_floor)
+    corr_floor: float = 0.2
 
 
 @dataclass(frozen=True)
@@ -102,35 +127,146 @@ def gate_is_open(closes: list[float], gate_sma: int) -> bool:
     return closes[-1] > _sma(closes, gate_sma)
 
 
-def target_weights(bars_by_sym: dict[str, list], cfg: LiveConfig) -> list[TargetWeight]:
-    """Today's S7-mini target weights — mirrors ``x4_paper._held_coins`` / the §19 engine.
+def portfolio_gate_open(bars_by_sym: dict[str, list], cfg: LiveConfig) -> bool:
+    """Risk-on/off gate: BTC master gate, optionally OR'd with a breadth gate (§21.4 B, validated).
 
-    Per coin held iff (close > SMA``regime_sma``) AND (SMA``fast`` > SMA``slow``); held coins get
-    inverse-volatility parity weight (1/σ of the last ``vol_lookback`` daily returns), normalized.
-    Empty list when the BTC master gate is shut or no coin is in an uptrend (-> 100% cash)."""
+    ``breadth`` = fraction of the universe trading above its own ``regime_sma`` SMA. With
+    ``breadth_combine='or'`` (default) the book is risk-on if **BTC is above its 200d SMA OR breadth
+    is broad** — so a sideways BTC no longer dictates 100% cash while the alt-universe trends
+    (lifts the chop/bear regime in train+test, bull-neutral). 'and'/'breadth' also supported."""
 
     gate_bars = bars_by_sym.get(cfg.gate_sym)
     if gate_bars is None:
-        return []
-    if not gate_is_open([b.close for b in gate_bars], cfg.gate_sma):
+        return False
+    btc_on = gate_is_open([b.close for b in gate_bars], cfg.gate_sma)
+    if cfg.breadth_gate is None:
+        return btc_on
+    masks = []
+    for s in cfg.universe:
+        bars = bars_by_sym.get(s)
+        if not bars:
+            continue
+        c = [b.close for b in bars]
+        if len(c) >= cfg.regime_sma:
+            masks.append(c[-1] > _sma(c, cfg.regime_sma))
+    breadth_on = bool(masks) and (sum(masks) / len(masks)) >= cfg.breadth_gate
+    if cfg.breadth_combine == "breadth":
+        return breadth_on
+    if cfg.breadth_combine == "and":
+        return btc_on and breadth_on
+    return btc_on or breadth_on  # "or" (default)
+
+
+def target_weights(bars_by_sym: dict[str, list], cfg: LiveConfig) -> list[TargetWeight]:
+    """Today's S7-mini target weights — mirrors ``x4_paper._held_coins`` / the §19 engine + §21.4 D.
+
+    Risk-on per :func:`portfolio_gate_open`. Then per coin held iff (close > SMA``regime_sma``) AND
+    (SMA``fast`` > SMA``slow``). Held coins get an inverse-volatility parity *relative* weight (1/σ of
+    the last ``vol_lookback`` daily returns; optional §21.4 D correlation penalty), normalized to sum 1.
+
+    Each relative weight is then multiplied by the coin's **vol-parity scale**
+    ``min(max_leverage, vol_target / atr_pct)`` (ATR``atr_lookback`` as a fraction of price) — IDENTICAL
+    to the engine's :func:`run_directional` sizing, so the live deployed exposure matches the validated
+    backtest (≈0.5x gross in normal crypto vol, capped at ``max_leverage``) instead of a naive full
+    notional. The returned ``weight`` is the coin's **absolute exposure fraction of capital** (the list
+    no longer sums to 1). Empty -> 100% cash; a coin in ATR warm-up gets scale 0 (flat, no look-ahead)."""
+
+    if not portfolio_gate_open(bars_by_sym, cfg):
         return []
 
     raw: dict[str, float] = {}
-    for s, bars in bars_by_sym.items():
+    windows: dict[str, list[float]] = {}
+    scale: dict[str, float] = {}
+    need = max(cfg.regime_sma, cfg.slow, cfg.vol_lookback + 1, cfg.atr_lookback + 1)
+    for s in cfg.universe:
+        bars = bars_by_sym.get(s)
+        if not bars:
+            continue
         c = [b.close for b in bars]
-        if len(c) < max(cfg.regime_sma, cfg.slow, cfg.vol_lookback + 1):
+        if len(c) < need:
             continue
         if c[-1] > _sma(c, cfg.regime_sma) and _sma(c, cfg.fast) > _sma(c, cfg.slow):
             rets = [c[i] / c[i - 1] - 1.0 for i in range(len(c) - cfg.vol_lookback, len(c))]
             mu = sum(rets) / len(rets)
             vol = (sum((x - mu) ** 2 for x in rets) / (len(rets) - 1)) ** 0.5
             raw[s] = (1.0 / vol) if vol > 0 else 0.0
-    tot = sum(raw.values())
+            windows[s] = rets
+            atr = ATR(cfg.atr_lookback)
+            a = None
+            for b in bars:
+                a = atr.update(b)
+            atr_pct = (a / c[-1]) if (a is not None and c[-1] > 0) else None
+            scale[s] = min(cfg.max_leverage, cfg.vol_target / atr_pct) if (atr_pct and atr_pct > 0) else 0.0
     if not raw:
         return []
-    if tot <= 0:
-        return [TargetWeight(s, 1.0 / len(raw)) for s in raw]
-    return [TargetWeight(s, w / tot) for s, w in raw.items()]
+    # §21.4 D correlation penalty: down-weight coins correlated with the rest (floored, no blow-up)
+    if cfg.corr_penalty and len(raw) > 1:
+        names = list(raw)
+        penalized = {}
+        for n in names:
+            cs = [correlation(windows[n], windows[m]) for m in names if m != n]
+            avg_corr = sum(cs) / len(cs) if cs else 0.0
+            penalized[n] = raw[n] / max(avg_corr, cfg.corr_floor)
+        raw = penalized
+    tot = sum(raw.values())
+    rel = {s: (raw[s] / tot if tot > 0 else 1.0 / len(raw)) for s in raw}  # inverse-vol weight, Σ=1
+    # vol-parity sizing (mirror run_directional): absolute exposure = relative weight × per-coin scale
+    return [TargetWeight(s, rel[s] * scale[s]) for s in raw]
+
+
+def _atr_last(bars: list, lookback: int) -> float | None:
+    """Trailing ATR(lookback) at the last bar (absolute price units), or None until warm."""
+    if len(bars) <= lookback:
+        return None
+    atr = ATR(lookback)
+    a = None
+    for b in bars:
+        a = atr.update(b)
+    return a
+
+
+def apply_chandelier_stops(
+    targets: list[TargetWeight],
+    live_prices: dict[str, float],       # data_sym -> current LIVE price (intraday)
+    daily_bars: dict[str, list],         # data_sym -> daily bars (for ATR)
+    stop_state: dict[str, dict],         # persisted {sym: {"trail_high": float} | {"latched": True}}
+    cfg: LiveConfig,
+) -> tuple[list[TargetWeight], dict[str, dict], list[str]]:
+    """Intraday trailing-Chandelier overlay on the daily target weights (盘中硬止损).
+
+    For each held coin, ratchet a trailing high from the LIVE price; if the live price falls to
+    ``trail_high − chandelier_mult × ATR(chandelier_lookback)`` the coin is forced flat NOW (a real
+    exit on the next 10-min run, not the daily close) and **latched** so it can't re-enter until the
+    daily signal itself drops the coin (mirrors :func:`run_directional`'s ``ch_latched``: re-arm on
+    signal reset). Cuts both intraday-crash liquidation risk and top-giveback. ``chandelier_mult<=0``
+    disables (returns targets/state unchanged). Returns (adjusted targets, new state, triggered syms)."""
+
+    if cfg.chandelier_mult <= 0:
+        return targets, stop_state, []
+    new_state: dict[str, dict] = {}
+    triggered: list[str] = []
+    adjusted: list[TargetWeight] = []
+    for t in targets:
+        s, px = t.symbol, live_prices.get(t.symbol)
+        prev = stop_state.get(s, {})
+        if prev.get("latched"):           # already stopped this trend -> stay flat until signal resets
+            adjusted.append(TargetWeight(s, 0.0))
+            new_state[s] = {"latched": True}
+            continue
+        if t.weight <= 0 or px is None:
+            adjusted.append(t)
+            continue
+        atr = _atr_last(daily_bars.get(s, []), cfg.chandelier_lookback)
+        trail_high = max(prev.get("trail_high", px), px)
+        if atr is not None and px <= trail_high - cfg.chandelier_mult * atr:
+            triggered.append(s)
+            adjusted.append(TargetWeight(s, 0.0))   # force exit
+            new_state[s] = {"latched": True}
+        else:
+            adjusted.append(t)
+            new_state[s] = {"trail_high": trail_high}
+    # coins not in `targets` (daily signal already dropped them) fall out of new_state -> latch cleared
+    return adjusted, new_state, triggered
 
 
 # ----------------------------- pure order reconciliation -----------------------------
@@ -150,15 +286,18 @@ def compute_orders(
 ) -> ReconcileResult:
     """Diff target dollar allocations vs current holdings into band-gated, capped, lot-rounded orders.
 
-    Idempotent: a leg already within ``rebalance_band`` of its target produces no order, so re-running
-    on an unchanged book is a no-op. Total target deployment is clamped to ``capital_usdt``."""
+    ``targets`` carry **absolute** exposure fractions of capital (vol-parity sized), so
+    ``target_notional = weight × capital_usdt`` directly (NO renormalization — that would undo the
+    vol-parity sizing). Total gross is clamped defensively to ``max_leverage × capital_usdt``.
+    Idempotent: a leg already within ``rebalance_band`` of its target produces no order."""
 
     res = ReconcileResult(gate_open=bool(targets))
     tw = {t.symbol: t.weight for t in targets}
-    # normalize (defensive) and clamp total deployment to the hard capital ceiling
-    wsum = sum(tw.values())
-    if wsum > 0:
-        tw = {s: w / wsum for s, w in tw.items()}
+    # defensive clamp only: scale down proportionally if total gross would exceed the leverage cap
+    gross = sum(tw.values())
+    cap = cfg.max_leverage
+    if gross > cap and gross > 0:
+        tw = {s: w * cap / gross for s, w in tw.items()}
 
     universe = list(dict.fromkeys(list(cfg.universe) + list(balances_base)))
     for s in universe:
@@ -191,8 +330,9 @@ def compute_orders(
             if est_base < f.min_amount or est_base <= 0:
                 res.skipped.append(f"{s}: buy base {est_base} below min_amount")
                 continue
-            res.orders.append(Order(to_ccxt_symbol(s, cfg.quote), "buy", est_base, round(spend, 2),
-                                    round(spend, 2), reason=f"deploy {cur_usdt:.0f}->{tgt_usdt:.0f}"))
+            res.orders.append(Order(to_ccxt_symbol(s, cfg.quote, cfg.market_type), "buy", est_base,
+                                    round(spend, 2), round(spend, 2),
+                                    reason=f"deploy {cur_usdt:.0f}->{tgt_usdt:.0f}"))
         else:          # SELL (reduce base)
             sell_usdt = min(-diff, cfg.max_order_usdt)
             base_amt = _round_down_step(sell_usdt / px, f.amount_step)
@@ -201,8 +341,9 @@ def compute_orders(
             if base_amt < f.min_amount or base_amt * px < max(cfg.min_order_usdt, f.min_notional):
                 res.skipped.append(f"{s}: sell {base_amt} below notional/min floor")
                 continue
-            res.orders.append(Order(to_ccxt_symbol(s, cfg.quote), "sell", base_amt, 0.0,
-                                    round(base_amt * px, 2), reason=f"reduce {cur_usdt:.0f}->{tgt_usdt:.0f}"))
+            res.orders.append(Order(to_ccxt_symbol(s, cfg.quote, cfg.market_type), "sell", base_amt,
+                                    0.0, round(base_amt * px, 2),
+                                    reason=f"reduce {cur_usdt:.0f}->{tgt_usdt:.0f}"))
     return res
 
 
@@ -213,13 +354,14 @@ def x4_live_enabled() -> bool:
 
 # ----------------------------- thin ccxt layer (mocked in tests) -----------------------------
 
-def fetch_filters(exchange, data_syms: list[str], quote: str = "USDT") -> dict[str, SymbolFilter]:
-    """Pull LOT_SIZE / MIN_NOTIONAL from loaded ccxt markets."""
+def fetch_filters(exchange, data_syms: list[str], quote: str = "USDT",
+                  market_type: str = "spot") -> dict[str, SymbolFilter]:
+    """Pull LOT_SIZE / MIN_NOTIONAL from loaded ccxt markets (spot or swap)."""
     if not getattr(exchange, "markets", None):
         exchange.load_markets()
     out: dict[str, SymbolFilter] = {}
     for s in data_syms:
-        m = exchange.markets.get(to_ccxt_symbol(s, quote))
+        m = exchange.markets.get(to_ccxt_symbol(s, quote, market_type))
         if not m:
             continue
         limits = m.get("limits", {})
@@ -234,10 +376,56 @@ def fetch_filters(exchange, data_syms: list[str], quote: str = "USDT") -> dict[s
     return out
 
 
-def place_orders(exchange, orders: list[Order], *, mode: str = "dry") -> list[dict]:
-    """``mode='dry'`` prints intended orders (no API write). ``mode='live'`` places market orders —
-    only proceeds when :func:`x4_live_enabled`. BUY uses quoteOrderQty (spend $X), SELL uses base."""
+def prepare_swap(exchange, data_syms: list[str], cfg: LiveConfig) -> set[str]:
+    """Set isolated margin + ``max_leverage`` per swap symbol, then VERIFY by reading back the live
+    leverage. Returns the set of data symbols whose leverage could **not be confirmed** at
+    ``max_leverage`` — the caller MUST refuse to trade those.
 
+    Why verify (真钱关键): ``set_leverage`` can fail silently (API hiccup, an already-open position,
+    a re-set error) and Binance defaults a fresh symbol to **20x** — so a "2x" strategy that trusts the
+    set call could open at 20x, where isolated liquidation is ~−5% (a single normal candle wipes the
+    leg). Reading the effective leverage back is the only safe check. Empty set for spot."""
+    if cfg.market_type != "swap":
+        return set()
+    target = int(cfg.max_leverage)
+    syms = [to_ccxt_symbol(s, cfg.quote, cfg.market_type) for s in data_syms]
+    for sym in syms:
+        try:
+            exchange.set_margin_mode(cfg.margin_mode, sym)
+        except Exception:
+            pass  # re-setting an unchanged margin mode throws a benign error
+        try:
+            exchange.set_leverage(target, sym)
+        except Exception:
+            pass  # verified below — a silent set failure is caught by the read-back
+    # verify: read the effective leverage; anything we can't confirm == target is unsafe to trade
+    lev: dict[str, object] = {}
+    try:
+        for p in exchange.fetch_positions(syms):
+            lev[p.get("symbol")] = p.get("leverage")
+    except Exception:
+        return set(data_syms)  # cannot read leverage at all -> treat every symbol as unsafe
+    unsafe = set()
+    for s, sym in zip(data_syms, syms):
+        L = lev.get(sym)
+        try:
+            if L is None or int(float(L)) != target:
+                unsafe.add(s)
+        except (TypeError, ValueError):
+            unsafe.add(s)
+    return unsafe
+
+
+def place_orders(exchange, orders: list[Order], *, mode: str = "dry",
+                 cfg: LiveConfig | None = None) -> list[dict]:
+    """``mode='dry'`` prints intended orders (no API write). ``mode='live'`` places market orders —
+    only proceeds when :func:`x4_live_enabled`.
+
+    Spot: BUY uses quoteOrderQty (spend $X), SELL uses base. Swap (``cfg.market_type=='swap'``):
+    long-only perp — BUY uses base amount, SELL uses base amount with ``reduceOnly`` so it only
+    closes the existing long (never flips short)."""
+
+    swap = bool(cfg and cfg.market_type == "swap")
     placed: list[dict] = []
     for o in orders:
         line = f"  [{mode}] {o.side.upper():4} {o.symbol:10} ~${o.est_usdt:.2f}  ({o.reason})"
@@ -249,8 +437,12 @@ def place_orders(exchange, orders: list[Order], *, mode: str = "dry") -> list[di
             print(line + "  -- BLOCKED: QOUNT_X4_LIVE_ENABLE not set")
             placed.append({"blocked": True, "order": o})
             continue
-        params = {"quoteOrderQty": o.quote_amount} if o.side == "buy" else {}
-        amount = None if o.side == "buy" else o.base_amount
+        if swap:
+            amount = o.base_amount
+            params = {} if o.side == "buy" else {"reduceOnly": True}
+        else:
+            amount = None if o.side == "buy" else o.base_amount
+            params = {"quoteOrderQty": o.quote_amount} if o.side == "buy" else {}
         print(line + "  -- SENDING")
         r = exchange.create_order(o.symbol, "market", o.side, amount, None, params)
         placed.append({"result": r, "order": o})

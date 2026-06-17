@@ -54,6 +54,11 @@ S7_UNIVERSE = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "SOLUSDT",
 S7_CONFIG = dict(weighting="inverse_vol", master_gate_sym="BTCUSDT", master_gate_sma=200,
                  fast=20, slow=100, regime_sma=200, vol_target=0.02, max_leverage=2.0,
                  rebalance_band=0.25, taker_fee=0.0005, slippage=0.0002, periods_per_year=365.0)
+# 盈利档 (§ small-cap profit): identical to S7_CONFIG except vol_target=3% -- a Sharpe-neutral SIZE
+# dial (§23: scales total return AND maxDD ~linearly, Sharpe invariant). Runs as a SEPARATE forward
+# track (``s7_vt3_*``) anchored to the SAME deploy bar as the 2% track so the two real-forward
+# (since-deploy) curves are apples-to-apples comparable. No real orders.
+S7_CONFIG_VT3 = {**S7_CONFIG, "vol_target": 0.03}
 
 
 def _load(end_y: int, end_m: int):
@@ -75,6 +80,37 @@ def _load_universe(end_y: int, end_m: int):
         return None
     common = sorted(set.intersection(*(set(d) for d in by_sym.values())))
     return {s: [by_sym[s][t] for t in common] for s in by_sym}
+
+
+def _funding_universe(end_y: int, end_m: int):
+    """Per-coin daily funding callable for the S7 universe (8h rates summed per day). Perp longs PAY
+    positive funding (~+11%/yr BTC/ETH, worst in bulls) -- a real cost the naive paper run ignored, so
+    the dashboard overstated trend returns by ~23pp. Pass to ``run_trend_portfolio(funding_by_sym=)``."""
+    out = {}
+    for sym in S7_UNIVERSE:
+        d: dict[int, float] = {}
+        for fr in load_funding(sym, start=START, end=(end_y, end_m), skip_missing=True):
+            k = fr.ts_ms // 86_400_000
+            d[k] = d.get(k, 0.0) + fr.rate
+        out[sym] = (lambda dd: (lambda bar: dd.get(bar.ts_ms // 86_400_000, 0.0)))(d)
+    return out
+
+
+def _curve_payload(dates: list[str], curve: list[float], n: int = 150) -> dict:
+    """Downsample a backtest equity curve to <= ``n`` (date, equity) points for the dashboard chart.
+
+    Lives only in ``*_latest.json`` (never the per-run jsonl) so the snapshot log stays lean.
+    """
+    m = min(len(dates), len(curve))
+    if m == 0:
+        return {"dates": [], "curve": []}
+    dates, curve = dates[-m:], curve[-m:]
+    if m <= n:
+        idx = list(range(m))
+    else:
+        step = (m - 1) / (n - 1)
+        idx = sorted({int(round(i * step)) for i in range(n)} | {m - 1})
+    return {"dates": [dates[i] for i in idx], "curve": [round(curve[i], 2) for i in idx]}
 
 
 def _print_snapshot(snap: dict) -> None:
@@ -122,7 +158,8 @@ def forward() -> int:
     # append one line per run (idempotent-ish: dedup by date on read if needed)
     with (PAPER_DIR / "snapshots.jsonl").open("a") as fh:
         fh.write(json.dumps({"run_at": now.isoformat(), **snap}, default=float) + "\n")
-    (PAPER_DIR / "latest.json").write_text(json.dumps(snap, indent=2, default=float))
+    latest = {**snap, "equity_curve": _curve_payload(res.dates, res.portfolio_curve)}
+    (PAPER_DIR / "latest.json").write_text(json.dumps(latest, indent=2, default=float))
     print(f"[X4-PAPER forward] {now.isoformat()}  bar {snap['date']}")
     _print_snapshot(snap)
     print(f"\n  snapshot appended -> {(PAPER_DIR / 'snapshots.jsonl').relative_to(REPO)}")
@@ -142,7 +179,8 @@ def forward_s7() -> int:
     aligned = _load_universe(now.year, now.month)
     if aligned is None or len(aligned["BTCUSDT"]) < 300:
         print("  too few bars"); return 2
-    res = run_trend_portfolio(aligned, initial_capital=100_000.0, **S7_CONFIG)
+    res = run_trend_portfolio(aligned, initial_capital=100_000.0,
+                              funding_by_sym=_funding_universe(now.year, now.month), **S7_CONFIG)
     btc = aligned["BTCUSDT"]
     bc = [b.close for b in btc]
     flat = len(bc) >= 200 and bc[-1] <= sum(bc[-200:]) / 200  # BTC master gate closed -> all cash
@@ -163,7 +201,8 @@ def forward_s7() -> int:
     PAPER_DIR.mkdir(parents=True, exist_ok=True)
     with (PAPER_DIR / "s7_snapshots.jsonl").open("a") as fh:
         fh.write(json.dumps({"run_at": now.isoformat(), **snap}, default=float) + "\n")
-    (PAPER_DIR / "s7_latest.json").write_text(json.dumps(snap, indent=2, default=float))
+    latest = {**snap, "equity_curve": _curve_payload([b.date for b in btc], res.equity_curve)}
+    (PAPER_DIR / "s7_latest.json").write_text(json.dumps(latest, indent=2, default=float))
     p = snap["portfolio"]
     print(f"[X4-PAPER forward-s7] {now.isoformat()}  bar {snap['date']}  ({snap['n_syms']} syms)")
     print(f"  S7-TREND-PORT: equity ${p['equity']:,.0f}  total {p['total_return']:+.1%}  "
@@ -172,6 +211,88 @@ def forward_s7() -> int:
     print(f"\n  snapshot appended -> {(PAPER_DIR / 's7_snapshots.jsonl').relative_to(REPO)}")
     print("  PRE-REGISTERED (§19.7): deployable size vol_target=2% -> in-sample ~+80%/0.87/-21%;"
           " honest forward Sharpe anchored ~0.70 (§17, not in-sample 0.88); BTC gate flattens in a bear.")
+    return 0
+
+
+def forward_s7_vt3() -> int:
+    """Real-forward (since-deploy) paper for S7-TREND-PORT at vol_target=3% (盈利档), §小资金搏盈利.
+
+    Parallel to the deployed 2% track (``holdings_latest.json`` book ``s7``): same universe / window /
+    fees / BTC gate, ONLY vol_target differs (2%->3%). Writes a SEPARATE log
+    (``s7_vt3_snapshots.jsonl`` / ``s7_vt3_latest.json``). Reports BOTH the full-history cumulative
+    metrics AND the since-deploy forward P&L, rebased to $100k at the deploy anchor. To make the two
+    curves apples-to-apples, the deploy anchor is SEEDED from the existing 2% track's anchor
+    (``holdings_latest.json``) on first run, else pinned to today; persisted thereafter for
+    idempotent reruns. No real orders -- pure simulation."""
+
+    now = dt.datetime.now(dt.UTC)
+    aligned = _load_universe(now.year, now.month)
+    if aligned is None or len(aligned["BTCUSDT"]) < 300:
+        print("  too few bars"); return 2
+    res = run_trend_portfolio(aligned, initial_capital=100_000.0,
+                              funding_by_sym=_funding_universe(now.year, now.month), **S7_CONFIG_VT3)
+    btc = aligned["BTCUSDT"]
+    bc = [b.close for b in btc]
+    dates = [b.date for b in btc]
+    as_of = btc[-1].date
+    flat = len(bc) >= 200 and bc[-1] <= sum(bc[-200:]) / 200  # BTC master gate closed -> all cash
+
+    # deploy anchor: persist own; seed from the 2% track on first run so windows align.
+    prev = {}
+    try:
+        prev = json.loads((PAPER_DIR / "s7_vt3_latest.json").read_text())
+    except Exception:
+        pass
+    if prev.get("deploy_date"):
+        deploy_date, anchor_bar = prev["deploy_date"], prev["anchor_bar"]
+    else:
+        seed = {}
+        try:
+            seed = json.loads((PAPER_DIR / "holdings_latest.json").read_text())
+        except Exception:
+            pass
+        deploy_date = seed.get("deploy_date", now.strftime("%Y-%m-%d"))
+        anchor_bar = seed.get("anchor_bar", as_of)
+
+    idx = dates.index(anchor_bar) if anchor_bar in dates else len(res.equity_curve) - 1
+    base = res.equity_curve[idx] if res.equity_curve[idx] > 0 else res.equity_curve[-1]
+    fwd_eq = 100_000.0 * res.equity_curve[-1] / base
+    forward = {"deploy_date": deploy_date, "anchor_bar": anchor_bar,
+               "fwd_equity": round(fwd_eq, 2), "fwd_pnl": round(fwd_eq - 100_000.0, 2),
+               "fwd_return": fwd_eq / 100_000.0 - 1.0}
+
+    snap = {
+        "date": as_of,
+        "n_bars": len(btc),
+        "n_syms": res.extra["n_syms"],
+        "gate_active_frac": round(res.extra["gate_active_frac"], 4),
+        "trend_flat": bool(flat),
+        "vol_target": 0.03,
+        "portfolio": {
+            "equity": round(res.equity_curve[-1], 2),
+            "total_return": res.total_return,
+            "sharpe": res.sharpe,
+            "max_drawdown": res.max_drawdown,
+        },
+        "forward": forward,
+        "fees_to_date": round(res.fees_paid, 2),
+    }
+    PAPER_DIR.mkdir(parents=True, exist_ok=True)
+    with (PAPER_DIR / "s7_vt3_snapshots.jsonl").open("a") as fh:
+        fh.write(json.dumps({"run_at": now.isoformat(), **snap}, default=float) + "\n")
+    latest = {**snap, "equity_curve": _curve_payload(dates, res.equity_curve)}
+    (PAPER_DIR / "s7_vt3_latest.json").write_text(json.dumps(latest, indent=2, default=float))
+    p = snap["portfolio"]
+    print(f"[X4-PAPER forward-s7-vt3] {now.isoformat()}  bar {as_of}  ({snap['n_syms']} syms)")
+    print(f"  S7 vol_target=3% (盈利档): full-history ${p['equity']:,.0f}  total {p['total_return']:+.1%}  "
+          f"Sharpe {p['sharpe']:.2f}  maxDD {p['max_drawdown']:.1%}  "
+          f"(BTC-gate active {snap['gate_active_frac']:.0%}, fees ${snap['fees_to_date']:,.0f})")
+    print(f"  真前向 (since {deploy_date}): 净值 ${forward['fwd_equity']:,.0f}  "
+          f"收益 {forward['fwd_pnl']:+,.0f} ({forward['fwd_return']:+.2%})  "
+          f"趋势{'空仓(BTC闸关)' if flat else '在场'}")
+    print(f"\n  snapshot appended -> {(PAPER_DIR / 's7_vt3_snapshots.jsonl').relative_to(REPO)}")
+    print("  并行于 holdings_latest.json 的 2% 档 s7 book(同 deploy 锚点),vol_target 3% 是 Sharpe 中性"
+          " size 旋钮:in-sample +135%/0.88/-30.5% vs 2% 档 +80%/0.87/-21%;诚实前向锚 ~0.70 (§17)。")
     return 0
 
 
@@ -207,7 +328,8 @@ def forward_combo() -> int:
     aligned_univ = _load_universe(now.year, now.month)
     if aligned_univ is None or len(aligned_univ["BTCUSDT"]) < 300:
         print("  too few trend bars"); return 2
-    tres = run_trend_portfolio(aligned_univ, initial_capital=100_000.0, **S7_CONFIG)
+    tres = run_trend_portfolio(aligned_univ, initial_capital=100_000.0,
+                               funding_by_sym=_funding_universe(now.year, now.month), **S7_CONFIG)
     trend_ts = [b.ts_ms for b in aligned_univ["BTCUSDT"]]
 
     carry = _load_carry_sleeve(now.year, now.month)
@@ -239,7 +361,9 @@ def forward_combo() -> int:
     PAPER_DIR.mkdir(parents=True, exist_ok=True)
     with (PAPER_DIR / "combo_snapshots.jsonl").open("a") as fh:
         fh.write(json.dumps({"run_at": now.isoformat(), **snap}, default=float) + "\n")
-    (PAPER_DIR / "combo_latest.json").write_text(json.dumps(snap, indent=2, default=float))
+    combo_dates = [dt.datetime.fromtimestamp(t / 1000, dt.UTC).strftime("%Y-%m-%d") for t in ts]
+    latest = {**snap, "equity_curve": _curve_payload(combo_dates, combo)}
+    (PAPER_DIR / "combo_latest.json").write_text(json.dumps(latest, indent=2, default=float))
     p, t, c = snap["portfolio"], snap["trend_alone"], snap["carry_alone"]
     print(f"[X4-PAPER forward-combo] {now.isoformat()}  bar {snap['date']}  ({len(ts)} bars, corr {rho:+.2f})")
     print(f"  COMBO 60/40   equity ${p['equity']:,.0f}  total {p['total_return']:+.1%}  "
@@ -336,7 +460,8 @@ def holdings() -> int:
     btc_um, fund = _load(now.year, now.month)
     three = run_paper(btc_um, config=PaperConfig(), funding=fund)
     three_dates = [b.date for b in btc_um]
-    s7 = run_trend_portfolio(aligned, initial_capital=100_000.0, **S7_CONFIG)
+    s7 = run_trend_portfolio(aligned, initial_capital=100_000.0,
+                             funding_by_sym=_funding_universe(now.year, now.month), **S7_CONFIG)
     s7_dates = [b.date for b in btc]
     carry = _load_carry_sleeve(now.year, now.month)
     ts, al = align_curves({"TREND": ([b.ts_ms for b in btc], s7.equity_curve),
@@ -400,10 +525,12 @@ def main(argv: list[str]) -> int:
         return forward()
     if mode == "forward-s7":
         return forward_s7()
+    if mode == "forward-s7-vt3":
+        return forward_s7_vt3()
     if mode == "forward-combo":
         return forward_combo()
-    print(f"unknown mode {mode!r} (expected 'replay', 'forward', 'forward-s7', 'forward-combo', "
-          f"or 'holdings')")
+    print(f"unknown mode {mode!r} (expected 'replay', 'forward', 'forward-s7', 'forward-s7-vt3', "
+          f"'forward-combo', or 'holdings')")
     return 2
 
 

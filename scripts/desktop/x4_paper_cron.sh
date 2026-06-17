@@ -5,7 +5,8 @@
 #
 # Runs the 4 tracks, then bundles state/x4/paper/*.json into the dashboard web dir as x4_paper.json
 # (replaces the Mac push_dashboard.sh paper step — the VPS now owns x4_paper.json).
-#   forward / forward-s7 / forward-combo / holdings  -> state/x4/paper/*.json
+#   forward / forward-s7 / forward-s7-vt3 / forward-combo / holdings  -> state/x4/paper/*.json
+#   (forward-s7-vt3 = S7 at vol_target=3% 小资金搏盈利档,真前向 since-deploy -> s7_vt3_latest.json)
 # Counterpart of the macOS x4_paper_daily.sh (launchd). Alerts go to the log + optional Server酱.
 set -u
 REPO="${QOUNT_REPO:-/root/qount}"
@@ -38,6 +39,7 @@ run_track() {  # $1=mode $2=success marker
 
 run_track forward       "[X4-PAPER forward]"
 run_track forward-s7    "[X4-PAPER forward-s7]"
+run_track forward-s7-vt3 "[X4-PAPER forward-s7-vt3]"
 run_track forward-combo "[X4-PAPER forward-combo]"
 run_track holdings      "[X4-PAPER holdings]"
 
@@ -53,7 +55,8 @@ def load(n):
 print(json.dumps({
     "generated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
     "holdings": load("holdings_latest.json"), "three": load("latest.json"),
-    "s7": load("s7_latest.json"), "combo": load("combo_latest.json"),
+    "s7": load("s7_latest.json"), "s7_vt3": load("s7_vt3_latest.json"),
+    "combo": load("combo_latest.json"),
 }, ensure_ascii=False, default=float))
 PYEOF
   then

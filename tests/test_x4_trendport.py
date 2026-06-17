@@ -71,6 +71,14 @@ class TestTrendPortfolio(unittest.TestCase):
         for a, b in zip(port.equity_curve, solo.equity_curve):
             self.assertAlmostEqual(a, b, places=6)
 
+    def test_funding_drag_reduces_long_returns(self) -> None:
+        # positive funding -> a held long pays funding -> portfolio ends strictly below the no-funding run
+        bars = _rising()
+        gross = run_trend_portfolio({"ALTUSDT": bars}, master_gate_sym=None, **_PARAMS)
+        net = run_trend_portfolio({"ALTUSDT": bars}, master_gate_sym=None,
+                                  funding_by_sym={"ALTUSDT": lambda b: 0.01}, **_PARAMS)
+        self.assertLess(net.equity_curve[-1], gross.equity_curve[-1])
+
     def test_inverse_vol_delegates_to_combine(self) -> None:
         # 2 sleeves, no master gate -> portfolio == combine(per-sleeve curves, inverse_vol).
         univ = {"AUSDT": _rising(step=1.0), "BUSDT": _rising(step=2.0)}

@@ -511,6 +511,7 @@ def run_trend_portfolio(
     rebalance_band: float = 0.25,
     chandelier_mult: float = 0.0,
     chandelier_lookback: int = 22,
+    funding_by_sym: dict[str, Callable[[Bar], float]] | None = None,
     periods_per_year: float | None = None,
 ) -> X4Result:
     """S7-TREND-PORT: the §17 trend signal (S3) run per-symbol, risk-combined (§19).
@@ -547,6 +548,7 @@ def run_trend_portfolio(
             initial_capital=initial_capital, taker_fee=taker_fee, slippage=slippage,
             rebalance_band=rebalance_band, vol_target=vol_target, max_leverage=max_leverage,
             chandelier_mult=chandelier_mult, chandelier_lookback=chandelier_lookback,
+            funding=(funding_by_sym.get(s) if funding_by_sym else None),
             periods_per_year=periods_per_year,
         )
         sleeves[s] = res.equity_curve
