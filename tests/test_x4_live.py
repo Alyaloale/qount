@@ -187,11 +187,15 @@ class TestComputeOrders(unittest.TestCase):
 
 
 class _MockExchange:
-    def __init__(self, positions=None):
+    def __init__(self, positions=None, lev_echo="ACK"):
         self.sent = []
         self.leverage_set = []
         self.margin_set = []
         self.positions = positions   # None -> fetch_positions raises (no key); list -> returned
+        # lev_echo mirrors Binance's set_leverage response: "ACK" -> echo the requested leverage
+        # (normal success); None -> no leverage in response; int -> echo that value (silent
+        # mis-set); "RAISE" -> set_leverage throws.
+        self.lev_echo = lev_echo
         self.markets = {
             "BTC/USDT": {"limits": {"amount": {"min": 1e-5}, "cost": {"min": 5.0}},
                          "precision": {"amount": 5}},
@@ -208,6 +212,13 @@ class _MockExchange:
 
     def set_leverage(self, lev, symbol):
         self.leverage_set.append((lev, symbol))
+        if self.lev_echo == "RAISE":
+            raise RuntimeError("set_leverage failed")
+        if self.lev_echo == "ACK":
+            return {"leverage": lev, "symbol": symbol}
+        if self.lev_echo is None:
+            return {"symbol": symbol}
+        return {"leverage": self.lev_echo, "symbol": symbol}
 
     def set_margin_mode(self, mode, symbol):
         self.margin_set.append((mode, symbol))
@@ -354,24 +365,32 @@ class TestSwapExecution(unittest.TestCase):
                           margin_mode="isolated")
 
     def test_prepare_swap_confirms_leverage(self):
-        # exchange read-back shows 2x -> sets called, returns NO unsafe symbols
+        # set_leverage echoes 2x + read-back shows 2x -> sets called, returns NO unsafe symbols
         ex = _MockExchange(positions=[{"symbol": "BTC/USDT:USDT", "leverage": 2}])
         unsafe = prepare_swap(ex, ["BTCUSDT"], self._swap_cfg())
         self.assertEqual(ex.leverage_set, [(2, "BTC/USDT:USDT")])
         self.assertEqual(ex.margin_set, [("isolated", "BTC/USDT:USDT")])
         self.assertEqual(unsafe, set())
 
+    def test_prepare_swap_confirmed_by_echo_when_flat(self):
+        # the real VPS case: FLAT account -> fetch_positions returns [] -> only the set_leverage echo
+        # can confirm. With the echo it is SAFE (regression guard against the never-trades deadlock).
+        ex = _MockExchange(positions=[])   # flat, no rows
+        self.assertEqual(prepare_swap(ex, ["BTCUSDT"], self._swap_cfg()), set())
+
     def test_prepare_swap_flags_wrong_leverage(self):
-        # read-back shows 20x (the dangerous default) -> flagged unsafe
-        ex = _MockExchange(positions=[{"symbol": "BTC/USDT:USDT", "leverage": 20}])
+        # silent mis-set: echo + read-back both show 20x (the dangerous default) -> flagged unsafe
+        ex = _MockExchange(positions=[{"symbol": "BTC/USDT:USDT", "leverage": 20}], lev_echo=20)
         self.assertEqual(prepare_swap(ex, ["BTCUSDT"], self._swap_cfg()), {"BTCUSDT"})
 
     def test_prepare_swap_flags_missing_position_data(self):
-        ex = _MockExchange(positions=[])   # symbol not reported -> cannot confirm -> unsafe
+        # no echo AND no position row -> cannot confirm -> unsafe
+        ex = _MockExchange(positions=[], lev_echo=None)
         self.assertEqual(prepare_swap(ex, ["BTCUSDT"], self._swap_cfg()), {"BTCUSDT"})
 
-    def test_prepare_swap_unsafe_when_fetch_fails(self):
-        ex = _MockExchange(positions=None)   # fetch_positions raises -> every symbol unsafe
+    def test_prepare_swap_unsafe_when_set_raises_and_fetch_fails(self):
+        # set_leverage throws AND fetch_positions raises -> no confirmation source -> unsafe
+        ex = _MockExchange(positions=None, lev_echo="RAISE")
         self.assertEqual(prepare_swap(ex, ["BTCUSDT"], self._swap_cfg()), {"BTCUSDT"})
 
     def test_prepare_swap_noop_for_spot(self):

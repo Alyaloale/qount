@@ -102,8 +102,21 @@ main { max-width: 920px; margin: 0 auto; padding: 4px max(20px, env(safe-area-in
 .dim { color: var(--txt2); }
 .arw { font-size: .72em; margin-right: 2px; }
 
-/* sparkline — subtle glow only */
-.spark { width: 100%; height: 60px; display: block; margin: 0 0 20px; filter: drop-shadow(0 0 2px rgba(86,197,216,.3)); }
+/* equity chart — axes + hover crosshair/tooltip (vanilla SVG) */
+.chartwrap { position: relative; margin: 2px 0 18px; }
+svg.chart { width: 100%; height: auto; display: block; overflow: visible; cursor: crosshair; }
+svg.chart .grid { stroke: var(--line-soft); stroke-width: 1; }
+svg.chart .ylbl { fill: var(--txt3); font-size: 9px; text-anchor: end; font-family: var(--mono); }
+svg.chart .axlbl { fill: var(--txt3); font-size: 9px; font-family: var(--mono); }
+svg.chart.compact .ylbl, svg.chart.compact .axlbl { font-size: 13px; }   /* narrow card → bigger user-unit font offsets the shrink */
+svg.chart .cx { stroke: var(--ac-line); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
+svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity: 0; pointer-events: none; }
+.chart-tip { position: absolute; transform: translateX(-50%); background: var(--card2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 9px; line-height: 1.35; white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity .12s; z-index: 6; font-family: var(--mono); box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+.chart-tip b { display: block; color: var(--txt); font-size: 12px; font-weight: 650; }
+.chart-tip span { color: var(--txt3); font-size: 10px; }
+.chart-cap { font-size: 10px; color: var(--txt3); letter-spacing: .3px; margin: 10px 0 -2px; }
 
 /* subhead — bigger, not all-caps */
 .subhead { color: var(--txt3); font-size: 12px; letter-spacing: .2px; margin: 8px 0 14px; }
@@ -135,6 +148,14 @@ main { max-width: 920px; margin: 0 auto; padding: 4px max(20px, env(safe-area-in
 .coin:hover { color: var(--ac); border-color: var(--ac-line); }
 
 .empty { color: var(--txt2); font-size: 13.5px; padding: 18px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; margin-bottom: 4px; }
+
+/* alert banner (盘中止损 / 杠杆未确认) — muted amber, theme-consistent */
+.banner { display: flex; align-items: center; gap: 9px; padding: 12px 15px; border-radius: 10px; font-size: 13px; margin: 0 0 16px; border: 1px solid var(--line); background: var(--card2); color: var(--txt2); }
+.banner.warn { border-color: rgba(216,166,87,.42); color: #d8a657; background: rgba(216,166,87,.06); }
+.banner b { color: inherit; font-weight: 650; }
+
+/* leverage / market badge */
+.badge.lev { color: var(--txt2); border-color: var(--line); font-family: var(--mono); letter-spacing: 0; }
 
 /* rebalance progress */
 .progblock { margin: 20px 0 4px; }

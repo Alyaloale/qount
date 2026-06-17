@@ -292,31 +292,49 @@ function renderLive(d) {
   store.live = d;
   const body = $("body-live");
   const head = $("panel-live").querySelector(".panel-head");
-  head.querySelectorAll(".badge.gate-open,.badge.gate-closed").forEach((e) => e.remove());
+  head.querySelectorAll(".badge.gate-open,.badge.gate-closed,.badge.lev").forEach((e) => e.remove());
+  const isPerp = d.market_type === "swap";
+  const lev = d.max_leverage || 2;
+  if (d.market_type) {
+    const lb = document.createElement("span");
+    lb.className = "badge lev";
+    lb.textContent = isPerp ? `USDⓈ-M 永续 ${lev}x` : "现货 1x";
+    head.appendChild(lb);
+  }
   const gb = document.createElement("span");
   gb.className = "badge " + (d.gate_open ? "gate-open" : "gate-closed");
   gb.textContent = d.gate_open ? "闸开" : "闸关";
   head.appendChild(gb);
 
   const toSma = d.btc_to_sma || 0;
+  const exp = d.gross_exposure || 0;
   const holdings = d.holdings || [];
   const coins = (d.universe && d.universe.length ? d.universe : UNIVERSE)
     .map((c) => `<span class="coin">${c}</span>`).join("");
 
+  // alerts: 盘中硬止损触发 / 杠杆未能确认(拒绝交易)
+  let banners = "";
+  if (d.stopped && d.stopped.length)
+    banners += `<div class="banner warn">⛔ 盘中硬止损触发,已强平:<b>${d.stopped.join("、")}</b></div>`;
+  if (d.leverage_unsafe && d.leverage_unsafe.length)
+    banners += `<div class="banner warn">⚠ 杠杆未确认为 ${lev}x,已拒绝交易:<b>${d.leverage_unsafe.join("、")}</b>(去交易所手动设逐仓)</div>`;
+
   const holdHtml = holdings.length
-    ? `<div class="subhead">当前持仓</div><table class="tbl">
-        <thead><tr><th>币种</th><th>数量</th><th class="opt">价格</th><th>市值</th></tr></thead>
+    ? `<div class="subhead">当前持仓 · ${isPerp ? "永续多头(名义)" : "现货"}</div><table class="tbl">
+        <thead><tr><th>币种</th><th class="opt">数量</th><th class="opt">价格</th><th>名义市值</th><th>权重</th></tr></thead>
         <tbody>${holdings.map((h) => `<tr>
           <td class="name">${h.symbol || h.sym || ""}</td>
-          <td>${money(h.qty != null ? h.qty : h.amount, "")}</td>
+          <td class="opt">${money(h.qty != null ? h.qty : h.amount, "")}</td>
           <td class="opt">${h.price != null ? money(h.price, "$") : "—"}</td>
-          <td>${h.value != null ? money(h.value, "$") : "—"}</td></tr>`).join("")}</tbody></table>`
-    : `<div class="empty">空仓 — BTC 低于 200 日线,大盘闸关闭,资金全在现金</div>`;
+          <td>${h.value != null ? money(h.value, "$") : "—"}</td>
+          <td>${h.weight != null ? (h.weight * 100).toFixed(1) + "%" : "—"}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="empty">空仓 — BTC 低于 200 日线,大盘闸关闭,${isPerp ? "永续仓位已全平,资金留在保证金钱包" : "资金全在现金"}</div>`;
 
   body.innerHTML = `
+    ${banners}
     <div class="hero">
       <div class="equity"><span class="cur">$</span>${counted("live-eq", d.capital)}</div>
-      <div class="sub">本金 · 已部署 $${money(d.deployed)} · 现金 $${money(d.cash)}</div>
+      <div class="sub">本金 · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)} · 自由保证金 $${money(d.cash)}</div>
     </div>
     <div class="subhead">大盘闸门 · BTC vs 200 日线</div>
     ${gateMeter(d.btc_px, d.btc_sma200)}
@@ -324,12 +342,13 @@ function renderLive(d) {
       <div class="chip"><div class="k">距开闸</div><div class="v ${cls(toSma)}">${arw(toSma)}${pct(toSma, 1)}</div></div>
       <div class="chip"><div class="k">BTC 现价 <span class="live-dot"></span>实时</div><div class="v">$${money(d.btc_px)}</div></div>
       <div class="chip"><div class="k">200日线 · 收盘</div><div class="v dim">$${money(d.btc_sma200)}</div></div>
+      <div class="chip"><div class="k">实际敞口 / 上限</div><div class="v ${exp > 0 ? "" : "dim"}">${exp.toFixed(2)}× <span class="dim" style="font-size:12px">/ ${lev}x</span></div></div>
       <div class="chip"><div class="k">状态</div><div class="v ${d.armed ? "" : "dim"}">${d.armed ? "已武装" : "未武装"}</div></div>
     </div>
     <div class="subhead">候选币池 · ${(d.universe || UNIVERSE).length} 币</div>
     <div class="uni">${coins}</div>
     ${holdHtml}
-    <div class="note"><b>实盘</b> · 现货 1x 逆波动率 · 站上 200 日线开仓 · 更新于 ${ago(d.ts)}</div>`;
+    <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · vol 平价 sizing` : "现货 1x 逆波动率"} · 站上 200 日线开仓${d.chandelier_mult ? ` · 盘中 chandelier ${d.chandelier_mult}× 止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
 }
 
 // ---- 加密 C×D 合成账(趋势 60% + carry 40%) ----

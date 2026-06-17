@@ -1,8 +1,9 @@
 #!/bin/bash
-# Linux/VPS cron version of the X4 fixed-TOP7 LIVE spot run (线 D §21) — for a 墙外 VPS with a
+# Linux/VPS cron version of the X4 fixed-TOP7 LIVE run (线 D §21 v2) — for a 墙外 VPS with a
 # STATIC IP (no proxy, direct to Binance). Counterpart of the macOS x4_live_daily.sh (launchd).
 #
-# Strategy: BTC/ETH/BNB/SOL/XRP/ADA/LINK · spot · 1x · inverse-vol · BTC 200d master gate.
+# Strategy: BTC/ETH/BNB/SOL/XRP/ADA/LINK · USDⓈ-M 永续 2x · vol 平价 sizing · BTC 200d master gate
+#           · 盘中 chandelier 硬止损. (旧"现货 1x"已过时 — v2 改永续杠杆博收益,可强平.)
 # Secrets + arm switch in ~/.config/qount/x4_live.env (chmod 600), sourced if present. The VPS reaches
 # Binance directly, so NO proxy line is needed in that file. Order placement is self-gated by
 # QOUNT_X4_LIVE_ENABLE. Alerts are written to the log (no desktop notifier on a headless VPS).
@@ -37,7 +38,7 @@ if ! curl -sf --max-time 12 https://api.binance.com/api/v3/ping -o /dev/null 2>/
 fi
 
 if [ "${QOUNT_X4_LIVE_ENABLE:-}" = "1" ]; then
-  echo "[armed] real spot orders may be placed" >> "$LOG"
+  echo "[armed] real USDⓈ-M perp orders may be placed (2x, 可强平)" >> "$LOG"
 else
   echo "[unarmed] intended orders logged, nothing sent" >> "$LOG"
 fi

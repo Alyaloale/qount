@@ -389,29 +389,46 @@ def prepare_swap(exchange, data_syms: list[str], cfg: LiveConfig) -> set[str]:
         return set()
     target = int(cfg.max_leverage)
     syms = [to_ccxt_symbol(s, cfg.quote, cfg.market_type) for s in data_syms]
+    # PRIMARY confirmation = the leverage Binance echoes back in the set_leverage response. This is
+    # authoritative (it is the now-effective leverage, not a blind ack) AND it works on a FLAT
+    # account — critical, because Binance's positionRisk read-back returns NO rows when flat, so a
+    # read-back-only check could never confirm leverage before the first fill (chicken-and-egg: can't
+    # open without confirming, can't confirm without an open position) -> the bot would never trade.
+    set_lev: dict[str, object] = {}
     for sym in syms:
         try:
             exchange.set_margin_mode(cfg.margin_mode, sym)
         except Exception:
             pass  # re-setting an unchanged margin mode throws a benign error
         try:
-            exchange.set_leverage(target, sym)
+            r = exchange.set_leverage(target, sym)
+            L = None
+            if isinstance(r, dict):
+                L = r.get("leverage")
+                if L is None and isinstance(r.get("info"), dict):
+                    L = r["info"].get("leverage")
+            set_lev[sym] = L
         except Exception:
-            pass  # verified below — a silent set failure is caught by the read-back
-    # verify: read the effective leverage; anything we can't confirm == target is unsafe to trade
-    lev: dict[str, object] = {}
+            set_lev[sym] = None  # set failed -> fall back to the read-back, else unsafe
+    # SECONDARY confirmation: effective leverage off any OPEN position (belt-and-suspenders; binance
+    # only returns non-flat rows, so this just corroborates once a leg exists).
+    read_lev: dict[str, object] = {}
     try:
         for p in exchange.fetch_positions(syms):
-            lev[p.get("symbol")] = p.get("leverage")
+            read_lev[p.get("symbol")] = p.get("leverage")
     except Exception:
-        return set(data_syms)  # cannot read leverage at all -> treat every symbol as unsafe
+        read_lev = {}
     unsafe = set()
     for s, sym in zip(data_syms, syms):
-        L = lev.get(sym)
-        try:
-            if L is None or int(float(L)) != target:
-                unsafe.add(s)
-        except (TypeError, ValueError):
+        ok = False
+        for L in (set_lev.get(sym), read_lev.get(sym)):
+            try:
+                if L is not None and int(float(L)) == target:
+                    ok = True
+                    break
+            except (TypeError, ValueError):
+                pass
+        if not ok:
             unsafe.add(s)
     return unsafe
 
