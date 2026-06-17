@@ -184,6 +184,13 @@ def to_ccxt_dated(dated_sym: str) -> str:
     return f"{coin}/USD:{coin}-{yymmdd}"
 
 
+def from_ccxt_dated(ccxt_sym: str) -> str:
+    """``"BTC/USD:BTC-260626"`` -> internal ``"BTCUSD_260626"`` (reverse of :func:`to_ccxt_dated`)."""
+    _, _, settle_exp = ccxt_sym.partition(":")
+    coin, _, yymmdd = settle_exp.partition("-")
+    return f"{coin}USD_{yymmdd}"
+
+
 def place_carry_orders(exchange_spot, exchange_cm, orders: list[CarryOrder], *,
                        mode: str = "dry", cfg: CarryConfig | None = None) -> list[dict]:
     """``mode='dry'`` prints intended two-venue orders (no API write); ``mode='live'`` places market

@@ -20,6 +20,7 @@ from qount.rv.live import (  # noqa: E402
     CarryOrder,
     active_dated,
     compute_carry_orders,
+    from_ccxt_dated,
     place_carry_orders,
     rv_live_enabled,
     target_legs,
@@ -118,6 +119,8 @@ class TestCcxtLayer(unittest.TestCase):
         self.assertEqual(to_ccxt_spot("BTCUSDT"), "BTC/USDT")
         self.assertEqual(to_ccxt_dated("BTCUSD_260626"), "BTC/USD:BTC-260626")
         self.assertEqual(to_ccxt_dated("ETHUSD_260925"), "ETH/USD:ETH-260925")
+        self.assertEqual(from_ccxt_dated("BTC/USD:BTC-260626"), "BTCUSD_260626")  # round-trips
+        self.assertEqual(from_ccxt_dated(to_ccxt_dated("ETHUSD_260925")), "ETHUSD_260925")
 
     def test_dry_sends_nothing(self):
         sp, cm = _Mock(), _Mock()
