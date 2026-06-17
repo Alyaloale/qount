@@ -298,6 +298,10 @@ def compute_orders(
     cap = cfg.max_leverage
     if gross > cap and gross > 0:
         tw = {s: w * cap / gross for s, w in tw.items()}
+    # per-BUY deployment cap = the smaller of the configured ceiling and this account's buying power
+    # (capital × leverage); the static ``max_order_usdt`` default was sized for the $415 pilot, so on a
+    # smaller live capital it shrinks with the account rather than staying a stale 12×-capital backstop.
+    order_cap = min(cfg.max_order_usdt, cfg.capital_usdt * max(cfg.max_leverage, 1.0))
 
     universe = list(dict.fromkeys(list(cfg.universe) + list(balances_base)))
     for s in universe:
@@ -322,7 +326,7 @@ def compute_orders(
 
         f = filters[s]
         if diff > 0:   # BUY (deploy quote)
-            spend = min(diff, cfg.max_order_usdt)
+            spend = min(diff, order_cap)
             if spend < max(cfg.min_order_usdt, f.min_notional):
                 res.skipped.append(f"{s}: buy {spend:.2f} below notional floor")
                 continue
@@ -333,7 +337,7 @@ def compute_orders(
             res.orders.append(Order(to_ccxt_symbol(s, cfg.quote, cfg.market_type), "buy", est_base,
                                     round(spend, 2), round(spend, 2),
                                     reason=f"deploy {cur_usdt:.0f}->{tgt_usdt:.0f}"))
-        else:          # SELL (reduce base)
+        else:          # SELL (reduce base) — keep the plain cap; never throttle a risk-reducing exit
             sell_usdt = min(-diff, cfg.max_order_usdt)
             base_amt = _round_down_step(sell_usdt / px, f.amount_step)
             # don't try to sell more than we hold
@@ -345,6 +349,27 @@ def compute_orders(
                                     0.0, round(base_amt * px, 2),
                                     reason=f"reduce {cur_usdt:.0f}->{tgt_usdt:.0f}"))
     return res
+
+
+def unreachable_coins(filters: dict[str, SymbolFilter], prices: dict[str, float],
+                      cfg: LiveConfig) -> list[dict]:
+    """Universe coins whose exchange MINIMUM order exceeds an equal-weight slice of buying power
+    (``capital × leverage ÷ n``) — they can't be held at their vol-parity weight, so on a small
+    capital the live book is a concentrated subset of the universe (honest caveat, not a bug; e.g.
+    BTC perp min 0.001 ≈ whole capital at $70). Returns ``[{"symbol", "min_usdt"}]`` sorted by cost."""
+
+    buying_power = cfg.capital_usdt * max(cfg.max_leverage, 1.0)
+    slice_cap = buying_power / max(1, len(cfg.universe))
+    out: list[dict] = []
+    for s in cfg.universe:
+        f = filters.get(s)
+        px = prices.get(s, 0.0)
+        if not f or px <= 0:
+            continue
+        floor = max(f.min_amount * px, f.min_notional, cfg.min_order_usdt)
+        if floor > slice_cap:
+            out.append({"symbol": s, "min_usdt": round(floor, 1)})
+    return sorted(out, key=lambda d: -d["min_usdt"])
 
 
 def x4_live_enabled() -> bool:

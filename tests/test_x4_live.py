@@ -25,6 +25,7 @@ from qount.x4.live import (  # noqa: E402
     prepare_swap,
     target_weights,
     to_ccxt_symbol,
+    unreachable_coins,
 )
 
 
@@ -162,6 +163,13 @@ class TestComputeOrders(unittest.TestCase):
         tw = [TargetWeight("BTCUSDT", 1.0)]
         res = compute_orders(tw, {}, prices, filt, cfg)
         self.assertLessEqual(res.orders[0].quote_amount, 50.0 + 1e-6)
+
+    def test_buy_capped_by_buying_power_when_max_order_stale(self):
+        # stale huge max_order_usdt must NOT let a buy exceed capital × leverage (buying power)
+        cfg, filt, prices = self._setup(capital_usdt=70.0, max_order_usdt=830.0, max_leverage=2.0)
+        tw = [TargetWeight("BTCUSDT", 5.0)]   # absurd weight -> gross clamp to 2.0 -> $140 target
+        res = compute_orders(tw, {}, prices, filt, cfg)
+        self.assertLessEqual(res.orders[0].quote_amount, 70.0 * 2.0 + 1e-6)   # <= $140, not $830
 
     def test_min_notional_skips_dust(self):
         cfg, filt, prices = self._setup(capital_usdt=8.0)   # 2 coins -> $4 each < $5 notional
@@ -466,6 +474,32 @@ class TestChandelierStops(unittest.TestCase):
         out, st, trig = apply_chandelier_stops([], {"ETHUSDT": 200.0}, self._bars(),
                                                {"ETHUSDT": {"latched": True}}, self._cfg())
         self.assertNotIn("ETHUSDT", st)
+
+
+class TestUnreachableCoins(unittest.TestCase):
+    def _filt(self):
+        return {
+            "BTCUSDT": SymbolFilter(amount_step=1e-3, min_amount=1e-3, min_notional=50.0),  # min 0.001
+            "ETHUSDT": SymbolFilter(amount_step=1e-3, min_amount=1e-3, min_notional=20.0),
+            "SOLUSDT": SymbolFilter(amount_step=1e-2, min_amount=1e-2, min_notional=5.0),
+        }
+    _prices = {"BTCUSDT": 64_000.0, "ETHUSDT": 1_800.0, "SOLUSDT": 70.0}
+
+    def _cfg(self, cap):
+        return LiveConfig(universe=("BTCUSDT", "ETHUSDT", "SOLUSDT"), capital_usdt=cap,
+                          max_leverage=2.0, min_order_usdt=6.0)
+
+    def test_btc_unreachable_at_tiny_capital(self):
+        # $70 × 2x = $140 buying power / 3 coins -> $46.7 equal slice. BTC floor = 0.001×64000 = $64 > slice
+        out = unreachable_coins(self._filt(), self._prices, self._cfg(70.0))
+        syms = [b["symbol"] for b in out]
+        self.assertIn("BTCUSDT", syms)        # min 0.001 BTC ≈ whole capital -> can't hold at weight
+        self.assertNotIn("SOLUSDT", syms)     # $5 floor fits easily
+        self.assertEqual(out[0]["symbol"], "BTCUSDT")   # sorted by cost desc
+
+    def test_all_reachable_at_large_capital(self):
+        # $5000 × 2x = $10000 / 3 -> $3333 slice; every floor well below -> nothing blocked
+        self.assertEqual(unreachable_coins(self._filt(), self._prices, self._cfg(5000.0)), [])
 
 
 if __name__ == "__main__":

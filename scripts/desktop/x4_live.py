@@ -39,6 +39,7 @@ from qount.x4.live import (  # noqa: E402
     prepare_swap,
     target_weights,
     to_ccxt_symbol,
+    unreachable_coins,
     x4_live_enabled,
 )
 
@@ -136,6 +137,11 @@ def main(argv: list[str]) -> int:
             tw = [t for t in tw if t.symbol not in unsafe]
 
     res = compute_orders(tw, balances, prices, filters, cfg)
+    # small-capital honesty: which universe coins can't be held at their weight at this capital
+    blocked = unreachable_coins(filters, prices, cfg)
+    if blocked:
+        print(f"  [capital] 本金 ${cfg.capital_usdt:.0f} 过小,以下币最小下单额超过等权份额,难以纳入: "
+              + ", ".join(f"{b['symbol']}(≥${b['min_usdt']:.0f})" for b in blocked))
     # SAFETY: never place orders against an unknown book (would blind-buy full notional).
     if mode == "live" and x4_live_enabled() and not holdings_ok:
         res.orders = []
@@ -173,6 +179,8 @@ def main(argv: list[str]) -> int:
         "btc_sma200": round(btc_sma, 2),
         "btc_to_sma": round(btc_close / btc_sma - 1.0, 4) if btc_sma > 0 else 0.0,  # gate dist = close 口径
         "n_universe": len(cfg.universe),
+        "buying_power": round(cfg.capital_usdt * max(cfg.max_leverage, 1.0), 2),
+        "capital_blocked": blocked,   # coins whose exchange min order > equal-weight slice @ capital
         "targets": {t.symbol: round(t.weight, 4) for t in tw},
         "holdings": holdings,
         "orders": [{"symbol": o.symbol, "side": o.side, "base": o.base_amount,
