@@ -46,7 +46,10 @@ function renderTicker() {
     parts.push(`A股今日 <b>${sign(day)}¥${money(Math.abs(day))}</b>`);
     parts.push(`A股累计 <b>${pct(c.total_pnl_pct || 0)}</b>`);
   }
-  if (l && l.capital != null) parts.push(`实盘 <b>$${money(l.capital)}</b> ${l.gate_open ? "闸开" : "闸关"}`);
+  if (l && l.capital != null) {
+    const lShort = !!l.shorting || (l.holdings || []).some((h) => (h.value || 0) < 0);
+    parts.push(`实盘 <b>$${money(l.equity != null ? l.equity : l.capital)}</b> ${l.gate_open ? "做多" : lShort ? "做空对冲" : "空仓"}`);
+  }
   if (p && p.combo && p.combo.portfolio) parts.push(`模拟合成 Sharpe <b>${(p.combo.portfolio.sharpe || 0).toFixed(2)}</b>`);
   const el = $("ticker");
   if (!parts.length) { el.innerHTML = ""; return; }
@@ -205,10 +208,13 @@ function renderOverview() {
 
   // 加密实盘
   if (l && l.capital != null) {
+    const lShort = !!l.shorting || (l.holdings || []).some((h) => (h.value || 0) < 0);
+    const lUp = l.unrealized_pnl;
+    const state = l.gate_open ? "闸开 · 做多" : lShort ? "闸关 · 做空对冲" : "闸关 · 空仓";
     tiles.push(`<div class="otile">
       <div class="ok"><span class="live-dot"></span>加密实盘</div>
-      <div class="oe"><span class="cur">$</span>${counted("ov-live", l.capital)}</div>
-      <div class="os">${l.gate_open ? "闸开 · 持仓" : "闸关 · 空仓"} · ${l.armed ? "已武装" : "未武装"}</div>
+      <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital)}</div>
+      <div class="os ${lUp != null ? cls(lUp) : ""}">${state}${lUp != null ? ` · ${arw(lUp)}未实现 ${sign(lUp)}$${money(Math.abs(lUp))}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
     </div>`);
   } else tiles.push(`<div class="otile"><div class="ok">加密实盘</div><div class="oe dim">—</div></div>`);
 
@@ -301,14 +307,15 @@ function renderLive(d) {
     lb.textContent = isPerp ? `USDⓈ-M 永续 ${lev}x` : "现货 1x";
     head.appendChild(lb);
   }
+  const holdings = d.holdings || [];
+  const shorting = !!d.shorting || holdings.some((h) => (h.value || 0) < 0);
   const gb = document.createElement("span");
-  gb.className = "badge " + (d.gate_open ? "gate-open" : "gate-closed");
-  gb.textContent = d.gate_open ? "闸开" : "闸关";
+  gb.className = "badge " + (d.gate_open ? "gate-open" : shorting ? "shorting" : "gate-closed");
+  gb.textContent = d.gate_open ? "闸开 · 做多" : shorting ? "闸关 · 做空对冲" : "闸关 · 空仓";
   head.appendChild(gb);
 
   const toSma = d.btc_to_sma || 0;
   const exp = d.gross_exposure || 0;
-  const holdings = d.holdings || [];
   const coins = (d.universe && d.universe.length ? d.universe : UNIVERSE)
     .map((c) => `<span class="coin">${c}</span>`).join("");
 
@@ -321,22 +328,29 @@ function renderLive(d) {
   if (d.capital_blocked && d.capital_blocked.length)
     banners += `<div class="banner">ℹ 本金 $${money(d.capital)} 偏小,以下币按逆波动率权重的目标额低于最小下单额、会被跳过:<b>${d.capital_blocked.map((b) => `${b.symbol}(目标$${money(b.target_usdt)}<地板$${money(b.min_usdt)})`).join("、")}</b> · 实盘为集中子集,非完整 ${(d.universe || UNIVERSE).length} 币</div>`;
 
+  const upnl = d.unrealized_pnl;
   const holdHtml = holdings.length
-    ? `<div class="subhead">当前持仓 · ${isPerp ? "永续多头(名义)" : "现货"}</div><table class="tbl">
-        <thead><tr><th>币种</th><th class="opt">数量</th><th class="opt">价格</th><th>名义市值</th><th>权重</th></tr></thead>
-        <tbody>${holdings.map((h) => `<tr>
+    ? `<div class="subhead">当前持仓 · ${shorting ? "永续做空对冲(§24 做空闸)" : isPerp ? "永续多头(名义)" : "现货"}</div><table class="tbl">
+        <thead><tr><th>币种</th><th>方向</th><th class="opt">入场</th><th class="opt">现价</th><th>名义</th><th>浮盈</th><th class="opt">止损</th></tr></thead>
+        <tbody>${holdings.map((h) => {
+          const sh = h.side === "short" || (h.value || 0) < 0;
+          const up = h.upnl || 0;
+          return `<tr>
           <td class="name">${h.symbol || h.sym || ""}</td>
-          <td class="opt">${money(h.qty != null ? h.qty : h.amount, "")}</td>
+          <td><span class="side ${sh ? "neg" : "pos"}">${sh ? "空" : "多"}</span></td>
+          <td class="opt">${h.entry != null ? money(h.entry, "$") : "—"}</td>
           <td class="opt">${h.price != null ? money(h.price, "$") : "—"}</td>
-          <td>${h.value != null ? money(h.value, "$") : "—"}</td>
-          <td>${h.weight != null ? (h.weight * 100).toFixed(1) + "%" : "—"}</td></tr>`).join("")}</tbody></table>`
+          <td>${h.value != null ? money(Math.abs(h.value), "$") : "—"}</td>
+          <td class="${cls(up)}">${h.upnl != null ? sign(up) + "$" + money(Math.abs(up)) : "—"}</td>
+          <td class="opt">${h.stop != null ? money(h.stop, "$") : "—"}</td></tr>`;
+        }).join("")}</tbody></table>`
     : `<div class="empty">空仓 — BTC 低于 200 日线,大盘闸关闭,${isPerp ? "永续仓位已全平,资金留在保证金钱包" : "资金全在现金"}</div>`;
 
   body.innerHTML = `
     ${banners}
     <div class="hero">
-      <div class="equity"><span class="cur">$</span>${counted("live-eq", d.capital)}</div>
-      <div class="sub">本金 · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)} · 自由保证金 $${money(d.cash)}</div>
+      <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital)}</div>
+      <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${sign(upnl)}$${money(Math.abs(upnl))}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
     <div class="subhead">大盘闸门 · BTC vs 200 日线</div>
     ${gateMeter(d.btc_px, d.btc_sma200)}
@@ -350,7 +364,7 @@ function renderLive(d) {
     <div class="subhead">候选币池 · ${(d.universe || UNIVERSE).length} 币</div>
     <div class="uni">${coins}</div>
     ${holdHtml}
-    <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · vol 平价 sizing` : "现货 1x 逆波动率"} · 站上 200 日线开仓${d.chandelier_mult ? ` · 盘中 chandelier ${d.chandelier_mult}× 止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
+    <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · vol 平价 sizing` : "现货 1x 逆波动率"} · ${shorting ? "熊市闸关 → §24 做空闸:对确认下跌的币做空对冲(逆波动率 · BUY closePosition 兜底止损)" : "站上 200 日线开仓"}${d.chandelier_mult ? ` · 盘中 chandelier ${d.chandelier_mult}× 止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
 }
 
 // ---- 加密 C×D 合成账(趋势 60% + carry 40%) ----

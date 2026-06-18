@@ -114,6 +114,7 @@ def main(argv: list[str]) -> int:
 
     # prices + current holdings (spot: base balance; swap: long position size, base units)
     prices, balances = {}, {}
+    pos_detail: dict[str, dict] = {}   # data_sym -> {side, entry, qty, upnl} for the 看板 (rich display)
     for s in cfg.universe:
         prices[s] = float(ex.fetch_ticker(to_ccxt_symbol(s, cfg.quote, cfg.market_type))["last"])
 
@@ -124,8 +125,17 @@ def main(argv: list[str]) -> int:
                 for s in cfg.universe:
                     if sym == to_ccxt_symbol(s, cfg.quote, cfg.market_type):
                         amt = float(p.get("contracts") or 0.0)
+                        if amt <= 0:
+                            continue
+                        side = (p.get("side") or "long")
                         # SIGNED: short = negative (§24 做空闸 reconcile needs the sign to cover/flip)
-                        balances[s] = -amt if (p.get("side") or "long") == "short" else amt
+                        balances[s] = -amt if side == "short" else amt
+                        pos_detail[s] = {
+                            "side": side,
+                            "entry": float(p.get("entryPrice") or 0.0) or None,
+                            "qty": amt,
+                            "upnl": float(p.get("unrealizedPnl") or 0.0),
+                        }
         else:
             bal = ex.fetch_balance()
             for s in cfg.universe:
@@ -215,9 +225,23 @@ def main(argv: list[str]) -> int:
     btc_px = prices.get(cfg.gate_sym, btc_close)   # live last for display; fall back to the close
     btc_sma = sum(btc_closes[-cfg.gate_sma:]) / cfg.gate_sma if len(btc_closes) >= cfg.gate_sma else 0.0
     deployed = sum(abs(v) for v in res.current_usdt.values())   # GROSS notional (long + |short|)
-    holdings = [{"symbol": s, "value": round(res.current_usdt[s], 2),   # signed (short = negative)
-                 "weight": round({t.symbol: t.weight for t in tw}.get(s, 0.0), 4)}
-                for s in cfg.universe if abs(res.current_usdt.get(s, 0.0)) > 0.01]
+    _twmap = {t.symbol: t.weight for t in tw}
+    holdings = []
+    for s in cfg.universe:
+        if abs(res.current_usdt.get(s, 0.0)) <= 0.01:
+            continue
+        d = pos_detail.get(s, {})
+        holdings.append({
+            "symbol": s, "value": round(res.current_usdt[s], 2),   # signed (short = negative)
+            "weight": round(_twmap.get(s, 0.0), 4),
+            "side": d.get("side") or ("short" if res.current_usdt[s] < 0 else "long"),
+            "entry": round(d["entry"], 6) if d.get("entry") else None,
+            "qty": d.get("qty"),
+            "price": prices.get(s),
+            "upnl": round(d["upnl"], 4) if d.get("upnl") is not None else None,
+            "stop": resting_stops.get(s),   # exchange-native squeeze/crash backstop trigger px
+        })
+    account_upnl = round(sum(h["upnl"] for h in holdings if h.get("upnl") is not None), 2)
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     rec = {
@@ -231,6 +255,8 @@ def main(argv: list[str]) -> int:
         "resting_stops": resting_stops,   # T2-2 交易所原生兜底止损价 (data_sym -> trigger px)
         "gross_exposure": round(deployed / cfg.capital_usdt, 3) if cfg.capital_usdt else 0.0,  # actual ×
         "capital": cfg.capital_usdt, "deployed": round(deployed, 2),   # deployed NOTIONAL
+        "unrealized_pnl": account_upnl,   # 当前持仓未实现盈亏(看板)
+        "equity": round(cfg.capital_usdt + account_upnl, 2),   # 钱包余额 + 未实现 = 实时权益
         "margin_used": round(deployed / cfg.max_leverage, 2) if cfg.max_leverage else round(deployed, 2),
         "cash": round(cfg.capital_usdt - deployed / max(cfg.max_leverage, 1.0), 2),  # free margin
         "btc_px": round(btc_px, 2), "btc_close": round(btc_close, 2),
