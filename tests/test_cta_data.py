@@ -115,7 +115,10 @@ class GracefulVendorTest(unittest.TestCase):
         self.assertIn("天勤", str(ctx.exception))
 
     def test_tqsdk_without_dep_raises_clear_error(self) -> None:
-        if "tqsdk" in sys.modules:
+        import importlib.util
+        # tqsdk imports lazily inside fetch_tqsdk_panel, so it may not be in
+        # sys.modules yet — check installability, else it'd try a real login.
+        if importlib.util.find_spec("tqsdk") is not None:
             self.skipTest("tqsdk is installed in this env")
         with self.assertRaises(RuntimeError) as ctx:
             fetch_tqsdk_panel(user="u", password="p")

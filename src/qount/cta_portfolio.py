@@ -57,7 +57,8 @@ def value_holdings(
         total_mv += mv
         total_cost += cost
         rows.append({
-            "symbol": sym, "shares": shares, "avg_cost": avg_cost, "last_px": px,
+            "symbol": sym, "shares": shares, "lots": shares / LOT,
+            "avg_cost": avg_cost, "last_px": px,
             "market_value": mv, "cost_basis": cost,
             "pnl": mv - cost, "pnl_pct": (mv / cost - 1.0) if cost > 0 else None,
         })
@@ -69,6 +70,21 @@ def value_holdings(
         "total_cost_basis": total_cost, "equity": equity,
         "total_pnl": total_mv - total_cost,
         "total_pnl_pct": (total_mv / total_cost - 1.0) if total_cost > 0 else None,
+    }
+
+
+def account_pnl(equity: float, capital: float) -> dict[str, Any]:
+    """Account-level P&L vs initial capital (the honest total return).
+
+    ``value_holdings`` only marks *current* holdings against their cost basis, so
+    once a rebalance sell books realized gains into cash that MTM number diverges
+    from the account's true profit. Drive 总盈亏/收益率 from capital instead:
+    ``equity = total_mv + cash`` already absorbs realized P&L, so
+    ``equity - capital`` is the full (realized + unrealized) account profit.
+    """
+    return {
+        "pnl": equity - capital,
+        "pnl_pct": (equity / capital - 1.0) if capital > 0 else None,
     }
 
 
@@ -454,12 +470,22 @@ def _build_status(pos: dict[str, Any]) -> dict[str, Any]:
     cur_w = {r["symbol"]: r["weight"] for r in st["rows"]}
     due = rebalance_due(dates, pos.get("last_rebalance_date", dates[0]), cur_w, tgt)
     orders = rebalance_orders(holdings, tgt, latest_px, st["equity"]) if due["due"] else []
+    # 总盈亏/收益率走本金口径(含已实现);缺 capital 的旧持仓退回持仓 MTM。
+    capital = pos.get("capital")
+    if capital is not None:
+        acct = account_pnl(st["equity"], float(capital))
+        total_pnl, total_pnl_pct = acct["pnl"], acct["pnl_pct"]
+    else:
+        total_pnl, total_pnl_pct = st["total_pnl"], st["total_pnl_pct"]
     return {
         "version": CTA_PORTFOLIO_VERSION, "mode": mode, "data_date": dates[-1],
         "last_rebalance_date": pos.get("last_rebalance_date", "?"),
         "price_source": "sina_live" if spot else "cache_close_adjusted",
         "equity": st["equity"], "cash": st["cash"], "total_market_value": st["total_market_value"],
-        "total_pnl": st["total_pnl"], "total_pnl_pct": st["total_pnl_pct"], "day_pnl": day_pnl,
+        "capital": float(capital) if capital is not None else None,
+        "total_pnl": total_pnl, "total_pnl_pct": total_pnl_pct,
+        "holdings_mtm_pnl": st["total_pnl"], "holdings_mtm_pnl_pct": st["total_pnl_pct"],
+        "day_pnl": day_pnl,
         "positions": [
             {**r, "target_weight": tgt.get(r["symbol"], 0.0), "name": ETF_NAMES.get(r["symbol"], "?")}
             for r in st["rows"]
@@ -493,17 +519,18 @@ def cmd_status(args: Any) -> None:
     mode, dates_last = res["mode"], res["data_date"]
     src = "新浪实时" if res["price_source"] == "sina_live" else "缓存收盘(复权,非实时)"
     print(f"\nCTA-R 组合状态  mode={mode}  价格={src}  数据 {dates_last}  上次调仓 {res['last_rebalance_date']}")
-    print(f"{'ETF':<11}{'名称':<12}{'持仓股':>9}{'成本':>8}{'现价':>8}{'市值¥':>11}{'盈亏¥':>11}{'盈亏%':>8}{'当前w':>7}{'目标w':>7}")
+    print(f"{'ETF':<11}{'名称':<12}{'手数':>7}{'持仓股':>9}{'建仓价':>8}{'现价':>8}{'市值¥':>11}{'盈亏¥':>11}{'收益率':>8}{'当前w':>7}{'目标w':>7}")
     for r in sorted(st["rows"], key=lambda x: -x["market_value"]):
         s = r["symbol"]
         pnl_pct = f"{r['pnl_pct']*100:+.1f}%" if r["pnl_pct"] is not None else "  -"
-        print(f"{s:<11}{ETF_NAMES.get(s,'?'):<11}{r['shares']:>9.0f}{r['avg_cost']:>8.3f}{r['last_px']:>8.3f}"
+        print(f"{s:<11}{ETF_NAMES.get(s,'?'):<11}{r['lots']:>7.0f}{r['shares']:>9.0f}{r['avg_cost']:>8.3f}{r['last_px']:>8.3f}"
               f"{_fmt_money(r['market_value']):>11}{r['pnl']:>+11,.0f}{pnl_pct:>8}"
               f"{r['weight']*100:>6.1f}%{tgt.get(s,0.0)*100:>6.1f}%")
     print(f"\n现金 ¥{_fmt_money(st['cash'])}   总市值 ¥{_fmt_money(st['total_market_value'])}   "
           f"总资产 ¥{_fmt_money(st['equity'])}")
     tp = st["total_pnl_pct"]
-    print(f"总盈亏 ¥{st['total_pnl']:+,.0f}" + (f"  ({tp*100:+.1f}%)" if tp is not None else "")
+    print(f"总盈亏(对本金,含已实现) ¥{st['total_pnl']:+,.0f}"
+          + (f"  ({tp*100:+.1f}%)" if tp is not None else "")
           + f"   今日 ¥{res['day_pnl']:+,.0f}")
 
     print()

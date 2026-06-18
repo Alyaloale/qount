@@ -470,7 +470,7 @@ ETF 跨资产 long-only lev1(现金账户,2496 eval 日):
 最大回撤 + 流水)。**实时价接缝**:缓存是 qfq 复权(只算信号),估值/下单用**原始价**——东财被该 WSL 挡,改新浪
 `hq.sinajs.cn` 直连(`fetch_spot_sina`,stdlib/域内/无代理)。**自动化**:`daily` 命令(刷新+落净值+paper 到点
 自动调仓/live 仅提醒);WSL 空闲会关机故 cron 不可靠,**调度放常开的 Mac**——launchd `com.qount.ctar-daily`
-每日 15:35 ssh→WSL 跑 daily。**Mac 桌面组件**:`scripts/desktop/ctar.jsx`(Übersicht,常驻桌面,显示总盈亏¥/
+每日 15:35 ssh→WSL 跑 daily。**Mac 桌面组件**:`scripts/desktop/ctar.jsx`(Übersicht,文件名须 ASCII——中文名会让 Übersicht 静默加载失败;组件内标题为中文,常驻桌面,显示总盈亏¥/
 收益率/今日盈亏/**净值曲线 SVG**/分仓权重/调仓徽标)+ 取数 `ctar_fetch.sh`;另有 SwiftBar 菜单栏版 `ctar.5m.py`。
 **日线缓存推进(stdlib,无 akshare):** `fetch_daily_sina`(新浪日线 kline,raw OHLC)+ `splice_daily`(纯函数:
 锚定 cache 与 raw 的最新重叠日,按 raw 收益率比例把 cache 复权水平向前延伸 → **无接缝**,不论 cache 复权基准如何);

@@ -8,14 +8,15 @@ export const refreshFrequency = 300000; // 5 分钟
 export const className = `
   top: 56px;
   left: 56px;
-  width: 300px;
+  width: 372px;
   color: #e8eef7;
-  font-family: -apple-system, "PingFang SC", Menlo, sans-serif;
-  background: rgba(20, 24, 33, 0.78);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  text-rendering: optimizeLegibility;
+  background: rgba(20, 24, 33, 0.93);
   backdrop-filter: blur(14px);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 16px;
-  padding: 14px 16px;
+  border-radius: 18px;
+  padding: 18px 20px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   -webkit-font-smoothing: antialiased;
   pointer-events: auto;   /* 接收鼠标 -> 可拖 */
@@ -23,23 +24,24 @@ export const className = `
   user-select: none;
 
   .hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:1px; }
-  .title { font-size: 11px; opacity:0.55; letter-spacing:0.5px; }
-  .badge { font-size: 10.5px; padding:2px 8px; border-radius:7px; font-weight:600; }
-  .pnl { font-size: 32px; font-weight:700; letter-spacing:-0.5px; margin: 2px 0 0;
+  .title { font-size: 12.5px; opacity:0.6; letter-spacing:0.3px; }
+  .badge { font-size: 11.5px; padding:3px 9px; border-radius:8px; font-weight:600; }
+  .pnl { font-size: 38px; font-weight:700; letter-spacing:-0.5px; margin: 3px 0 0;
          font-variant-numeric: tabular-nums; }
-  .sub { font-size: 11.5px; opacity:0.85; margin: 2px 0 6px; font-variant-numeric: tabular-nums; }
-  .divider { height:1px; background:rgba(255,255,255,0.08); margin: 5px 0; }
-  .colhd { display:flex; align-items:center; font-size:10px; opacity:0.38;
-           letter-spacing:0.5px; padding-bottom:2px; }
-  .row { display:flex; align-items:center; font-size:11.5px; padding:2.5px 0;
-         font-variant-numeric: tabular-nums; }
-  .row .nm { flex:1; opacity:0.92; }
-  .row .rpc { width:52px; text-align:right; }
-  .row .rw  { width:104px; text-align:right; opacity:0.5; }
+  .sub { font-size: 13px; opacity:0.85; margin: 3px 0 7px; font-variant-numeric: tabular-nums; }
+  .divider { height:1px; background:rgba(255,255,255,0.08); margin: 7px 0; }
+  .colhd { display:flex; align-items:center; font-size:11px; opacity:0.4;
+           letter-spacing:0.5px; padding-bottom:3px; }
+  .row { padding:4px 0; font-variant-numeric: tabular-nums; }
+  .rmain { display:flex; align-items:center; font-size:13px; }
+  .rmain .nm { flex:1; opacity:0.92; }
+  .rmain .rpc { width:60px; text-align:right; }
+  .rmain .rw  { width:118px; text-align:right; opacity:0.5; }
+  .rsub { font-size:11px; opacity:0.46; margin-top:2px; letter-spacing:0.2px; }
   .green { color:#37d67a; } .red { color:#ff5c5c; } .gray { color:#8b97a8; }
-  .ft { font-size: 10px; opacity:0.45; margin-top: 7px; line-height:1.55; }
+  .ft { font-size: 11px; opacity:0.45; margin-top: 9px; line-height:1.6; }
   .alert { background: rgba(255,92,92,0.16); border:1px solid rgba(255,92,92,0.38); color:#ff9a9a;
-           border-radius:10px; padding:7px 9px; margin-top:7px; font-size:11px; line-height:1.5; }
+           border-radius:10px; padding:8px 10px; margin-top:8px; font-size:12px; line-height:1.5; }
 `;
 
 const yuan = (x) => (x < 0 ? "-" : "") + "¥" + Math.abs(Math.round(x)).toLocaleString();
@@ -81,31 +83,42 @@ const startDrag = (e) => {
   e.preventDefault();
 };
 
-function Curve({ pts }) {
-  const W = 268, H = 50, M = { sm: "2px 0 6px" };
-  if (!pts || pts.length < 1) return <svg width={W} height={H} style={{ display: "block", margin: M.sm }} />;
+// 净值曲线:相对首个净值点画收益率,叠加盈亏盈利金额 + 收益率标注 + 盈亏平衡基线。
+function Curve({ pts, W }) {
+  const H = 66, M = "4px 0 6px";
+  if (!pts || pts.length < 1) return <svg width={W} height={H} style={{ display: "block", margin: M }} />;
+  const vals = pts.map((p) => p.equity);
+  const base = vals[0], last = vals[vals.length - 1];
+  const profit = last - base, ret = base > 0 ? last / base - 1 : 0;
+  const up = profit >= 0, col = up ? "#37d67a" : "#ff5c5c";
+  const tag = `${profit >= 0 ? "+" : "-"}¥${Math.abs(Math.round(profit)).toLocaleString()}  ·  ${ret >= 0 ? "+" : ""}${(ret * 100).toFixed(2)}%`;
+  const label = (
+    <text x="0" y="13" fill={col} fontSize="13" fontWeight="600" style={{ fontVariantNumeric: "tabular-nums" }}>{tag}</text>
+  );
   if (pts.length < 2) {
-    const y = H / 2;
+    const y = H - 14;
     return (
-      <svg width={W} height={H} style={{ display: "block", margin: M.sm }}>
+      <svg width={W} height={H} style={{ display: "block", margin: M }}>
         <line x1="0" y1={y} x2={W} y2={y} stroke="rgba(255,255,255,0.16)" strokeWidth="1" strokeDasharray="3 4" />
         <circle cx={W - 3} cy={y} r="2.5" fill="#8b97a8" />
-        <text x="0" y={y - 7} fill="rgba(255,255,255,0.38)" fontSize="10">净值曲线 · 第 {pts.length} 天(明日起成形)</text>
+        {label}
+        <text x="0" y={y - 7} fill="rgba(255,255,255,0.34)" fontSize="10.5">净值曲线 · 第 {pts.length} 天(明日起成形)</text>
       </svg>
     );
   }
-  const vals = pts.map((p) => p.equity);
-  const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
-  const xy = pts.map((p, i) => [(i / (pts.length - 1)) * W, H - ((p.equity - lo) / span) * (H - 8) - 4]);
+  const lo = Math.min(...vals, base), hi = Math.max(...vals, base), span = hi - lo || 1;
+  const yOf = (v) => H - ((v - lo) / span) * (H - 26) - 6;   // 顶部留 26px 给收益率/盈利标注
+  const xy = pts.map((p, i) => [(i / (pts.length - 1)) * W, yOf(p.equity)]);
   const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-  const up = vals[vals.length - 1] >= vals[0];
-  const stroke = up ? "#37d67a" : "#ff5c5c";
   const [lx, ly] = xy[xy.length - 1];
+  const yBase = yOf(base);
   return (
-    <svg width={W} height={H} style={{ display: "block", margin: M.sm }}>
-      <polygon points={`0,${H} ${line} ${W},${H}`} fill={stroke} opacity="0.10" />
-      <polyline points={line} fill="none" stroke={stroke} strokeWidth="1.6" />
-      <circle cx={lx} cy={ly} r="2.4" fill={stroke} />
+    <svg width={W} height={H} style={{ display: "block", margin: M }}>
+      <line x1="0" y1={yBase} x2={W} y2={yBase} stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="2 4" />
+      <polygon points={`0,${H} ${line} ${W},${H}`} fill={col} opacity="0.1" />
+      <polyline points={line} fill="none" stroke={col} strokeWidth="1.8" />
+      <circle cx={lx} cy={ly} r="2.6" fill={col} />
+      {label}
     </svg>
   );
 }
@@ -118,7 +131,7 @@ export const render = ({ output }) => {
   if (!d) {
     return (
       <div {...dragProps}>
-        <div className="hd"><span className="title">CTA-R 组合</span><span className="badge gray">取数失败</span></div>
+        <div className="hd"><span className="title">CTA-R 量化组合</span><span className="badge gray">取数失败</span></div>
         <div className="sub gray">检查 ssh home / WSL（{(output || "").slice(0, 40)}）· 可拖动</div>
       </div>
     );
@@ -128,7 +141,7 @@ export const render = ({ output }) => {
   return (
     <div {...dragProps}>
       <div className="hd">
-        <span className="title">CTA-R · {d.paper ? "模拟盘" : "实盘"}</span>
+        <span className="title">CTA-R 量化组合 · {d.paper ? "模拟盘" : "实盘"}</span>
         {d.due
           ? <span className="badge red">🔔 待调仓</span>
           : <span className="badge gray">{d.price_source === "sina_live" ? "实时" : "收盘"}</span>}
@@ -139,18 +152,22 @@ export const render = ({ output }) => {
         {"  ·  今日 "}<span className={day >= 0 ? "green" : "red"}>{(day >= 0 ? "+" : "") + yuan(day)}</span>
         {"  ·  总资产 " + yuan(d.equity || 0)}
       </div>
-      <Curve pts={d.equity_curve} />
+      <Curve pts={d.equity_curve} W={332} />
       <div className="divider" />
       <div className="colhd"><span className="nm" style={{ flex: 1 }}>持仓</span>
-        <span className="rpc" style={{ width: 52, textAlign: "right" }}>盈亏</span>
-        <span className="rw" style={{ width: 104, textAlign: "right" }}>当前→目标</span></div>
+        <span className="rpc" style={{ width: 60, textAlign: "right" }}>收益率</span>
+        <span className="rw" style={{ width: 118, textAlign: "right" }}>当前→目标</span></div>
       {(d.positions || []).filter((p) => p.shares > 0).sort((a, b) => b.market_value - a.market_value).map((p) => {
         const pc = (p.pnl_pct || 0) * 100;
+        const lots = Math.round((p.lots != null ? p.lots : p.shares / 100));
         return (
           <div className="row" key={p.symbol}>
-            <span className="nm">{p.name}</span>
-            <span className={"rpc " + (pc >= 0 ? "green" : "red")}>{(pc >= 0 ? "+" : "") + pc.toFixed(1) + "%"}</span>
-            <span className="rw">{(p.weight * 100).toFixed(1)}→{(p.target_weight * 100).toFixed(1)}%</span>
+            <div className="rmain">
+              <span className="nm">{p.name}</span>
+              <span className={"rpc " + (pc >= 0 ? "green" : "red")}>{(pc >= 0 ? "+" : "") + pc.toFixed(1) + "%"}</span>
+              <span className="rw">{(p.weight * 100).toFixed(1)}→{(p.target_weight * 100).toFixed(1)}%</span>
+            </div>
+            <div className="rsub">{lots}手 / {Math.round(p.shares).toLocaleString()}股 · 建仓 {(p.avg_cost || 0).toFixed(3)} → 现价 {(p.last_px || 0).toFixed(3)}</div>
           </div>
         );
       })}

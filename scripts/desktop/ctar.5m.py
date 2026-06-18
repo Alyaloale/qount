@@ -88,11 +88,13 @@ def main():
     print(f"总盈亏 {'+' if tp>=0 else ''}¥{money(tp)} ({tot_pct:+.1f}%)   今日 {'+' if day>=0 else ''}¥{money(day)}")
     print(f"现金 ¥{money(d.get('cash',0))}   价格源 {'新浪实时' if src_live else '缓存收盘'}")
     print("---")
-    print(f"{'ETF':<10}{'盈亏%':>8}{'当前w':>7}{'目标w':>7} | font=Menlo")
+    print(f"{'ETF':<8}{'手数':>6}{'持仓股':>9}{'建仓':>8}{'收益%':>8}{'当前/目标w':>13} | font=Menlo")
     for p in sorted(d.get("positions", []), key=lambda x: -x["market_value"]):
         pct = (p.get("pnl_pct") or 0.0) * 100
+        lots = round(p.get("lots", p["shares"] / 100))
         nm = p.get("name", p["symbol"])[:6]
-        line = f"{nm:<8}{pct:>+7.1f}%{p['weight']*100:>6.1f}%{p['target_weight']*100:>6.1f}%"
+        line = (f"{nm:<6}{lots:>5}手{round(p['shares']):>8d}{p.get('avg_cost', 0):>7.3f}{pct:>+7.1f}%"
+                f"{p['weight']*100:>6.1f}/{p['target_weight']*100:>4.1f}%")
         print(f"{line} | font=Menlo color={'green' if pct>=0 else 'red'}")
 
     print("---")

@@ -1,6 +1,7 @@
 import unittest
 
 from qount.cta_portfolio import (
+    account_pnl,
     apply_fill,
     equity_curve_stats,
     paper_execute,
@@ -116,6 +117,32 @@ class ValueHoldingsTest(unittest.TestCase):
         self.assertEqual(st["equity"], 17000.0)
         self.assertAlmostEqual(r["weight"], 12000.0 / 17000.0)
         self.assertEqual(st["total_pnl"], 2000.0)
+
+
+class AccountPnlTest(unittest.TestCase):
+    def test_account_pnl_vs_capital(self) -> None:
+        a = account_pnl(equity=1_200_000.0, capital=1_000_000.0)
+        self.assertEqual(a["pnl"], 200_000.0)
+        self.assertAlmostEqual(a["pnl_pct"], 0.20)
+
+    def test_zero_capital_pct_none(self) -> None:
+        self.assertIsNone(account_pnl(equity=100.0, capital=0.0)["pnl_pct"])
+
+    def test_realized_gain_survives_rebalance_sell(self) -> None:
+        # 本金 100 万满仓买入 -> 翻倍 -> 调仓卖掉一半:真实盈利仍是 +100 万。
+        # holdings-MTM(value_holdings.total_pnl)在卖出后只剩浮盈、漏掉已实现;
+        # account_pnl(对本金)不漏。
+        capital = 1_000_000.0
+        pos = {"capital": capital, "cash": capital, "holdings": {}}
+        apply_fill(pos, "A", "buy", 1_000_000, 1.0)          # 满仓,成本=本金
+        # 价格翻倍后调仓卖掉一半(50 万股 @2.0)
+        apply_fill(pos, "A", "sell", 500_000, 2.0)
+        st = value_holdings(pos["holdings"], pos["cash"], {"A": 2.0})
+        self.assertEqual(st["equity"], 2_000_000.0)          # 100万市值 + 100万现金
+        self.assertEqual(st["total_pnl"], 500_000.0)         # 持仓 MTM:漏掉已实现的 50 万
+        acct = account_pnl(st["equity"], capital)
+        self.assertEqual(acct["pnl"], 1_000_000.0)           # 对本金:完整 +100 万
+        self.assertAlmostEqual(acct["pnl_pct"], 1.0)
 
 
 class RebalanceOrdersTest(unittest.TestCase):
