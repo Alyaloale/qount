@@ -9,6 +9,26 @@ const cls = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "dim");
 const sign = (n) => (n > 0 ? "+" : "");
 const arw = (n) => (n > 0 ? '<span class="arw">▲</span>' : n < 0 ? '<span class="arw">▼</span>' : "");
 const store = {};
+const livePx = {};                 // live mark prices fetched client-side (real-time tick between cron runs)
+let liveOnly = false;              // true during a price-tick re-render -> skip count-up (no constant re-animate)
+
+// proper signed money (+$1.23 / -$0.45) — `sign()` alone drops the minus after Math.abs
+function signed(x, cur) {
+  if (x == null || isNaN(x)) return "—";
+  return (x >= 0 ? "+" : "-") + (cur || "") + money(Math.abs(x));
+}
+
+// ---- theme (dark / light, persisted) ----
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  try { localStorage.setItem("qount-theme", t); } catch (e) {}
+  const b = document.getElementById("theme-btn");
+  if (b) { b.textContent = t === "light" ? "☾" : "☀"; b.title = t === "light" ? "切换深色" : "切换浅色"; }
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+  applyTheme(cur === "light" ? "dark" : "light");
+}
 
 // ---- count-up animation for big numbers ----
 let booted = false;
@@ -26,7 +46,7 @@ function applyCounts() {
     if (isNaN(to)) return;
     const from = booted && key in prevVals ? prevVals[key] : 0;
     prevVals[key] = to;
-    if (REDUCE || from === to) { el.textContent = grp(to, dec); return; }
+    if (REDUCE || liveOnly || from === to) { el.textContent = grp(to, dec); return; }
     const dur = 850, t0 = performance.now();
     (function step(t) {
       const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 4);
@@ -43,7 +63,7 @@ function renderTicker() {
   if (l && l.btc_to_sma != null) parts.push(`距开闸 <b>${pct(l.btc_to_sma, 1)}</b>`);
   if (c && c.equity != null) {
     const day = c.day_pnl || 0;
-    parts.push(`A股今日 <b>${sign(day)}¥${money(Math.abs(day))}</b>`);
+    parts.push(`A股今日 <b>${signed(day, "¥")}</b>`);
     parts.push(`A股累计 <b>${pct(c.total_pnl_pct || 0)}</b>`);
   }
   if (l && l.capital != null) {
@@ -214,7 +234,7 @@ function renderOverview() {
     tiles.push(`<div class="otile">
       <div class="ok"><span class="live-dot"></span>加密实盘</div>
       <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital)}</div>
-      <div class="os ${lUp != null ? cls(lUp) : ""}">${state}${lUp != null ? ` · ${arw(lUp)}未实现 ${sign(lUp)}$${money(Math.abs(lUp))}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
+      <div class="os ${lUp != null ? cls(lUp) : ""}">${state}${lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
     </div>`);
   } else tiles.push(`<div class="otile"><div class="ok">加密实盘</div><div class="oe dim">—</div></div>`);
 
@@ -298,7 +318,7 @@ function renderLive(d) {
   store.live = d;
   const body = $("body-live");
   const head = $("panel-live").querySelector(".panel-head");
-  head.querySelectorAll(".badge.gate-open,.badge.gate-closed,.badge.lev").forEach((e) => e.remove());
+  head.querySelectorAll(".badge.gate-open,.badge.gate-closed,.badge.shorting,.badge.lev").forEach((e) => e.remove());
   const isPerp = d.market_type === "swap";
   const lev = d.max_leverage || 2;
   if (d.market_type) {
@@ -341,7 +361,7 @@ function renderLive(d) {
           <td class="opt">${h.entry != null ? money(h.entry, "$") : "—"}</td>
           <td class="opt">${h.price != null ? money(h.price, "$") : "—"}</td>
           <td>${h.value != null ? money(Math.abs(h.value), "$") : "—"}</td>
-          <td class="${cls(up)}">${h.upnl != null ? sign(up) + "$" + money(Math.abs(up)) : "—"}</td>
+          <td class="${cls(up)}">${h.upnl != null ? signed(up, "$") : "—"}</td>
           <td class="opt">${h.stop != null ? money(h.stop, "$") : "—"}</td></tr>`;
         }).join("")}</tbody></table>`
     : `<div class="empty">空仓 — BTC 低于 200 日线,大盘闸关闭,${isPerp ? "永续仓位已全平,资金留在保证金钱包" : "资金全在现金"}</div>`;
@@ -350,7 +370,7 @@ function renderLive(d) {
     ${banners}
     <div class="hero">
       <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital)}</div>
-      <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${sign(upnl)}$${money(Math.abs(upnl))}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
+      <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
     <div class="subhead">大盘闸门 · BTC vs 200 日线</div>
     ${gateMeter(d.btc_px, d.btc_sma200)}
@@ -374,9 +394,18 @@ function renderCxd(d) {
   const t = d.trend || {}, c = d.carry || {};
   const w = d.weights || { trend: 0.6, carry: 0.4 };
   const tArmed = !!t.armed, cArmed = !!c.armed;
+  const anyArmed = tArmed || cArmed;
   const tCap = t.capital || 0, cCap = c.capital || 0;
   const activeDated = (c.active_dated || []).map((s) => `<span class="coin">${s}</span>`).join("");
   const delta = c.net_delta || 0;
+
+  // 这条与"加密实盘"不同:C×D 是 60/40 编排账,两腿都未武装时是 dry 模拟编排(carry 待注资),武装后才转实盘
+  const head = $("panel-cxd").querySelector(".panel-head");
+  head.querySelectorAll(".badge.real,.badge.paper").forEach((e) => e.remove());
+  const cb = document.createElement("span");
+  cb.className = "badge " + (anyArmed ? "real" : "paper");
+  cb.textContent = anyArmed ? "实盘" : "模拟编排 · 待注资";
+  head.appendChild(cb);
 
   body.innerHTML = `
     <div class="hero">
@@ -401,7 +430,7 @@ function renderCxd(d) {
         <span>尾砍至 <b>−10%</b></span>
       </div>
     </div>
-    <div class="note"><b>实盘</b> · 60% 趋势永续 + 40% carry(现货多+季度空)· 两腿各自武装 · 更新于 ${ago(t.ts || c.ts)}</div>`;
+    <div class="note"><b>${anyArmed ? "实盘" : "模拟编排"}</b> · 与上方「加密实盘」是两套账:这是 60% 趋势永续 + 40% carry(现货多+季度空)的 C×D 合成编排,${anyArmed ? "已部分武装" : "两腿均未武装(carry 待注资 spot+COIN-M),当前为 dry 模拟"} · 更新于 ${ago(t.ts || c.ts)}</div>`;
 }
 
 // ---- 加密模拟盘 ----
@@ -494,7 +523,67 @@ function tick() {
   btn.classList.add("spin");
   load().finally(() => setTimeout(() => btn.classList.remove("spin"), 600));
 }
+
+// ---- real-time: poll Binance USDⓈ-M public mark prices between the 10-min cron snapshots and re-derive
+//      live uPnL / equity / gate distance in the browser (no key, public CORS endpoint) ----
+const SPOT_TICKER = "https://api.binance.com/api/v3/ticker/price?symbol=";
+function liveSymbols() {
+  const u = (store.live && store.live.universe) || UNIVERSE;
+  const set = new Set(u.map((c) => (c.endsWith("USDT") ? c : c + "USDT")));
+  set.add("BTCUSDT");                                   // always need BTC for the gate
+  return [...set];
+}
+async function refreshLivePrices() {
+  if (!store.live || document.hidden) return;
+  // per-symbol fetch (the single-symbol endpoint is the simplest/most portable; CORS = * on Binance
+  // public market data). A blocked/offline fetch is swallowed -> the cron snapshot stays on screen.
+  const results = await Promise.allSettled(
+    liveSymbols().map((s) => fetch(SPOT_TICKER + s, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)))
+  );
+  let any = false;
+  results.forEach((res) => {
+    const o = res.status === "fulfilled" && res.value;
+    if (o && o.symbol && o.price) { livePx[o.symbol] = parseFloat(o.price); any = true; }
+  });
+  if (any) patchLive();
+}
+function patchLive() {
+  const base = store.live;
+  if (!base) return;
+  const d = JSON.parse(JSON.stringify(base));          // clone — never corrupt the cron snapshot
+  let acc = 0, anyLive = false;
+  (d.holdings || []).forEach((h) => {
+    const px = livePx[h.symbol];
+    if (px && h.entry && h.qty) {
+      anyLive = true;
+      const isShort = h.side === "short" || (h.value || 0) < 0;
+      h.price = px;
+      h.value = (isShort ? -1 : 1) * px * h.qty;
+      h.upnl = (isShort ? h.entry - px : px - h.entry) * h.qty;
+    }
+    if (h.upnl != null) acc += h.upnl;
+  });
+  if (d.holdings && d.holdings.length && anyLive) {
+    d.unrealized_pnl = acc;
+    d.equity = (d.capital || 0) + acc;
+  }
+  const bpx = livePx["BTCUSDT"];
+  if (bpx) { d.btc_px = bpx; if (d.btc_sma200) d.btc_to_sma = d.btc_px / d.btc_sma200 - 1; d.live_price = true; }
+  liveOnly = true;                                      // skip count-up re-animation on a price tick
+  store.live = d;
+  renderLive(d);
+  renderOverview();
+  renderTicker();
+  applyCounts();
+  wireCharts();
+  liveOnly = false;
+  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false }) + " · 实时价";
+}
+
 $("refresh").addEventListener("click", tick);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+$("theme-btn").addEventListener("click", toggleTheme);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); refreshLivePrices(); } });
+applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
 tick();
-setInterval(load, 60000);
+setInterval(load, 60000);                              // cron JSON snapshot (positions/stops/capital)
+setInterval(refreshLivePrices, 8000);                  // live spot price -> uPnL/equity/gate, every 8s
