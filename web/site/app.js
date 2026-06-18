@@ -99,9 +99,19 @@ function ago(iso) {
   return Math.floor(s / 86400) + " 天前";
 }
 async function getJSON(path) {
-  const r = await fetch(path + "?t=" + Date.now(), { cache: "no-store" });
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  return r.json();
+  // 境内访问墙外 VPS 时 HTTPS 请求可能挂住(既不成功也不报错)。没有超时的话 load() 永不 settle,
+  // 刷新按钮会一直转圈、画面停在上一次成功的快照。加 AbortController 兜底:到点中止,让 load() 必定结束。
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(path + "?t=" + Date.now(), { cache: "no-store", signal: ctrl.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } catch (e) {
+    throw ctrl.signal.aborted ? new Error("请求超时(8s)") : e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---- interactive equity chart (axes + hover crosshair/tooltip; vanilla SVG, no CDN) ----
@@ -686,9 +696,15 @@ async function refreshLivePrices() {
   if (!store.live || document.hidden) return;
   // per-symbol fetch (the single-symbol endpoint is the simplest/most portable; CORS = * on Binance
   // public market data). A blocked/offline fetch is swallowed -> the cron snapshot stays on screen.
-  const results = await Promise.allSettled(
-    liveSymbols().map((s) => fetch(SPOT_TICKER + s, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)))
-  );
+  // api.binance.com 在境内被墙;没超时的话被卡住的请求永不 settle -> 把刷新链路一起拖住转圈不停。
+  const tfetch6 = (u) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    return fetch(u, { cache: "no-store", signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .finally(() => clearTimeout(timer));
+  };
+  const results = await Promise.allSettled(liveSymbols().map((s) => tfetch6(SPOT_TICKER + s)));
   let any = false;
   results.forEach((res) => {
     const o = res.status === "fulfilled" && res.value;
@@ -752,5 +768,6 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) { lo
 applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
 showRoute(currentRoute());
 tick();
-setInterval(load, 45000);                              // cron JSON snapshot (positions/stops/capital)
+setInterval(load, 20000);                              // cron JSON snapshot (positions/stops/capital)
 setInterval(refreshLivePrices, 4000);                  // live spot price -> uPnL/equity/gate, every 4s
+setInterval(() => pageSub(currentRoute()), 1000);      // “更新 X 分钟前”按墙钟走:UI 不假死,数据卡住时数字一直爬 = stale 指示
