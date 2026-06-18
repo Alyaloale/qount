@@ -106,17 +106,22 @@ def run_directional(
     constant risk exposure (flattens the equity curve, caps drawdown). 0 = off (always 1x). Sizing is
     flat during ATR warm-up (no look-ahead). ``periods_per_year`` annualizes the Sharpe if given.
 
-    ``chandelier_mult`` > 0 adds an **asymmetric Chandelier exit** (long-only): while long, trail a
-    stop at ``highest_high_since_entry − chandelier_mult × ATR(chandelier_lookback)`` (ratchets up,
-    never down); if a bar's low pierces it, flatten and latch out until the strategy signal resets to
-    flat/short (then a fresh signal re-enters). Slow entry, fast exit — cuts the trend giveback at a
-    blow-off top. 0 = off.
+    ``chandelier_mult`` > 0 adds a **symmetric Chandelier exit**: while long, trail a stop at
+    ``highest_high_since_entry − chandelier_mult × ATR(chandelier_lookback)`` (ratchets up, never
+    down) — flatten + latch if a bar's low pierces it; while short, the mirror — trail
+    ``lowest_low_since_entry + mult × ATR`` (ratchets down, never up) and flatten + latch if a bar's
+    high pierces it (squeeze protection). Latched out until the strategy signal resets out of that side
+    (then a fresh signal re-enters). Slow entry, fast exit — cuts the trend giveback at a blow-off top
+    / the squeeze tail on a short. 0 = off. (Long-only strategies never reach the short branch, so their
+    behavior is unchanged.)
     """
 
     acct = X4Account(initial_capital=initial_capital, taker_fee=taker_fee, slippage=slippage)
     atr = ATR(vol_lookback) if vol_target > 0 else None
     atr_ch = ATR(chandelier_lookback) if chandelier_mult > 0 else None
     hh_since_entry: float | None = None
+    ll_since_entry: float | None = None     # short trail (lowest low since entry)
+    latched_sign = 0                        # sign of the position the latch fired on (+1 long, -1 short)
     ch_latched = False
     chandelier_exits = 0
     curve: list[float] = []
@@ -131,20 +136,33 @@ def run_directional(
         if atr_ch is not None:
             a_ch = atr_ch.update(bar)
             was_long = acct.position_base > 1e-12
-            if ch_latched and raw <= 0.0:
-                ch_latched = False          # signal reset -> re-arm
+            was_short = acct.position_base < -1e-12
+            # re-arm only when the signal leaves the side the latch fired on
+            if ch_latched and ((latched_sign > 0 and raw <= 0.0) or (latched_sign < 0 and raw >= 0.0)):
+                ch_latched = False
+                latched_sign = 0
             if ch_latched:
                 weight = 0.0
             elif was_long and a_ch is not None:
                 hh_since_entry = bar.high if hh_since_entry is None else max(hh_since_entry, bar.high)
-                stop = hh_since_entry - chandelier_mult * a_ch
-                if bar.low <= stop:          # trailing stop pierced -> flatten + latch
+                if bar.low <= hh_since_entry - chandelier_mult * a_ch:   # trailing stop pierced
                     weight = 0.0
                     ch_latched = True
+                    latched_sign = 1
                     hh_since_entry = None
                     chandelier_exits += 1
+            elif was_short and a_ch is not None:
+                ll_since_entry = bar.low if ll_since_entry is None else min(ll_since_entry, bar.low)
+                if bar.high >= ll_since_entry + chandelier_mult * a_ch:  # squeeze into the stop
+                    weight = 0.0
+                    ch_latched = True
+                    latched_sign = -1
+                    ll_since_entry = None
+                    chandelier_exits += 1
             if not was_long and weight > 0.0:
-                hh_since_entry = bar.high     # newly entering long -> start the trail
+                hh_since_entry = bar.high     # newly entering long -> start the high trail
+            if not was_short and weight < 0.0:
+                ll_since_entry = bar.low      # newly entering short -> start the low trail
         eq = acct.equity(bar.close)
         target_base = weight * scale * eq / bar.close
         if _should_rebalance(acct.position_base, target_base, rebalance_band):

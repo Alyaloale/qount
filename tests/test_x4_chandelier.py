@@ -41,6 +41,13 @@ class _LongThenFlat:
         return 1.0 if self.i < self.n else 0.0
 
 
+class _AlwaysShort:
+    name = "always-short"
+
+    def on_bar(self, bar: Bar) -> float:
+        return -1.0
+
+
 class TestChandelier(unittest.TestCase):
     def test_trailing_stop_flattens_before_the_decline(self) -> None:
         # rally to ~129, then a multi-bar decline to 78: chandelier exits early and sits flat through
@@ -73,6 +80,28 @@ class TestChandelier(unittest.TestCase):
         self.assertGreaterEqual(r.extra["chandelier_exits"], 1)
         # equity flat across the last bar (no position) -> last two equity points ~equal
         self.assertAlmostEqual(r.equity_curve[-1], r.equity_curve[-2], places=2)
+
+
+    def test_short_squeeze_stop_flattens_before_the_rally(self) -> None:
+        # mirror of the long test: decline to ~71 (a profitable short), then a violent squeeze back up
+        # to 122. The symmetric chandelier covers the short early; the no-stop short rides the squeeze.
+        bars = [_bar(i, 100.0 - i, high=100.0 - i + 1, low=100.0 - i - 1) for i in range(30)]  # ~71
+        for j, c in enumerate([76.0, 82.0, 90.0, 100.0, 110.0, 118.0, 122.0]):
+            bars.append(_bar(30 + j, c, high=c + 1, low=c - 1))
+        stopped = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                                  slippage=0.0, chandelier_mult=3.0, chandelier_lookback=5)
+        no_ch = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                                slippage=0.0, chandelier_mult=0.0)
+        self.assertGreaterEqual(stopped.extra["chandelier_exits"], 1)
+        self.assertGreater(stopped.equity_curve[-1], no_ch.equity_curve[-1])  # covered the squeeze
+
+    def test_short_does_not_trigger_long_branch(self) -> None:
+        # a pure downtrend short should never fire the (long) stop and never the short stop either
+        bars = [_bar(i, 100.0 - i, high=100.0 - i + 1, low=100.0 - i - 1) for i in range(20)]
+        r = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                            slippage=0.0, chandelier_mult=3.0, chandelier_lookback=5)
+        self.assertEqual(r.extra["chandelier_exits"], 0)
+        self.assertGreater(r.equity_curve[-1], r.equity_curve[0])  # short profited on the decline
 
 
 if __name__ == "__main__":

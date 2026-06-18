@@ -6,7 +6,7 @@
 ## 架构
 
 ```
-加密 X4 live (实盘)  VPS 本地 x4_live_cron.sh  (每日 10:30) ──┐
+加密 X4 live (实盘)  VPS 本地 x4_live_cron.sh  (每10分钟)   ──┐
 加密 X4 paper(模拟) VPS 本地 x4_paper_cron.sh (每日 10:00) ──┤──> VPS /var/www/qount/data/
 A股 CTA-R  (模拟)   WSL `home` ──ssh──> Mac ──scp(每5分)──────┘
                                                               │
@@ -29,7 +29,7 @@ A股 CTA-R  (模拟)   WSL `home` ──ssh──> Mac ──scp(每5分)──�
 | `web/push_dashboard.sh` | Mac 端:取 A股(WSL)→ scp 上 VPS(只管 cta.json) | Mac 本地 |
 | `web/com.qount.dashboard.plist` | launchd:每 300s 跑 push_dashboard.sh | Mac `~/Library/LaunchAgents/` |
 | `web/Caddyfile.qount` | Caddy 站点块**模板**(hash 占位,真值在 VPS) | append 到 VPS `/etc/caddy/Caddyfile` |
-| `scripts/desktop/x4_live_cron.sh` | VPS:实盘小仓 + 发布 x4_live.json | VPS crontab `30 10 * * *` |
+| `scripts/desktop/x4_live_cron.sh` | VPS:实盘小仓 + 发布 x4_live.json(btc_px=实时 ticker,gate/SMA=日线收盘) | VPS crontab `*/10 * * * *`(每10分,价格日内刷新) |
 | `scripts/desktop/x4_paper_cron.sh` | VPS:4 条 paper track + 发布 x4_paper.json | VPS crontab `0 10 * * *` |
 | `scripts/desktop/x4_paper_daily.sh` + `com.qount.x4-paper.plist` | (已弃用)Mac 版 paper 跑批,2026-06-15 迁 VPS 后 unload | 保留作回滚参考 |
 

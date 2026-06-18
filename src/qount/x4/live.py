@@ -66,13 +66,28 @@ class LiveConfig:
     # crash before the daily-close exit. NOT a return optimizer. 0 disables.
     chandelier_mult: float = 8.0         # stop = trailing_high − mult × ATR(chandelier_lookback)
     chandelier_lookback: int = 22
-    # S7-mini signal params (§21 deployable = §19.7 validated)
+    # S7-mini signal params (§21 deployable; slow 100->60 per §24 train/test re-optimization:
+    # the slow MA was the one un-swept core factor — faster slow MA enters crypto trends earlier,
+    # a broad robust plateau (slow 40-70 beats baseline both train+test), total +142->+173%,
+    # Sharpe 0.91->1.07, maxDD -28->-26%, train 0.78->1.00. fast=20 already optimal.)
     fast: int = 20
-    slow: int = 100
+    slow: int = 60
     regime_sma: int = 200
     vol_lookback: int = 30               # inverse-vol weight window (= engine combine vol_lookback)
     gate_sym: str = "BTCUSDT"
     gate_sma: int = 200
+    # --- §24 做空闸 (short gate): when the master gate is SHUT (real bear), instead of 100% cash,
+    # open a mirror SHORT book on coins in a confirmed downtrend (close < SMA``short_regime_sma`` AND
+    # SMA``fast`` < SMA``slow``), inverse-vol sized. Risk-off short is FREE additive return (the long is
+    # in cash then). Validated OOS-robust (§24): short risk-off compound +20%/train +18%/test across a
+    # plateau; total +142->+246%. ⚠️ NOT a tail hedge (maxDD ~2pp deeper); it's a return knob. Default
+    # OFF — flipping to True is owner's deliberate arm step (after paper). short_regime_sma=100 (NOT the
+    # long's 200): a short must engage the downtrend earlier. Smaller size + tighter stop (squeeze tail).
+    short_gate: bool = False
+    short_regime_sma: int = 100
+    short_vol_target: float = 0.02
+    short_max_leverage: float = 1.5
+    short_chandelier_mult: float = 3.0
     # --- §21.4 train+test-validated enhancements (此前未接进 live;只改善 chop/熊 regime,牛市中性) ---
     breadth_gate: float | None = 0.5     # risk-on if BTC gate OR ≥50% of universe above its regime_sma
     breadth_combine: str = "or"          # "or" (默认,§21.B) | "and" | "breadth"
@@ -109,6 +124,8 @@ class Order:
     quote_amount: float      # USDT to spend (used for market BUY via quoteOrderQty)
     est_usdt: float
     reason: str = ""
+    reduce_only: bool = False   # swap: True iff this order REDUCES |position| (close long / cover short)
+                                # -> reduceOnly param; opening/increasing a short is a non-reduceOnly SELL
 
 
 @dataclass
@@ -163,15 +180,24 @@ def portfolio_gate_open(bars_by_sym: dict[str, list], cfg: LiveConfig) -> bool:
     return btc_on or breadth_on  # "or" (default)
 
 
-def _coin_windows_scales(bars_by_sym: dict[str, list], cfg: LiveConfig, trend_filter: bool
+def _coin_windows_scales(bars_by_sym: dict[str, list], cfg: LiveConfig, trend_filter: bool,
+                         short: bool = False
                          ) -> tuple[dict[str, list[float]], dict[str, float]]:
     """Per-coin return window (last ``vol_lookback`` daily rets) + vol-parity ``scale`` =
-    ``min(max_leverage, vol_target / atr_pct)``. ``trend_filter`` keeps only coins held by the S7
-    signal (close > SMA``regime_sma`` AND SMA``fast`` > SMA``slow``); False keeps the whole universe."""
+    ``min(max_leverage, vol_target / atr_pct)``. ``trend_filter`` keeps only coins held by the signal;
+    False keeps the whole universe.
 
+    ``short=False`` (long, §21): held iff close > SMA``regime_sma`` AND SMA``fast`` > SMA``slow``; scale
+    uses ``vol_target``/``max_leverage``. ``short=True`` (§24 做空闸 mirror): held iff close <
+    SMA``short_regime_sma`` AND SMA``fast`` < SMA``slow`` (confirmed downtrend, earlier regime window);
+    scale uses the smaller ``short_vol_target``/``short_max_leverage``."""
+
+    regime_sma = cfg.short_regime_sma if short else cfg.regime_sma
+    vol_target = cfg.short_vol_target if short else cfg.vol_target
+    max_leverage = cfg.short_max_leverage if short else cfg.max_leverage
     windows: dict[str, list[float]] = {}
     scale: dict[str, float] = {}
-    need = max(cfg.regime_sma, cfg.slow, cfg.vol_lookback + 1, cfg.atr_lookback + 1)
+    need = max(regime_sma, cfg.slow, cfg.vol_lookback + 1, cfg.atr_lookback + 1)
     for s in cfg.universe:
         bars = bars_by_sym.get(s)
         if not bars:
@@ -179,15 +205,18 @@ def _coin_windows_scales(bars_by_sym: dict[str, list], cfg: LiveConfig, trend_fi
         c = [b.close for b in bars]
         if len(c) < need:
             continue
-        if trend_filter and not (c[-1] > _sma(c, cfg.regime_sma) and _sma(c, cfg.fast) > _sma(c, cfg.slow)):
-            continue
+        if trend_filter:
+            up = c[-1] > _sma(c, regime_sma) and _sma(c, cfg.fast) > _sma(c, cfg.slow)
+            down = c[-1] < _sma(c, regime_sma) and _sma(c, cfg.fast) < _sma(c, cfg.slow)
+            if not (down if short else up):
+                continue
         windows[s] = [c[i] / c[i - 1] - 1.0 for i in range(len(c) - cfg.vol_lookback, len(c))]
         atr = ATR(cfg.atr_lookback)
         a = None
         for b in bars:
             a = atr.update(b)
         atr_pct = (a / c[-1]) if (a is not None and c[-1] > 0) else None
-        scale[s] = min(cfg.max_leverage, cfg.vol_target / atr_pct) if (atr_pct and atr_pct > 0) else 0.0
+        scale[s] = min(max_leverage, vol_target / atr_pct) if (atr_pct and atr_pct > 0) else 0.0
     return windows, scale
 
 
@@ -234,7 +263,11 @@ def target_weights(bars_by_sym: dict[str, list], cfg: LiveConfig) -> list[Target
     no longer sums to 1). Empty -> 100% cash; a coin in ATR warm-up gets scale 0 (flat, no look-ahead)."""
 
     if not portfolio_gate_open(bars_by_sym, cfg):
-        return []
+        if not cfg.short_gate:
+            return []                       # §21 default: risk-off -> 100% cash
+        # §24 做空闸: risk-off -> mirror SHORT book on coins in a confirmed downtrend (NEGATIVE weights)
+        windows, scale = _coin_windows_scales(bars_by_sym, cfg, trend_filter=True, short=True)
+        return [TargetWeight(s, -w) for s, w in _inverse_vol_parity(windows, scale, cfg).items()]
     windows, scale = _coin_windows_scales(bars_by_sym, cfg, trend_filter=True)
     return [TargetWeight(s, w) for s, w in _inverse_vol_parity(windows, scale, cfg).items()]
 
@@ -267,16 +300,17 @@ def apply_chandelier_stops(
     stop_state: dict[str, dict],         # persisted {sym: {"trail_high": float} | {"latched": True}}
     cfg: LiveConfig,
 ) -> tuple[list[TargetWeight], dict[str, dict], list[str]]:
-    """Intraday trailing-Chandelier overlay on the daily target weights (盘中硬止损).
+    """Intraday trailing-Chandelier overlay on the daily target weights (盘中硬止损), **side-aware**.
 
-    For each held coin, ratchet a trailing high from the LIVE price; if the live price falls to
-    ``trail_high − chandelier_mult × ATR(chandelier_lookback)`` the coin is forced flat NOW (a real
-    exit on the next 10-min run, not the daily close) and **latched** so it can't re-enter until the
-    daily signal itself drops the coin (mirrors :func:`run_directional`'s ``ch_latched``: re-arm on
-    signal reset). Cuts both intraday-crash liquidation risk and top-giveback. ``chandelier_mult<=0``
-    disables (returns targets/state unchanged). Returns (adjusted targets, new state, triggered syms)."""
+    LONG leg (weight>0): ratchet a trailing high from the LIVE price; if it falls to
+    ``trail_high − chandelier_mult × ATR`` force flat + **latch**. SHORT leg (weight<0, §24 做空闸): the
+    mirror — ratchet a trailing low; if the price RISES to ``trail_low + short_chandelier_mult × ATR``
+    (a squeeze) force flat + latch. Latched until the daily signal drops the coin (mirrors
+    :func:`run_directional`'s ``ch_latched``). The short uses the tighter ``short_chandelier_mult`` (the
+    squeeze right-tail is sharper). A side whose mult≤0 is left unmanaged. Returns (adjusted targets,
+    new state, triggered syms)."""
 
-    if cfg.chandelier_mult <= 0:
+    if cfg.chandelier_mult <= 0 and cfg.short_chandelier_mult <= 0:
         return targets, stop_state, []
     new_state: dict[str, dict] = {}
     triggered: list[str] = []
@@ -288,18 +322,34 @@ def apply_chandelier_stops(
             adjusted.append(TargetWeight(s, 0.0))
             new_state[s] = {"latched": True}
             continue
-        if t.weight <= 0 or px is None:
+        if t.weight == 0 or px is None:
             adjusted.append(t)
             continue
         atr = _atr_last(daily_bars.get(s, []), cfg.chandelier_lookback)
-        trail_high = max(prev.get("trail_high", px), px)
-        if atr is not None and px <= trail_high - cfg.chandelier_mult * atr:
-            triggered.append(s)
-            adjusted.append(TargetWeight(s, 0.0))   # force exit
-            new_state[s] = {"latched": True}
-        else:
-            adjusted.append(t)
-            new_state[s] = {"trail_high": trail_high}
+        if t.weight > 0:                  # LONG: trail high, stop on a fall
+            if cfg.chandelier_mult <= 0:
+                adjusted.append(t)
+                continue
+            trail_high = max(prev.get("trail_high", px), px)
+            if atr is not None and px <= trail_high - cfg.chandelier_mult * atr:
+                triggered.append(s)
+                adjusted.append(TargetWeight(s, 0.0))
+                new_state[s] = {"latched": True}
+            else:
+                adjusted.append(t)
+                new_state[s] = {"trail_high": trail_high}
+        else:                             # SHORT: trail low, stop on a squeeze (rise)
+            if cfg.short_chandelier_mult <= 0:
+                adjusted.append(t)
+                continue
+            trail_low = min(prev.get("trail_low", px), px)
+            if atr is not None and px >= trail_low + cfg.short_chandelier_mult * atr:
+                triggered.append(s)
+                adjusted.append(TargetWeight(s, 0.0))
+                new_state[s] = {"latched": True}
+            else:
+                adjusted.append(t)
+                new_state[s] = {"trail_low": trail_low}
     # coins not in `targets` (daily signal already dropped them) fall out of new_state -> latch cleared
     return adjusted, new_state, triggered
 
@@ -311,6 +361,7 @@ class StopOrder:
     symbol: str          # ccxt symbol e.g. "BTC/USDT:USDT"
     stop_price: float    # trigger price
     reason: str = ""
+    side: str = "sell"   # "sell" closes a long / "buy" covers a short (closePosition=True)
 
 
 @dataclass(frozen=True)
@@ -327,24 +378,27 @@ class StopOrderPlan:
 
 def chandelier_stop_prices(targets: list[TargetWeight], daily_bars: dict[str, list],
                            stop_state: dict[str, dict], cfg: LiveConfig) -> dict[str, float]:
-    """The intraday Chandelier stop trigger price per held coin = ``trail_high − mult × ATR``, using
-    the ``trail_high`` that :func:`apply_chandelier_stops` just persisted (call AFTER it, with the
-    adjusted targets + updated state). Latched / flat (weight≤0) / ATR-warm-up / disabled coins yield
-    no price. These feed the exchange-native resting STOP_MARKET so a between-poll crash is closed by
-    the exchange — the local stop can only fire on the next 10-min run."""
+    """The intraday Chandelier stop trigger price per held coin, using the trail
+    :func:`apply_chandelier_stops` just persisted (call AFTER it, with the adjusted targets + state).
+    LONG (weight>0): ``trail_high − chandelier_mult × ATR`` (a fall). SHORT (weight<0, §24):
+    ``trail_low + short_chandelier_mult × ATR`` (a squeeze). Latched / flat / ATR-warm-up / disabled-side
+    coins yield no price. Feeds the exchange-native resting STOP_MARKET (the local stop fires only on the
+    next 10-min run)."""
 
-    if cfg.chandelier_mult <= 0:
-        return {}
     out: dict[str, float] = {}
     for t in targets:
-        if t.weight <= 0:
+        atr = _atr_last(daily_bars.get(t.symbol, []), cfg.chandelier_lookback)
+        if atr is None:
             continue
         st = stop_state.get(t.symbol) or {}
-        trail_high = st.get("trail_high")
-        atr = _atr_last(daily_bars.get(t.symbol, []), cfg.chandelier_lookback)
-        if trail_high is None or atr is None:
-            continue
-        out[t.symbol] = trail_high - cfg.chandelier_mult * atr
+        if t.weight > 0 and cfg.chandelier_mult > 0:
+            trail_high = st.get("trail_high")
+            if trail_high is not None:
+                out[t.symbol] = trail_high - cfg.chandelier_mult * atr
+        elif t.weight < 0 and cfg.short_chandelier_mult > 0:
+            trail_low = st.get("trail_low")
+            if trail_low is not None:
+                out[t.symbol] = trail_low + cfg.short_chandelier_mult * atr
     return out
 
 
@@ -353,28 +407,29 @@ def plan_stop_orders(stop_prices: dict[str, float], positions_base: dict[str, fl
     """Idempotent diff of the DESIRED resting stops vs the ones already on the exchange.
 
     ``stop_prices``: {data_sym: trigger px} from :func:`chandelier_stop_prices`. ``positions_base``:
-    {data_sym: base held} — only coins we ACTUALLY hold get a protective stop. ``existing``: {data_sym:
-    {"id","symbol","stopPrice"}} from :func:`fetch_open_stops`. A stop is (re)placed only when there is
-    none yet OR the trigger moved more than ``stop_amend_band`` (the trail ratchets up, so the resting
-    stop must follow) — a held coin's stop already within band is left untouched (no churn). Coins no
-    longer held / latched / gate-shut (absent from the desired set) have their stale stop cancelled.
-    Swap only; ``exchange_stops=False`` desires nothing (so any existing stops are torn down)."""
+    {data_sym: SIGNED base held} — only coins we ACTUALLY hold get a protective stop; a long (>0) gets a
+    SELL stop, a short (<0) a BUY stop (§24). ``existing``: {data_sym: {"id","symbol","stopPrice"}} from
+    :func:`fetch_open_stops`. A stop is (re)placed only when there is none yet OR the trigger moved more
+    than ``stop_amend_band`` (the trail ratchets, so the resting stop must follow) — within band is left
+    untouched (no churn). Coins no longer held / latched / gate-shut (absent from desired) have their
+    stale stop cancelled. Swap only; ``exchange_stops=False`` desires nothing (existing stops torn down)."""
 
     plan = StopOrderPlan()
     if cfg.market_type != "swap":
         return plan
     use = stop_prices if cfg.exchange_stops else {}
-    desired = {s: px for s, px in use.items() if positions_base.get(s, 0.0) > 0 and px > 0}
+    desired = {s: px for s, px in use.items() if positions_base.get(s, 0.0) != 0 and px > 0}
     for s, px in desired.items():
         sym = to_ccxt_symbol(s, cfg.quote, cfg.market_type)
+        side = "sell" if positions_base.get(s, 0.0) > 0 else "buy"   # close long / cover short
         ex = existing.get(s)
         if ex is None:
-            plan.to_place.append(StopOrder(sym, px, reason="arm stop"))
+            plan.to_place.append(StopOrder(sym, px, reason="arm stop", side=side))
             continue
         old = ex.get("stopPrice")
         if old is None or abs(px - old) > cfg.stop_amend_band * max(abs(old), 1e-9):
             plan.to_cancel.append(StopCancel(ex["id"], ex.get("symbol", sym)))
-            plan.to_place.append(StopOrder(sym, px, reason=f"trail {old}->{px:.6g}"))
+            plan.to_place.append(StopOrder(sym, px, reason=f"trail {old}->{px:.6g}", side=side))
     for s, ex in existing.items():
         if s not in desired:
             sym = to_ccxt_symbol(s, cfg.quote, cfg.market_type)
@@ -397,37 +452,42 @@ def compute_orders(
     filters: dict[str, SymbolFilter],  # data_sym -> exchange filter
     cfg: LiveConfig,
 ) -> ReconcileResult:
-    """Diff target dollar allocations vs current holdings into band-gated, capped, lot-rounded orders.
+    """Diff **signed** target dollar allocations vs current holdings into band-gated, capped, lot-rounded
+    orders. ``balances_base`` is signed (``+`` long / ``−`` short on swap).
 
-    ``targets`` carry **absolute** exposure fractions of capital (vol-parity sized), so
-    ``target_notional = weight × capital_usdt`` directly (NO renormalization — that would undo the
-    vol-parity sizing). Total gross is clamped defensively to ``max_leverage × capital_usdt``.
-    Idempotent: a leg already within ``rebalance_band`` of its target produces no order."""
+    ``targets`` carry **absolute** exposure fractions of capital (vol-parity sized; negative = §24 short
+    book), so ``target_notional = weight × capital_usdt`` directly (NO renormalization). Gross is the sum
+    of |exposure|, clamped defensively to ``max_leverage × capital_usdt``. Each leg trades toward its
+    signed target: ``diff>0``→BUY (cover short / open-or-add long), ``diff<0``→SELL (reduce long /
+    open-or-add short). ``reduce_only`` is set when the order moves |position| toward zero WITHOUT
+    crossing — opening/increasing a short is a non-reduceOnly SELL, covering is a reduceOnly BUY. Shorting
+    is swap-only: on spot a SELL is clamped to holdings (no naked short). Idempotent within
+    ``rebalance_band``."""
 
     res = ReconcileResult(gate_open=bool(targets))
     tw = {t.symbol: t.weight for t in targets}
-    # defensive clamp only: scale down proportionally if total gross would exceed the leverage cap
-    gross = sum(tw.values())
+    swap = cfg.market_type == "swap"
+    # defensive clamp only: scale down proportionally if total GROSS (|long|+|short|) exceeds the cap
+    gross = sum(abs(w) for w in tw.values())
     cap = cfg.max_leverage
     if gross > cap and gross > 0:
         tw = {s: w * cap / gross for s, w in tw.items()}
-    # per-BUY deployment cap = the smaller of the configured ceiling and this account's buying power
-    # (capital × leverage); the static ``max_order_usdt`` default was sized for the $415 pilot, so on a
-    # smaller live capital it shrinks with the account rather than staying a stale 12×-capital backstop.
+    # per-order deployment cap = the smaller of the configured ceiling and this account's buying power
+    # (capital × leverage); shrinks with a smaller live capital rather than staying a stale backstop.
     order_cap = min(cfg.max_order_usdt, cfg.capital_usdt * max(cfg.max_leverage, 1.0))
 
     universe = list(dict.fromkeys(list(cfg.universe) + list(balances_base)))
     for s in universe:
         px = prices.get(s, 0.0)
-        cur_usdt = balances_base.get(s, 0.0) * px
-        tgt_usdt = tw.get(s, 0.0) * cfg.capital_usdt
+        cur_usdt = balances_base.get(s, 0.0) * px           # signed
+        tgt_usdt = tw.get(s, 0.0) * cfg.capital_usdt        # signed
         res.target_usdt[s] = tgt_usdt
         res.current_usdt[s] = cur_usdt
         diff = tgt_usdt - cur_usdt
-        denom = max(tgt_usdt, cur_usdt, 1e-9)
+        denom = max(abs(tgt_usdt), abs(cur_usdt), 1e-9)
 
-        # band gate: leave small deviations alone (no churn on $415)
-        if abs(diff) < cfg.rebalance_band * denom and tgt_usdt > 0:
+        # band gate: leave small deviations alone (no churn) — but never skip a full exit (tgt=0)
+        if abs(diff) < cfg.rebalance_band * denom and tgt_usdt != 0:
             res.skipped.append(f"{s}: within band ({cur_usdt:.2f}->{tgt_usdt:.2f})")
             continue
         if abs(diff) < cfg.min_order_usdt:
@@ -438,7 +498,7 @@ def compute_orders(
             continue
 
         f = filters[s]
-        if diff > 0:   # BUY (deploy quote)
+        if diff > 0:   # BUY: cover short and/or open-or-add long
             spend = min(diff, order_cap)
             if spend < max(cfg.min_order_usdt, f.min_notional):
                 res.skipped.append(f"{s}: buy {spend:.2f} below notional floor")
@@ -447,20 +507,27 @@ def compute_orders(
             if est_base < f.min_amount or est_base <= 0:
                 res.skipped.append(f"{s}: buy base {est_base} below min_amount")
                 continue
+            # reduceOnly iff purely covering a short without crossing into a long
+            reduce_only = swap and cur_usdt < 0 and (cur_usdt + spend) <= 1e-9
             res.orders.append(Order(to_ccxt_symbol(s, cfg.quote, cfg.market_type), "buy", est_base,
                                     round(spend, 2), round(spend, 2),
-                                    reason=f"deploy {cur_usdt:.0f}->{tgt_usdt:.0f}"))
-        else:          # SELL (reduce base) — keep the plain cap; never throttle a risk-reducing exit
-            sell_usdt = min(-diff, cfg.max_order_usdt)
+                                    reason=f"{'cover' if cur_usdt < 0 else 'deploy'} {cur_usdt:.0f}->{tgt_usdt:.0f}",
+                                    reduce_only=reduce_only))
+        else:          # SELL: reduce long and/or open-or-add short (swap)
+            sell_usdt = min(-diff, order_cap)
             base_amt = _round_down_step(sell_usdt / px, f.amount_step)
-            # don't try to sell more than we hold
-            base_amt = min(base_amt, _round_down_step(balances_base.get(s, 0.0), f.amount_step))
+            if not swap:   # spot: no naked short — never sell more than held
+                base_amt = min(base_amt, _round_down_step(max(balances_base.get(s, 0.0), 0.0), f.amount_step))
             if base_amt < f.min_amount or base_amt * px < max(cfg.min_order_usdt, f.min_notional):
                 res.skipped.append(f"{s}: sell {base_amt} below notional/min floor")
                 continue
+            # reduceOnly iff purely reducing a long without crossing into a short
+            reduce_only = swap and cur_usdt > 0 and (cur_usdt - base_amt * px) >= -1e-9
+            opening_short = tgt_usdt < cur_usdt <= 0 or tgt_usdt < 0 <= cur_usdt
             res.orders.append(Order(to_ccxt_symbol(s, cfg.quote, cfg.market_type), "sell", base_amt,
                                     0.0, round(base_amt * px, 2),
-                                    reason=f"reduce {cur_usdt:.0f}->{tgt_usdt:.0f}"))
+                                    reason=f"{'short' if opening_short else 'reduce'} {cur_usdt:.0f}->{tgt_usdt:.0f}",
+                                    reduce_only=reduce_only))
     return res
 
 
@@ -580,9 +647,11 @@ def place_orders(exchange, orders: list[Order], *, mode: str = "dry",
     """``mode='dry'`` prints intended orders (no API write). ``mode='live'`` places market orders —
     only proceeds when :func:`x4_live_enabled`.
 
-    Spot: BUY uses quoteOrderQty (spend $X), SELL uses base. Swap (``cfg.market_type=='swap'``):
-    long-only perp — BUY uses base amount, SELL uses base amount with ``reduceOnly`` so it only
-    closes the existing long (never flips short)."""
+    Spot: BUY uses quoteOrderQty (spend $X), SELL uses base. Swap (``cfg.market_type=='swap'``): BUY/SELL
+    use base amount; ``reduceOnly`` is set per-order (``Order.reduce_only``) — True only when the order
+    moves |position| toward zero without crossing (close long / cover short), so an open-or-add SELL
+    short (§24 做空闸) or a regime-flip cross-zero order is NOT reduceOnly (would otherwise be rejected/
+    capped)."""
 
     swap = bool(cfg and cfg.market_type == "swap")
     placed: list[dict] = []
@@ -598,7 +667,7 @@ def place_orders(exchange, orders: list[Order], *, mode: str = "dry",
             continue
         if swap:
             amount = o.base_amount
-            params = {} if o.side == "buy" else {"reduceOnly": True}
+            params = {"reduceOnly": True} if o.reduce_only else {}
         else:
             amount = None if o.side == "buy" else o.base_amount
             params = {"quoteOrderQty": o.quote_amount} if o.side == "buy" else {}
@@ -665,7 +734,7 @@ def sync_stop_orders(exchange, plan: StopOrderPlan, *, mode: str = "dry",
             acted.append({"place": o, "sent": False})
             continue
         print(tag + "  -- SENDING")
-        r = exchange.create_order(o.symbol, "STOP_MARKET", "sell", None, None,
+        r = exchange.create_order(o.symbol, "STOP_MARKET", o.side, None, None,
                                   {"stopPrice": o.stop_price, "closePosition": True})
         acted.append({"place": o, "result": r})
     return acted

@@ -100,6 +100,48 @@ class TestTargetWeights(unittest.TestCase):
         self.assertGreater(tw[0].weight, 0.0)
 
 
+class TestShortGate(unittest.TestCase):
+    """§24 做空闸 pure layer: when the master gate is SHUT and short_gate=True, target_weights returns
+    NEGATIVE weights for coins in a confirmed downtrend (close < SMA short_regime_sma AND fast < slow),
+    sized by the smaller short_* knobs. Default (short_gate=False) keeps the 100%-cash path."""
+
+    def _cfg(self, **over):
+        kw = dict(universe=("BTCUSDT", "ETHUSDT"), regime_sma=5, fast=2, slow=4, vol_lookback=3,
+                  atr_lookback=3, gate_sym="BTCUSDT", gate_sma=5, breadth_gate=None, corr_penalty=False,
+                  short_gate=True, short_regime_sma=5, short_vol_target=0.02, short_max_leverage=1.5)
+        kw.update(over)
+        return LiveConfig(**kw)
+
+    def test_off_stays_cash_when_gate_shut(self):
+        # short_gate=False (default) -> risk-off is still 100% cash (current behavior preserved)
+        bars = {"BTCUSDT": _bars([10, 9, 8, 7, 6, 5]), "ETHUSDT": _bars([8, 7, 6, 5, 4, 3])}
+        self.assertEqual(target_weights(bars, self._cfg(short_gate=False)), [])
+
+    def test_shorts_downtrend_coins_when_gate_shut(self):
+        # BTC falling -> master gate shut; both coins in confirmed downtrend -> both SHORTED (w < 0)
+        bars = {"BTCUSDT": _bars([10, 9, 8, 7, 6, 5]), "ETHUSDT": _bars([8, 7, 6, 5, 4, 3])}
+        tw = target_weights(bars, self._cfg())
+        self.assertEqual({t.symbol for t in tw}, {"BTCUSDT", "ETHUSDT"})
+        self.assertTrue(all(t.weight < 0.0 for t in tw))
+
+    def test_excludes_non_downtrend_coin(self):
+        # gate shut (BTC down) but ETH rising -> ETH not in a downtrend -> only BTC shorted
+        bars = {"BTCUSDT": _bars([10, 9, 8, 7, 6, 5]), "ETHUSDT": _bars([1, 2, 3, 4, 5, 6])}
+        tw = target_weights(bars, self._cfg())
+        self.assertEqual([t.symbol for t in tw], ["BTCUSDT"])
+        self.assertLess(tw[0].weight, 0.0)
+
+    def test_short_uses_smaller_leverage_cap(self):
+        # a near-zero-vol steady downtrend pushes vol_target/atr_pct above the cap -> |w| pins to the
+        # SHORT cap (1.5), proving the short knobs (not the long max_leverage 2.0) size the short book
+        slow_down = [100.0 - 0.01 * i for i in range(8)]
+        cfg = self._cfg(universe=("BTCUSDT",), max_leverage=2.0, short_max_leverage=1.5)
+        tw = target_weights({"BTCUSDT": _bars(slow_down)}, cfg)
+        self.assertEqual(len(tw), 1)
+        self.assertLessEqual(abs(tw[0].weight), cfg.short_max_leverage + 1e-9)
+        self.assertGreater(abs(tw[0].weight), cfg.max_leverage * 0.5)  # genuinely sized, not dust
+
+
 class TestComputeOrders(unittest.TestCase):
     def _setup(self, **over):
         # weights are ABSOLUTE exposure fractions now -> target = weight × capital (no renorm/lev)
@@ -416,15 +458,96 @@ class TestSwapExecution(unittest.TestCase):
         try:
             ex = _MockExchange()
             cfg = LiveConfig(market_type="swap")
-            orders = [Order("BTC/USDT:USDT", "buy", 0.005, 0.0, 300.0),
-                      Order("BTC/USDT:USDT", "sell", 0.002, 0.0, 120.0)]
+            # a long-closing SELL carries reduce_only=True (set by compute_orders); an open-long BUY does not
+            orders = [Order("BTC/USDT:USDT", "buy", 0.005, 0.0, 300.0, reduce_only=False),
+                      Order("BTC/USDT:USDT", "sell", 0.002, 0.0, 120.0, reduce_only=True)]
             place_orders(ex, orders, mode="live", cfg=cfg)
             buy, sell = ex.sent
             self.assertEqual(buy[3], 0.005)        # BUY by base amount (not quoteOrderQty)
             self.assertEqual(buy[4], {})
-            self.assertEqual(sell[4], {"reduceOnly": True})   # SELL only closes the long
+            self.assertEqual(sell[4], {"reduceOnly": True})   # reduceOnly comes from Order.reduce_only
         finally:
             os.environ.pop("QOUNT_X4_LIVE_ENABLE", None)
+
+
+class TestShortExecution(unittest.TestCase):
+    """§24 做空闸 execution layer: signed reconcile (open/cover short), reduceOnly direction, short
+    exchange stop side. All swap-only; spot never naked-shorts."""
+
+    def _cfg(self, **over):
+        kw = dict(universe=("BTCUSDT",), capital_usdt=400.0, rebalance_band=0.25, min_order_usdt=6.0,
+                  max_order_usdt=400.0, market_type="swap", max_leverage=2.0)
+        kw.update(over)
+        return LiveConfig(**kw)
+
+    def _filt(self):
+        return {"BTCUSDT": SymbolFilter(amount_step=1e-5, min_amount=1e-5, min_notional=5.0)}
+
+    def test_open_short_from_flat_sells_beyond_holdings(self):
+        # swap: target −0.5 (short $200) from flat -> SELL $200 (NOT clamped to 0 holdings), not reduceOnly
+        cfg = self._cfg()
+        res = compute_orders([TargetWeight("BTCUSDT", -0.5)], {}, {"BTCUSDT": 60_000.0}, self._filt(), cfg)
+        self.assertEqual(len(res.orders), 1)
+        o = res.orders[0]
+        self.assertEqual(o.side, "sell")
+        self.assertFalse(o.reduce_only)                 # opening a short is NOT reduceOnly
+        self.assertAlmostEqual(o.base_amount * 60_000.0, 200.0, delta=1.0)
+
+    def test_spot_never_naked_shorts(self):
+        # same target on spot -> clamped to 0 holdings -> no order (can't short spot)
+        cfg = self._cfg(market_type="spot")
+        res = compute_orders([TargetWeight("BTCUSDT", -0.5)], {}, {"BTCUSDT": 60_000.0}, self._filt(), cfg)
+        self.assertEqual(res.orders, [])
+
+    def test_cover_short_is_reduce_only_buy(self):
+        # holding −$200 short, target flat -> BUY $200 to cover, reduceOnly
+        cfg = self._cfg()
+        bal = {"BTCUSDT": -200.0 / 60_000.0}
+        res = compute_orders([TargetWeight("BTCUSDT", 0.0)], bal, {"BTCUSDT": 60_000.0}, self._filt(), cfg)
+        self.assertEqual(len(res.orders), 1)
+        o = res.orders[0]
+        self.assertEqual(o.side, "buy")
+        self.assertTrue(o.reduce_only)
+
+    def test_flip_short_to_long_crosses_zero_not_reduce_only(self):
+        # −$200 short -> +$200 long: BUY $400 crossing zero must NOT be reduceOnly (would cap at cover)
+        cfg = self._cfg()
+        bal = {"BTCUSDT": -200.0 / 60_000.0}
+        res = compute_orders([TargetWeight("BTCUSDT", 0.5)], bal, {"BTCUSDT": 60_000.0}, self._filt(), cfg)
+        o = res.orders[0]
+        self.assertEqual(o.side, "buy")
+        self.assertFalse(o.reduce_only)
+
+    def test_gross_clamp_counts_short_magnitude(self):
+        # one long 0.8 + one short −0.8 => gross |0.8|+|0.8|=1.6 > cap 1.0 -> scaled down
+        cfg = self._cfg(universe=("BTCUSDT", "ETHUSDT"), max_leverage=1.0)
+        filt = {"BTCUSDT": SymbolFilter(1e-5, 1e-5, 5.0), "ETHUSDT": SymbolFilter(1e-4, 1e-4, 5.0)}
+        prices = {"BTCUSDT": 60_000.0, "ETHUSDT": 3_000.0}
+        res = compute_orders([TargetWeight("BTCUSDT", 0.8), TargetWeight("ETHUSDT", -0.8)], {}, prices, filt, cfg)
+        self.assertLessEqual(sum(abs(v) for v in res.target_usdt.values()), cfg.max_leverage * cfg.capital_usdt + 1e-6)
+
+    def test_place_orders_reduce_only_per_order(self):
+        import os
+        os.environ["QOUNT_X4_LIVE_ENABLE"] = "1"
+        try:
+            ex = _MockExchange()
+            cfg = self._cfg()
+            orders = [Order("BTC/USDT:USDT", "sell", 0.003, 0.0, 180.0, reduce_only=False),  # open short
+                      Order("BTC/USDT:USDT", "buy", 0.003, 0.0, 180.0, reduce_only=True)]     # cover
+            place_orders(ex, orders, mode="live", cfg=cfg)
+            sell, buy = ex.sent
+            self.assertEqual(sell[4], {})                       # open short: no reduceOnly
+            self.assertEqual(buy[4], {"reduceOnly": True})      # cover: reduceOnly
+        finally:
+            os.environ.pop("QOUNT_X4_LIVE_ENABLE", None)
+
+    def test_short_exchange_stop_is_buy_side(self):
+        # a short position (neg base) gets a BUY closePosition stop above the trail
+        cfg = self._cfg(exchange_stops=True)
+        stop_px = {"BTCUSDT": 103.0}
+        plan = plan_stop_orders(stop_px, {"BTCUSDT": -0.01}, {}, cfg)
+        self.assertEqual(len(plan.to_place), 1)
+        self.assertEqual(plan.to_place[0].side, "buy")
 
 
 class TestChandelierStops(unittest.TestCase):
@@ -478,6 +601,30 @@ class TestChandelierStops(unittest.TestCase):
         out, st, trig = apply_chandelier_stops([], {"ETHUSDT": 200.0}, self._bars(),
                                                {"ETHUSDT": {"latched": True}}, self._cfg())
         self.assertNotIn("ETHUSDT", st)
+
+    # ---- §24 short-side (mirror): trail the LOW, stop on a squeeze (rise) ----
+    def test_short_triggers_on_squeeze(self):
+        # short, trail_low 100, ATR 1, short stop = 100 + 3×1 = 103; live 104 >= 103 -> flat + latched
+        out, st, trig = apply_chandelier_stops([TargetWeight("ETHUSDT", -0.5)], {"ETHUSDT": 104.0},
+                                               self._bars(), {"ETHUSDT": {"trail_low": 100.0}},
+                                               self._cfg(short_chandelier_mult=3.0))
+        self.assertEqual(trig, ["ETHUSDT"])
+        self.assertEqual(out[0].weight, 0.0)
+        self.assertTrue(st["ETHUSDT"]["latched"])
+
+    def test_short_no_trigger_below_squeeze_stop(self):
+        out, st, trig = apply_chandelier_stops([TargetWeight("ETHUSDT", -0.5)], {"ETHUSDT": 102.0},
+                                               self._bars(), {"ETHUSDT": {"trail_low": 100.0}},
+                                               self._cfg(short_chandelier_mult=3.0))
+        self.assertEqual(trig, [])
+        self.assertEqual(out[0].weight, -0.5)
+        self.assertEqual(st["ETHUSDT"]["trail_low"], 100.0)   # min(100, 102)
+
+    def test_short_trail_low_ratchets_down(self):
+        out, st, _ = apply_chandelier_stops([TargetWeight("ETHUSDT", -0.5)], {"ETHUSDT": 90.0},
+                                            self._bars(), {"ETHUSDT": {"trail_low": 100.0}},
+                                            self._cfg(short_chandelier_mult=3.0))
+        self.assertEqual(st["ETHUSDT"]["trail_low"], 90.0)
 
 
 class TestUnreachableCoins(unittest.TestCase):

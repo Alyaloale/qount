@@ -39,6 +39,7 @@ from qount.x4.live import (  # noqa: E402
     fetch_open_stops,
     place_orders,
     plan_stop_orders,
+    portfolio_gate_open,
     prepare_swap,
     sync_stop_orders,
     target_weights,
@@ -65,20 +66,42 @@ def _load_universe(cfg: LiveConfig):
     return {s: [by_sym[s][t] for t in common] for s in by_sym}
 
 
+def _perp_usdt_balance(ex) -> float | None:
+    """Live USDT wallet balance of the (perp) account — the capital base for ``QOUNT_X4_CAPITAL=auto``.
+    Returns None on a read failure so the caller can refuse to size against an unknown balance."""
+    try:
+        bal = ex.fetch_balance()
+    except Exception:
+        return None
+    u = bal.get("USDT") or {}
+    v = u.get("total")
+    return float(v) if v not in (None, "") else None
+
+
 def main(argv: list[str]) -> int:
     mode = argv[1] if len(argv) > 1 else "dry"
     if mode not in ("dry", "live"):
         raise SystemExit("usage: x4_live.py [dry|live]")
-    # capital overridable via env (C×D orchestrator sets the 60% trend slice); else LiveConfig default
-    _cap = float(os.environ.get("QOUNT_X4_CAPITAL", "0") or 0)
-    cfg = LiveConfig(capital_usdt=_cap) if _cap > 0 else LiveConfig()
+    # capital: QOUNT_X4_CAPITAL = "auto" -> use the live account USDT wallet balance each run (本账户全部
+    # 余额可用,随盈亏自动伸缩,修掉硬编码本金在回撤后按虚高额下单的隐患); = <number> -> fixed cap (旧行为);
+    # unset -> LiveConfig default. §24 做空闸 arm: QOUNT_X4_SHORT_GATE=1 turns on the risk-off short book.
+    _cap_raw = os.environ.get("QOUNT_X4_CAPITAL", "").strip()
+    _cap_auto = _cap_raw.lower() == "auto"
+    _cap = 0.0 if _cap_auto else float(_cap_raw or 0)
+    _short = os.environ.get("QOUNT_X4_SHORT_GATE", "").lower() in ("1", "true", "yes")
+    _base = dict(short_gate=True) if _short else {}
+    cfg = LiveConfig(capital_usdt=_cap, **_base) if _cap > 0 else LiveConfig(**_base)
 
     aligned = _load_universe(cfg)
     last_date = aligned[cfg.gate_sym][-1].date
     tw = target_weights(aligned, cfg)
-    gate_open = bool(tw)
-    print(f"[X4-LIVE {mode}] bar {last_date}  gate={'OPEN' if gate_open else 'SHUT (flat -> cash)'}  "
-          f"capital ${cfg.capital_usdt:.0f}  universe {len(cfg.universe)} coins")
+    master_open = portfolio_gate_open(aligned, cfg)   # the real BTC/breadth gate (NOT bool(tw))
+    shorting = bool(tw) and not master_open           # §24: risk-off short book active
+    gate_open = master_open
+    _state = "OPEN (long)" if master_open else ("SHUT (short book)" if shorting else "SHUT (flat -> cash)")
+    _cap_disp = "auto (账户余额,稍后解析)" if _cap_auto else f"${cfg.capital_usdt:.0f}"
+    print(f"[X4-LIVE {mode}] bar {last_date}  gate={_state}  "
+          f"capital {_cap_disp}  universe {len(cfg.universe)} coins")
     if tw:
         print("  target weights: " + ", ".join(f"{t.symbol}={t.weight:.2f}" for t in tw))
 
@@ -101,7 +124,8 @@ def main(argv: list[str]) -> int:
                 for s in cfg.universe:
                     if sym == to_ccxt_symbol(s, cfg.quote, cfg.market_type):
                         amt = float(p.get("contracts") or 0.0)
-                        balances[s] = amt if (p.get("side") or "long") == "long" else 0.0
+                        # SIGNED: short = negative (§24 做空闸 reconcile needs the sign to cover/flip)
+                        balances[s] = -amt if (p.get("side") or "long") == "short" else amt
         else:
             bal = ex.fetch_balance()
             for s in cfg.universe:
@@ -117,6 +141,17 @@ def main(argv: list[str]) -> int:
         if mode == "live" and x4_live_enabled():
             print("  [ALERT] live+armed but cannot read positions (need a FUTURES-enabled API key for"
                   " swap) -> SKIP trading this run (no blind fills).")
+
+    # auto-capital: size against the LIVE USDT wallet balance (本账户全部余额可用,随盈亏伸缩). Resolved
+    # here (after the exchange is live) — capital does NOT affect target_weights/universe, only sizing.
+    if _cap_auto:
+        bal_usdt = _perp_usdt_balance(ex)
+        if bal_usdt and bal_usdt > 0:
+            cfg = dataclasses.replace(cfg, capital_usdt=bal_usdt)
+            print(f"  [capital] auto = 账户 USDT 余额 ${bal_usdt:.2f} (随盈亏自动伸缩)")
+        else:
+            holdings_ok = False   # refuse to size against an unknown balance (same guard as holdings)
+            print("  [ALERT] auto-capital 无法读取 USDT 余额 -> SKIP trading this run (不按未知本金下单).")
 
     # 盘中硬止损: trailing Chandelier on the LIVE price (intraday), persisted across the 10-min runs.
     stops_path = STATE_DIR / "stops.json"
@@ -167,7 +202,7 @@ def main(argv: list[str]) -> int:
         existing_stops = fetch_open_stops(ex, list(cfg.universe), cfg) if mode == "live" else {}
         stop_plan = plan_stop_orders(stop_px, balances, existing_stops, cfg)
         sync_stop_orders(ex, stop_plan, mode=mode, cfg=cfg)
-        resting_stops = {s: round(px, 6) for s, px in stop_px.items() if balances.get(s, 0.0) > 0}
+        resting_stops = {s: round(px, 6) for s, px in stop_px.items() if balances.get(s, 0.0) != 0}
         if resting_stops:
             print(f"  [stop-guard] 交易所兜底止损 {len(resting_stops)} 腿: "
                   + ", ".join(f"{s}@{px:.6g}" for s, px in resting_stops.items()))
@@ -179,15 +214,17 @@ def main(argv: list[str]) -> int:
     btc_close = btc_closes[-1]
     btc_px = prices.get(cfg.gate_sym, btc_close)   # live last for display; fall back to the close
     btc_sma = sum(btc_closes[-cfg.gate_sma:]) / cfg.gate_sma if len(btc_closes) >= cfg.gate_sma else 0.0
-    deployed = sum(res.current_usdt.values())
-    holdings = [{"symbol": s, "value": round(res.current_usdt[s], 2),
+    deployed = sum(abs(v) for v in res.current_usdt.values())   # GROSS notional (long + |short|)
+    holdings = [{"symbol": s, "value": round(res.current_usdt[s], 2),   # signed (short = negative)
                  "weight": round({t.symbol: t.weight for t in tw}.get(s, 0.0), 4)}
-                for s in cfg.universe if res.current_usdt.get(s, 0.0) > 0.01]
+                for s in cfg.universe if abs(res.current_usdt.get(s, 0.0)) > 0.01]
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     rec = {
         "ts": dt.datetime.now(dt.UTC).isoformat(), "bar": last_date, "mode": mode,
         "gate_open": gate_open, "armed": x4_live_enabled(),
+        "short_gate": cfg.short_gate, "shorting": shorting,   # §24 做空闸 状态
+        "slow": cfg.slow,   # §24.1 trend slow MA (100->60)
         "market_type": cfg.market_type, "max_leverage": cfg.max_leverage,
         "vol_target": cfg.vol_target, "chandelier_mult": cfg.chandelier_mult,
         "stopped": stopped, "leverage_unsafe": sorted(unsafe),

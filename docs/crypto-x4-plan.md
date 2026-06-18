@@ -158,6 +158,90 @@
 
 ---
 
+## 24. 做空闸(2026-06-18)——尾对冲证伪,但收益旋钮 OOS-robust 成立(空头 regime 窗口=100 非 200)
+
+**命题(owner 授权设计)**:现状 live 是 long-only + 大盘闸,总闸 SHUT(BTC<200SMA 且 breadth 窄=真熊)
+时全仓现金。S7 砍不掉的 **−30% 尾 = "crypto-beta 一起跌"**。做空闸 = 把闸 SHUT 那段"死现金"换成镜像
+空头组合(只在熊 regime 做空 `close<SMA200 且 fast<slow` 的币,逆波动率加权),目标**对冲掉那个 beta 尾**。
+语义=**A 大盘反转闸**(非 B 对称双向);承 §11.2-11.3「做空全灾难」从单策略升到 regime-闸层级。
+
+**工程**:`scripts/research/x4_short_gate.py`(只读)。不动引擎拼装,但把 long 基线**精确钉死**到
+`run_trend_portfolio`(最大相对偏差 `0.00e+00`),保证唯一变量=「闸 SHUT 那步:现金 vs 空头组合」。诚实口径:
+funding 计入(空头收正费率,engine `accrue_funding` 带符号);TOP7、2021-01..2026-06、taker+滑点已扣。
+为测「对称止损能否救活空头」,**引擎补了对称空头侧 chandelier**(`run_directional`:多头 trail
+`high−mult×ATR`、空头镜像 trail `low+mult×ATR` 触发 squeeze 止损 + 对称 latch/re-arm;+2 单测,
+long-only 行为零改动,x4 共 **229 全绿**)。
+
+**结果(funding-adjusted,vs 现状 +142.0%/0.91/−28.2%)**:
+
+| 空头变体 | total | Sharpe | maxDD | risk-off 子区间复利 |
+|---|---|---|---|---|
+| 对称 3%/2x · 无止损 | +86.2% | 0.56 | **−46.1%** | −23.0% |
+| 保守 2%/1.5x · 无止损 | +105.4% | 0.68 | −35.0% | −15.1% |
+| 保守 + SMA200 下行确认 | +115.1% | 0.71 | −36.8% | −11.1% |
+| 对称 + 对称止损 8x | +96.9% | 0.59 | −42.7% | −18.7% |
+| **对称 + 对称止损 3x** | **+162.6%** | 0.88 | −34.5% | **+8.5%** |
+| 全料(保守+下行+止损3x) | +131.3% | 0.82 | −33.5% | −4.4% |
+
+上表的空头 sleeve **沿用了多头的 `regime_sma=200`**(抄大盘闸窗口)——这是个错锚:空头要更早进下跌段,
+200 太晚 = 跌势确认时大半已走、空在临近反弹处。这版结论(尾对冲死,3x 止损只换来 Sharpe 中性 +20pp)成立但**不是
+全貌**;owner 追问「优化因子参数,只要空头别亏就行(闸 SHUT 时多头本在现金,空头净≥0 即纯加法)」后,补了
+**因子参数扫描 + train(≤2023)/test(≥2024) 双段防过拟合**(判据=两段 SHUT 段都 ≥0 才算真白捡,只 train≥0 是幻觉)。
+
+**关键修正发现(命题翻转)**:空头的 `regime_sma` 从 200→**100** 是决定性杠杆,且是**宽平台不是尖峰**——
+regime 60..200 **每一档** train 和 test 的 SHUT 段复利**都为正**(宽峰在 100~150;200 是最弱角 +0.7/+5.1),
+stop 2..8x 双段也全正(3x 最佳;0=无止损 train 翻负)。两个杠杆都机制自洽(空头早进 + 紧止损盖逼空)、宽平台,
+非 in-sample 针。**27/96 组通过「train 且 test 双段 SHUT≥0」**。可部署平台中心 = `fast20/slow100 + regime100 +
+止损3x + size2%/1.5x`:**train SHUT +20.2% / test SHUT +18.9%(双段都赚)、全段 total +245.8%、maxDD −30.2%**。
+
+**两条诚实结论(分开)**:
+- **① 收益旋钮 = 成立且 OOS 稳健。** 闸 SHUT 时多头在现金,空头那段两段都净赚 ~+20% = **纯加法**,total
+  +142%→+246%。owner 的「不亏就能赚」在收益流上兑现且前向稳健。**先前(regime 200)的"证伪"是锚错窗口所致,
+  太草率,此处修正。**
+- **② 尾对冲 = 仍证伪。** 那个 −28% 是 risk-ON(多头侧)事件,做空闸只在闸 SHUT 启用、**结构上够不着它**;
+  几乎整个参数平台 maxDD 都在 −29~33% = **始终比现状 −28.2% 深 ~1-5pp**(空头叠的是 risk-off 段自己的逼空中途
+  回撤,虽每回合净赚但中途坑把全局 max 顶深 ~2pp)。**所以做空闸是收益旋钮,不是尾护盾。**
+
+**判决**:**作尾对冲=死;作收益旋钮=OOS-robust 真增量(+100pp total),代价 = 尾深 ~2pp + 一整套空头永续运营
+(逼空/funding/第二本账/带符号仓位 reconcile/空头侧交易所止损)。** 注:平台虽宽且机制自洽,仍是单一 5 年
+crypto 窗口(2022 主导熊)校准的;regime~100 优于 200 的机制稳,但具体最优档对这段回撤历史敏感,前向按平台中心取。
+
+### 24.1 多头同款再优化 + 合并(owner:「多头能不能同样优化避免过拟合,能则一同推进 live」)
+
+用做空闸同款的 train/test 双段闸**真扫**多头核心因子(fast/slow/regime,非再动外围 breadth/ADX/斜率)——
+发现**多头也有一条没扫过的核心杠杆**:slow MA `100→~60`。**是平台不是尖峰**:slow 40-70 整段 Sharpe ≥0.94、
+maxDD ≤ 基线,中心 50-60 双段都过基线(slow60:train 1.00/test 1.12,total +172.8%,maxDD −26.1%)。fast=20 已最优
+(15 train 垮/25 test 垮)。机制 = §14「crypto 趋势奖励更快参数」;前几轮一直动外围、守着预注册 20/100,从没干净
+重扫核心 slow MA(7 币 funding-adjusted + 双段闸),所以"到顶"漏了这条。诚实锚仍用 train(0.78→1.00),test 1.1+ 是
+近期牛灌高。**两优化的尾效应互相抵消**(多头优化压浅尾、做空闸压深尾):
+
+| 配置 | total | Sharpe | maxDD | train | test |
+|---|---|---|---|---|---|
+| ① 现状(long100,熊→现金) | +142.0% | 0.91 | −28.2% | 0.78 | 1.01 |
+| ② 仅多头优化(long60) | +172.8% | 1.07 | −26.1% | 1.00 | 1.12 |
+| ③ 仅做空闸(long100+空 regime100/3x) | +245.8% | 1.16 | −30.2% | 1.04 | 1.27 |
+| **④ 两者合并(long60+空)** | **+289.8%** | **1.32** | **−27.7%** | **1.24** | **1.38** |
+
+### 24.2 实现落地(2026-06-18,两优化一同推进 live,全藏 `short_gate=False` 默认关后)
+
+- **多头 slow 100→60**:`LiveConfig.slow` 默认改(已验证平台,需 scp 重部署 VPS;非旋钮,改即生产生效)。
+- **做空闸 = 默认关旋钮**(`short_gate=False` + `short_regime_sma=100`/`short_vol_target=0.02`/`short_max_leverage=1.5`/
+  `short_chandelier_mult=3.0`):arm 前生产行为**字节级不变**。
+  - **纯权重层**:`target_weights` 闸 SHUT 且 `short_gate` → 镜像空头(负权重),`_coin_windows_scales(short=True)`
+    用反向 regime 门 + 更小 size。
+  - **带符号执行层**:`compute_orders` 带符号 reconcile(开空/平空/翻仓 cross-zero),`Order.reduce_only` 按
+    "是否向零收敛不穿越"判定(开空 SELL 非 reduceOnly、平空 BUY reduceOnly),spot 永不裸卖空;`place_orders`
+    按 `reduce_only` 下 param;`apply_chandelier_stops`/`chandelier_stop_prices` 空头镜像(trail low + squeeze 止损);
+    `plan_stop_orders` 空头挂 BUY closePosition 止损;runner `x4_live.py` 持仓读成**带符号**(空头为负)。
+  - **引擎对称空头侧 chandelier**(§24 已落 `run_directional`)。
+- **测试**:x4 共 **243 全绿**(+做空闸纯层 4 + 执行层/空头止损 10;旧 `test_swap_orders` 更新为 per-order reduceOnly
+  语义);grid106/rv69 回归绿。端到端 dry 验:`short_gate=False`→闸 SHUT 0 单(现状);`True`→闸 SHUT 出开空 SELL、
+  持空仓 flip 出 reduceOnly BUY 平空。
+- **待 owner**:① scp 重部署 VPS(含 long60);② 先 paper/dry 观察做空闸数日;③ 设 `short_gate=True` arm(arm 是
+  owner 刻意动作,非默认)。**当前 BTC<200MA 闸 SHUT,一旦 arm 即会在真账户开空仓**——务必先 paper 验。
+
+---
+
 ## 22. Phase 2:动态币池引擎 + walk-forward(2026-06-14)——严格无前视下,动态选币证伪,固定 TOP7 胜
 
 owner(以研究负责人身份)定路线图 3→2→1:先上线基线、**再做动态币池引擎(Phase 2,他的 ★★★★★)**、最后才考虑
@@ -1113,6 +1197,7 @@ S2 样本内调参、2021 顶部年是不可过拟合的残余)。脚本配置�
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-06-18 | 研究(做空闸 §24) | **尾对冲证伪,但收益旋钮 OOS-robust 成立(空头 regime 窗口=100 非 200)**。owner 授权设计:闸 SHUT(真熊)时把"死现金"换成镜像空头组合。`x4_short_gate.py`(只读,long 基线钉死 `run_trend_portfolio` 偏差 0.00);引擎补**对称空头侧 chandelier**(`run_directional` 多头 high-stop/空头 low+squeeze-stop,+2 单测,long-only 零改动,x4 共 **229 绿**)。funding 计入(空头收正费率)。**初版(空头抄多头 regime200)= 尾对冲死**:无止损空头 risk-off 复利 −11~23%,3x 止损翻 +8.5%/总 +162.6% 但 maxDD −34.5% 仍比现状(+142%/0.91/−28.2%)深。**owner 追问「优化参数只要空头别亏」→ 补因子扫描 + train/test 双段防过拟合 → 命题翻转**:空头 `regime_sma` 200→**100** 是决定性杠杆且**宽平台**(regime 60..200 每档 train+test 的 SHUT 段都正、200 是最弱角,stop 2..8x 双段全正;27/96 组双段 SHUT≥0)。可部署中心 `20/100+regime100+止损3x+2%/1.5x`=train SHUT +20.2%/test +18.9%(双段都赚)/total **+245.8%**/maxDD −30.2%。**两结论分开:①收益旋钮成立且 OOS 稳健**(闸 SHUT 多头在现金→空头净赚=纯加法,+142→+246%,先前 regime200 的"证伪"是锚错窗口太草率,修正);**②尾对冲仍死**(−28% 是 risk-ON 多头事件、空头够不着,整个平台 maxDD −29~33% 始终比现状深 ~2pp)。**做空闸=收益旋钮非尾护盾**。**§24.1 多头同款再优化**:用同款双段闸真扫多头核心因子,发现没扫过的核心杠杆 slow MA 100→**60**(平台 40-70,中心 slow60 train 1.00/test 1.12/total +172.8%/maxDD −26.1%;前几轮只动外围守预注册 20/100 漏了它,机制=§14 快参更好)。**合并 ④(long60+空 regime100/3x)= total +289.8%/Sharpe 1.32/maxDD −27.7%/train 1.24**(两优化尾效应互抵)。**§24.2 一同落地 live**:多头 slow→60 默认改(需重部署);**做空闸全藏 `short_gate=False` 默认关旋钮**(arm 前生产字节级不变)——纯权重层(`target_weights` 负权重+`_coin_windows_scales(short)` 反向 regime 门)+带符号执行层(`compute_orders` 带符号 reconcile/开空平空 cross-zero、`Order.reduce_only` 向零收敛判定、spot 不裸空、`place_orders` per-order reduceOnly、空头镜像盘中/交易所止损 buy closePosition、runner 持仓读带符号)。**x4 共 243 全绿**(+14 测)/grid106/rv69 绿;端到端 dry 验 off→0 单、on→开空 SELL+平空 reduceOnly BUY。**待 owner:重部署 VPS + paper 验数日 + 设 short_gate=True arm(当前闸 SHUT,arm 即真账户开空)**。 |
 | 2026-06-18 | 研究(外部 review T3-8) | **动态 vol_target = 未过 §21.4 alpha 门,但是有效降回撤旋钮(默认关,不接 live)**。reviewer 建议组合回撤>15% 把 vt 3%→2% 降仓。落 `run_trend_portfolio(dd_derisk_threshold/dd_derisk_vol_target=0)` 组合层敞口 haircut(回撤超阈值按 derisk_vt/vt 缩敞口,因果:DD 测到 bar t 定 t→t+1 敞口;敞口~0.5x 在 cap 下→组合层乘子≈per-sleeve 重 vol-target),+4 单测(x4 共 227 绿)。funding-adjusted train/test:DD15→2%=+121.6%/0.87/**−24.1%**(train0.72)、DD20→2%=+134.6%/0.89/−26.4%(test0.98)、DD15→1.5%=+103.2%/0.82/**−21.9%**。**三档 Sharpe 全 ≤ 基线 0.91、train/test 无一双打过 → FAIL alpha 门**;但**真砍 maxDD**(−28%→−24%/−22%),代价 −20~39pp 总收益 = **风控/sizing 旋钮非 alpha(同 ADX)**。**caveat**:回测是现货等价,但 live 是 **2x 永续尾 ~−42%**,这档砍 4~6pp DD + 降清算风险在杠杆实盘里比现货回测显示的更值——保留默认关,**owner 怕尾可开(同 ADX≥20「怕回撤可开」),不作默认**。**元结论再确认**:§21.4 五增强 + T3-4 斜率 + T3-8 动态vt 全非 alpha → baseline 已在天花板。**owner 拍板归档剩余 T3(平仓冷却 / 周级再平衡)——入场类滤器与斜率同类、几乎必同命,不再空耗算力**;精力转向真利润杠杆=carry 腿注资(T2-3)。外部 review 的可测增量到此收口:真增量只有 T2-2(已上)+ T2-3(待注资),其余全是已测的风控旋钮或非 alpha。 |
 | 2026-06-18 | 研究(外部 review T3-4) | **MA200 斜率确认 = 证伪(未过 §21.4 预注册门),live 不动**。reviewer 头号增量=总闸除 `close>SMA200` 外再要求 SMA200 上行(`SMA[t]≥SMA[t−lookback]`),滤"假站上"。落纯件 `strategies.sma_slope_up_mask` + `run_trend_portfolio(master_gate_slope=0)` 默认关开关(与 BTC 闸 AND,breadth-OR 仍可救),+7 单测(x4 共 223 绿)。funding-adjusted TOP7 train(≤23)/test(≥24) vs LIVE 基线(+142.0%/0.91,train0.78/test1.01):**+斜率5d=+123.2%/0.84(train 掉到 0.65)、+斜率20d=+136.2%/0.89(train0.77/test0.99 双微降,maxDD −28.2→−29.6)**——判据「train 且 test 都打过基线」两变体都没做到。机制:breadth-OR 已处理 chop/熊,斜率确认只是延迟入场丢"鱼头",滤假突破省的不够补。**加入「已测·非 alpha」(同 ADX);`master_gate_slope` 保留默认关研究开关,不接 live。再证 §21.4 元结论=baseline 近天花板。** |
 | 2026-06-18 | ops(外部 review T2-3) | **carry 腿验到"钱到即跑"+ 算清最小注资额(owner 动作待注资)**。carry leg `rv/live.py` 在 VPS dry 跑通:识别活跃合约 `BTCUSD_260626/ETHUSD_260626`、算出 delta-neutral 四腿(各买现货+空 dated),只差注资+arm。**注资规格**:carry 与趋势的 USDⓈ-M 钱包**分离**,需 ① **现货钱包 USDT**(买现货多腿)② **COIN-M 交割钱包**存 BTC/ETH 币(空反向合约的保证金)③ **API key 加 SPOT+COIN-M(delivery)权限**(当前期货 only key 无交割权)。**额度**(L=3:per-pair N=carry_capital×0.375,pair 在 N<合约面值跳过,ETHUSD=$10/BTCUSD=$100):**ETH-only 需 carry slice≥~$27、BTC+ETH 需≥~$267**;per-pair 拆 spot=N + COIN-M 保证金=N/3。经 cxd 编排则 carry=总本金×40%(QOUNT_CXD_CAPITAL),要 BTC+ETH 需总≥~$667。**为何现在注**:当前趋势闸 SHUT(BTC<200MA)空仓,carry 正是该空窗的唯一正收益腿(C×D corr −0.196,§20),价值在压舱石不在独立薄 yield(~4.7%/yr)。 |
