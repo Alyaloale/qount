@@ -235,6 +235,37 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
 
 .foot { max-width: 920px; margin: 0 auto; padding: 0 24px 44px; color: var(--txt3); font-size: 12px; text-align: center; line-height: 1.7; }
 
+/* ===== 侧栏 nav 项内 sparkline ===== */
+.nav-item { flex-direction: column; align-items: stretch; gap: 7px; }
+.ni-top { display: flex; align-items: center; gap: 11px; }
+.ni-label { flex: 0 1 auto; }
+.ni-spark { display: block; height: 22px; opacity: .85; }
+.ni-spark .spk { width: 100%; height: 22px; display: block; }
+.nav-item.active .ni-spark { opacity: 1; }
+
+/* ===== 概览汇总卡 ===== */
+.sumcard { background: var(--card); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 18px; }
+.sc-main { padding-bottom: 18px; border-bottom: 1px solid var(--line-soft); margin-bottom: 18px; }
+.sc-k { color: var(--txt3); font-size: 12.5px; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.sc-v { font-size: 36px; font-weight: 700; letter-spacing: -1px; font-family: var(--mono); line-height: 1; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.sc-v .cur { font-size: 18px; color: var(--txt3); margin-right: 2px; }
+.sc-chg { font-size: 14px; font-weight: 600; font-family: var(--mono); }
+.sc-cells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.sc-cell { }
+.sc-ck { color: var(--txt3); font-size: 12px; margin-bottom: 8px; }
+.sc-cv { font-size: 20px; font-weight: 650; font-family: var(--mono); letter-spacing: -.3px; }
+.sc-cv.sc-sum { display: flex; gap: 14px; flex-wrap: wrap; font-size: 18px; }
+.sc-cs { font-size: 12px; margin-top: 6px; color: var(--txt2); }
+
+/* ===== chart cap row + 盘中/日线 切换 ===== */
+.cap-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 2px; }
+.segbar { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.seg { background: transparent; color: var(--txt3); border: none; padding: 5px 13px; font-size: 12.5px; cursor: pointer; font-family: inherit; transition: .15s; border-left: 1px solid var(--line); }
+.seg:first-child { border-left: none; }
+.seg:hover:not(:disabled) { color: var(--txt); }
+.seg.on { background: var(--ac-soft); color: var(--ac); }
+.seg:disabled { opacity: .4; cursor: not-allowed; }
+
 /* ===== 3-态闸 (long gate / short gate / flat) ===== */
 .gate-states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 2px 0 22px; }
 .gst { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--card2); transition: .2s; opacity: .5; }
@@ -266,6 +297,8 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
   .panel-body { padding: 4px 18px 20px; }
   .panel-head { padding: 18px 18px 12px; }
   .gate-states { grid-template-columns: 1fr; }
+  .sc-cells { grid-template-columns: 1fr; gap: 14px; }
+  .sc-v { font-size: 30px; }
   .tbl th.opt, .tbl td.opt { display: none; }
   .chips { grid-template-columns: repeat(2, 1fr); }
   .chip:nth-child(2) { border-right: none; }

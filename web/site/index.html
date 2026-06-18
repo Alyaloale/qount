@@ -26,11 +26,11 @@
       <span class="tag">监控台</span>
     </div>
     <nav class="nav">
-      <a class="nav-item" data-route="overview"><span class="ni-ic">▦</span> 概览</a>
-      <a class="nav-item" data-route="live"><span class="ni-ic">●</span> 加密实盘 <span class="ni-tag" id="nav-live-tag"></span></a>
-      <a class="nav-item" data-route="cta"><span class="ni-ic">◆</span> A股 CTA-R</a>
-      <a class="nav-item" data-route="cxd"><span class="ni-ic">⊕</span> C×D 合成账</a>
-      <a class="nav-item" data-route="paper"><span class="ni-ic">◇</span> 加密模拟盘</a>
+      <a class="nav-item" data-route="overview"><div class="ni-top"><span class="ni-ic">▦</span><span class="ni-label">概览</span></div></a>
+      <a class="nav-item" data-route="live"><div class="ni-top"><span class="ni-ic">●</span><span class="ni-label">加密实盘</span><span class="ni-tag" id="nav-live-tag"></span></div><span class="ni-spark" id="spark-live"></span></a>
+      <a class="nav-item" data-route="cta"><div class="ni-top"><span class="ni-ic">◆</span><span class="ni-label">A股 CTA-R</span></div><span class="ni-spark" id="spark-cta"></span></a>
+      <a class="nav-item" data-route="cxd"><div class="ni-top"><span class="ni-ic">⊕</span><span class="ni-label">C×D 合成账</span></div></a>
+      <a class="nav-item" data-route="paper"><div class="ni-top"><span class="ni-ic">◇</span><span class="ni-label">加密模拟盘</span></div><span class="ni-spark" id="spark-paper"></span></a>
     </nav>
     <div class="side-foot">
       <div class="side-status"><span class="live-dot"></span><span id="clock">—</span></div>
@@ -50,6 +50,7 @@
     </header>
 
     <section class="view" id="view-overview">
+      <div class="sumcard" id="ov-summary"></div>
       <div class="overview" id="overview"></div>
       <div class="ov-note">点击任意卡片进入明细 · A股 / 加密模拟盘为模拟,加密实盘为真实小仓</div>
     </section>

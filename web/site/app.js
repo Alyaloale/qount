@@ -11,6 +11,7 @@ const arw = (n) => (n > 0 ? '<span class="arw">▲</span>' : n < 0 ? '<span clas
 const store = {};
 const livePx = {};                 // live mark prices fetched client-side (real-time tick between cron runs)
 let liveOnly = false;              // true during a price-tick re-render -> skip count-up (no constant re-animate)
+let liveCurveMode = "intra";       // 加密实盘权益曲线:"intra"=盘中实时 / "daily"=日线
 
 // proper signed money (+$1.23 / -$0.45) — `sign()` alone drops the minus after Math.abs
 function signed(x, cur) {
@@ -116,9 +117,9 @@ function normCurve(input) {
   if (input.curve) return { vals: input.curve, dates: input.dates || null };
   return { vals: [], dates: null };
 }
-function fmtAxis(v, cur) {
+function fmtAxis(v, cur, dec) {
   const a = Math.abs(v);
-  const s = a >= 1e6 ? (v / 1e6).toFixed(2) + "M" : a >= 1e4 ? Math.round(v / 1e3) + "k" : grp(v, 0);
+  const s = a >= 1e6 ? (v / 1e6).toFixed(2) + "M" : a >= 1e4 ? Math.round(v / 1e3) + "k" : grp(v, dec || 0);
   return (cur || "") + s;
 }
 function chart(input, opts) {
@@ -145,16 +146,22 @@ function chart(input, opts) {
   CHART_N++;
   let grid = "";
   const TICKS = cz ? 3 : 4;
+  // y-axis decimals scale to the value RANGE so a tight curve (e.g. $483.6–$484.4) isn't all "$484"
+  const axSpan = maxV - minV;
+  const axDec = axSpan === 0 ? (Math.abs(maxV) < 100 ? 2 : 0)
+    : axSpan < 2 ? 3 : axSpan < 20 ? 2 : axSpan < 200 ? 1 : 0;
   for (let k = 0; k <= TICKS; k++) {
     const val = minV + (maxV - minV) * k / TICKS, y = Y(val).toFixed(1);
     grid += `<line class="grid" x1="${L}" y1="${y}" x2="${L + plotW}" y2="${y}"/>` +
-            `<text class="ylbl" x="${L - 7}" y="${(+y + 3).toFixed(1)}">${fmtAxis(val, cur)}</text>`;
+            `<text class="ylbl" x="${L - 7}" y="${(+y + 3).toFixed(1)}">${fmtAxis(val, cur, axDec)}</text>`;
   }
   let xlab = "";
   const XT = Math.min(cz ? 3 : 4, n);
   for (let k = 0; k < XT; k++) {
     const i = Math.round((k / (XT - 1)) * (n - 1));
-    const lab = dates ? String(dates[i]).slice(2) : "#" + i;
+    const raw = dates ? String(dates[i]) : "#" + i;
+    // only slice the year off ISO dates ("2026-06-18"->"26-06-18"); leave time/short labels intact
+    const lab = /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(2) : raw;
     const anchor = k === 0 ? "start" : k === XT - 1 ? "end" : "middle";
     xlab += `<text class="axlbl" x="${X(i).toFixed(1)}" y="${H - 7}" text-anchor="${anchor}">${lab}</text>`;
   }
@@ -210,6 +217,29 @@ function wireCharts() {
   });
 }
 
+// ---- mini sparkline (no axes/hover) for the sidebar nav ----
+function spark(input) {
+  const vals = normCurve(input).vals;
+  if (vals.length < 2) return "";
+  const W = 100, H = 22, n = vals.length;
+  const mn = Math.min(...vals), mx = Math.max(...vals), sp = (mx - mn) || 1;
+  const X = (i) => (i / (n - 1)) * W, Y = (v) => H - 2 - ((v - mn) / sp) * (H - 4);
+  const dd = vals.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+  const up = vals[n - 1] >= vals[0];
+  const col = up ? "var(--ac)" : "var(--neg)";
+  return `<svg class="spk" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <path d="${dd} L${W} ${H} L0 ${H} Z" fill="${col}" opacity=".10"/>
+    <path d="${dd}" fill="none" stroke="${col}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+}
+function updateSparks() {
+  const set = (id, input) => { const el = $(id); if (el) el.innerHTML = spark(input); };
+  set("spark-live", store.live && (store.live.equity_curve_daily && store.live.equity_curve_daily.length > 1
+    ? store.live.equity_curve_daily : store.live.equity_curve));
+  set("spark-cta", store.cta && store.cta.equity_curve);
+  const cb = store.paper && store.paper.combo && store.paper.combo.portfolio;
+  set("spark-paper", cb && cb.equity_curve);
+}
+
 // ---- 全局概览 ----
 function renderOverview() {
   const el = $("overview");
@@ -255,6 +285,41 @@ function renderOverview() {
   } else tiles.push(`<div class="otile" data-route="paper"><div class="ok">加密模拟盘</div><div class="oe dim">—</div></div>`);
 
   el.innerHTML = tiles.join("");
+  renderSummary();
+  updateSparks();
+}
+
+// 概览汇总卡:真实资金头条 + 跨账户 今日 P&L 汇总(分币种,不混真/模拟)
+function renderSummary() {
+  const el = $("ov-summary");
+  if (!el) return;
+  const c = store.cta, l = store.live, p = store.paper;
+  const lUp = l && l.unrealized_pnl;
+  const cDay = c && (c.day_pnl || 0);
+  // 真实头条 = 加密实盘权益(唯一真金账户)
+  const realEq = l && (l.equity != null ? l.equity : l.capital);
+  const realChg = lUp != null ? `<span class="sc-chg ${cls(lUp)}">${arw(lUp)}今日未实现 ${signed(lUp, "$")}</span>` : "";
+  // 模拟合计(两币种分列,不与真金混合)
+  const paperEq = p && p.holdings && p.holdings.books
+    ? Object.values(p.holdings.books).reduce((s, b) => s + (b.fwd_equity || 0), 0) : null;
+  const cells = [];
+  cells.push(`<div class="sc-cell"><div class="sc-ck">A股 CTA-R · 模拟</div>
+    <div class="sc-cv">${c ? "¥" + money(c.equity) : "—"}</div>
+    <div class="sc-cs ${cls(cDay || 0)}">${c ? `今日 ${signed(cDay, "¥")} · ${pct(c.total_pnl_pct || 0)}` : ""}</div></div>`);
+  cells.push(`<div class="sc-cell"><div class="sc-ck">加密模拟 · 前向</div>
+    <div class="sc-cv">${paperEq != null ? "$" + money(paperEq) : "—"}</div>
+    <div class="sc-cs dim">各 $100k · 纯模拟</div></div>`);
+  cells.push(`<div class="sc-cell"><div class="sc-ck">今日盈亏汇总(分币种)</div>
+    <div class="sc-cv sc-sum">${cDay != null ? `<span class="${cls(cDay)}">${signed(cDay, "¥")}</span>` : "—"}
+      ${lUp != null ? `<span class="${cls(lUp)}">${signed(lUp, "$")}</span>` : ""}</div>
+    <div class="sc-cs dim">A股(¥)+ 加密实盘未实现($)</div></div>`);
+
+  el.innerHTML = `
+    <div class="sc-main">
+      <div class="sc-k"><span class="live-dot"></span>真实资金 · 加密实盘 X4</div>
+      <div class="sc-v"><span class="cur">$</span>${realEq != null ? counted("sum-real", realEq) : "—"} ${realChg}</div>
+    </div>
+    <div class="sc-cells">${cells.join("")}</div>`;
 }
 
 // ---- A股 CTA-R ----
@@ -333,6 +398,20 @@ function gateStates(d) {
     ${tile(flatOn, "flat", "空仓 · 现金", flatOn ? "观望" : "—")}
   </div>`;
 }
+// 权益曲线 + 盘中/日线切换
+function liveCurveBlock(d) {
+  const intra = d.equity_curve || [], daily = d.equity_curve_daily || [];
+  const series = liveCurveMode === "daily" ? daily : intra;
+  const hasDaily = daily.length > 1, hasIntra = intra.length > 1;
+  if (!hasDaily && !hasIntra) return "";
+  const seg = (mode, label, enabled) =>
+    `<button class="seg ${liveCurveMode === mode ? "on" : ""}" data-curve="${mode}" ${enabled ? "" : "disabled"}>${label}</button>`;
+  const toggle = `<div class="segbar">${seg("intra", "盘中实时", hasIntra)}${seg("daily", "日线", hasDaily)}</div>`;
+  const body = series.length > 1
+    ? chart(series, { cur: "$" })
+    : `<div class="empty">${liveCurveMode === "daily" ? "日线" : "盘中"}数据累积中(每${liveCurveMode === "daily" ? "日" : "10 分钟"}一点)…</div>`;
+  return `<div class="cap-row"><div class="chart-cap">账户权益曲线 · 钱包 + 未实现</div>${toggle}</div>${body}`;
+}
 function renderLive(d) {
   store.live = d;
   const body = $("body-live");
@@ -391,7 +470,7 @@ function renderLive(d) {
       <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital)}</div>
       <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
-    ${d.equity_curve && d.equity_curve.length > 1 ? `<div class="chart-cap">账户权益曲线 · 钱包 + 未实现</div>${chart(d.equity_curve, { cur: "$" })}` : ""}
+    ${liveCurveBlock(d)}
     <div class="subhead">交易闸 · 两道闸 → 三态(BTC 站上 200 线做多 / 真熊做空对冲 / 否则空仓)</div>
     ${gateStates(d)}
     <div class="subhead">大盘闸门 · BTC vs 200 日线</div>
@@ -631,6 +710,12 @@ $("menu-btn").addEventListener("click", () => document.body.classList.toggle("na
 $("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
 document.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.dataset.route); }));
 document.addEventListener("click", (e) => { const t = e.target.closest(".otile[data-route]"); if (t) go(t.dataset.route); });
+document.addEventListener("click", (e) => {                 // 权益曲线 盘中/日线 切换
+  const b = e.target.closest(".seg[data-curve]");
+  if (!b || b.disabled || !store.live) return;
+  liveCurveMode = b.dataset.curve;
+  liveOnly = true; renderLive(store.live); applyCounts(); wireCharts(); liveOnly = false;
+});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); refreshLivePrices(); } });
 applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
 showRoute(currentRoute());

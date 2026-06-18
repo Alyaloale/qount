@@ -288,12 +288,34 @@ def main(argv: list[str]) -> int:
             hist = []
     except Exception:
         hist = []
-    stamp = rec["ts"][:16]   # minute granularity
+    stamp = rec["ts"][:16]   # minute granularity dedup
     if not (hist and hist[-1].get("ts", "")[:16] == stamp):
-        hist.append({"ts": rec["ts"], "date": last_date, "equity": rec["equity"]})
+        # label by LOCAL snapshot time (intraday 10-min points), NOT the daily bar date — else every
+        # point on the same trading day shares one x label. "MM-DD HH:MM" so the curve reads as a time axis.
+        hist.append({"ts": rec["ts"], "date": dt.datetime.now().strftime("%m-%d %H:%M"),
+                     "equity": rec["equity"]})
     hist = hist[-720:]
     hist_path.write_text(json.dumps(hist, default=float))
     rec["equity_curve"] = hist   # latest.json only (already wrote orders.jsonl above without it)
+
+    # daily equity series (一日一点,看板「日线 / 盘中」切换的日线源): update today's point in place each
+    # run so it tracks the latest equity, finalize when the day rolls; cap ~400 days. Local date as key.
+    day_path = STATE_DIR / "equity_daily.json"
+    try:
+        daily = json.loads(day_path.read_text())
+        if not isinstance(daily, list):
+            daily = []
+    except Exception:
+        daily = []
+    today = dt.datetime.now().strftime("%Y-%m-%d")
+    pt = {"date": today[5:], "day": today, "equity": rec["equity"]}
+    if daily and daily[-1].get("day") == today:
+        daily[-1] = pt
+    else:
+        daily.append(pt)
+    daily = daily[-400:]
+    day_path.write_text(json.dumps(daily, default=float))
+    rec["equity_curve_daily"] = daily
 
     (STATE_DIR / "latest.json").write_text(json.dumps(rec, indent=2, default=float))
     print(f"  logged -> {STATE_DIR}/latest.json")
