@@ -9,11 +9,13 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23000'/><g fill='%23fff'><rect x='24' y='52' width='12' height='24'/><rect x='44' y='38' width='12' height='38'/><rect x='64' y='24' width='12' height='52'/></g></svg>">
 <link rel="stylesheet" href="style.css">
 <script>
-  // apply saved/system theme before first paint (no flash)
+  // apply saved/system theme + 涨跌配色 before first paint (no flash)
   (function () {
     var t; try { t = localStorage.getItem("qount-theme"); } catch (e) {}
     if (!t) t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", t);
+    var c; try { c = localStorage.getItem("qount-color"); } catch (e) {}
+    document.documentElement.setAttribute("data-color", c === "us" ? "us" : "cn");  // 默认红涨绿跌
   })();
 </script>
 </head>
@@ -38,6 +40,7 @@
       <div class="side-status"><span class="live-dot"></span><span id="clock">—</span></div>
       <div class="side-ctrl">
         <button id="theme-btn" class="iconbtn" title="切换深色 / 浅色">☀</button>
+        <button id="color-btn" class="iconbtn" title="涨跌配色 · 红涨绿跌 / 绿涨红跌">涨</button>
         <button id="refresh" class="iconbtn" title="立即刷新">↻</button>
       </div>
     </div>

@@ -14,6 +14,10 @@
   --neg: #8c95a4;        /* readable loss gray */
   --amber: #d8a657;      /* short / risk-off accent (warm, distinct from cyan) */
   --amber-line: rgba(216,166,87,.42);
+  /* 涨跌语义色 — 默认 data-color=cn(红涨绿跌);[data-color=us] 翻成绿涨红跌。
+     与既有低饱和调性匹配:柔珊瑚红 + 玉绿,不刺眼。--up=盈/涨,--down=亏/跌。 */
+  --up: #e0685c;
+  --down: #46b083;
   --radius: 16px;
   --sbw: clamp(196px, 15vw, 244px);   /* 侧栏宽随视口流式 */
   --cmax: 1460px;                      /* 内容最大宽,大屏居中、不左贴 */
@@ -37,7 +41,12 @@
   --neg: #5a6575;        /* loss gray, readable on white */
   --amber: #9a6512;      /* darker amber for white bg */
   --amber-line: rgba(154,101,18,.42);
+  --up: #cf4338;         /* 涨/盈:浅色背景下加深的红 */
+  --down: #1f9b66;       /* 跌/亏:浅色背景下加深的绿 */
 }
+/* 绿涨红跌切换(美式):暗 / 亮 两套各翻一次 */
+[data-color="us"] { --up: #46b083; --down: #e0685c; }
+[data-theme="light"][data-color="us"] { --up: #1f9b66; --down: #cf4338; }
 [data-theme="light"] .tbl tbody tr:hover td { background: rgba(14,143,166,.05); }
 [data-theme="light"] .panel, [data-theme="light"] .otile { box-shadow: 0 1px 2px rgba(20,30,50,.04); }
 [data-theme="light"] body::before { background: radial-gradient(900px 560px at 75% -15%, rgba(14,143,166,.05), transparent 60%); }
@@ -148,8 +157,8 @@ body::before {
 .hero .sub { color: var(--txt3); font-size: 13px; width: 100%; }
 .pnl-tag { font-family: var(--mono); font-size: 14px; font-weight: 650; padding: 4px 12px; border-radius: 20px;
   border: 1px solid var(--line); background: var(--card2); align-self: center; }
-.pnl-tag.pos { color: var(--ac); border-color: var(--ac-line); }
-.pnl-tag.neg { color: var(--neg); }
+.pnl-tag.pos { color: var(--up); border-color: color-mix(in srgb, var(--up) 42%, transparent); }
+.pnl-tag.neg { color: var(--down); border-color: color-mix(in srgb, var(--down) 42%, transparent); }
 
 /* stat chips — fewer, larger, no glow */
 .chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); border-top: 1px solid var(--line-soft); margin-bottom: 20px; }
@@ -157,10 +166,13 @@ body::before {
 .chip:last-child { border-right: none; }
 .chip .k { color: var(--txt3); font-size: 12px; margin-bottom: 7px; }
 .chip .v { font-size: 19px; font-weight: 650; font-family: var(--mono); letter-spacing: -.3px; }
-.pos { color: var(--ac); }      /* no text-shadow glow — easier on eyes */
-.neg { color: var(--neg); }
+.pos { color: var(--up); }      /* 盈/涨 — 配色由 data-color 决定(红涨绿跌 / 绿涨红跌) */
+.neg { color: var(--down); }    /* 亏/跌 */
 .dim { color: var(--txt2); }
 .arw { font-size: .72em; margin-right: 2px; }
+/* 涨跌配色切换:按钮上的「涨」字本身就是当前涨色 = 开关即预览 */
+#color-btn { color: var(--up); font-weight: 700; font-size: 13px; }
+#color-btn:hover { color: var(--up); border-color: color-mix(in srgb, var(--up) 42%, transparent); }
 
 /* equity chart — axes + hover crosshair/tooltip (vanilla SVG) */
 .chartwrap { position: relative; margin: 2px 0 18px; }
@@ -176,6 +188,10 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
   opacity: 0; transition: opacity .12s; z-index: 6; font-family: var(--mono); box-shadow: 0 4px 14px rgba(0,0,0,.4); }
 .chart-tip b { display: block; color: var(--txt); font-size: 12px; font-weight: 650; }
 .chart-tip span { color: var(--txt3); font-size: 10px; }
+.chart-tip .tip-pnl { display: block; font-size: 11px; font-weight: 600; margin-top: 2px; }
+.chart-tip .tip-pnl.pos { color: var(--up); }
+.chart-tip .tip-pnl.neg { color: var(--down); }
+.chart-tip .tip-pnl.dim { color: var(--txt3); }
 .chart-cap { font-size: 10px; color: var(--txt3); letter-spacing: .3px; margin: 10px 0 -2px; }
 
 /* subhead — bigger, not all-caps */
@@ -231,6 +247,20 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
 
 /* leverage / market badge */
 .badge.lev { color: var(--txt2); border-color: var(--line); font-family: var(--mono); letter-spacing: 0; }
+
+/* 成本线 (equity 曲线基准:权益在线上=盈、线下=亏) */
+.refline { stroke: var(--txt3); stroke-width: 1; stroke-dasharray: 4 4; opacity: .55; }
+.reflbl { fill: var(--txt3); font-size: 11px; font-family: var(--mono); opacity: .9; }
+
+/* 当前仓位条:购买力满格,分段=各币名义占比,空段=空闲保证金 */
+.posbar { margin: 4px 0 22px; }
+.posbar-meta { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--txt3); margin-bottom: 9px; font-family: var(--mono); }
+.posbar-meta b { color: var(--txt2); font-weight: 600; }
+.posbar-track { display: flex; height: 22px; background: var(--card2); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.posbar-seg { min-width: 0; background: linear-gradient(180deg, rgba(86,197,216,.9), var(--ac)); border-right: 1px solid var(--bg); transition: width .5s ease; }
+.posbar-seg.short { background: linear-gradient(180deg, rgba(216,166,87,.9), var(--amber)); }
+.posbar-seg.free { background: transparent; border-right: none; }
+.posbar-seg:last-child { border-right: none; }
 
 /* rebalance progress */
 .progblock { margin: 20px 0 4px; }

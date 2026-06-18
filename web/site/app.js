@@ -7,6 +7,7 @@ const UNIVERSE = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "LINK"];
 const $ = (id) => document.getElementById(id);
 const cls = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "dim");
 const sign = (n) => (n > 0 ? "+" : "");
+const r2 = (n) => Math.round((n + (n >= 0 ? 1 : -1) * Number.EPSILON) * 100) / 100;  // 舍到分,符号一致
 const arw = (n) => (n > 0 ? '<span class="arw">▲</span>' : n < 0 ? '<span class="arw">▼</span>' : "");
 const store = {};
 const livePx = {};                 // live mark prices fetched client-side (real-time tick between cron runs)
@@ -29,6 +30,18 @@ function applyTheme(t) {
 function toggleTheme() {
   const cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
   applyTheme(cur === "light" ? "dark" : "light");
+}
+
+// ---- 涨跌配色 (红涨绿跌 cn / 绿涨红跌 us, persisted) ----
+function applyColor(c) {
+  c = c === "us" ? "us" : "cn";
+  document.documentElement.setAttribute("data-color", c);
+  try { localStorage.setItem("qount-color", c); } catch (e) {}
+  const b = document.getElementById("color-btn");
+  if (b) b.title = c === "us" ? "涨跌配色 · 当前绿涨红跌 → 切红涨绿跌" : "涨跌配色 · 当前红涨绿跌 → 切绿涨红跌";
+}
+function toggleColor() {
+  applyColor(document.documentElement.getAttribute("data-color") === "us" ? "cn" : "us");
 }
 
 // ---- count-up animation for big numbers ----
@@ -142,7 +155,10 @@ function chart(input, opts) {
   const W = cz ? 340 : 600, H = cz ? 150 : 170;
   const L = cz ? 46 : 58, R = cz ? 10 : 12, T = cz ? 10 : 12, B = cz ? 22 : 24;
   const plotW = W - L - R, plotH = H - T - B, baseY = T + plotH;
-  const minV = Math.min(...vals), maxV = Math.max(...vals);
+  // 成本线 / 基准线:折进 y 轴值域,保证始终可见(即便权益一直在成本上方)
+  const ref = (opts.ref != null && isFinite(opts.ref)) ? opts.ref : null;
+  let minV = Math.min(...vals), maxV = Math.max(...vals);
+  if (ref != null) { minV = Math.min(minV, ref); maxV = Math.max(maxV, ref); }
   const pad = (maxV - minV) * 0.06 || Math.abs(maxV) * 0.01 || 1;
   const lo = minV - pad, hi = maxV + pad, span = hi - lo || 1;
   const X = (i) => L + (i / (n - 1)) * plotW;
@@ -150,7 +166,7 @@ function chart(input, opts) {
   const xy = vals.map((v, i) => [X(i), Y(v)]);
   const d = xy.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const up = vals[n - 1] >= vals[0];
-  const color = up ? "var(--ac)" : "var(--neg)";
+  const color = up ? "var(--up)" : "var(--down)";
   const area = d + ` L${X(n - 1).toFixed(1)} ${baseY} L${X(0).toFixed(1)} ${baseY} Z`;
   const id = "ch" + CHART_N, gid = "cg" + CHART_N;
   CHART_N++;
@@ -175,7 +191,15 @@ function chart(input, opts) {
     const anchor = k === 0 ? "start" : k === XT - 1 ? "end" : "middle";
     xlab += `<text class="axlbl" x="${X(i).toFixed(1)}" y="${H - 7}" text-anchor="${anchor}">${lab}</text>`;
   }
-  CHARTS[id] = { vals, dates, n, W, H, L, T, plotW, plotH, lo, span, cur };
+  // 成本线:横虚线 + 右端标签(权益在线上=盈利,在线下=亏损)
+  let refLine = "";
+  if (ref != null) {
+    const ry = Y(ref).toFixed(1);
+    refLine = `<line class="refline" x1="${L}" y1="${ry}" x2="${L + plotW}" y2="${ry}"/>` +
+      `<text class="reflbl" x="${L + plotW - 2}" y="${(+ry - 5).toFixed(1)}" text-anchor="end">` +
+      `${opts.refLabel || "成本"} ${cur}${grp(ref, Math.abs(ref) < 1000 ? 2 : 0)}</text>`;
+  }
+  CHARTS[id] = { vals, dates, n, W, H, L, T, plotW, plotH, lo, span, cur, ref };
   return `<div class="chartwrap">
     <svg class="chart${cz ? " compact" : ""}" viewBox="0 0 ${W} ${H}" data-cid="${id}">
       <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1">
@@ -184,6 +208,7 @@ function chart(input, opts) {
       ${grid}
       <path d="${area}" fill="url(#${gid})"/>
       <path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      ${refLine}
       ${xlab}
       <line class="cx" x1="0" y1="${T}" x2="0" y2="${baseY}"/>
       <circle class="hot" r="3.6" cx="0" cy="0"/>
@@ -195,7 +220,10 @@ function onChartMove(e) {
   const svg = e.currentTarget, c = CHARTS[svg.dataset.cid];
   if (!c) return;
   const rect = svg.getBoundingClientRect();
-  let f = (e.clientX - rect.left) / rect.width;
+  // 命中映射:鼠标 → viewBox x → 扣掉绘图区左右边距(L/R)后的数据区比例,再吸附到最近数据点。
+  // (宽高比由 viewBox 保持,clientX→viewBox 为线性;此前按整幅宽算、没扣 L 导致点位滞后鼠标。)
+  const svgX = (e.clientX - rect.left) / rect.width * c.W;
+  let f = c.plotW > 0 ? (svgX - c.L) / c.plotW : 0;
   f = Math.max(0, Math.min(1, f));
   const i = Math.round(f * (c.n - 1)), v = c.vals[i];
   const xv = c.L + (i / (c.n - 1)) * c.plotW;
@@ -205,10 +233,19 @@ function onChartMove(e) {
   hot.setAttribute("cx", xv); hot.setAttribute("cy", yv); hot.style.opacity = 1;
   const tip = svg.parentNode.querySelector(".chart-tip");
   const dlab = c.dates ? c.dates[i] : "#" + i;
-  tip.innerHTML = `<b>${c.cur}${grp(v, Math.abs(v) < 1000 ? 2 : 0)}</b><span>${dlab}</span>`;
+  // 结合本金基线(ref)显示该点盈亏金额 + 百分比(股市做法:浮在点上,红涨绿跌跟随配色)
+  let pnlHtml = "";
+  if (c.ref != null && isFinite(c.ref) && c.ref !== 0) {
+    const pnl = v - c.ref, rate = pnl / c.ref;
+    pnlHtml = `<span class="tip-pnl ${cls(pnl)}">${signed(pnl, c.cur)} · ${pct(rate)}</span>`;
+  }
+  tip.innerHTML = `<b>${c.cur}${grp(v, Math.abs(v) < 1000 ? 2 : 0)}</b><span>${dlab}</span>${pnlHtml}`;
   const px = (xv / c.W) * rect.width, py = (yv / c.H) * rect.height;
-  tip.style.left = Math.max(38, Math.min(rect.width - 38, px)) + "px";
-  tip.style.top = Math.max(0, py - 44) + "px";
+  // 不压点:水平跟随光标(夹在边界内),竖直永远放到点的对侧 —— 点在上半区则框落底部,反之升到顶部。
+  // 这样十字线 + 圆点始终露出,能看清落在哪个点(股市 tooltip 做法)。
+  const tw = tip.offsetWidth || 80, th = tip.offsetHeight || 48;
+  tip.style.left = Math.max(tw / 2 + 2, Math.min(rect.width - tw / 2 - 2, px)) + "px";
+  tip.style.top = (py < rect.height / 2 ? rect.height - th - 4 : 4) + "px";
   tip.style.opacity = 1;
 }
 function onChartLeave(e) {
@@ -236,7 +273,7 @@ function spark(input) {
   const X = (i) => (i / (n - 1)) * W, Y = (v) => H - 2 - ((v - mn) / sp) * (H - 4);
   const dd = vals.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
   const up = vals[n - 1] >= vals[0];
-  const col = up ? "var(--ac)" : "var(--neg)";
+  const col = up ? "var(--up)" : "var(--down)";
   return `<svg class="spk" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <path d="${dd} L${W} ${H} L0 ${H} Z" fill="${col}" opacity=".10"/>
     <path d="${dd}" fill="none" stroke="${col}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
@@ -442,7 +479,7 @@ function liveCurveBlock(d) {
   const toggle = `<div class="segbar">${seg("intra", "24 小时", hasIntra)}${seg("daily", "日线", hasDaily)}</div>`;
   const cap = liveCurveMode === "daily" ? "账户权益 · 日线" : "账户权益 · 滚动 24 小时(10 分钟/点)";
   const body = series.length > 1
-    ? chart(series, { cur: "$" })
+    ? chart(series, { cur: "$", ref: d.inception_equity, refLabel: "成本" })
     : `<div class="empty">${liveCurveMode === "daily" ? "日线(次日起)" : "24 小时"}数据累积中…</div>`;
   return `<div class="cap-row"><div class="chart-cap">${cap}</div>${toggle}</div>${body}`;
 }
@@ -480,20 +517,53 @@ function renderLive(d) {
   if (d.capital_blocked && d.capital_blocked.length)
     banners += `<div class="banner">ℹ 本金 $${money(d.capital)} 偏小,以下币按逆波动率权重的目标额低于最小下单额、会被跳过:<b>${d.capital_blocked.map((b) => `${b.symbol}(目标$${money(b.target_usdt)}<地板$${money(b.min_usdt)})`).join("、")}</b> · 实盘为集中子集,非完整 ${(d.universe || UNIVERSE).length} 币</div>`;
 
-  const upnl = d.unrealized_pnl;
+  // 未实现(总浮盈):严格 = 各标的浮盈「按显示的分」之和,消除分项四舍五入错位(逐个加起来=总数)。
+  const upnlShown = holdings.length
+    ? holdings.reduce((s, h) => s + (h.upnl != null ? r2(h.upnl) : 0), 0)
+    : d.unrealized_pnl;
+  const upnl = upnlShown != null ? r2(upnlShown) : d.unrealized_pnl;
+  // 已实现 = 钱包余额 − 入金成本(已平仓盈亏 + 资金费 + 手续费,已落袋)。总盈亏 = 已实现 + 未实现,
+  // 所以「各标的浮盈之和」(只是未实现)≠ 总盈亏,差额就是这块已实现 —— 显式列出消除歧义。
+  const realized = (d.inception_equity != null && d.capital != null) ? r2(d.capital - d.inception_equity) : null;
+  // 总盈亏按「已实现 + 未实现」两个显示值相加,保证三处(逐标的 → 总浮盈 → 总盈亏)对到分
+  const totalShown = (realized != null && upnl != null) ? r2(realized + upnl) : d.total_pnl;
+  // 仓位口径:gross = 各腿名义之和(持仓占比的分母);bp = 购买力(本金 × 杠杆),当前仓位条的满格
+  const gross = holdings.reduce((s, h) => s + Math.abs(h.value || 0), 0);
+  const bp = (d.capital || 0) * (d.max_leverage || 1) || gross;
+  const used = bp > 0 ? gross / bp : 0;
+  const posbar = holdings.length
+    ? `<div class="subhead">当前仓位 · 部署名义 ${money(gross, "$")} / 购买力 ${money(bp, "$")}</div>
+       <div class="posbar">
+         <div class="posbar-meta"><span>已用 <b>${pct(used, 0)}</b> 购买力</span><span>空闲保证金 <b>${money(Math.max(0, d.capital - (d.margin_used || 0)), "$")}</b></span></div>
+         <div class="posbar-track">${holdings.map((h) => {
+           const v = Math.abs(h.value || 0); if (!v || bp <= 0) return "";
+           const sh = h.side === "short" || (h.value || 0) < 0;
+           return `<div class="posbar-seg${sh ? " short" : ""}" style="width:${(v / bp * 100).toFixed(2)}%" title="${h.symbol || h.sym} ${money(v, "$")}"></div>`;
+         }).join("")}<div class="posbar-seg free" style="width:${(Math.max(0, bp - gross) / bp * 100).toFixed(2)}%"></div></div>
+       </div>`
+    : "";
   const holdHtml = holdings.length
     ? `<div class="subhead">当前持仓 · ${shorting ? "永续做空对冲(§24 做空闸)" : isPerp ? "永续多头(名义)" : "现货"}</div><table class="tbl">
-        <thead><tr><th>币种</th><th>方向</th><th class="opt">入场</th><th class="opt">现价</th><th>名义</th><th>浮盈</th><th class="opt">止损</th></tr></thead>
+        <thead><tr><th>币种</th><th>方向</th><th class="opt">入场</th><th class="opt">现价</th><th>名义</th><th>占比</th><th>浮盈</th><th title="按名义,不含杠杆">收益率</th><th title="按保证金 ROE,含 ${lev}x 杠杆(同币安持仓页)">ROE</th><th class="opt">止损</th></tr></thead>
         <tbody>${holdings.map((h) => {
           const sh = h.side === "short" || (h.value || 0) < 0;
           const up = h.upnl || 0;
+          const share = gross > 0 ? Math.abs(h.value || 0) / gross : 0;
+          // 收益率 = 浮盈 / 入场名义(entry×qty);缺入场则退回当前名义。与本行「浮盈」自洽。
+          const roeDenom = (h.entry && h.qty) ? Math.abs(h.entry * h.qty) : Math.abs(h.value || 0);
+          const roe = (h.upnl != null && roeDenom > 0) ? h.upnl / roeDenom : null;
+          // ROE(按保证金,含杠杆)= 收益率 × 杠杆,与币安持仓页一致
+          const roeMargin = roe != null ? roe * lev : null;
           return `<tr>
           <td class="name">${h.symbol || h.sym || ""}</td>
           <td><span class="side ${sh ? "neg" : "pos"}">${sh ? "空" : "多"}</span></td>
           <td class="opt">${h.entry != null ? money(h.entry, "$") : "—"}</td>
           <td class="opt">${h.price != null ? money(h.price, "$") : "—"}</td>
           <td>${h.value != null ? money(Math.abs(h.value), "$") : "—"}</td>
-          <td class="${cls(up)}">${h.upnl != null ? signed(up, "$") : "—"}</td>
+          <td>${(share * 100).toFixed(1)}%<span class="wbar" style="width:${Math.round(share * 46)}px"></span></td>
+          <td class="${cls(up)}">${h.upnl != null ? signed(r2(up), "$") : "—"}</td>
+          <td class="${cls(roe || 0)}">${roe != null ? pct(roe) : "—"}</td>
+          <td class="${cls(roeMargin || 0)}">${roeMargin != null ? pct(roeMargin) : "—"}</td>
           <td class="opt">${h.stop != null ? money(h.stop, "$") : "—"}</td></tr>`;
         }).join("")}</tbody></table>`
     : `<div class="empty">空仓 — BTC 低于 200 日线,大盘闸关闭,${isPerp ? "永续仓位已全平,资金留在保证金钱包" : "资金全在现金"}</div>`;
@@ -502,8 +572,8 @@ function renderLive(d) {
     ${banners}
     <div class="hero">
       <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital, 2)}</div>
-      ${d.total_pnl != null ? `<div class="pnl-tag ${cls(d.total_pnl)}">总盈亏 ${arw(d.total_pnl)}${signed(d.total_pnl, "$")} · ${pct(d.total_pnl_pct || 0)}</div>` : ""}
-      <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
+      ${totalShown != null ? `<div class="pnl-tag ${cls(totalShown)}" title="总盈亏 = 已实现 + 未实现(各标的浮盈只是未实现那部分)">总盈亏 ${arw(totalShown)}${signed(totalShown, "$")} · ${pct(d.total_pnl_pct || 0)}</div>` : ""}
+      <div class="sub">实时权益 · 钱包 $${money(d.capital)}${realized != null ? ` · 已实现 <span class="${cls(realized)}">${signed(realized, "$")}</span>` : ""}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
     ${liveCurveBlock(d)}
     <div class="subhead">交易闸 · 两道闸 → 三态(BTC 站上 200 线做多 / 真熊做空对冲 / 否则空仓)</div>
@@ -519,6 +589,7 @@ function renderLive(d) {
     </div>
     <div class="subhead">候选币池 · ${(d.universe || UNIVERSE).length} 币</div>
     <div class="uni">${coins}</div>
+    ${posbar}
     ${holdHtml}
     <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · 逆波动率平价` : "现货 1x"}${d.chandelier_mult ? ` · chandelier ${d.chandelier_mult}× 兜底止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
 }
@@ -754,6 +825,7 @@ function patchLive() {
 // ---- wiring ----
 $("refresh").addEventListener("click", tick);
 $("theme-btn").addEventListener("click", toggleTheme);
+$("color-btn").addEventListener("click", toggleColor);
 $("menu-btn").addEventListener("click", () => document.body.classList.toggle("nav-open"));
 $("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
 document.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.dataset.route); }));
@@ -766,6 +838,7 @@ document.addEventListener("click", (e) => {                 // 权益曲线 盘�
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); refreshLivePrices(); } });
 applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+applyColor(document.documentElement.getAttribute("data-color") === "us" ? "us" : "cn");
 showRoute(currentRoute());
 tick();
 setInterval(load, 20000);                              // cron JSON snapshot (positions/stops/capital)
