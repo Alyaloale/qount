@@ -374,15 +374,26 @@ function renderCTA(d) {
 // ---- 加密实盘 ----
 function gateMeter(btc, sma) {
   if (!btc || !sma) return "";
-  const lo = Math.min(btc, sma) * 0.94, hi = Math.max(btc, sma) * 1.05;
-  const pos = (v) => ((v - lo) / (hi - lo) * 100).toFixed(1);
+  const lo = Math.min(btc, sma) * 0.93, hi = Math.max(btc, sma) * 1.04;
+  const pos = (v) => Math.max(3, Math.min(97, (v - lo) / (hi - lo) * 100));
   const pb = pos(btc), ps = pos(sma);
-  return `<div class="gate">
-    <div class="gate-track">
-      <span class="gate-fill" style="width:${pb}%"></span>
-      <span class="gate-line" style="left:${ps}%"><span class="lbl">开闸线 $${money(sma)}</span></span>
-      <span class="gate-dot" style="left:${pb}%"><span class="lbl">BTC $${money(btc)}</span></span>
+  const above = btc >= sma;
+  const gapL = Math.min(pb, ps), gapW = Math.abs(ps - pb);
+  // edge-aware label anchor: near right edge → extend left (translateX -100%), near left → extend right
+  const anchor = (p) => p > 76 ? "transform:translateX(-100%);padding-right:10px"
+    : p < 24 ? "transform:translateX(0);padding-left:10px" : "transform:translateX(-50%)";
+  return `<div class="gate ${above ? "long" : "risk"}">
+    <div class="gate-bar">
+      <div class="gate-fill" style="width:${pb}%"></div>
+      <div class="gate-gap" style="left:${gapL}%;width:${gapW}%"></div>
+      <div class="gate-th" style="left:${ps}%"></div>
+      <div class="gate-btc" style="left:${pb}%"></div>
+      <div class="gate-lbl gate-th-lbl" style="left:${ps}%;${anchor(ps)}">开闸线 $${money(sma)}</div>
+      <div class="gate-lbl gate-btc-lbl" style="left:${pb}%;${anchor(pb)}">BTC $${money(btc)}</div>
     </div>
+    <div class="gate-need ${above ? "on" : ""}">${above
+      ? "✓ BTC 已站上 200 日线 · 多头闸开启 · 做多"
+      : "大盘闸关闭 · 当前做空对冲 → BTC 需重回 200 日线上方才切多头闸"}</div>
   </div>`;
 }
 // 3-态闸:多头闸(站上 200 线)/ 空头闸(熊市对冲)/ 空仓,互斥,高亮当前态
@@ -393,12 +404,19 @@ function liveNetState(d) {
 }
 function gateStates(d) {
   const { longOn, shortOn, flatOn } = liveNetState(d);
-  const tile = (on, kind, k, v) =>
-    `<div class="gst ${on ? "on" : ""} ${kind}"><div class="gst-k"><span class="gst-dot"></span>${k}</div><div class="gst-v">${v}</div></div>`;
-  return `<div class="gate-states">
-    ${tile(longOn, "long", "多头闸 · 站上 200 线", longOn ? "做多 · 持多仓" : "关闭")}
-    ${tile(shortOn, "short", "空头闸 · 熊市对冲", shortOn ? "做空 · 持空仓" : d.short_gate ? "待命(未触发)" : "未启用")}
-    ${tile(flatOn, "flat", "空仓 · 现金", flatOn ? "观望" : "—")}
+  // 两道闸(各自独立 on/off,始终都清晰显示)+ 推导出的净态
+  const gcard = (on, kind, name, status, desc) => `<div class="gcard ${on ? "on " + kind : "off"}">
+    <div class="gc-k"><span class="gc-dot"></span>${name}</div>
+    <div class="gc-v">${status}</div><div class="gc-d">${desc}</div></div>`;
+  const netKind = longOn ? "long" : shortOn ? "short" : "flat";
+  const netTxt = longOn ? "做多 · 持多仓" : shortOn ? "做空 · 持空仓" : "空仓 · 现金";
+  return `<div class="gates2">
+    ${gcard(longOn, "long", "① 多头闸", longOn ? "开启" : "关闭", "BTC 站上 200 日线")}
+    ${gcard(shortOn, "short", "② 空头闸", shortOn ? "触发" : d.short_gate ? "待命" : "未启用", "真熊 → 做空对冲")}
+    <div class="gnet ${netKind}">
+      <div class="gn-k">当前净态(二选一闸 → 三态)</div>
+      <div class="gn-v">${netTxt}</div>
+    </div>
   </div>`;
 }
 // 权益曲线 + 24小时/日线切换

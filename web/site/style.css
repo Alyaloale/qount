@@ -15,6 +15,8 @@
   --amber: #d8a657;      /* short / risk-off accent (warm, distinct from cyan) */
   --amber-line: rgba(216,166,87,.42);
   --radius: 16px;
+  --sbw: clamp(196px, 15vw, 244px);   /* 侧栏宽随视口流式 */
+  --cmax: 1460px;                      /* 内容最大宽,大屏居中、不左贴 */
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono", "Roboto Mono", monospace;
 }
 
@@ -59,7 +61,7 @@ body::before {
 
 /* ===== app shell: fixed sidebar + scrolling content ===== */
 .shell { min-height: 100vh; }
-.sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 232px; z-index: 30;
+.sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sbw); z-index: 30;
   background: var(--card); border-right: 1px solid var(--line-soft);
   display: flex; flex-direction: column; padding: 22px 14px 16px; }
 .brand { display: flex; align-items: baseline; gap: 10px; padding: 0 10px 22px; }
@@ -91,10 +93,11 @@ body::before {
 .iconbtn.spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* content area */
-.content { margin-left: 232px; padding: 26px max(28px, env(safe-area-inset-left)) 56px; max-width: 1180px; }
+/* content area — fluid: fills viewport right of the sidebar, inner content centered & capped */
+.content { margin-left: var(--sbw); padding: clamp(20px, 2.4vw, 34px) clamp(18px, 3vw, 48px) 60px; }
+.page-head, .view { max-width: var(--cmax); margin-left: auto; margin-right: auto; }
 .page-head { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
-.page-head h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.4px; color: var(--txt); }
+.page-head h1 { margin: 0; font-size: clamp(18px, 2.2vw, 23px); font-weight: 650; letter-spacing: -.4px; color: var(--txt); }
 .page-sub { color: var(--txt3); font-size: 13px; margin-left: auto; font-family: var(--mono); }
 .menu-btn { display: none; }
 .scrim { display: none; }
@@ -103,8 +106,8 @@ body::before {
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .ov-note { color: var(--txt3); font-size: 12.5px; margin-top: 18px; text-align: center; }
 
-/* overview band */
-.overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+/* overview band — auto-fit so it reflows at any resolution */
+.overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 248px), 1fr)); gap: 18px; }
 .otile { cursor: pointer; }
 .otile { position: relative; background: var(--card); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 22px 22px; transition: border-color .25s, transform .25s; }
 .otile:hover { border-color: var(--line); transform: translateY(-2px); }
@@ -112,14 +115,15 @@ body::before {
 .ot-tag { margin-left: auto; font-size: 10.5px; font-weight: 600; padding: 2px 9px; border-radius: 12px; border: 1px solid var(--line); }
 .ot-tag.real { color: var(--ac); border-color: var(--ac-line); }
 .ot-tag.paper { color: var(--txt3); }
-.otile .oe { font-size: 27px; font-weight: 650; letter-spacing: -.8px; line-height: 1; font-family: var(--mono); }
+.otile .oe { font-size: clamp(22px, 2.4vw, 28px); font-weight: 650; letter-spacing: -.8px; line-height: 1; font-family: var(--mono); }
 .otile .oe .cur { color: var(--txt3); font-size: 16px; margin-right: 3px; }
 .otile .os { font-size: 13px; margin-top: 11px; color: var(--txt2); }
 
 /* live pulse dot — softer */
-.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ac); display: inline-block; position: relative; flex: 0 0 auto; }
-.live-dot::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1px solid var(--ac); opacity: .6; animation: pulse 2.6s ease-out infinite; }
-@keyframes pulse { 0% { transform: scale(.5); opacity: .6; } 100% { transform: scale(2); opacity: 0; } }
+/* live indicator — calm green "online" dot with a soft halo pulse (green reads as live, less stray) */
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: #2fbf71; display: inline-block;
+  flex: 0 0 auto; box-shadow: 0 0 0 0 rgba(47,191,113,.5); animation: pulse 2.4s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(47,191,113,.45); } 70% { box-shadow: 0 0 0 5px rgba(47,191,113,0); } 100% { box-shadow: 0 0 0 0 rgba(47,191,113,0); } }
 
 /* panel */
 .panel { position: relative; background: var(--card); border: 1px solid var(--line-soft); border-radius: var(--radius); overflow: hidden; }
@@ -139,7 +143,7 @@ body::before {
 
 /* hero */
 .hero { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; margin: 14px 0 22px; }
-.hero .equity { font-size: 42px; font-weight: 650; letter-spacing: -1.4px; line-height: 1; font-family: var(--mono); }
+.hero .equity { font-size: clamp(32px, 4.4vw, 46px); font-weight: 650; letter-spacing: -1.4px; line-height: 1; font-family: var(--mono); }
 .hero .equity .cur { font-size: 20px; color: var(--txt3); margin-right: 5px; }
 .hero .sub { color: var(--txt3); font-size: 13px; width: 100%; }
 .pnl-tag { font-family: var(--mono); font-size: 14px; font-weight: 650; padding: 4px 12px; border-radius: 20px;
@@ -189,14 +193,29 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
 .tbl .sym { color: var(--txt3); font-size: 12px; margin-left: 8px; font-family: var(--mono); }
 .wbar { display: inline-block; height: 3px; border-radius: 2px; background: var(--ac); vertical-align: middle; opacity: .5; margin-left: 8px; }
 
-/* gate meter — softened */
-.gate { margin: 0 0 24px; }
-.gate-track { position: relative; height: 6px; background: var(--card2); border: 1px solid var(--line); border-radius: 6px; margin: 40px 8px 44px; }
-.gate-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, rgba(86,197,216,.12), rgba(86,197,216,.4)); border-radius: 6px 0 0 6px; }
-.gate-line { position: absolute; top: -9px; bottom: -9px; width: 2px; background: var(--ac); }
-.gate-line .lbl { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 11.5px; color: var(--ac); white-space: nowrap; font-family: var(--mono); }
-.gate-dot { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--txt); transform: translate(-50%, -50%); box-shadow: 0 0 0 4px var(--card); }
-.gate-dot .lbl { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); font-size: 11.5px; color: var(--txt); font-weight: 600; white-space: nowrap; font-family: var(--mono); }
+/* gate meter — refined: rounded bar, fill colored by state, threshold flag + gap-to-open */
+.gate { margin: 6px 0 22px; }
+.gate-bar { position: relative; height: 10px; background: var(--card2); border: 1px solid var(--line); border-radius: 999px; margin: 48px 12px 42px; }
+.gate-fill { position: absolute; left: 0; top: -1px; bottom: -1px; border-radius: 999px; }
+.gate.risk .gate-fill { background: linear-gradient(90deg, rgba(154,101,18,.18), var(--amber)); opacity: .55; }
+.gate.long .gate-fill { background: linear-gradient(90deg, rgba(86,197,216,.18), var(--ac)); opacity: .6; }
+/* faint striped "gap" between BTC and the gate line = distance still to cover */
+.gate-gap { position: absolute; top: 0; bottom: 0; opacity: .5;
+  background: repeating-linear-gradient(-45deg, transparent 0 5px, var(--line) 5px 6px); }
+/* threshold (开闸线): clean vertical tick; label sits above, edge-aware anchored (inline transform) */
+.gate-th { position: absolute; top: -8px; bottom: -8px; width: 3px; background: var(--ac); border-radius: 3px;
+  transform: translateX(-50%); }
+.gate-lbl { position: absolute; font-size: 11.5px; white-space: nowrap; font-family: var(--mono); }
+.gate-th-lbl { bottom: 20px; color: var(--ac); font-weight: 600; }
+/* BTC marker: a clean ringed dot; label below, edge-aware anchored */
+.gate-btc { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--bg); border: 3px solid var(--txt2); transform: translate(-50%, -50%); }
+.gate.risk .gate-btc { border-color: var(--amber); }
+.gate.long .gate-btc { border-color: var(--ac); }
+.gate-btc-lbl { top: 18px; color: var(--txt); font-weight: 600; }
+.gate-need { font-size: 12.5px; color: var(--txt3); text-align: center; }
+.gate-need b { color: var(--amber); font-weight: 700; font-family: var(--mono); }
+.gate-need.on { color: var(--ac); }
 
 /* universe coin pills */
 .uni { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
@@ -256,10 +275,10 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
 .sumcard { background: var(--card); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 18px; }
 .sc-main { padding-bottom: 18px; border-bottom: 1px solid var(--line-soft); margin-bottom: 18px; }
 .sc-k { color: var(--txt3); font-size: 12.5px; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.sc-v { font-size: 36px; font-weight: 700; letter-spacing: -1px; font-family: var(--mono); line-height: 1; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.sc-v { font-size: clamp(28px, 3.6vw, 38px); font-weight: 700; letter-spacing: -1px; font-family: var(--mono); line-height: 1; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
 .sc-v .cur { font-size: 18px; color: var(--txt3); margin-right: 2px; }
 .sc-chg { font-size: 14px; font-weight: 600; font-family: var(--mono); }
-.sc-cells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.sc-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 18px; }
 .sc-cell { }
 .sc-ck { color: var(--txt3); font-size: 12px; margin-bottom: 8px; }
 .sc-cv { font-size: 20px; font-weight: 650; font-family: var(--mono); letter-spacing: -.3px; }
@@ -275,28 +294,34 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
 .seg.on { background: var(--ac-soft); color: var(--ac); }
 .seg:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ===== 3-态闸 (long gate / short gate / flat) ===== */
-.gate-states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 2px 0 22px; }
-.gst { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--card2); transition: .2s; opacity: .5; }
-.gst .gst-k { font-size: 12px; color: var(--txt3); display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
-.gst .gst-v { font-size: 15px; font-weight: 650; color: var(--txt2); }
-.gst .gst-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--txt3); flex: 0 0 auto; }
-.gst.on { opacity: 1; }
-.gst.on.long { border-color: var(--ac-line); background: var(--ac-soft); }
-.gst.on.long .gst-v, .gst.on.long .gst-dot { color: var(--ac); background: var(--ac); }
-.gst.on.long .gst-v { background: none; }
-.gst.on.short { border-color: var(--amber-line); background: rgba(154,101,18,.07); }
-.gst.on.short .gst-v, .gst.on.short .gst-dot { color: var(--amber); background: var(--amber); }
-.gst.on.short .gst-v { background: none; }
-.gst.on.flat { border-color: var(--line); }
-.gst.on.flat .gst-v, .gst.on.flat .gst-dot { color: var(--txt); background: var(--txt2); }
-.gst.on.flat .gst-v { background: none; }
+/* ===== 两道闸(各自 on/off,始终都显示)+ 净态 ===== */
+.gates2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; margin: 2px 0 22px; align-items: stretch; }
+.gcard { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--card2); }
+.gcard .gc-k { font-size: 12.5px; color: var(--txt2); display: flex; align-items: center; gap: 8px; margin-bottom: 9px; font-weight: 600; }
+.gcard .gc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--txt3); flex: 0 0 auto; box-shadow: 0 0 0 3px transparent; }
+.gcard .gc-v { font-size: 19px; font-weight: 700; color: var(--txt3); letter-spacing: -.2px; }
+.gcard .gc-d { font-size: 11.5px; color: var(--txt3); margin-top: 5px; }
+.gcard.off .gc-v { color: var(--txt3); }                 /* 关闭的闸:清晰可见(不重度变暗),只是中性灰 */
+.gcard.on.long { border-color: var(--ac-line); background: var(--ac-soft); }
+.gcard.on.long .gc-v, .gcard.on.long .gc-dot { color: var(--ac); background: var(--ac); }
+.gcard.on.long .gc-v { background: none; }
+.gcard.on.long .gc-dot { box-shadow: 0 0 0 3px var(--ac-soft); }
+.gcard.on.short { border-color: var(--amber-line); background: rgba(154,101,18,.08); }
+.gcard.on.short .gc-v, .gcard.on.short .gc-dot { color: var(--amber); background: var(--amber); }
+.gcard.on.short .gc-v { background: none; }
+.gcard.on.short .gc-dot { box-shadow: 0 0 0 3px rgba(154,101,18,.12); }
+.gnet { border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; display: flex; flex-direction: column; justify-content: center; background: var(--card); }
+.gnet .gn-k { font-size: 11.5px; color: var(--txt3); margin-bottom: 7px; }
+.gnet .gn-v { font-size: 22px; font-weight: 750; letter-spacing: -.4px; color: var(--txt); }
+.gnet.long { border-color: var(--ac-line); } .gnet.long .gn-v { color: var(--ac); }
+.gnet.short { border-color: var(--amber-line); } .gnet.short .gn-v { color: var(--amber); }
+@media (max-width: 560px) { .gates2 { grid-template-columns: 1fr; } }
 
 /* ===== responsive: collapse sidebar to a drawer ===== */
 @media (max-width: 920px) {
-  .sidebar { transform: translateX(-100%); transition: transform .25s ease; box-shadow: 0 0 40px rgba(0,0,0,.4); }
+  .sidebar { width: 248px; transform: translateX(-100%); transition: transform .25s ease; box-shadow: 0 0 40px rgba(0,0,0,.4); }
   body.nav-open .sidebar { transform: none; }
-  .content { margin-left: 0; max-width: 760px; margin-right: auto; }
+  .content { margin-left: 0; }
   .menu-btn { display: inline-block; }
   body.nav-open .scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; }
 }
@@ -313,4 +338,4 @@ svg.chart .hot { fill: var(--ac); stroke: var(--bg); stroke-width: 1.5; opacity:
   .chip:nth-child(2) { border-right: none; }
   .page-head h1 { font-size: 19px; }
 }
-@media (prefers-reduced-motion: reduce) { .live-dot::after, .view { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .live-dot, .view { animation: none !important; } }
