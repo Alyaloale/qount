@@ -252,7 +252,7 @@ function renderOverview() {
     const lUp = l.unrealized_pnl;
     const state = longOn ? "做多 · 持多仓" : shortOn ? "做空 · 对冲" : "空仓 · 观望";
     tiles.push(`<div class="otile" data-route="live">
-      <div class="ok"><span class="live-dot"></span>加密实盘 · X4 趋势</div>
+      <div class="ok"><span class="live-dot"></span>加密实盘 · X4 趋势<span class="ot-tag real">实盘</span></div>
       <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital, 2)}</div>
       <div class="os ${l.total_pnl != null ? cls(l.total_pnl) : ""}">${state}${l.total_pnl != null ? ` · 总盈亏 ${signed(l.total_pnl, "$")}` : lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
     </div>`);
@@ -265,7 +265,7 @@ function renderOverview() {
   if (c && c.equity != null) {
     const day = c.day_pnl || 0, dayPct = c.equity ? day / (c.equity - day) : 0;
     tiles.push(`<div class="otile" data-route="cta">
-      <div class="ok">A股 · CTA-R 模拟盘</div>
+      <div class="ok">A股 · CTA-R<span class="ot-tag paper">模拟</span></div>
       <div class="oe"><span class="cur">¥</span>${counted("ov-cta", c.equity)}</div>
       <div class="os ${cls(day)}">${arw(day)}今日 ${signed(day, "¥")} · ${pct(dayPct, 2)}</div>
     </div>`);
@@ -278,7 +278,7 @@ function renderOverview() {
     const base = Object.keys(bk).length * (p.holdings.initial_capital || 100000);
     const ret = base ? eq / base - 1 : 0;
     tiles.push(`<div class="otile" data-route="paper">
-      <div class="ok">加密 · 模拟盘(前向)</div>
+      <div class="ok">加密 · 模拟盘(前向)<span class="ot-tag paper">模拟</span></div>
       <div class="oe"><span class="cur">$</span>${counted("ov-paper", eq)}</div>
       <div class="os ${cls(ret)}">${Object.keys(bk).length} 本 · 前向 ${arw(ret)}${pct(ret)}</div>
     </div>`);

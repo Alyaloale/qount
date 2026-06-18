@@ -68,6 +68,8 @@ body::before {
 .tag { color: var(--txt3); font-size: 12.5px; }
 
 .nav { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.nav-sec { font-size: 10.5px; letter-spacing: 1px; color: var(--txt3); text-transform: uppercase;
+  padding: 14px 12px 6px; opacity: .8; }
 .nav-item { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 10px;
   color: var(--txt2); font-size: 14.5px; font-weight: 500; cursor: pointer; text-decoration: none;
   transition: background .15s, color .15s; user-select: none; }
@@ -107,6 +109,9 @@ body::before {
 .otile { position: relative; background: var(--card); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 22px 22px; transition: border-color .25s, transform .25s; }
 .otile:hover { border-color: var(--line); transform: translateY(-2px); }
 .otile .ok { color: var(--txt3); font-size: 12px; letter-spacing: .2px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.ot-tag { margin-left: auto; font-size: 10.5px; font-weight: 600; padding: 2px 9px; border-radius: 12px; border: 1px solid var(--line); }
+.ot-tag.real { color: var(--ac); border-color: var(--ac-line); }
+.ot-tag.paper { color: var(--txt3); }
 .otile .oe { font-size: 27px; font-weight: 650; letter-spacing: -.8px; line-height: 1; font-family: var(--mono); }
 .otile .oe .cur { color: var(--txt3); font-size: 16px; margin-right: 3px; }
 .otile .os { font-size: 13px; margin-top: 11px; color: var(--txt2); }

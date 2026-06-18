@@ -340,6 +340,34 @@ def main(argv: list[str]) -> int:
     rec["total_pnl"] = round(rec["equity"] - base, 2)
     rec["total_pnl_pct"] = round(rec["equity"] / base - 1.0, 4) if base else 0.0
 
+    # 复盘本地记录:每轮 append 一行精简状态(append-only 时间线,便于回放/复盘三态闸切换与盈亏轨迹)。
+    # 净态 = 三选一:多头闸开→long / 闸关且做空闸触发→short / 否则 flat。分钟去重避免手动多触发刷屏。
+    net_state = "long" if rec["gate_open"] else ("short" if rec["shorting"] else "flat")
+    snap = {
+        "ts": rec["ts"], "bar": rec["bar"], "state": net_state, "armed": rec["armed"],
+        "gate_open": rec["gate_open"], "shorting": rec["shorting"], "short_gate": rec["short_gate"],
+        "equity": rec["equity"], "capital": rec["capital"], "unrealized_pnl": rec["unrealized_pnl"],
+        "total_pnl": rec["total_pnl"], "gross_exposure": rec["gross_exposure"],
+        "btc_px": rec["btc_px"], "btc_to_sma": rec["btc_to_sma"], "n_holdings": len(holdings),
+        "holdings": [{"s": h["symbol"], "side": h["side"], "value": h["value"],
+                      "entry": h.get("entry"), "upnl": h.get("upnl"), "stop": h.get("stop")} for h in holdings],
+    }
+    snap_path = STATE_DIR / "snapshots.jsonl"
+    last_min = ""
+    if snap_path.exists():
+        try:
+            with snap_path.open("rb") as f:           # cheap last-line read for minute-dedup
+                f.seek(0, 2)
+                f.seek(max(0, f.tell() - 4096))
+                tail = f.read().splitlines()
+            if tail:
+                last_min = json.loads(tail[-1]).get("ts", "")[:16]
+        except Exception:
+            last_min = ""
+    if last_min != rec["ts"][:16]:
+        with snap_path.open("a") as f:
+            f.write(json.dumps(snap, default=float) + "\n")
+
     (STATE_DIR / "latest.json").write_text(json.dumps(rec, indent=2, default=float))
     print(f"  logged -> {STATE_DIR}/latest.json")
     return 0
