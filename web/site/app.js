@@ -56,25 +56,25 @@ function applyCounts() {
   });
 }
 
-// ---- top ticker ----
-function renderTicker() {
-  const c = store.cta, l = store.live, p = store.paper, parts = [];
-  if (l && l.btc_px) parts.push(`BTC <b>$${money(l.btc_px)}</b>`);
-  if (l && l.btc_to_sma != null) parts.push(`距开闸 <b>${pct(l.btc_to_sma, 1)}</b>`);
-  if (c && c.equity != null) {
-    const day = c.day_pnl || 0;
-    parts.push(`A股今日 <b>${signed(day, "¥")}</b>`);
-    parts.push(`A股累计 <b>${pct(c.total_pnl_pct || 0)}</b>`);
+// ---- page subtitle: per-route compact status line in the header ----
+function pageSub(route) {
+  const el = $("page-sub");
+  if (!el) return;
+  const c = store.cta, l = store.live, p = store.paper;
+  let s = "";
+  if (route === "overview") {
+    if (l && l.btc_px) s = `BTC $${money(l.btc_px)} · 距开闸 ${pct(l.btc_to_sma || 0, 1)}`;
+  } else if (route === "live" && l) {
+    const { longOn, shortOn } = liveNetState(l);
+    s = `${longOn ? "做多" : shortOn ? "做空对冲" : "空仓"} · ${l.armed ? "已武装" : "未武装"} · 更新 ${ago(l.ts)}`;
+  } else if (route === "cta" && c) {
+    s = `累计 ${pct(c.total_pnl_pct || 0)} · 数据 ${c.data_date || "—"}`;
+  } else if (route === "cxd" && store.cxd) {
+    s = `编排 · 趋势 60% + carry 40%`;
+  } else if (route === "paper" && p) {
+    s = `各 $100k 前向 · ${(p.holdings && p.holdings.deploy_date) || "—"}`;
   }
-  if (l && l.capital != null) {
-    const lShort = !!l.shorting || (l.holdings || []).some((h) => (h.value || 0) < 0);
-    parts.push(`实盘 <b>$${money(l.equity != null ? l.equity : l.capital)}</b> ${l.gate_open ? "做多" : lShort ? "做空对冲" : "空仓"}`);
-  }
-  if (p && p.combo && p.combo.portfolio) parts.push(`模拟合成 Sharpe <b>${(p.combo.portfolio.sharpe || 0).toFixed(2)}</b>`);
-  const el = $("ticker");
-  if (!parts.length) { el.innerHTML = ""; return; }
-  const seq = parts.join('<span class="sep">◆</span>') + '<span class="sep">◆</span>';
-  el.innerHTML = `<div class="ticker-track"><span>${seq}</span><span>${seq}</span></div>`;
+  el.textContent = s;
 }
 
 function money(x, cur) {
@@ -216,27 +216,30 @@ function renderOverview() {
   const c = store.cta, l = store.live, p = store.paper;
   const tiles = [];
 
-  // A股
-  if (c && c.equity != null) {
-    const day = c.day_pnl || 0, dayPct = c.equity ? day / (c.equity - day) : 0;
-    tiles.push(`<div class="otile">
-      <div class="ok">A股 · 模拟盘</div>
-      <div class="oe"><span class="cur">¥</span>${counted("ov-cta", c.equity)}</div>
-      <div class="os ${cls(day)}">${arw(day)}今日 ${sign(day)}¥${money(Math.abs(day))} · ${pct(dayPct, 2)}</div>
-    </div>`);
-  } else tiles.push(`<div class="otile"><div class="ok">A股 · 模拟盘</div><div class="oe dim">—</div></div>`);
-
-  // 加密实盘
+  // 加密实盘(主账,置顶)
   if (l && l.capital != null) {
-    const lShort = !!l.shorting || (l.holdings || []).some((h) => (h.value || 0) < 0);
+    const { longOn, shortOn } = liveNetState(l);
     const lUp = l.unrealized_pnl;
-    const state = l.gate_open ? "闸开 · 做多" : lShort ? "闸关 · 做空对冲" : "闸关 · 空仓";
-    tiles.push(`<div class="otile">
-      <div class="ok"><span class="live-dot"></span>加密实盘</div>
+    const state = longOn ? "做多 · 持多仓" : shortOn ? "做空 · 对冲" : "空仓 · 观望";
+    tiles.push(`<div class="otile" data-route="live">
+      <div class="ok"><span class="live-dot"></span>加密实盘 · X4 趋势</div>
       <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital)}</div>
       <div class="os ${lUp != null ? cls(lUp) : ""}">${state}${lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
     </div>`);
-  } else tiles.push(`<div class="otile"><div class="ok">加密实盘</div><div class="oe dim">—</div></div>`);
+    const tag = $("nav-live-tag");
+    if (tag) { tag.textContent = longOn ? "做多" : shortOn ? "做空" : "空仓";
+               tag.className = "ni-tag " + (longOn ? "long" : shortOn ? "short" : ""); }
+  } else tiles.push(`<div class="otile" data-route="live"><div class="ok">加密实盘</div><div class="oe dim">—</div></div>`);
+
+  // A股
+  if (c && c.equity != null) {
+    const day = c.day_pnl || 0, dayPct = c.equity ? day / (c.equity - day) : 0;
+    tiles.push(`<div class="otile" data-route="cta">
+      <div class="ok">A股 · CTA-R 模拟盘</div>
+      <div class="oe"><span class="cur">¥</span>${counted("ov-cta", c.equity)}</div>
+      <div class="os ${cls(day)}">${arw(day)}今日 ${signed(day, "¥")} · ${pct(dayPct, 2)}</div>
+    </div>`);
+  } else tiles.push(`<div class="otile" data-route="cta"><div class="ok">A股 · 模拟盘</div><div class="oe dim">—</div></div>`);
 
   // 加密模拟(3 本 book 合计)
   if (p && p.holdings && p.holdings.books) {
@@ -244,12 +247,12 @@ function renderOverview() {
     const eq = Object.values(bk).reduce((s, b) => s + (b.fwd_equity || 0), 0);
     const base = Object.keys(bk).length * (p.holdings.initial_capital || 100000);
     const ret = base ? eq / base - 1 : 0;
-    tiles.push(`<div class="otile">
-      <div class="ok">加密模拟盘</div>
+    tiles.push(`<div class="otile" data-route="paper">
+      <div class="ok">加密 · 模拟盘(前向)</div>
       <div class="oe"><span class="cur">$</span>${counted("ov-paper", eq)}</div>
       <div class="os ${cls(ret)}">${Object.keys(bk).length} 本 · 前向 ${arw(ret)}${pct(ret)}</div>
     </div>`);
-  } else tiles.push(`<div class="otile"><div class="ok">加密模拟盘</div><div class="oe dim">—</div></div>`);
+  } else tiles.push(`<div class="otile" data-route="paper"><div class="ok">加密模拟盘</div><div class="oe dim">—</div></div>`);
 
   el.innerHTML = tiles.join("");
 }
@@ -314,6 +317,22 @@ function gateMeter(btc, sma) {
     </div>
   </div>`;
 }
+// 3-态闸:多头闸(站上 200 线)/ 空头闸(熊市对冲)/ 空仓,互斥,高亮当前态
+function liveNetState(d) {
+  const longOn = !!d.gate_open;
+  const shortOn = !longOn && (!!d.shorting || (d.holdings || []).some((h) => (h.value || 0) < 0));
+  return { longOn, shortOn, flatOn: !longOn && !shortOn };
+}
+function gateStates(d) {
+  const { longOn, shortOn, flatOn } = liveNetState(d);
+  const tile = (on, kind, k, v) =>
+    `<div class="gst ${on ? "on" : ""} ${kind}"><div class="gst-k"><span class="gst-dot"></span>${k}</div><div class="gst-v">${v}</div></div>`;
+  return `<div class="gate-states">
+    ${tile(longOn, "long", "多头闸 · 站上 200 线", longOn ? "做多 · 持多仓" : "关闭")}
+    ${tile(shortOn, "short", "空头闸 · 熊市对冲", shortOn ? "做空 · 持空仓" : d.short_gate ? "待命(未触发)" : "未启用")}
+    ${tile(flatOn, "flat", "空仓 · 现金", flatOn ? "观望" : "—")}
+  </div>`;
+}
 function renderLive(d) {
   store.live = d;
   const body = $("body-live");
@@ -331,7 +350,7 @@ function renderLive(d) {
   const shorting = !!d.shorting || holdings.some((h) => (h.value || 0) < 0);
   const gb = document.createElement("span");
   gb.className = "badge " + (d.gate_open ? "gate-open" : shorting ? "shorting" : "gate-closed");
-  gb.textContent = d.gate_open ? "闸开 · 做多" : shorting ? "闸关 · 做空对冲" : "闸关 · 空仓";
+  gb.textContent = d.gate_open ? "做多" : shorting ? "做空" : "空仓";
   head.appendChild(gb);
 
   const toSma = d.btc_to_sma || 0;
@@ -373,6 +392,8 @@ function renderLive(d) {
       <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
     ${d.equity_curve && d.equity_curve.length > 1 ? `<div class="chart-cap">账户权益曲线 · 钱包 + 未实现</div>${chart(d.equity_curve, { cur: "$" })}` : ""}
+    <div class="subhead">交易闸 · 两道闸 → 三态(BTC 站上 200 线做多 / 真熊做空对冲 / 否则空仓)</div>
+    ${gateStates(d)}
     <div class="subhead">大盘闸门 · BTC vs 200 日线</div>
     ${gateMeter(d.btc_px, d.btc_sma200)}
     <div class="chips">
@@ -385,7 +406,7 @@ function renderLive(d) {
     <div class="subhead">候选币池 · ${(d.universe || UNIVERSE).length} 币</div>
     <div class="uni">${coins}</div>
     ${holdHtml}
-    <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · vol 平价 sizing` : "现货 1x 逆波动率"} · ${shorting ? "熊市闸关 → §24 做空闸:对确认下跌的币做空对冲(逆波动率 · BUY closePosition 兜底止损)" : "站上 200 日线开仓"}${d.chandelier_mult ? ` · 盘中 chandelier ${d.chandelier_mult}× 止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
+    <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · 逆波动率平价` : "现货 1x"}${d.chandelier_mult ? ` · chandelier ${d.chandelier_mult}× 兜底止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
 }
 
 // ---- 加密 C×D 合成账(趋势 60% + carry 40%) ----
@@ -513,17 +534,37 @@ async function load() {
     }
   }));
   renderOverview();
-  renderTicker();
   applyCounts();
   wireCharts();
+  pageSub(currentRoute());
   booted = true;
-  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false }) + " 刷新";
+  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
 }
 function tick() {
   const btn = $("refresh");
   btn.classList.add("spin");
   load().finally(() => setTimeout(() => btn.classList.remove("spin"), 600));
 }
+
+// ---- router: hash-based, one view visible at a time (keeps each page short) ----
+const ROUTES = {
+  overview: "概览", live: "加密实盘 · X4 趋势", cta: "A股 · CTA-R 跨资产",
+  cxd: "C×D 合成账", paper: "加密模拟盘",
+};
+function currentRoute() {
+  const r = (location.hash || "").replace(/^#\/?/, "");
+  return ROUTES[r] ? r : "overview";
+}
+function showRoute(route) {
+  document.querySelectorAll(".view").forEach((v) => { v.hidden = v.id !== "view-" + route; });
+  document.querySelectorAll(".nav-item").forEach((a) => a.classList.toggle("active", a.dataset.route === route));
+  const t = $("page-title"); if (t) t.textContent = ROUTES[route] || "概览";
+  pageSub(route);
+  document.body.classList.remove("nav-open");           // close mobile drawer on navigate
+  window.scrollTo(0, 0);
+}
+function go(route) { location.hash = "#/" + route; }
+window.addEventListener("hashchange", () => showRoute(currentRoute()));
 
 // ---- real-time: poll Binance USDⓈ-M public mark prices between the 10-min cron snapshots and re-derive
 //      live uPnL / equity / gate distance in the browser (no key, public CORS endpoint) ----
@@ -574,19 +615,25 @@ function patchLive() {
   store.live = d;
   renderLive(d);
   renderOverview();
-  renderTicker();
   applyCounts();
   wireCharts();
   // prune chart registry to DOM-present ids (live panel re-renders its chart each tick — avoid leak)
   Object.keys(CHARTS).forEach((id) => { if (!document.querySelector(`[data-cid="${id}"]`)) delete CHARTS[id]; });
   liveOnly = false;
-  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false }) + " · 实时价";
+  if (currentRoute() === "live" || currentRoute() === "overview") pageSub(currentRoute());
+  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false }) + " · 实时";
 }
 
+// ---- wiring ----
 $("refresh").addEventListener("click", tick);
 $("theme-btn").addEventListener("click", toggleTheme);
+$("menu-btn").addEventListener("click", () => document.body.classList.toggle("nav-open"));
+$("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
+document.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.dataset.route); }));
+document.addEventListener("click", (e) => { const t = e.target.closest(".otile[data-route]"); if (t) go(t.dataset.route); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); refreshLivePrices(); } });
 applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+showRoute(currentRoute());
 tick();
-setInterval(load, 60000);                              // cron JSON snapshot (positions/stops/capital)
-setInterval(refreshLivePrices, 8000);                  // live spot price -> uPnL/equity/gate, every 8s
+setInterval(load, 45000);                              // cron JSON snapshot (positions/stops/capital)
+setInterval(refreshLivePrices, 4000);                  // live spot price -> uPnL/equity/gate, every 4s
