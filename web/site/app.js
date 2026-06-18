@@ -647,7 +647,10 @@ async function load() {
 function tick() {
   const btn = $("refresh");
   btn.classList.add("spin");
-  load().finally(() => setTimeout(() => btn.classList.remove("spin"), 600));
+  // 先拉 cron JSON 快照,再立刻刷一次币安实时价(否则点刷新只更新 10min 级快照、不动实时价)
+  load()
+    .then(() => refreshLivePrices())
+    .finally(() => setTimeout(() => btn.classList.remove("spin"), 600));
 }
 
 // ---- router: hash-based, one view visible at a time (keeps each page short) ----
