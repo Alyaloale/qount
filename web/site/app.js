@@ -372,6 +372,7 @@ function renderLive(d) {
       <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital)}</div>
       <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
+    ${d.equity_curve && d.equity_curve.length > 1 ? `<div class="chart-cap">账户权益曲线 · 钱包 + 未实现</div>${chart(d.equity_curve, { cur: "$" })}` : ""}
     <div class="subhead">大盘闸门 · BTC vs 200 日线</div>
     ${gateMeter(d.btc_px, d.btc_sma200)}
     <div class="chips">
@@ -576,6 +577,8 @@ function patchLive() {
   renderTicker();
   applyCounts();
   wireCharts();
+  // prune chart registry to DOM-present ids (live panel re-renders its chart each tick — avoid leak)
+  Object.keys(CHARTS).forEach((id) => { if (!document.querySelector(`[data-cid="${id}"]`)) delete CHARTS[id]; });
   liveOnly = false;
   $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false }) + " · 实时价";
 }

@@ -277,6 +277,24 @@ def main(argv: list[str]) -> int:
     if res.orders or rec["n_placed"]:
         with (STATE_DIR / "orders.jsonl").open("a") as f:
             f.write(json.dumps(rec, default=float) + "\n")
+
+    # equity history for the 看板 收益曲线: append this run's real equity (wallet + 未实现), dedup the
+    # last point if same bar+minute, cap to the last 720 points (~5 days @ 10-min cron). Kept in a small
+    # standalone file so it survives across runs; embedded into latest.json as equity_curve for the chart.
+    hist_path = STATE_DIR / "equity_history.json"
+    try:
+        hist = json.loads(hist_path.read_text())
+        if not isinstance(hist, list):
+            hist = []
+    except Exception:
+        hist = []
+    stamp = rec["ts"][:16]   # minute granularity
+    if not (hist and hist[-1].get("ts", "")[:16] == stamp):
+        hist.append({"ts": rec["ts"], "date": last_date, "equity": rec["equity"]})
+    hist = hist[-720:]
+    hist_path.write_text(json.dumps(hist, default=float))
+    rec["equity_curve"] = hist   # latest.json only (already wrote orders.jsonl above without it)
+
     (STATE_DIR / "latest.json").write_text(json.dumps(rec, indent=2, default=float))
     print(f"  logged -> {STATE_DIR}/latest.json")
     return 0
