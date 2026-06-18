@@ -253,8 +253,8 @@ function renderOverview() {
     const state = longOn ? "做多 · 持多仓" : shortOn ? "做空 · 对冲" : "空仓 · 观望";
     tiles.push(`<div class="otile" data-route="live">
       <div class="ok"><span class="live-dot"></span>加密实盘 · X4 趋势</div>
-      <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital)}</div>
-      <div class="os ${lUp != null ? cls(lUp) : ""}">${state}${lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
+      <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital, 2)}</div>
+      <div class="os ${l.total_pnl != null ? cls(l.total_pnl) : ""}">${state}${l.total_pnl != null ? ` · 总盈亏 ${signed(l.total_pnl, "$")}` : lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
     </div>`);
     const tag = $("nav-live-tag");
     if (tag) { tag.textContent = longOn ? "做多" : shortOn ? "做空" : "空仓";
@@ -298,7 +298,10 @@ function renderSummary() {
   const cDay = c && (c.day_pnl || 0);
   // 真实头条 = 加密实盘权益(唯一真金账户)
   const realEq = l && (l.equity != null ? l.equity : l.capital);
-  const realChg = lUp != null ? `<span class="sc-chg ${cls(lUp)}">${arw(lUp)}今日未实现 ${signed(lUp, "$")}</span>` : "";
+  const realTot = l && l.total_pnl;
+  const realChg = realTot != null
+    ? `<span class="sc-chg ${cls(realTot)}">${arw(realTot)}总盈亏 ${signed(realTot, "$")} · ${pct(l.total_pnl_pct || 0)}</span>`
+    : lUp != null ? `<span class="sc-chg ${cls(lUp)}">${arw(lUp)}未实现 ${signed(lUp, "$")}</span>` : "";
   // 模拟合计(两币种分列,不与真金混合)
   const paperEq = p && p.holdings && p.holdings.books
     ? Object.values(p.holdings.books).reduce((s, b) => s + (b.fwd_equity || 0), 0) : null;
@@ -317,7 +320,7 @@ function renderSummary() {
   el.innerHTML = `
     <div class="sc-main">
       <div class="sc-k"><span class="live-dot"></span>真实资金 · 加密实盘 X4</div>
-      <div class="sc-v"><span class="cur">$</span>${realEq != null ? counted("sum-real", realEq) : "—"} ${realChg}</div>
+      <div class="sc-v"><span class="cur">$</span>${realEq != null ? counted("sum-real", realEq, 2) : "—"} ${realChg}</div>
     </div>
     <div class="sc-cells">${cells.join("")}</div>`;
 }
@@ -398,19 +401,22 @@ function gateStates(d) {
     ${tile(flatOn, "flat", "空仓 · 现金", flatOn ? "观望" : "—")}
   </div>`;
 }
-// 权益曲线 + 盘中/日线切换
+// 权益曲线 + 24小时/日线切换
 function liveCurveBlock(d) {
-  const intra = d.equity_curve || [], daily = d.equity_curve_daily || [];
+  const cutoff = Date.now() - 24 * 3600 * 1000;             // 真正的滚动 24h:按时间戳过滤最近 24 小时的点
+  const intra = (d.equity_curve || []).filter((p) => p.ts && new Date(p.ts).getTime() >= cutoff);
+  const daily = d.equity_curve_daily || [];
   const series = liveCurveMode === "daily" ? daily : intra;
   const hasDaily = daily.length > 1, hasIntra = intra.length > 1;
   if (!hasDaily && !hasIntra) return "";
   const seg = (mode, label, enabled) =>
     `<button class="seg ${liveCurveMode === mode ? "on" : ""}" data-curve="${mode}" ${enabled ? "" : "disabled"}>${label}</button>`;
-  const toggle = `<div class="segbar">${seg("intra", "盘中实时", hasIntra)}${seg("daily", "日线", hasDaily)}</div>`;
+  const toggle = `<div class="segbar">${seg("intra", "24 小时", hasIntra)}${seg("daily", "日线", hasDaily)}</div>`;
+  const cap = liveCurveMode === "daily" ? "账户权益 · 日线" : "账户权益 · 滚动 24 小时(10 分钟/点)";
   const body = series.length > 1
     ? chart(series, { cur: "$" })
-    : `<div class="empty">${liveCurveMode === "daily" ? "日线" : "盘中"}数据累积中(每${liveCurveMode === "daily" ? "日" : "10 分钟"}一点)…</div>`;
-  return `<div class="cap-row"><div class="chart-cap">账户权益曲线 · 钱包 + 未实现</div>${toggle}</div>${body}`;
+    : `<div class="empty">${liveCurveMode === "daily" ? "日线(次日起)" : "24 小时"}数据累积中…</div>`;
+  return `<div class="cap-row"><div class="chart-cap">${cap}</div>${toggle}</div>${body}`;
 }
 function renderLive(d) {
   store.live = d;
@@ -467,7 +473,8 @@ function renderLive(d) {
   body.innerHTML = `
     ${banners}
     <div class="hero">
-      <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital)}</div>
+      <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital, 2)}</div>
+      ${d.total_pnl != null ? `<div class="pnl-tag ${cls(d.total_pnl)}">总盈亏 ${arw(d.total_pnl)}${signed(d.total_pnl, "$")} · ${pct(d.total_pnl_pct || 0)}</div>` : ""}
       <div class="sub">实时权益 · 钱包 $${money(d.capital)}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
     ${liveCurveBlock(d)}
@@ -687,6 +694,10 @@ function patchLive() {
   if (d.holdings && d.holdings.length && anyLive) {
     d.unrealized_pnl = acc;
     d.equity = (d.capital || 0) + acc;
+    if (d.inception_equity) {                            // 总盈亏 also ticks live with equity
+      d.total_pnl = d.equity - d.inception_equity;
+      d.total_pnl_pct = d.inception_equity ? d.equity / d.inception_equity - 1 : 0;
+    }
   }
   const bpx = livePx["BTCUSDT"];
   if (bpx) { d.btc_px = bpx; if (d.btc_sma200) d.btc_to_sma = d.btc_px / d.btc_sma200 - 1; d.live_price = true; }

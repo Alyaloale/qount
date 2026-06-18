@@ -136,7 +136,11 @@ body::before {
 .hero { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; margin: 14px 0 22px; }
 .hero .equity { font-size: 42px; font-weight: 650; letter-spacing: -1.4px; line-height: 1; font-family: var(--mono); }
 .hero .equity .cur { font-size: 20px; color: var(--txt3); margin-right: 5px; }
-.hero .sub { color: var(--txt3); font-size: 13px; }
+.hero .sub { color: var(--txt3); font-size: 13px; width: 100%; }
+.pnl-tag { font-family: var(--mono); font-size: 14px; font-weight: 650; padding: 4px 12px; border-radius: 20px;
+  border: 1px solid var(--line); background: var(--card2); align-self: center; }
+.pnl-tag.pos { color: var(--ac); border-color: var(--ac-line); }
+.pnl-tag.neg { color: var(--neg); }
 
 /* stat chips — fewer, larger, no glow */
 .chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); border-top: 1px solid var(--line-soft); margin-bottom: 20px; }

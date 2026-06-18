@@ -317,6 +317,29 @@ def main(argv: list[str]) -> int:
     day_path.write_text(json.dumps(daily, default=float))
     rec["equity_curve_daily"] = daily
 
+    # 总盈亏 baseline = inception equity (首次记录、持久化,不随重启变);可用 QOUNT_X4_INCEPTION 覆盖为
+    # 真实入金额。total_pnl = 实时权益 − inception(含已实现+未实现 vs 起点)。
+    incep_env = os.environ.get("QOUNT_X4_INCEPTION", "").strip()
+    incep_path = STATE_DIR / "inception.json"
+    try:
+        incep = json.loads(incep_path.read_text())
+    except Exception:
+        incep = {}
+    base = None
+    if incep_env:
+        try:
+            base = float(incep_env)
+        except ValueError:
+            base = None
+    if base is None:
+        base = incep.get("equity")
+    if not base:
+        base = rec["equity"]
+        incep_path.write_text(json.dumps({"equity": base, "ts": rec["ts"], "day": today}, default=float))
+    rec["inception_equity"] = round(base, 2)
+    rec["total_pnl"] = round(rec["equity"] - base, 2)
+    rec["total_pnl_pct"] = round(rec["equity"] / base - 1.0, 4) if base else 0.0
+
     (STATE_DIR / "latest.json").write_text(json.dumps(rec, indent=2, default=float))
     print(f"  logged -> {STATE_DIR}/latest.json")
     return 0
