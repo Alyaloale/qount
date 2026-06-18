@@ -680,7 +680,13 @@ def place_orders(exchange, orders: list[Order], *, mode: str = "dry",
 def fetch_open_stops(exchange, data_syms: list[str], cfg: LiveConfig) -> dict[str, dict]:
     """The resting reduce-only / closePosition STOP_MARKET orders currently on the exchange, keyed by
     data symbol: ``{data_sym: {"id","symbol","stopPrice"}}``. Swap only; a per-symbol read failure is
-    skipped (best-effort — a missed read just means we may re-place, which the band debounces)."""
+    skipped (best-effort — a missed read just means we may re-place, which the band debounces).
+
+    ⚠️ Binance USDⓈ-M conditional / ``closePosition`` STOP_MARKET orders are NOT returned by a plain
+    ``fetch_open_orders`` — they live in a separate "stop" order book and only surface with
+    ``params={"stop": True}``. Without it this returned ``{}`` every run → plan re-placed the stop that
+    was already resting → Binance ``-4130`` ("a closePosition order in the direction is existing") →
+    the whole live run crashed each cron tick. (Found the first time stops were actually placed live.)"""
 
     if cfg.market_type != "swap":
         return {}
@@ -688,17 +694,20 @@ def fetch_open_stops(exchange, data_syms: list[str], cfg: LiveConfig) -> dict[st
     for s in data_syms:
         sym = to_ccxt_symbol(s, cfg.quote, cfg.market_type)
         try:
-            orders = exchange.fetch_open_orders(sym)
+            orders = exchange.fetch_open_orders(sym, params={"stop": True})
         except Exception:
             continue
         for o in orders:
             info = o.get("info") or {}
-            otype = str(o.get("type") or info.get("type") or "").upper()
-            is_stop = "STOP" in otype
+            otype = str(o.get("type") or info.get("type") or info.get("origType") or "").upper()
+            sp = o.get("stopPrice") or o.get("triggerPrice") or info.get("stopPrice")
+            # ccxt normalizes a Binance conditional order's unified ``type`` to "market" — the STOP-ness
+            # lives in origType / the presence of a trigger price. Since we query the stop book
+            # (params stop=True) any returned order with a trigger price IS a resting stop.
+            is_stop = "STOP" in otype or sp not in (None, "", 0)
             is_reduce = bool(o.get("reduceOnly") or str(info.get("reduceOnly")).lower() == "true"
                              or o.get("closePosition") or str(info.get("closePosition")).lower() == "true")
             if is_stop and is_reduce:
-                sp = o.get("stopPrice") or o.get("triggerPrice") or info.get("stopPrice")
                 out[s] = {"id": o.get("id"), "symbol": sym,
                           "stopPrice": float(sp) if sp not in (None, "") else None}
                 break
@@ -734,7 +743,14 @@ def sync_stop_orders(exchange, plan: StopOrderPlan, *, mode: str = "dry",
             acted.append({"place": o, "sent": False})
             continue
         print(tag + "  -- SENDING")
-        r = exchange.create_order(o.symbol, "STOP_MARKET", o.side, None, None,
-                                  {"stopPrice": o.stop_price, "closePosition": True})
-        acted.append({"place": o, "result": r})
+        try:
+            r = exchange.create_order(o.symbol, "STOP_MARKET", o.side, None, None,
+                                      {"stopPrice": o.stop_price, "closePosition": True})
+            acted.append({"place": o, "result": r})
+        except Exception as exc:   # a stop is a best-effort disaster backstop — never crash the whole
+            # run on a placement error. -4130 (a closePosition stop already rests in this direction) is
+            # benign (the protective stop IS there); any other error is logged but also non-fatal so the
+            # daily reconcile + local intraday stop still run.
+            print(tag + f"  -- place failed (non-fatal): {type(exc).__name__}: {str(exc)[:120]}")
+            acted.append({"place": o, "error": str(exc)})
     return acted

@@ -748,12 +748,15 @@ class TestPlanStopOrders(unittest.TestCase):
 
 
 class _StopMockExchange:
-    def __init__(self, open_orders=None):
+    def __init__(self, open_orders=None, place_raises=None):
         self._open = open_orders or {}      # ccxt_sym -> list[order dict]
         self.created = []
         self.cancelled = []
+        self.fetch_params = []              # records params passed to fetch_open_orders
+        self._place_raises = place_raises   # Exception to raise on create_order (simulate -4130)
 
-    def fetch_open_orders(self, symbol):
+    def fetch_open_orders(self, symbol, params=None):
+        self.fetch_params.append(params)
         return self._open.get(symbol, [])
 
     def cancel_order(self, order_id, symbol):
@@ -761,6 +764,8 @@ class _StopMockExchange:
         return {"id": order_id}
 
     def create_order(self, symbol, type_, side, amount, price, params):
+        if self._place_raises is not None:
+            raise self._place_raises
         self.created.append((symbol, type_, side, amount, params))
         return {"id": "stop1", "symbol": symbol}
 
@@ -786,6 +791,26 @@ class TestStopExchangeLayer(unittest.TestCase):
     def test_fetch_open_stops_spot_empty(self):
         ex = _StopMockExchange()
         self.assertEqual(fetch_open_stops(ex, ["ETHUSDT"], self._cfg(market_type="spot")), {})
+
+    def test_fetch_open_stops_parses_ccxt_market_typed_stop(self):
+        # real ccxt shape from the stop book: unified type is "market" (NOT "STOP_MARKET"), the stop-ness
+        # is the trigger price; closePosition lives in info. Must still be recognized (was the -4130 bug).
+        ex = _StopMockExchange({self.SYM: [
+            {"id": "9", "type": "market", "stopPrice": 2006.62, "triggerPrice": 2006.62,
+             "reduceOnly": True, "closePosition": None, "info": {"closePosition": True}},
+        ]})
+        out = fetch_open_stops(ex, ["ETHUSDT"], self._cfg())
+        self.assertEqual(out["ETHUSDT"]["id"], "9")
+        self.assertAlmostEqual(out["ETHUSDT"]["stopPrice"], 2006.62)
+
+    def test_fetch_open_stops_queries_stop_book(self):
+        # Binance closePosition stops only surface with params={"stop": True}; without it fetch returns
+        # [] every run and the plan re-places -> -4130 crash. Assert the param is actually sent.
+        ex = _StopMockExchange({self.SYM: [
+            {"id": "8", "type": "STOP_MARKET", "stopPrice": "99.5", "info": {"closePosition": "true"}},
+        ]})
+        fetch_open_stops(ex, ["ETHUSDT"], self._cfg())
+        self.assertEqual(ex.fetch_params, [{"stop": True}])
 
     def test_sync_dry_sends_nothing(self):
         ex = _StopMockExchange()
@@ -817,6 +842,20 @@ class TestStopExchangeLayer(unittest.TestCase):
             self.assertIsNone(amount)                                # closePosition -> no amount
             self.assertTrue(params["closePosition"])
             self.assertAlmostEqual(params["stopPrice"], 101.0)
+        finally:
+            os.environ.pop("QOUNT_X4_LIVE_ENABLE", None)
+
+    def test_sync_place_error_is_non_fatal(self):
+        # a -4130 (or any) placement error must NOT crash the run — the resting stop is a best-effort
+        # backstop; the local intraday stop + daily reconcile must still complete.
+        import os
+        os.environ["QOUNT_X4_LIVE_ENABLE"] = "1"
+        try:
+            ex = _StopMockExchange(place_raises=RuntimeError(
+                '{"code":-4130,"msg":"An open ... closePosition in the direction is existing."}'))
+            plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, {}, self._cfg())
+            acted = sync_stop_orders(ex, plan, mode="live", cfg=self._cfg())   # must not raise
+            self.assertTrue(any("error" in a for a in acted))
         finally:
             os.environ.pop("QOUNT_X4_LIVE_ENABLE", None)
 
