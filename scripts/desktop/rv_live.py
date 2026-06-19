@@ -33,9 +33,12 @@ from qount.settings import Settings  # noqa: E402
 from qount.exchange_utils import build_exchange  # noqa: E402
 from qount.rv.live import (  # noqa: E402
     CarryConfig,
+    CONTRACT_USD,
     compute_carry_orders,
+    execute_funding,
     from_ccxt_dated,
     place_carry_orders,
+    plan_funding,
     rv_live_enabled,
     target_legs,
     to_ccxt_dated,
@@ -64,7 +67,16 @@ def main(argv: list[str]) -> int:
         raise SystemExit("usage: rv_live.py [dry|live]")
     # capital overridable via env (C×D orchestrator sets the 40% carry slice); else CarryConfig default
     _cap = float(os.environ.get("QOUNT_RV_CAPITAL", "0") or 0)
-    cfg = CarryConfig(capital_usdt=_cap) if _cap > 0 else CarryConfig()
+    # auto-funding (owner「用合约账户闲置资金」): QOUNT_RV_AUTOFUND=1 pulls idle USDⓈ-M USDT to fund the
+    # carry wallets (needs the key's Permits Universal Transfer). Default off = byte-identical.
+    _autofund = os.environ.get("QOUNT_RV_AUTOFUND", "").lower() in ("1", "true", "yes")
+    _um_buffer = float(os.environ.get("QOUNT_RV_UM_BUFFER_USDT", "") or 200.0)
+    _kw: dict = {"autofund": True} if _autofund else {}
+    if _cap > 0:
+        _kw["capital_usdt"] = _cap
+    if _autofund:
+        _kw["um_buffer_usdt"] = _um_buffer
+    cfg = CarryConfig(**_kw)
     now = dt.datetime.now(dt.UTC)
     now_ms = int(now.timestamp() * 1000)
     legs = target_legs(now_ms, cfg)
@@ -97,19 +109,31 @@ def main(argv: list[str]) -> int:
             qty = float((bal.get("total") or {}).get(base, 0.0) or 0.0)
             if qty > 0 and spot_sym in prices:
                 current[spot_sym] = qty * prices[spot_sym]
-        for p in cm_ex.fetch_positions():
-            sym = p.get("symbol") or ""
-            # only DATED COIN-M (e.g. "BTC/USD:BTC-260626"); the delivery client also returns USDⓈ-M
-            # ("ETH/USDT:USDT", no "-") and COIN-M perps ("BTC/USD:BTC", no "-") -- skip those, they
-            # are a different venue/leg and would garble from_ccxt_dated.
-            if ":" not in sym or "-" not in sym:
-                continue
-            internal = from_ccxt_dated(sym)
-            amt = float(p.get("contracts") or 0.0)
-            if amt == 0:
-                continue
-            notional = abs(float(p.get("notional") or 0.0)) or abs(amt) * prices.get(internal, 0.0)
-            current[internal] = -notional if (p.get("side") or "short") == "short" else notional
+        # COIN-M dated positions: ccxt fetch_positions() only returns PERPETUAL (USDT-M / COIN-M
+        # perp) positions, NOT dated quarterly contracts. Use Binance dapiPrivateGetPositionRisk
+        # which returns ALL COIN-M positions including dated quarterlies.
+        try:
+            for r in cm_ex.dapiPrivateGetPositionRisk():
+                sym = r.get("symbol") or ""
+                amt = float(r.get("positionAmt") or 0)
+                if amt == 0 or "_" not in sym:
+                    continue
+                # Sym from Binance dapi API is already in internal format (e.g. "ETHUSD_260626")
+                internal = sym
+                notional = abs(amt) * CONTRACT_USD.get(internal.split("_")[0] if "_" in internal else "", 10.0)
+                current[internal] = -notional if amt < 0 else notional
+        except Exception:
+            # fallback: try ccxt fetch_positions (returns perps but not dated)
+            for p in cm_ex.fetch_positions():
+                sym = p.get("symbol") or ""
+                if ":" not in sym or "-" not in sym:
+                    continue
+                internal = from_ccxt_dated(sym)
+                amt = float(p.get("contracts") or 0.0)
+                if amt == 0:
+                    continue
+                notional = abs(float(p.get("notional") or 0.0)) or abs(amt) * prices.get(internal, 0.0)
+                current[internal] = -notional if (p.get("side") or "short") == "short" else notional
 
     try:
         _read()
@@ -118,6 +142,39 @@ def main(argv: list[str]) -> int:
         print(f"  (no holdings access: {type(exc).__name__}) -> assuming flat")
         if live and rv_live_enabled():
             print("  [ALERT] live+armed but cannot read holdings (need SPOT+COIN-M key) -> SKIP this run")
+
+    # --- auto-funding: pull idle USDⓈ-M USDT -> spot longs + COIN-M margin coins (before reconcile) ---
+    fund_plan = None
+    if cfg.autofund:
+        spot_usdt = 0.0
+        cm_coin_usdt: dict[str, float] = {}
+        um_available = 0.0
+        try:
+            sb = spot_ex.fetch_balance()
+            spot_usdt = float((sb.get("free") or {}).get(cfg.quote, 0.0) or 0.0)
+            cb = cm_ex.fetch_balance()
+            for spot_sym, _b in cfg.pairs:
+                coin = spot_sym[: -len(cfg.quote)]
+                amt = float((cb.get("total") or {}).get(coin, 0.0) or 0.0)
+                if amt > 0 and spot_sym in prices:
+                    cm_coin_usdt[spot_sym] = amt * prices[spot_sym]
+            um_ex = build_exchange(dataclasses.replace(settings, market_type="future"), private=live)
+            ub = um_ex.fetch_balance()
+            um_available = float((ub.get(cfg.quote) or {}).get("free", 0.0) or 0.0)
+        except Exception as exc:
+            print(f"  (autofund read failed: {type(exc).__name__}) -> skip funding this run")
+        else:
+            # credit the spot BASE already held so funding only tops up the SHORTFALL (not the full N
+            # every run -> would slowly bleed the trend wallet into idle spot USDT). `current` holds the
+            # signed spot long notionals read above.
+            cur_spot = {s: v for s, v in current.items() if "_" not in s and v > 0}
+            fund_plan = plan_funding(legs, spot_usdt, cm_coin_usdt, prices, um_available, cfg,
+                                     cur_spot_usdt=cur_spot)
+            print(f"  [autofund] spot ${spot_usdt:.0f} | UMFUTURE 可用 ${um_available:.0f} (缓冲 ${cfg.um_buffer_usdt:.0f}) "
+                  f"| 计划 {len(fund_plan.actions)} 步, 抽 UMFUTURE ${fund_plan.um_draw_usdt:.0f}")
+            for sk in fund_plan.skipped:
+                print(f"    skip {sk}")
+            execute_funding(spot_ex, fund_plan, mode=mode, cfg=cfg)
 
     res = compute_carry_orders(legs, current, cfg)
     if live and rv_live_enabled() and not holdings_ok:
@@ -136,6 +193,9 @@ def main(argv: list[str]) -> int:
         "ts": now.isoformat(), "mode": mode, "armed": rv_live_enabled(),
         "capital": cfg.capital_usdt, "n_pairs": len(cfg.pairs), "liq_leverage": cfg.liq_leverage,
         "active_dated": dated_syms, "net_delta": round(net_delta, 2),
+        "autofund": cfg.autofund,
+        "autofund_draw_usdt": round(fund_plan.um_draw_usdt, 2) if fund_plan else 0.0,
+        "autofund_actions": len(fund_plan.actions) if fund_plan else 0,
         "target": {k: round(v, 2) for k, v in res.target_usdt.items()},
         "current": {k: round(v, 2) for k, v in current.items()},
         "rolled": res.rolled,

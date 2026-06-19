@@ -146,6 +146,7 @@ body::before {
 .badge.gate-open { color: var(--ac); border-color: var(--ac-line); }
 .badge.gate-closed { color: var(--txt3); }
 .badge.shorting { color: var(--amber); border-color: var(--amber-line); }
+.badge.carry { color: #6af; border-color: rgba(102,170,255,.4); }
 .side { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 12px; font-family: var(--mono); border: 1px solid var(--line); }
 .side.pos { color: var(--ac); border-color: var(--ac-line); }
 .side.neg { color: var(--amber); border-color: var(--amber-line); }

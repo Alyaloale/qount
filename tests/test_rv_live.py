@@ -20,8 +20,10 @@ from qount.rv.live import (  # noqa: E402
     CarryOrder,
     active_dated,
     compute_carry_orders,
+    execute_funding,
     from_ccxt_dated,
     place_carry_orders,
+    plan_funding,
     rv_live_enabled,
     target_legs,
     to_ccxt_dated,
@@ -54,32 +56,46 @@ class TestActiveDated(unittest.TestCase):
 
 class TestTargetLegs(unittest.TestCase):
     def test_delta_neutral_legs_and_sizing(self):
-        cfg = CarryConfig(capital_usdt=1_000.0, liq_leverage=3.0)   # 2 pairs -> 500 each -> N=375
+        # 2 pairs -> 500 each -> short N=375 (500×3/4); spot long = N(L−1)/L = 375×2/3 = 250;
+        # margin coin = N/L = 125; total long 250+125 = 375 == short => Δ≈0.
+        cfg = CarryConfig(capital_usdt=1_000.0, liq_leverage=3.0)
         legs = target_legs(_ms(2026, 1, 15), cfg)
         self.assertEqual(len(legs), 4)                              # spot+dated per pair
         spots = [l for l in legs if l.kind == "spot"]
         dated = [l for l in legs if l.kind == "dated"]
-        self.assertEqual(len(spots), 2)
-        self.assertEqual(len(dated), 2)
+        self.assertEqual((len(spots), len(dated)), (2, 2))
+        L = cfg.liq_leverage
         for l in spots:
-            self.assertAlmostEqual(l.notional_usdt, 375.0, places=6)   # +long, 500×3/4
+            self.assertAlmostEqual(l.notional_usdt, 250.0, places=6)   # +long = N(L−1)/L
         for l in dated:
-            self.assertAlmostEqual(l.notional_usdt, -375.0, places=6)  # −short, equal -> Δ≈0
+            self.assertAlmostEqual(l.notional_usdt, -375.0, places=6)  # −short N
+        # the key invariant: spot long + COIN-M margin coin (N/L) == short notional -> net Δ ≈ 0
+        for sl, dl in zip(spots, dated):
+            short_n = abs(dl.notional_usdt)
+            total_long = sl.notional_usdt + short_n / L              # spot + margin coin
+            self.assertAlmostEqual(total_long, short_n, places=6)    # Δ ≈ 0
 
-    def test_skips_btc_when_below_one_contract(self):
-        # $200 carry slice -> 100 each pair -> N=75 short. BTCUSD=$100/contract -> can't fund 1 ->
-        # skip BTC entirely (no naked spot); ETHUSD=$10/contract -> 75 funds 7 contracts -> kept.
+    def test_skips_btc_and_reallocates_its_capital_to_eth(self):
+        # $200 carry slice: split 2 ways -> N=75, BTCUSD=$100/contract can't fund 1 -> BTC dropped.
+        # Its half is REALLOCATED to ETH (2026-06-19): ETH-only -> N = 200×3/4 = 150 (NOT the old 75),
+        # so the carry deploys the FULL slice instead of stranding the BTC half idle.
         cfg = CarryConfig(capital_usdt=200.0, liq_leverage=3.0)
         legs = target_legs(_ms(2026, 1, 15), cfg)
         self.assertFalse(any(l.symbol == "BTCUSDT" for l in legs))          # BTC pair dropped
         self.assertFalse(any(l.symbol.startswith("BTCUSD_") for l in legs))
-        self.assertTrue(any(l.symbol == "ETHUSDT" for l in legs))           # ETH pair kept
-        self.assertTrue(any(l.symbol.startswith("ETHUSD_") for l in legs))
         self.assertEqual(len(legs), 2)                                      # only ETH spot+dated
+        dated = next(l for l in legs if l.kind == "dated")
+        spot = next(l for l in legs if l.kind == "spot")
+        self.assertAlmostEqual(dated.notional_usdt, -150.0, places=6)       # full slice -> N=150 (not 75)
+        self.assertAlmostEqual(spot.notional_usdt, 100.0, places=6)         # 150×2/3 = 100
+        # Δ≈0 invariant still holds after reallocation: spot + margin (N/L) == short N
+        self.assertAlmostEqual(spot.notional_usdt + abs(dated.notional_usdt) / 3.0,
+                               abs(dated.notional_usdt), places=6)
 
     def test_skips_both_when_capital_too_small(self):
-        # $20 carry slice -> 10 each pair -> N=7.5 short -> below ETHUSD $10 too -> both skipped.
-        cfg = CarryConfig(capital_usdt=20.0, liq_leverage=3.0)
+        # $12 carry slice -> even ETH-only (after dropping BTC) N = 12×3/4 = 9 < ETHUSD $10 -> both
+        # skipped (the reallocation can't conjure a fundable leg out of too little capital).
+        cfg = CarryConfig(capital_usdt=12.0, liq_leverage=3.0)
         self.assertEqual(target_legs(_ms(2026, 1, 15), cfg), [])
 
 
@@ -164,12 +180,177 @@ class TestCcxtLayer(unittest.TestCase):
 
 
 class _Mock:
-    def __init__(self):
+    def __init__(self, raises=False):
         self.sent = []
+        self._raises = raises
 
     def create_order(self, symbol, type_, side, amount, price, params):
         self.sent.append((symbol, type_, side, amount, params))
+        if self._raises:
+            raise RuntimeError("simulated venue error")
         return {"id": "mock", "symbol": symbol}
+
+
+class TestCarryExecutionSafety(unittest.TestCase):
+    """2026-06-19 incident fixes: COIN-M contract quantity (-1102), spot-first, per-leg non-fatal."""
+
+    def setUp(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+
+    def tearDown(self):
+        os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+
+    def test_coinm_order_uses_integer_contract_quantity(self):
+        sp, cm = _Mock(), _Mock()
+        # BTCUSD $100/contract; $300 short -> 3 contracts (NOT notional/quoteOrderQty -> was the -1102)
+        place_carry_orders(sp, cm, [CarryOrder("BTCUSD_260626", "sell", 300.0)], mode="live", cfg=CarryConfig())
+        self.assertEqual(len(cm.sent), 1)
+        sym, type_, side, amount, params = cm.sent[0]
+        self.assertEqual((sym, side, amount), ("BTC/USD:BTC-260626", "sell", 3))   # 3 whole contracts
+        self.assertNotIn("quoteOrderQty", params)
+
+    def test_contract_quantity_floors_not_rounds(self):
+        sp, cm = _Mock(), _Mock()
+        # ETHUSD $10/contract; $75 short -> 7 (floor of 7.5), NOT 8 (round-up over-sizes past margin = -2019)
+        place_carry_orders(sp, cm, [CarryOrder("ETHUSD_260626", "sell", 75.0)], mode="live", cfg=CarryConfig())
+        self.assertEqual(cm.sent[0][3], 7)   # floor(7.5) = 7
+
+    def test_below_one_contract_skips(self):
+        sp, cm = _Mock(), _Mock()
+        place_carry_orders(sp, cm, [CarryOrder("BTCUSD_260626", "sell", 50.0)], mode="live", cfg=CarryConfig())
+        self.assertEqual(cm.sent, [])   # $50 < $100 contract -> nothing sent
+
+    def test_spot_placed_before_short(self):
+        # SPOT-FIRST: the safe-residual ordering (a partial leaves a naked LONG, never a naked short)
+        order_log = []
+        sp, cm = _Mock(), _Mock()
+        sp.create_order = lambda *a, **k: (order_log.append("spot"), {"id": "s"})[1]
+        cm.create_order = lambda *a, **k: (order_log.append("dated"), {"id": "d"})[1]
+        orders = [CarryOrder("ETHUSD_260626", "sell", 75.0), CarryOrder("ETHUSDT", "buy", 50.0)]  # dated first in list
+        place_carry_orders(sp, cm, orders, mode="live", cfg=CarryConfig())
+        self.assertEqual(order_log, ["spot", "dated"])   # spot still placed FIRST regardless of input order
+
+    def test_short_failure_is_non_fatal_and_spot_still_placed(self):
+        # short fails -> non-fatal (no crash), spot long WAS placed (safe naked long, re-hedged next run)
+        sp, cm = _Mock(), _Mock(raises=True)
+        orders = [CarryOrder("ETHUSDT", "buy", 50.0), CarryOrder("ETHUSD_260626", "sell", 75.0)]
+        res = place_carry_orders(sp, cm, orders, mode="live", cfg=CarryConfig())   # must not raise
+        self.assertEqual(len(sp.sent), 1)                       # spot long opened
+        self.assertTrue(any("error" in r for r in res))         # short failure recorded, non-fatal
+
+
+class TestPlanFunding(unittest.TestCase):
+    """Auto-funding: pull idle UMFUTURE USDT -> spot longs + COIN-M margin coins (cfg.autofund)."""
+
+    def _legs(self):
+        # one pair, spot long N=$300 (-> COIN-M short margin N/L = $100 at L=3)
+        return [CarryLeg("spot", "BTCUSDT", +300.0), CarryLeg("dated", "BTCUSD_260626", -300.0, base="BTCUSD")]
+
+    def _cfg(self, **o):
+        kw = dict(autofund=True, liq_leverage=3.0, um_buffer_usdt=200.0, min_order_usdt=10.0)
+        kw.update(o)
+        return CarryConfig(**kw)
+
+    def test_off_by_default_empty_plan(self):
+        p = plan_funding(self._legs(), 0.0, {}, {"BTCUSDT": 60000.0}, 1000.0, CarryConfig())  # autofund off
+        self.assertEqual(p.actions, [])
+
+    def test_transfers_and_buys_margin_from_flat(self):
+        # flat: need spot 300 (long) + 100 (margin coin) = 400 USDT; transfer from UMFUTURE (avail 1000, buf 200 -> cap 800)
+        p = plan_funding(self._legs(), 0.0, {}, {"BTCUSDT": 60000.0}, 1000.0, self._cfg())
+        kinds = [a.kind for a in p.actions]
+        self.assertEqual(kinds, ["transfer_usdt_to_spot", "buy_margin_coin", "transfer_coin_to_cm"])
+        self.assertAlmostEqual(p.actions[0].amount, 400.0)      # 300 long + 100 margin
+        self.assertAlmostEqual(p.um_draw_usdt, 400.0)
+        self.assertAlmostEqual(p.actions[1].amount, 100.0)      # buy $100 BTC margin
+        self.assertAlmostEqual(p.actions[2].amount, 100.0 / 60000.0)  # coin units to COIN-M
+
+    def test_respects_um_buffer_skips_when_insufficient(self):
+        # avail 250, buffer 200 -> cap 50 < need 400 -> skip (never drain the trend leg)
+        p = plan_funding(self._legs(), 0.0, {}, {"BTCUSDT": 60000.0}, 250.0, self._cfg())
+        self.assertEqual(p.actions, [])
+        self.assertTrue(p.skipped and "缓冲" in p.skipped[0])
+
+    def test_uses_existing_spot_usdt_and_margin(self):
+        # already 350 USDT in spot + $100 margin coin already in COIN-M -> only 300-? ; need 300 long +0 margin =300, have 350 -> no transfer
+        p = plan_funding(self._legs(), 350.0, {"BTCUSDT": 100.0}, {"BTCUSDT": 60000.0}, 1000.0, self._cfg())
+        self.assertFalse(any(a.kind == "transfer_usdt_to_spot" for a in p.actions))  # spot already funded
+        self.assertFalse(any(a.kind == "buy_margin_coin" for a in p.actions))        # margin already there
+
+    def test_credits_held_spot_no_bleed_when_at_target(self):
+        # at target: spot long $300 already HELD + $100 margin already in COIN-M -> no incremental need,
+        # so NOTHING is transferred even with idle UMFUTURE available (was the bleed bug: full-N need each
+        # run topped spot USDT toward $300 and drained the trend wallet into idle cash).
+        p = plan_funding(self._legs(), 0.0, {"BTCUSDT": 100.0}, {"BTCUSDT": 60000.0}, 1000.0, self._cfg(),
+                         cur_spot_usdt={"BTCUSDT": 300.0})
+        self.assertEqual(p.actions, [])
+        self.assertAlmostEqual(p.um_draw_usdt, 0.0)
+
+    def test_held_spot_funds_only_the_shortfall(self):
+        # $120 of the $300 spot long already held -> only $180 incremental spot + $100 margin = $280 need
+        p = plan_funding(self._legs(), 0.0, {}, {"BTCUSDT": 60000.0}, 1000.0, self._cfg(),
+                         cur_spot_usdt={"BTCUSDT": 120.0})
+        self.assertAlmostEqual(p.actions[0].amount, 280.0)     # 180 incremental long + 100 margin
+        self.assertAlmostEqual(p.um_draw_usdt, 280.0)
+
+    def test_execute_dry_sends_nothing(self):
+        p = plan_funding(self._legs(), 0.0, {}, {"BTCUSDT": 60000.0}, 1000.0, self._cfg())
+        ex = _FundMock()
+        execute_funding(ex, p, mode="dry", cfg=self._cfg())
+        self.assertEqual(ex.transfers, [])
+        self.assertEqual(ex.sent, [])
+
+    def test_execute_live_routes_transfer_buy_transfer(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+        try:
+            p = plan_funding(self._legs(), 0.0, {}, {"BTCUSDT": 60000.0}, 1000.0, self._cfg())
+            ex = _FundMock(free={"BTC": 0.002})   # margin BTC available after the buy (free-balance read)
+            execute_funding(ex, p, mode="live", cfg=self._cfg())
+            self.assertEqual(ex.transfers[0], ("USDT", 400.0, "future", "spot"))   # UMFUTURE->SPOT
+            self.assertEqual(ex.sent[0][:3], ("BTC/USDT", "market", "buy"))         # buy margin coin
+            self.assertEqual(ex.transfers[1][0], "BTC")                              # SPOT->COIN-M
+            self.assertEqual(ex.transfers[1][2:], ("spot", "delivery"))
+        finally:
+            os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+
+
+class _FundMock:
+    def __init__(self, free=None):
+        self.transfers = []
+        self.sent = []
+        self._free = free or {}     # asset -> free balance (for the coin-transfer free-balance read)
+
+    def transfer(self, code, amount, fromAccount, toAccount):
+        self.transfers.append((code, amount, fromAccount, toAccount))
+        return {"id": "t"}
+
+    def create_order(self, symbol, type_, side, amount, price, params):
+        self.sent.append((symbol, type_, side, amount, params))
+        return {"id": "o", "symbol": symbol}
+
+    def fetch_balance(self):
+        return {"free": dict(self._free)}
+
+
+class TestExecuteFundingTransfer(unittest.TestCase):
+    """coin->COIN-M transfer must use ACTUAL free balance (pre-fee estimate > filled -> insufficient)."""
+
+    def test_coin_transfer_uses_free_not_estimate(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+        try:
+            from qount.rv.live import FundingAction, FundingPlan
+            # plan wants to move 0.0146 ETH, but only 0.0140 actually filled (fees) -> must cap to free
+            plan = FundingPlan(actions=[FundingAction("transfer_coin_to_cm", "ETH", 0.0146,
+                                                      reason="margin SPOT->COIN-M")])
+            ex = _FundMock(free={"ETH": 0.0140})
+            execute_funding(ex, plan, mode="live", cfg=CarryConfig())
+            self.assertEqual(len(ex.transfers), 1)
+            code, amt, frm, to = ex.transfers[0]
+            self.assertEqual((code, frm, to), ("ETH", "spot", "delivery"))
+            self.assertLessEqual(amt, 0.0140)            # capped to free, not the 0.0146 estimate
+            self.assertGreater(amt, 0.0139)              # ~free × 0.999
+        finally:
+            os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from qount.x4.live import (  # noqa: E402
     SymbolFilter,
     TargetWeight,
     apply_chandelier_stops,
+    apply_scale_out,
     chandelier_stop_prices,
     compute_orders,
     fetch_filters,
@@ -30,6 +31,7 @@ from qount.x4.live import (  # noqa: E402
     target_weights,
     to_ccxt_symbol,
     unreachable_coins,
+    usdt_wallet_balance,
 )
 
 
@@ -281,6 +283,94 @@ class _MockExchange:
         if self.positions is None:
             raise RuntimeError("no futures key")
         return self.positions
+
+
+class TestWalletBalance(unittest.TestCase):
+    """walletBalance extraction — must NOT return marginBalance (would double-count unrealized)."""
+
+    def test_prefers_total_wallet_balance(self):
+        # ccxt total (488.97) = marginBalance; the real cash wallet is 484.91 (484.91 + 4.06 uPnL)
+        bal = {"USDT": {"total": 488.97, "free": 414.64},
+               "info": {"totalWalletBalance": "484.91", "totalUnrealizedProfit": "4.06"}}
+        self.assertAlmostEqual(usdt_wallet_balance(bal), 484.91)
+
+    def test_falls_back_to_total_minus_unrealized(self):
+        bal = {"USDT": {"total": 488.97}, "info": {"totalUnrealizedProfit": "4.06"}}
+        self.assertAlmostEqual(usdt_wallet_balance(bal), 484.91)
+
+    def test_falls_back_to_total_when_no_info(self):
+        self.assertAlmostEqual(usdt_wallet_balance({"USDT": {"total": 500.0}, "info": {}}), 500.0)
+
+    def test_none_when_unreadable(self):
+        self.assertIsNone(usdt_wallet_balance({"USDT": {}, "info": {}}))
+
+
+class TestScaleOut(unittest.TestCase):
+    """§10 分批止盈: ratchet a winner's target weight down as it runs into profit (residual rides stop)."""
+
+    def _cfg(self):
+        return LiveConfig(scale_out_step=0.20, scale_out_frac=0.50, scale_out_residual=0.34)
+
+    def test_off_by_default_is_identity(self):
+        tw = [TargetWeight("BTCUSDT", 0.5)]
+        out, st, scaled = apply_scale_out(tw, {"BTCUSDT": 200.0}, {"BTCUSDT": 100.0},
+                                          {"BTCUSDT": 1.0}, {}, LiveConfig())
+        self.assertEqual(out, tw)
+        self.assertEqual(scaled, [])
+
+    def test_full_target_when_flat_or_small_profit(self):
+        cfg = self._cfg()
+        # flat (no position) -> full target, no state
+        out, st, _ = apply_scale_out([TargetWeight("BTCUSDT", 0.5)], {"BTCUSDT": 110.0},
+                                     {"BTCUSDT": None}, {"BTCUSDT": 0.0}, {}, cfg)
+        self.assertAlmostEqual(out[0].weight, 0.5)
+        # held, only +10% profit (< step 20%) -> step 0 -> full target
+        out, st, _ = apply_scale_out([TargetWeight("BTCUSDT", 0.5)], {"BTCUSDT": 110.0},
+                                     {"BTCUSDT": 100.0}, {"BTCUSDT": 1.0}, {}, cfg)
+        self.assertAlmostEqual(out[0].weight, 0.5)
+
+    def test_trims_at_profit_steps_long(self):
+        cfg = self._cfg()
+        held = {"BTCUSDT": 1.0}
+        # +20% -> 1 step -> cap 0.50
+        out, st, scaled = apply_scale_out([TargetWeight("BTCUSDT", 0.5)], {"BTCUSDT": 120.0},
+                                          {"BTCUSDT": 100.0}, held, {}, cfg)
+        self.assertAlmostEqual(out[0].weight, 0.5 * 0.50)
+        self.assertEqual(st["BTCUSDT"]["steps"], 1)
+        self.assertEqual(scaled, ["BTCUSDT"])
+        # +40% -> 2 steps -> cap floored at residual 0.34
+        out, st, _ = apply_scale_out([TargetWeight("BTCUSDT", 0.5)], {"BTCUSDT": 140.0},
+                                     {"BTCUSDT": 100.0}, held, st, cfg)
+        self.assertAlmostEqual(out[0].weight, 0.5 * 0.34)
+        self.assertEqual(st["BTCUSDT"]["steps"], 2)
+
+    def test_ratchet_does_not_re_add_on_retrace(self):
+        cfg = self._cfg()
+        held = {"BTCUSDT": 1.0}
+        _, st, _ = apply_scale_out([TargetWeight("BTCUSDT", 0.5)], {"BTCUSDT": 140.0},
+                                   {"BTCUSDT": 100.0}, held, {}, cfg)        # 2 steps
+        # price falls back to +10%: steps must stay 2 (no re-add), cap still residual
+        out, st2, scaled = apply_scale_out([TargetWeight("BTCUSDT", 0.5)], {"BTCUSDT": 110.0},
+                                           {"BTCUSDT": 100.0}, held, st, cfg)
+        self.assertEqual(st2["BTCUSDT"]["steps"], 2)
+        self.assertEqual(scaled, [])
+        self.assertAlmostEqual(out[0].weight, 0.5 * 0.34)
+
+    def test_short_leg_trims_on_profit(self):
+        cfg = self._cfg()
+        # short at entry 100, price down to 80 = +20% profit on the short -> 1 step
+        out, st, scaled = apply_scale_out([TargetWeight("BTCUSDT", -0.5)], {"BTCUSDT": 80.0},
+                                          {"BTCUSDT": 100.0}, {"BTCUSDT": -1.0}, {}, cfg)
+        self.assertAlmostEqual(out[0].weight, -0.5 * 0.50)
+        self.assertEqual(st["BTCUSDT"]["steps"], 1)
+
+    def test_opposite_side_resets(self):
+        cfg = self._cfg()
+        # target flipped to short but a long position is still on -> not same-side -> full target, reset
+        out, st, _ = apply_scale_out([TargetWeight("BTCUSDT", -0.5)], {"BTCUSDT": 120.0},
+                                     {"BTCUSDT": 100.0}, {"BTCUSDT": 1.0}, {"BTCUSDT": {"steps": 2}}, cfg)
+        self.assertAlmostEqual(out[0].weight, -0.5)
+        self.assertNotIn("BTCUSDT", st)
 
 
 class TestExchangeLayer(unittest.TestCase):
@@ -759,8 +849,8 @@ class _StopMockExchange:
         self.fetch_params.append(params)
         return self._open.get(symbol, [])
 
-    def cancel_order(self, order_id, symbol):
-        self.cancelled.append((order_id, symbol))
+    def cancel_order(self, order_id, symbol, params=None):
+        self.cancelled.append((order_id, symbol, params))
         return {"id": order_id}
 
     def create_order(self, symbol, type_, side, amount, price, params):
@@ -835,7 +925,9 @@ class TestStopExchangeLayer(unittest.TestCase):
             existing = {"ETHUSDT": {"id": "1", "symbol": self.SYM, "stopPrice": 95.0}}
             plan = plan_stop_orders({"ETHUSDT": 101.0}, {"ETHUSDT": 1.0}, existing, self._cfg())
             sync_stop_orders(ex, plan, mode="live", cfg=self._cfg())
-            self.assertEqual(ex.cancelled, [("1", self.SYM)])        # old stop cancelled first
+            # old stop cancelled first, routed to the algo endpoint via params={"stop": True}
+            # (regular cancel -> OrderNotFound on the algoId -> -4130 re-place churn; the bug we fixed)
+            self.assertEqual(ex.cancelled, [("1", self.SYM, {"stop": True})])
             self.assertEqual(len(ex.created), 1)
             sym, type_, side, amount, params = ex.created[0]
             self.assertEqual((sym, type_, side), (self.SYM, "STOP_MARKET", "sell"))

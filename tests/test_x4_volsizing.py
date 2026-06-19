@@ -51,6 +51,49 @@ class _AlwaysLong:
         return 1.0
 
 
+class _AlwaysShort:
+    name = "always-short"
+
+    def on_bar(self, bar: Bar) -> float:
+        return -1.0
+
+
+class TestWalletSizing(unittest.TestCase):
+    """§8.3① — sizing off realized-only equity (walletBalance) vs mark-to-market (marginBalance)."""
+
+    def test_off_by_default_matches_margin(self) -> None:
+        bars = [_bar(0, 100.0), _bar(1, 90.0), _bar(2, 80.0)]
+        a = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                            slippage=0.0, vol_target=0.0)
+        b = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                            slippage=0.0, vol_target=0.0, wallet_sizing=False)
+        self.assertEqual(a.equity_curve, b.equity_curve)
+
+    def test_wallet_does_not_pyramid_into_a_winning_short(self) -> None:
+        # short 1x, then price falls (short wins). Margin sizing folds the unrealized gain into the
+        # base and shorts MORE near the bottom; wallet sizing does not -> smaller final short.
+        bars = [_bar(0, 100.0), _bar(1, 90.0)]
+        margin = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                                 slippage=0.0, vol_target=0.0, rebalance_band=0.0)
+        wallet = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                                 slippage=0.0, vol_target=0.0, rebalance_band=0.0, wallet_sizing=True)
+        self.assertLess(margin.extra["final_position_base"], 0.0)        # both still short
+        self.assertLess(wallet.extra["final_position_base"], 0.0)
+        self.assertGreater(abs(margin.extra["final_position_base"]),
+                           abs(wallet.extra["final_position_base"]))      # margin pyramids harder
+
+    def test_wallet_does_not_derisk_a_losing_short(self) -> None:
+        # mirror: price rises (short loses). Margin shrinks the base (protective de-risk); wallet
+        # keeps it larger (the symmetric cost of ignoring unrealized MTM).
+        bars = [_bar(0, 100.0), _bar(1, 110.0)]
+        margin = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                                 slippage=0.0, vol_target=0.0, rebalance_band=0.0)
+        wallet = run_directional(bars, _AlwaysShort(), initial_capital=100_000.0, taker_fee=0.0,
+                                 slippage=0.0, vol_target=0.0, rebalance_band=0.0, wallet_sizing=True)
+        self.assertGreater(abs(wallet.extra["final_position_base"]),
+                           abs(margin.extra["final_position_base"]))      # margin de-risked, wallet didn't
+
+
 class TestVolSizing(unittest.TestCase):
     def test_high_vol_shrinks_position_vs_low_vol(self) -> None:
         # two regimes: a low-vol stretch then a high-vol stretch; vol-sizing should hold a smaller

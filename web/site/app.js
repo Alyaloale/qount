@@ -80,11 +80,10 @@ function pageSub(route) {
     if (l && l.btc_px) s = `BTC $${money(l.btc_px)} · 距开闸 ${pct(l.btc_to_sma || 0, 1)}`;
   } else if (route === "live" && l) {
     const { longOn, shortOn } = liveNetState(l);
-    s = `${longOn ? "做多" : shortOn ? "做空对冲" : "空仓"} · ${l.armed ? "已武装" : "未武装"} · 更新 ${ago(l.ts)}`;
+    const hasCarry = !!l.carry && !!l.carry.active_dated && l.carry.active_dated.length > 0;
+    s = `${longOn ? "做多" : shortOn ? "做空对冲" : "空仓"}${hasCarry ? " · carry" : ""} · ${l.armed ? "已武装" : "未武装"} · 更新 ${ago(l.ts)}`;
   } else if (route === "cta" && c) {
     s = `累计 ${pct(c.total_pnl_pct || 0)} · 数据 ${c.data_date || "—"}`;
-  } else if (route === "cxd" && store.cxd) {
-    s = `编排 · 趋势 60% + carry 40%`;
   } else if (route === "paper" && p) {
     s = `各 $100k 前向 · ${(p.holdings && p.holdings.deploy_date) || "—"}`;
   }
@@ -297,11 +296,12 @@ function renderOverview() {
   if (l && l.capital != null) {
     const { longOn, shortOn } = liveNetState(l);
     const lUp = l.unrealized_pnl;
+    const hasCarry = !!l.carry && !!l.carry.active_dated && l.carry.active_dated.length > 0;
     const state = longOn ? "做多 · 持多仓" : shortOn ? "做空 · 对冲" : "空仓 · 观望";
     tiles.push(`<div class="otile" data-route="live">
-      <div class="ok"><span class="live-dot"></span>加密实盘 · X4 趋势<span class="ot-tag real">实盘</span></div>
+      <div class="ok"><span class="live-dot"></span>加密实盘 · ${longOn ? "趋势做多" : shortOn ? "做空对冲" : "空仓"}${hasCarry ? " + carry" : ""}<span class="ot-tag real">实盘</span></div>
       <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital, 2)}</div>
-      <div class="os ${l.total_pnl != null ? cls(l.total_pnl) : ""}">${state}${l.total_pnl != null ? ` · 总盈亏 ${signed(l.total_pnl, "$")}` : lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
+      <div class="os ${l.total_pnl != null ? cls(l.total_pnl) : ""}">${state}${l.trend_pnl != null ? ` · 趋势 ${signed(l.trend_pnl, "$")}` : ""}${l.carry_pnl != null ? ` · carry ${signed(l.carry_pnl, "$")}` : ""}${l.total_pnl != null ? ` · 总 ${signed(l.total_pnl, "$")}` : lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
     </div>`);
     const tag = $("nav-live-tag");
     if (tag) { tag.textContent = longOn ? "做多" : shortOn ? "做空" : "空仓";
@@ -366,7 +366,7 @@ function renderSummary() {
 
   el.innerHTML = `
     <div class="sc-main">
-      <div class="sc-k"><span class="live-dot"></span>真实资金 · 加密实盘 X4</div>
+      <div class="sc-k"><span class="live-dot"></span>真实资金 · 加密实盘 C×D</div>
       <div class="sc-v"><span class="cur">$</span>${realEq != null ? counted("sum-real", realEq, 2) : "—"} ${realChg}</div>
     </div>
     <div class="sc-cells">${cells.join("")}</div>`;
@@ -487,7 +487,7 @@ function renderLive(d) {
   store.live = d;
   const body = $("body-live");
   const head = $("panel-live").querySelector(".panel-head");
-  head.querySelectorAll(".badge.gate-open,.badge.gate-closed,.badge.shorting,.badge.lev").forEach((e) => e.remove());
+  head.querySelectorAll(".badge.gate-open,.badge.gate-closed,.badge.shorting,.badge.lev,.badge.carry").forEach((e) => e.remove());
   const isPerp = d.market_type === "swap";
   const lev = d.max_leverage || 2;
   if (d.market_type) {
@@ -498,10 +498,17 @@ function renderLive(d) {
   }
   const holdings = d.holdings || [];
   const shorting = !!d.shorting || holdings.some((h) => (h.value || 0) < 0);
+  const hasCarry = !!d.carry && !!d.carry.active_dated && d.carry.active_dated.length > 0;
   const gb = document.createElement("span");
   gb.className = "badge " + (d.gate_open ? "gate-open" : shorting ? "shorting" : "gate-closed");
-  gb.textContent = d.gate_open ? "做多" : shorting ? "做空" : "空仓";
+  gb.textContent = d.gate_open ? "做多" : shorting ? "做空对冲" : "空仓";
   head.appendChild(gb);
+  if (hasCarry) {
+    const cb = document.createElement("span");
+    cb.className = "badge carry";
+    cb.textContent = "carry Δ" + (d.carry.net_delta != null ? (Math.abs(d.carry.net_delta) < (d.carry.capital || 1) * 0.05 ? "≈0" : "偏" + (d.carry.net_delta > 0 ? "+" : "") + money(d.carry.net_delta)) : "");
+    head.appendChild(cb);
+  }
 
   const toSma = d.btc_to_sma || 0;
   const exp = d.gross_exposure || 0;
@@ -525,8 +532,9 @@ function renderLive(d) {
   // 已实现 = 钱包余额 − 入金成本(已平仓盈亏 + 资金费 + 手续费,已落袋)。总盈亏 = 已实现 + 未实现,
   // 所以「各标的浮盈之和」(只是未实现)≠ 总盈亏,差额就是这块已实现 —— 显式列出消除歧义。
   const realized = (d.inception_equity != null && d.capital != null) ? r2(d.capital - d.inception_equity) : null;
-  // 总盈亏按「已实现 + 未实现」两个显示值相加,保证三处(逐标的 → 总浮盈 → 总盈亏)对到分
-  const totalShown = (realized != null && upnl != null) ? r2(realized + upnl) : d.total_pnl;
+  // 总盈亏 = 后端算好的「全账户」口径(趋势 + carry vs 入金基线);退回逐项相加仅在旧数据无 total_pnl 时
+  const totalShown = d.total_pnl != null ? r2(d.total_pnl)
+    : (realized != null && upnl != null) ? r2(realized + upnl) : d.total_pnl;
   // 仓位口径:gross = 各腿名义之和(持仓占比的分母);bp = 购买力(本金 × 杠杆),当前仓位条的满格
   const gross = holdings.reduce((s, h) => s + Math.abs(h.value || 0), 0);
   const bp = (d.capital || 0) * (d.max_leverage || 1) || gross;
@@ -568,12 +576,15 @@ function renderLive(d) {
         }).join("")}</tbody></table>`
     : `<div class="empty">空仓 — BTC 低于 200 日线,大盘闸关闭,${isPerp ? "永续仓位已全平,资金留在保证金钱包" : "资金全在现金"}</div>`;
 
+  // C×D 合成账作为实盘页内的一个合成仓位卡片(不再单独成页)
+  const cxdBlock = cxdCard(store.cxd);
+
   body.innerHTML = `
     ${banners}
     <div class="hero">
       <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital, 2)}</div>
       ${totalShown != null ? `<div class="pnl-tag ${cls(totalShown)}" title="总盈亏 = 已实现 + 未实现(各标的浮盈只是未实现那部分)">总盈亏 ${arw(totalShown)}${signed(totalShown, "$")} · ${pct(d.total_pnl_pct || 0)}</div>` : ""}
-      <div class="sub">实时权益 · 钱包 $${money(d.capital)}${realized != null ? ` · 已实现 <span class="${cls(realized)}">${signed(realized, "$")}</span>` : ""}${upnl != null ? ` · 未实现 <span class="${cls(upnl)}">${signed(upnl, "$")}</span>` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
+      <div class="sub">全账户 · 趋势权益 $${money(d.trend_equity != null ? d.trend_equity : d.capital)}${d.carry ? ` <span class="dim">+</span> carry $${money(d.carry.equity || d.carry.capital)}` : ""}${d.idle_usdt ? ` <span class="dim">+</span> 闲置 $${money(d.idle_usdt)}` : ""}${d.trend_pnl != null ? ` · 趋势 <span class="${cls(d.trend_pnl)}">${signed(r2(d.trend_pnl), "$")}</span> ${pct(d.trend_pnl_pct || 0)}` : ""}${d.carry_pnl != null ? ` · carry <span class="${cls(d.carry_pnl)}">${signed(r2(d.carry_pnl), "$")}</span> ${pct(d.carry_pnl_pct || 0)}` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
     </div>
     ${liveCurveBlock(d)}
     <div class="subhead">交易闸 · 两道闸 → 三态(BTC 站上 200 线做多 / 真熊做空对冲 / 否则空仓)</div>
@@ -591,53 +602,58 @@ function renderLive(d) {
     <div class="uni">${coins}</div>
     ${posbar}
     ${holdHtml}
+    ${cxdBlock}
     <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · 逆波动率平价` : "现货 1x"}${d.chandelier_mult ? ` · chandelier ${d.chandelier_mult}× 兜底止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
 }
 
-// ---- 加密 C×D 合成账(趋势 60% + carry 40%) ----
-function renderCxd(d) {
-  store.cxd = d;
-  const body = $("body-cxd");
+// ---- 加密 C×D 合成账(作为实盘页内的一个合成仓位卡片) ----
+function cxdCard(d) {
+  if (!d) return "";
   const t = d.trend || {}, c = d.carry || {};
-  const w = d.weights || { trend: 0.6, carry: 0.4 };
+  const w = d.weights || { trend: 0.6, carry: 0.4 };          // ACTUAL deployed split
+  const tw = d.target_weights || { trend: 0.6, carry: 0.4 };  // design intent
   const tArmed = !!t.armed, cArmed = !!c.armed;
   const anyArmed = tArmed || cArmed;
   const tCap = t.capital || 0, cCap = c.capital || 0;
+  const cEq = c.equity || cCap;   // carry 全腿权益(含短腿浮盈),fallback to capital for old data
+  const total = d.total_capital || (tCap + cCap);
   const activeDated = (c.active_dated || []).map((s) => `<span class="coin">${s}</span>`).join("");
   const delta = c.net_delta || 0;
-
-  // 这条与"加密实盘"不同:C×D 是 60/40 编排账,两腿都未武装时是 dry 模拟编排(carry 待注资),武装后才转实盘
-  const head = $("panel-cxd").querySelector(".panel-head");
-  head.querySelectorAll(".badge.real,.badge.paper").forEach((e) => e.remove());
-  const cb = document.createElement("span");
-  cb.className = "badge " + (anyArmed ? "real" : "paper");
-  cb.textContent = anyArmed ? "实盘" : "模拟编排 · 待注资";
-  head.appendChild(cb);
-
-  body.innerHTML = `
-    <div class="hero">
-      <div class="equity"><span class="cur">$</span>${counted("cxd-eq", d.total_capital || tCap + cCap)}</div>
-      <div class="sub">总本金 · 趋势 $${money(tCap)} (${pct(w.trend, 0)}) + carry $${money(cCap)} (${pct(w.carry, 0)})</div>
-    </div>
-    <div class="chips">
-      <div class="chip"><div class="k">趋势腿 · USDⓈ-M ${t.max_leverage ? t.max_leverage + "x" : ""}</div>
-        <div class="v ${t.gate_open ? "" : "dim"}">${t.gate_open ? "在场" : "空仓(闸关)"}</div></div>
-      <div class="chip"><div class="k">carry 腿 · Δ 中性</div>
-        <div class="v ${Math.abs(delta) < (cCap || 1) * 0.05 ? "" : "neg"}">Δ $${money(delta)}</div></div>
-      <div class="chip"><div class="k">趋势武装</div><div class="v ${tArmed ? "" : "dim"}">${tArmed ? "已武装" : "未武装"}</div></div>
-      <div class="chip"><div class="k">carry 武装</div><div class="v ${cArmed ? "" : "dim"}">${cArmed ? "已武装" : "未武装"}</div></div>
-    </div>
-    <div class="subhead">carry 当前空头 · 季度 COIN-M</div>
-    <div class="uni">${activeDated || '<span class="dim">—</span>'}</div>
-    <div class="insight">
-      <div class="ins-h">合成命题 · 趋势骑牛市 / carry 吃空窗</div>
-      <div class="ins-row">
-        <span>负相关 ρ <b>−0.20</b></span>
-        <span>回测 Sharpe <b>1.18</b>(扣 funding ~0.9)</span>
-        <span>尾砍至 <b>−10%</b></span>
-      </div>
-    </div>
-    <div class="note"><b>${anyArmed ? "实盘" : "模拟编排"}</b> · 与上方「加密实盘」是两套账:这是 60% 趋势永续 + 40% carry(现货多+季度空)的 C×D 合成编排,${anyArmed ? "已部分武装" : "两腿均未武装(carry 待注资 spot+COIN-M),当前为 dry 模拟"} · 更新于 ${ago(t.ts || c.ts)}</div>`;
+  return `
+    <div class="subhead">C×D 合成仓位 · 实际 趋势 ${pct(w.trend, 0)} + carry ${pct(w.carry, 0)} <span class="dim">· 目标 ${pct(tw.trend, 0)}/${pct(tw.carry, 0)}</span></div>
+    <table class="tbl">
+      <thead><tr><th>结构</th><th>方向</th><th>当前合约</th><th>额度</th><th>占比</th><th title="净敞口,≈0 即对冲到位">净 Δ</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="name">C×D 合成</td>
+          <td><span class="side">对冲+趋势</span></td>
+          <td>${activeDated || "—"}</td>
+          <td>${money(total, "$")}</td>
+          <td>100%</td>
+          <td class="${Math.abs(delta) < (cCap || 1) * 0.05 ? "" : "neg"}">${signed(r2(delta), "$")}</td>
+          <td class="${anyArmed ? "" : "dim"}">${anyArmed ? "已武装" : "未武装"}</td>
+        </tr>
+        <tr>
+          <td class="name">&nbsp;└ 趋势腿</td>
+          <td><span class="side ${t.gate_open ? "pos" : (t.shorting ? "neg" : "dim")}">${t.gate_open ? "多头" : (t.shorting ? "做空" : "空仓")}</span></td>
+          <td>USDⓈ-M ${t.max_leverage ? t.max_leverage + "x" : ""}</td>
+          <td>${money(tCap, "$")}</td>
+          <td>${pct(w.trend, 0)}</td>
+          <td>—</td>
+          <td class="${tArmed ? "" : "dim"}">${tArmed ? "已武装" : "未武装"}</td>
+        </tr>
+        <tr>
+          <td class="name">&nbsp;└ carry 腿</td>
+          <td><span class="side">Δ 中性</span></td>
+          <td>${activeDated || "—"}</td>
+          <td>${money(cEq, "$")}</td>
+          <td>${pct(w.carry, 0)}</td>
+          <td class="${Math.abs(delta) < (cCap || 1) * 0.05 ? "" : "neg"}">${signed(r2(delta), "$")}</td>
+          <td class="${cArmed ? "" : "dim"}">${cArmed ? "已武装" : "未武装"}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note dim">C×D = 趋势永续( riding BTC 200 日大盘闸) + carry(现货多 + 季度 COIN-M 空,吃基差收敛)。carry 额度 = 全腿权益(含短腿浮盈),净 Δ ≈ 0 即对冲到位。</div>`;
 }
 
 // ---- 加密模拟盘 ----
@@ -703,10 +719,11 @@ function renderPaper(d) {
 // ---- orchestration ----
 async function load() {
   for (const k in CHARTS) delete CHARTS[k];   // charts are rebuilt fresh each render
+  // C×D 合成账数据不再单独成页,先取到 store 里供实盘页合成仓位卡片使用
+  try { store.cxd = await getJSON("data/cxd_live.json"); } catch (e) { store.cxd = null; }
   const tasks = [
     ["data/cta.json", renderCTA, "body-cta"],
     ["data/x4_live.json", renderLive, "body-live"],
-    ["data/cxd_live.json", renderCxd, "body-cxd"],
     ["data/x4_paper.json", renderPaper, "body-paper"],
   ];
   await Promise.all(tasks.map(async ([path, render, bodyId]) => {
@@ -736,8 +753,8 @@ function tick() {
 
 // ---- router: hash-based, one view visible at a time (keeps each page short) ----
 const ROUTES = {
-  overview: "概览", live: "加密实盘 · X4 趋势", cta: "A股 · CTA-R 跨资产",
-  cxd: "C×D 合成账", paper: "加密模拟盘",
+  overview: "概览", live: "加密实盘", cta: "A股 · CTA-R 跨资产",
+  paper: "加密模拟盘",
 };
 function currentRoute() {
   const r = (location.hash || "").replace(/^#\/?/, "");
@@ -801,10 +818,16 @@ function patchLive() {
   });
   if (d.holdings && d.holdings.length && anyLive) {
     d.unrealized_pnl = acc;
-    d.equity = (d.capital || 0) + acc;
-    if (d.inception_equity) {                            // 总盈亏 also ticks live with equity
+    d.trend_equity = (d.capital || 0) + acc;             // 趋势腿实时 = USDⓈ-M 钱包 + 未实现
+    const carryValue = (d.carry && (d.carry.equity || d.carry.capital)) || 0; // carry 全腿净值(含短腿浮盈)
+    d.equity = d.trend_equity + carryValue + (d.idle_usdt || 0); // 全账户实时 = 趋势 + carry + 闲置现金,守恒
+    if (d.inception_equity) {                            // 总盈亏 also ticks live with full equity
       d.total_pnl = d.equity - d.inception_equity;
       d.total_pnl_pct = d.inception_equity ? d.equity / d.inception_equity - 1 : 0;
+    }
+    if (d.trend_inception) {                              // 趋势腿盈亏 live tick
+      d.trend_pnl = d.trend_equity - d.trend_inception;
+      d.trend_pnl_pct = d.trend_inception ? d.trend_equity / d.trend_inception - 1 : 0;
     }
   }
   const bpx = livePx["BTCUSDT"];

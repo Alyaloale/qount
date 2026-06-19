@@ -33,6 +33,7 @@ from qount.exchange_utils import build_exchange  # noqa: E402
 from qount.x4.live import (  # noqa: E402
     LiveConfig,
     apply_chandelier_stops,
+    apply_scale_out,
     chandelier_stop_prices,
     compute_orders,
     fetch_filters,
@@ -45,6 +46,7 @@ from qount.x4.live import (  # noqa: E402
     target_weights,
     to_ccxt_symbol,
     unreachable_coins,
+    usdt_wallet_balance,
     x4_live_enabled,
 )
 
@@ -67,15 +69,15 @@ def _load_universe(cfg: LiveConfig):
 
 
 def _perp_usdt_balance(ex) -> float | None:
-    """Live USDT wallet balance of the (perp) account — the capital base for ``QOUNT_X4_CAPITAL=auto``.
-    Returns None on a read failure so the caller can refuse to size against an unknown balance."""
+    """Live USDT **walletBalance** (cash, realized-only) of the perp account — the capital base for
+    ``QOUNT_X4_CAPITAL=auto``. Uses :func:`usdt_wallet_balance` (NOT ccxt ``total`` = marginBalance,
+    which would double-count open unrealized once ``equity = capital + unrealized`` is formed). Returns
+    None on a read failure so the caller can refuse to size against an unknown balance."""
     try:
         bal = ex.fetch_balance()
     except Exception:
         return None
-    u = bal.get("USDT") or {}
-    v = u.get("total")
-    return float(v) if v not in (None, "") else None
+    return usdt_wallet_balance(bal)
 
 
 def main(argv: list[str]) -> int:
@@ -90,6 +92,10 @@ def main(argv: list[str]) -> int:
     _cap = 0.0 if _cap_auto else float(_cap_raw or 0)
     _short = os.environ.get("QOUNT_X4_SHORT_GATE", "").lower() in ("1", "true", "yes")
     _base = dict(short_gate=True) if _short else {}
+    # §10 分批止盈 arm: QOUNT_X4_SCALE_OUT=1 -> recommended 档 (step20%/frac50%/留 1/3 残仓). Books partial
+    # profit as a winner runs (validated long-side: Sharpe 0.91->1.00, maxDD -28->-22%, −18pp total).
+    if os.environ.get("QOUNT_X4_SCALE_OUT", "").lower() in ("1", "true", "yes"):
+        _base.update(scale_out_step=0.20, scale_out_frac=0.50, scale_out_residual=0.34)
     cfg = LiveConfig(capital_usdt=_cap, **_base) if _cap > 0 else LiveConfig(**_base)
 
     aligned = _load_universe(cfg)
@@ -175,6 +181,19 @@ def main(argv: list[str]) -> int:
     if stopped:
         print(f"  [STOP] 盘中硬止损触发,强制平仓: {', '.join(stopped)}")
 
+    # §10 分批止盈: ratchet down a winner's target as it runs into profit (residual rides the stop),
+    # persisted across the 10-min runs. OFF unless armed (QOUNT_X4_SCALE_OUT) -> byte-identical pipeline.
+    so_path = STATE_DIR / "scale_out.json"
+    try:
+        so_state = json.loads(so_path.read_text())
+    except Exception:
+        so_state = {}
+    entry_prices = {s: (pos_detail.get(s) or {}).get("entry") for s in cfg.universe}
+    tw, so_state, scaled = apply_scale_out(tw, prices, entry_prices, balances, so_state, cfg)
+    so_path.write_text(json.dumps(so_state, indent=2, default=float))
+    if scaled:
+        print(f"  [SCALE-OUT] 浮盈分批减仓: {', '.join(scaled)}")
+
     # LEVERAGE SAFETY: set + VERIFY 2x/isolated before sizing; refuse any coin whose leverage we can't
     # confirm (an unconfirmed swap leverage may be the 20x exchange default -> ~5% liquidation).
     unsafe: set = set()
@@ -242,6 +261,29 @@ def main(argv: list[str]) -> int:
             "stop": resting_stops.get(s),   # exchange-native squeeze/crash backstop trigger px
         })
     account_upnl = round(sum(h["upnl"] for h in holdings if h.get("upnl") is not None), 2)
+    trend_equity = round(cfg.capital_usdt + account_upnl, 2)   # 趋势腿:USDⓈ-M 钱包 + 未实现
+    # 全账户视角:把 carry sleeve(C×D 现货多+季度空,delta 中性)的净值并入显示权益 —— 划给 carry 的
+    # 资金作为一个独立持仓体现、账户总额守恒(趋势页不因 $ 划转而缩水)。carry 状态由只读 cxd_publish 落盘。
+    # carry_equity = 长腿市值 + 短腿浮盈(完整 delta-neutral 权益);carry_capital = 仅长腿市值(仓位口径)。
+    carry_equity = 0.0
+    carry_value = 0.0
+    carry_info = None
+    idle_usdt = 0.0   # spot 钱包闲置 USDT(carry 注资场地的干火药)——既不在趋势 UMFUTURE 钱包、也不在 carry
+                      # ETH 腿里,必须显式并入权益,否则现金 wallet->spot 但未买成 ETH 时权益/总盈亏会无故下沉。
+    try:
+        _cj = json.loads((REPO / "state" / "cxd" / "live" / "latest.json").read_text())
+        _cc = _cj.get("carry") or {}
+        idle_usdt = float(_cj.get("idle_usdt") or 0.0)
+        if _cc.get("active_dated"):
+            carry_equity = float(_cc.get("equity") or _cc.get("capital") or 0.0)
+            carry_value = float(_cc.get("capital") or 0.0)
+            carry_info = {"capital": round(carry_value, 2),
+                          "equity": round(carry_equity, 2),
+                          "net_delta": _cc.get("net_delta"),
+                          "active_dated": _cc.get("active_dated") or [], "ts": _cc.get("ts")}
+    except Exception:
+        pass
+    account_equity = round(trend_equity + carry_equity + idle_usdt, 2)   # 全账户 = 趋势 + carry + 闲置现金
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     rec = {
@@ -252,11 +294,18 @@ def main(argv: list[str]) -> int:
         "market_type": cfg.market_type, "max_leverage": cfg.max_leverage,
         "vol_target": cfg.vol_target, "chandelier_mult": cfg.chandelier_mult,
         "stopped": stopped, "leverage_unsafe": sorted(unsafe),
+        "scale_out": bool(cfg.scale_out_step > 0 and cfg.scale_out_frac > 0),   # §10 分批止盈 armed?
+        "scaled_out": scaled,   # syms that took a new scale-out step this run
+        "scale_out_steps": {s: v.get("steps", 0) for s, v in so_state.items()},  # ratcheted steps per sym
         "resting_stops": resting_stops,   # T2-2 交易所原生兜底止损价 (data_sym -> trigger px)
         "gross_exposure": round(deployed / cfg.capital_usdt, 3) if cfg.capital_usdt else 0.0,  # actual ×
         "capital": cfg.capital_usdt, "deployed": round(deployed, 2),   # deployed NOTIONAL
         "unrealized_pnl": account_upnl,   # 当前持仓未实现盈亏(看板)
-        "equity": round(cfg.capital_usdt + account_upnl, 2),   # 钱包余额 + 未实现 = 实时权益
+        "equity": account_equity,   # 全账户实时权益(趋势钱包+未实现 + carry 净值)
+        "trend_wallet": round(cfg.capital_usdt, 2),   # 趋势腿 USDⓈ-M 钱包(部署/sizing 口径)
+        "trend_equity": trend_equity,                 # 趋势腿权益(钱包+未实现)
+        "carry": carry_info,                          # carry sleeve 净值/腿(None=未注资,前端单列)
+        "idle_usdt": round(idle_usdt, 2),             # spot 闲置现金(已并入 equity,前端可单列显示)
         "margin_used": round(deployed / cfg.max_leverage, 2) if cfg.max_leverage else round(deployed, 2),
         "cash": round(cfg.capital_usdt - deployed / max(cfg.max_leverage, 1.0), 2),  # free margin
         "btc_px": round(btc_px, 2), "btc_close": round(btc_close, 2),
@@ -289,7 +338,9 @@ def main(argv: list[str]) -> int:
     except Exception:
         hist = []
     stamp = rec["ts"][:16]   # minute granularity dedup
-    if not (hist and hist[-1].get("ts", "")[:16] == stamp):
+    # only record a point when the balance is KNOWN (holdings_ok): an auto-capital read failure falls
+    # back to the LiveConfig default and would otherwise plant a spurious equity spike on the curve.
+    if holdings_ok and not (hist and hist[-1].get("ts", "")[:16] == stamp):
         # label by LOCAL snapshot time (intraday 10-min points), NOT the daily bar date — else every
         # point on the same trading day shares one x label. "MM-DD HH:MM" so the curve reads as a time axis.
         hist.append({"ts": rec["ts"], "date": dt.datetime.now().strftime("%m-%d %H:%M"),
@@ -308,11 +359,12 @@ def main(argv: list[str]) -> int:
     except Exception:
         daily = []
     today = dt.datetime.now().strftime("%Y-%m-%d")
-    pt = {"date": today[5:], "day": today, "equity": rec["equity"]}
-    if daily and daily[-1].get("day") == today:
-        daily[-1] = pt
-    else:
-        daily.append(pt)
+    if holdings_ok:   # same guard: don't finalize a daily point on an unknown-balance run
+        pt = {"date": today[5:], "day": today, "equity": rec["equity"]}
+        if daily and daily[-1].get("day") == today:
+            daily[-1] = pt
+        else:
+            daily.append(pt)
     daily = daily[-400:]
     day_path.write_text(json.dumps(daily, default=float))
     rec["equity_curve_daily"] = daily
@@ -339,6 +391,36 @@ def main(argv: list[str]) -> int:
     rec["inception_equity"] = round(base, 2)
     rec["total_pnl"] = round(rec["equity"] - base, 2)
     rec["total_pnl_pct"] = round(rec["equity"] / base - 1.0, 4) if base else 0.0
+
+    # 拆分 trend / carry 各自的盈亏:各自首次出现时记录 inception,之后 PnL = 实时 − inception。
+    # trend_inception 存趋势腿(trend_equity);carry_inception 存 carry 全腿权益(carry_equity = 长腿+短腿浮盈)。
+    trend_incep_path = STATE_DIR / "trend_inception.json"
+    try:
+        ti = json.loads(trend_incep_path.read_text())
+    except Exception:
+        ti = {}
+    trend_base = ti.get("trend_equity")
+    if not trend_base:
+        trend_base = trend_equity
+        trend_incep_path.write_text(json.dumps({"trend_equity": trend_base, "ts": rec["ts"]}, default=float))
+    rec["trend_inception"] = round(trend_base, 2)
+    rec["trend_pnl"] = round(trend_equity - trend_base, 2)
+    rec["trend_pnl_pct"] = round(trend_equity / trend_base - 1.0, 4) if trend_base else 0.0
+    carry_incep_path = STATE_DIR / "carry_inception.json"
+    try:
+        ci = json.loads(carry_incep_path.read_text())
+    except Exception:
+        ci = {}
+    carry_base = ci.get("carry_equity")
+    if carry_equity > 0 and not carry_base:
+        carry_base = carry_equity
+        carry_incep_path.write_text(json.dumps({"carry_equity": carry_base, "ts": rec["ts"]}, default=float))
+    if carry_equity <= 0:
+        carry_base = None
+        carry_incep_path.unlink(missing_ok=True)
+    rec["carry_inception"] = round(carry_base, 2) if carry_base else None
+    rec["carry_pnl"] = round(carry_equity - carry_base, 2) if carry_base else None
+    rec["carry_pnl_pct"] = round(carry_equity / carry_base - 1.0, 4) if carry_base else None
 
     # 复盘本地记录:每轮 append 一行精简状态(append-only 时间线,便于回放/复盘三态闸切换与盈亏轨迹)。
     # 净态 = 三选一:多头闸开→long / 闸关且做空闸触发→short / 否则 flat。分钟去重避免手动多触发刷屏。

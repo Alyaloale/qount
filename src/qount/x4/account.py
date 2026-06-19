@@ -94,10 +94,20 @@ class X4Account:
         return amt
 
     def equity(self, mark_price: float) -> float:
-        """Total account equity marked at ``mark_price``."""
+        """Total account equity marked at ``mark_price`` (the **marginBalance** analog: includes
+        open-position unrealized MTM)."""
 
         unrealized = self.position_base * (mark_price - self.avg_price)
         return self.initial_capital + self.realized_pnl + unrealized + self.funding_pnl - self.fees_paid
+
+    def wallet_balance(self) -> float:
+        """Realized-only equity (the **walletBalance** analog: ``equity`` MINUS open-position MTM).
+
+        Independent of the mark — it only moves when PnL is *booked* (a reduction/flip realizes
+        average-cost PnL), funding settles, or fees are charged. Used as an alternative sizing base
+        so that an open winner/loser's unrealized MTM does NOT feed back into the position size."""
+
+        return self.initial_capital + self.realized_pnl + self.funding_pnl - self.fees_paid
 
     def weight(self, mark_price: float) -> float:
         """Current signed exposure as a fraction of equity (``position notional / equity``)."""

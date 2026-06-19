@@ -33,6 +33,28 @@ class TestOpenAndMark(unittest.TestCase):
         self.assertAlmostEqual(a.equity(90.0), _CAP + 10.0 * 10.0)
 
 
+class TestWalletBalance(unittest.TestCase):
+    def test_flat_wallet_equals_capital(self) -> None:
+        a = X4Account(initial_capital=_CAP)
+        self.assertEqual(a.wallet_balance(), _CAP)
+
+    def test_wallet_excludes_open_unrealized(self) -> None:
+        a = X4Account(initial_capital=_CAP, taker_fee=0.0, slippage=0.0)
+        a.trade(target_base=-10.0, fill_price=100.0)  # short 10 @ 100
+        # marked equity swings with price; walletBalance ignores the open MTM
+        self.assertAlmostEqual(a.equity(90.0), _CAP + 100.0)   # short wins on the drop
+        self.assertAlmostEqual(a.wallet_balance(), _CAP)        # but realized-only is unchanged
+        self.assertAlmostEqual(a.equity(110.0), _CAP - 100.0)
+        self.assertAlmostEqual(a.wallet_balance(), _CAP)
+
+    def test_wallet_moves_only_on_realized_pnl(self) -> None:
+        a = X4Account(initial_capital=_CAP, taker_fee=0.0, slippage=0.0)
+        a.trade(target_base=-10.0, fill_price=100.0)   # short 10 @ 100
+        a.trade(target_base=0.0, fill_price=90.0)      # cover @ 90 -> realize +100
+        self.assertAlmostEqual(a.realized_pnl, 100.0)
+        self.assertAlmostEqual(a.wallet_balance(), _CAP + 100.0)  # now it moves (booked)
+
+
 class TestFeesAndSlippage(unittest.TestCase):
     def test_fee_charged_on_notional(self) -> None:
         a = X4Account(initial_capital=_CAP, taker_fee=0.0005, slippage=0.0)

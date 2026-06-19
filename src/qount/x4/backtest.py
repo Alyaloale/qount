@@ -91,6 +91,12 @@ def run_directional(
     max_leverage: float = 1.0,
     chandelier_mult: float = 0.0,
     chandelier_lookback: int = 22,
+    wallet_sizing: bool = False,
+    profit_lock_threshold: float = 0.0,
+    profit_lock_mult: float = 0.0,
+    scale_out_step: float = 0.0,
+    scale_out_frac: float = 0.0,
+    scale_out_residual: float = 0.0,
     periods_per_year: float | None = None,
 ) -> X4Result:
     """Run one single-asset directional strategy and return its :class:`X4Result`.
@@ -114,6 +120,28 @@ def run_directional(
     (then a fresh signal re-enters). Slow entry, fast exit — cuts the trend giveback at a blow-off top
     / the squeeze tail on a short. 0 = off. (Long-only strategies never reach the short branch, so their
     behavior is unchanged.)
+
+    ``wallet_sizing`` switches the position-sizing base from mark-to-market equity (``acct.equity``,
+    the marginBalance analog: includes open-position unrealized MTM) to realized-only equity
+    (``acct.wallet_balance``, the walletBalance analog). With it ON, an open winner's unrealized
+    profit no longer inflates the next target — so the book does not pyramid into a running winner
+    (the §8.3① short-side concern: a winning short adding near a bottom). It is symmetric: it also
+    stops the protective de-risk a losing open position would otherwise get from shrinking equity. 0
+    = off (= the validated marginBalance sizing).
+
+    **Profit-taking / giveback control** (both off by default, byte-identical when off — they target
+    the §8 concern "let a winner run, then give it back"):
+
+    * ``profit_lock_threshold`` / ``profit_lock_mult`` — *profit-conditional* Chandelier tightening.
+      The entry-phase stop stays wide (``chandelier_mult``, no whipsaw), but once the open position is
+      in profit by ``profit_lock_threshold`` (fraction of the average entry), the trailing stop
+      tightens to ``profit_lock_mult × ATR`` — locking gains on a position that has already run.
+      Needs ``chandelier_mult > 0``; both > 0 to activate.
+    * ``scale_out_step`` / ``scale_out_frac`` / ``scale_out_residual`` — *partial scale-out*. Each time
+      the open profit crosses another ``scale_out_step`` (e.g. every +20%), permanently trim
+      ``scale_out_frac`` of full size (ratcheted: a retrace does NOT re-add). ``scale_out_residual`` is
+      the floor fraction always kept while the signal holds (so the book never scales to flat and
+      re-enters; the residual still rides the Chandelier). 0 = off.
     """
 
     acct = X4Account(initial_capital=initial_capital, taker_fee=taker_fee, slippage=slippage)
@@ -124,7 +152,17 @@ def run_directional(
     latched_sign = 0                        # sign of the position the latch fired on (+1 long, -1 short)
     ch_latched = False
     chandelier_exits = 0
+    so_steps = 0                            # ratcheted scale-out steps taken on the current trade
+    scale_outs = 0
     curve: list[float] = []
+
+    def _open_profit(px: float) -> float:
+        """Open-position profit as a fraction of the average entry (signed by side; 0 if flat)."""
+        if acct.avg_price <= 0 or abs(acct.position_base) < 1e-12:
+            return 0.0
+        gain = (px - acct.avg_price) if acct.position_base > 0 else (acct.avg_price - px)
+        return gain / acct.avg_price
+
     for bar in bars:
         raw = strategy.on_bar(bar)
         scale = 1.0
@@ -137,6 +175,11 @@ def run_directional(
             a_ch = atr_ch.update(bar)
             was_long = acct.position_base > 1e-12
             was_short = acct.position_base < -1e-12
+            # profit-conditional tightening: wide entry stop, tighter once the trade is in profit
+            eff_mult = chandelier_mult
+            if profit_lock_threshold > 0 and profit_lock_mult > 0 \
+                    and _open_profit(bar.close) >= profit_lock_threshold:
+                eff_mult = profit_lock_mult
             # re-arm only when the signal leaves the side the latch fired on
             if ch_latched and ((latched_sign > 0 and raw <= 0.0) or (latched_sign < 0 and raw >= 0.0)):
                 ch_latched = False
@@ -145,7 +188,7 @@ def run_directional(
                 weight = 0.0
             elif was_long and a_ch is not None:
                 hh_since_entry = bar.high if hh_since_entry is None else max(hh_since_entry, bar.high)
-                if bar.low <= hh_since_entry - chandelier_mult * a_ch:   # trailing stop pierced
+                if bar.low <= hh_since_entry - eff_mult * a_ch:   # trailing stop pierced
                     weight = 0.0
                     ch_latched = True
                     latched_sign = 1
@@ -153,7 +196,7 @@ def run_directional(
                     chandelier_exits += 1
             elif was_short and a_ch is not None:
                 ll_since_entry = bar.low if ll_since_entry is None else min(ll_since_entry, bar.low)
-                if bar.high >= ll_since_entry + chandelier_mult * a_ch:  # squeeze into the stop
+                if bar.high >= ll_since_entry + eff_mult * a_ch:  # squeeze into the stop
                     weight = 0.0
                     ch_latched = True
                     latched_sign = -1
@@ -163,7 +206,22 @@ def run_directional(
                 hh_since_entry = bar.high     # newly entering long -> start the high trail
             if not was_short and weight < 0.0:
                 ll_since_entry = bar.low      # newly entering short -> start the low trail
-        eq = acct.equity(bar.close)
+        # partial scale-out ratchet (on top of the Chandelier; independent of it)
+        if scale_out_step > 0 and scale_out_frac > 0:
+            if abs(acct.position_base) < 1e-12:
+                so_steps = 0                  # flat -> reset for the next trade
+            elif weight != 0.0:
+                prof = _open_profit(bar.close)
+                if prof > 0:
+                    step = int(prof // scale_out_step)
+                    if step > so_steps:       # ratchet up only (a retrace never re-adds)
+                        prev_cap = max(scale_out_residual, 1.0 - so_steps * scale_out_frac)
+                        so_steps = step
+                        new_cap = max(scale_out_residual, 1.0 - so_steps * scale_out_frac)
+                        if new_cap < prev_cap - 1e-12:   # count only steps that actually trim
+                            scale_outs += 1
+                weight *= max(scale_out_residual, 1.0 - so_steps * scale_out_frac)
+        eq = acct.wallet_balance() if wallet_sizing else acct.equity(bar.close)
         target_base = weight * scale * eq / bar.close
         if _should_rebalance(acct.position_base, target_base, rebalance_band):
             acct.trade(target_base, bar.close)
@@ -175,8 +233,8 @@ def run_directional(
     return _result(strategy.name if hasattr(strategy, "name") else strategy.__class__.__name__,
                    curve, initial_capital, acct.trade_count, acct.fees_paid, acct.funding_pnl,
                    periods_per_year,
-                   {"chandelier_exits": chandelier_exits, "final_weight": last_w,
-                    "final_position_base": acct.position_base})
+                   {"chandelier_exits": chandelier_exits, "scale_outs": scale_outs,
+                    "final_weight": last_w, "final_position_base": acct.position_base})
 
 
 def _result(name, curve, initial_capital, trades, fees, funding, periods_per_year, extra=None):

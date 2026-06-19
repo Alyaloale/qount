@@ -85,8 +85,10 @@ class LiveConfig:
     # long's 200): a short must engage the downtrend earlier. Smaller size + tighter stop (squeeze tail).
     short_gate: bool = False
     short_regime_sma: int = 100
-    short_vol_target: float = 0.02
-    short_max_leverage: float = 1.5
+    short_vol_target: float = 0.03       # owner 2026-06-19: 0.02->0.03 抬空书 gross ~0.40->~0.60 (上限给到
+                                         # 0.6). vt 是 binding 旋钮 (short_max_leverage cap 1.5 inert,不 bind).
+                                         # 回测:拼账 +246->+312%/Sharpe 1.17->1.23/train+test 双升/maxDD ~1pp 深.
+    short_max_leverage: float = 1.5      # per-coin scale cap; inert at vt0.03 (无币 scale 触顶 -> 不动)
     short_chandelier_mult: float = 3.0
     # --- §21.4 train+test-validated enhancements (此前未接进 live;只改善 chop/熊 regime,牛市中性) ---
     breadth_gate: float | None = 0.5     # risk-on if BTC gate OR ≥50% of universe above its regime_sma
@@ -99,6 +101,18 @@ class LiveConfig:
     # debounced by ``stop_amend_band``. Swap only (perp). ``exchange_stops=False`` tears them down. ---
     exchange_stops: bool = True
     stop_amend_band: float = 0.01        # only move the resting stop if the trigger shifts >1% (no churn)
+    # --- §10 partial scale-out (分批止盈 / 锁利): as an OPEN position runs into profit, ratchet DOWN its
+    # target weight by ``scale_out_frac`` every ``scale_out_step`` of open profit (fraction of entry),
+    # flooring at ``scale_out_residual`` of full size; the residual rides the Chandelier. Ratcheted (a
+    # retrace never re-adds) -> books partial profit on a winner so a +100% trend doesn't give back 28%
+    # before the wide stop. Validated LONG-side (§10, x4_profit_taking.py): Sharpe 0.91->1.00, maxDD
+    # -28%->-22%, train/test both hold, at the cost of ~18pp total return = a giveback / risk-adjusted
+    # knob (NOT pure alpha). Symmetric -> also applies to a held SHORT leg (mechanism direction-agnostic,
+    # though the short side wasn't separately validated). Default OFF (byte-identical) -- arming via
+    # QOUNT_X4_SCALE_OUT is owner's deliberate step. Recommended armed档: step0.20/frac0.50/residual0.34.
+    scale_out_step: float = 0.0          # open-profit fraction between successive partial scale-outs (0=off)
+    scale_out_frac: float = 0.0          # fraction of full size trimmed at each step
+    scale_out_residual: float = 0.0      # floor fraction always kept (residual rides the stop)
 
 
 @dataclass(frozen=True)
@@ -148,6 +162,42 @@ def gate_is_open(closes: list[float], gate_sma: int) -> bool:
     if len(closes) < gate_sma:
         return False
     return closes[-1] > _sma(closes, gate_sma)
+
+
+def usdt_wallet_balance(bal: dict) -> float | None:
+    """USDⓈ-M **walletBalance** (cash incl. realized PnL/funding/fees, EXCLUDING open-position
+    unrealized MTM) from a ccxt ``fetch_balance`` result — the correct sizing/equity base.
+
+    ⚠️ ccxt ``balance['USDT']['total']`` on USDⓈ-M is the **marginBalance** (= walletBalance +
+    unrealized): using it as ``capital`` and then adding unrealized again DOUBLE-counts the open
+    profit (inflates equity & total PnL ≈ 2× when unrealized is large). So prefer Binance
+    ``info.totalWalletBalance``; fall back to ``total − totalUnrealizedProfit``, else ``total``.
+    None if unreadable (caller refuses to trade against an unknown balance)."""
+
+    info = bal.get("info") or {}
+    # Binance USDⓈ-M: marginBalance = walletBalance + unrealized. 最可靠的做法是
+    # 用 USDT.total(=marginBalance) − totalUnrealizedProfit 得到真正的 walletBalance;
+    # 这比直接用 totalWalletBalance 更稳(某些账户/模式下 totalWalletBalance 会混进未实现)。
+    u = bal.get("USDT") or {}
+    t = u.get("total")
+    upnl = info.get("totalUnrealizedProfit")
+    if t not in (None, "") and upnl not in (None, ""):
+        try:
+            return float(t) - float(upnl)
+        except (TypeError, ValueError):
+            pass
+    w = info.get("totalWalletBalance")
+    if w not in (None, ""):
+        try:
+            return float(w)
+        except (TypeError, ValueError):
+            pass
+    if t in (None, ""):
+        return None
+    try:
+        return float(t)
+    except (TypeError, ValueError):
+        return None
 
 
 def portfolio_gate_open(bars_by_sym: dict[str, list], cfg: LiveConfig) -> bool:
@@ -352,6 +402,49 @@ def apply_chandelier_stops(
                 new_state[s] = {"trail_low": trail_low}
     # coins not in `targets` (daily signal already dropped them) fall out of new_state -> latch cleared
     return adjusted, new_state, triggered
+
+
+def apply_scale_out(
+    targets: list[TargetWeight],
+    live_prices: dict[str, float],          # data_sym -> current LIVE price (intraday)
+    entry_prices: dict[str, float | None],  # data_sym -> avg entry of the current position (None if flat)
+    positions_base: dict[str, float],       # data_sym -> SIGNED current position (+long / −short, base units)
+    so_state: dict[str, dict],              # persisted {sym: {"steps": int}}
+    cfg: LiveConfig,
+) -> tuple[list[TargetWeight], dict[str, dict], list[str]]:
+    """§10 partial scale-out (分批止盈): cap each target weight by a **ratcheted** partial profit-take.
+
+    For an OPEN position held in the SAME direction as today's target, measure open profit as a fraction
+    of the average entry; every ``scale_out_step`` of profit permanently trims ``scale_out_frac`` of full
+    size, flooring at ``scale_out_residual`` (the residual keeps riding the Chandelier). Ratcheted: steps
+    only go UP, so a retrace never re-adds (state persisted across the 10-min cron in ``scale_out.json``).
+    A flat / freshly-entered / opposite-side leg gets its full target and its state reset (it falls out of
+    the returned state). Mirrors :func:`run_directional`'s scale-out; OFF when either knob is 0
+    (byte-identical). Returns (adjusted targets, new state, syms that took a new scale-out step)."""
+
+    if cfg.scale_out_step <= 0 or cfg.scale_out_frac <= 0:
+        return targets, so_state, []
+    new_state: dict[str, dict] = {}
+    scaled: list[str] = []
+    adjusted: list[TargetWeight] = []
+    for t in targets:
+        s = t.symbol
+        px = live_prices.get(s)
+        entry = entry_prices.get(s)
+        pos = positions_base.get(s, 0.0)
+        same_side = abs(pos) > 0 and (pos > 0) == (t.weight > 0)
+        if not (t.weight != 0.0 and px and entry and entry > 0 and same_side):
+            adjusted.append(t)                 # flat / fresh / opposite / unknown entry -> full, reset
+            continue
+        prof = ((px - entry) if t.weight > 0 else (entry - px)) / entry
+        prev = int(so_state.get(s, {}).get("steps", 0))
+        steps = max(prev, int(prof // cfg.scale_out_step)) if prof > 0 else prev
+        if steps > prev:
+            scaled.append(s)
+        new_state[s] = {"steps": steps}
+        cap = max(cfg.scale_out_residual, 1.0 - steps * cfg.scale_out_frac)
+        adjusted.append(TargetWeight(s, t.weight * cap))
+    return adjusted, new_state, scaled
 
 
 # ------------------- T2-2: exchange-native resting STOP_MARKET backstop -------------------
@@ -731,7 +824,13 @@ def sync_stop_orders(exchange, plan: StopOrderPlan, *, mode: str = "dry",
             acted.append({"cancel": c, "sent": False})
             continue
         try:
-            exchange.cancel_order(c.order_id, c.symbol)
+            # ⚠️ closePosition STOP_MARKET orders are Binance **CONDITIONAL/algo** orders (algoType
+            # CONDITIONAL, keyed by algoId, actualOrderId empty until triggered) — NOT regular orders.
+            # cancel_order WITHOUT params={"stop": True} hits the regular-order endpoint -> the algoId
+            # isn't found there -> OrderNotFound, the algo stop survives, and the re-place then hits
+            # -4130 ("already existing") => every-run churn. The stop param routes to the algo cancel
+            # endpoint (mirror of fetch_open_stops, which already needs it). Verified live 2026-06-19.
+            exchange.cancel_order(c.order_id, c.symbol, params={"stop": True})
             acted.append({"cancel": c, "sent": True})
         except Exception as exc:   # a stale id (already filled/cancelled) is benign — log, continue
             print(tag + f"  -- cancel failed: {type(exc).__name__}")

@@ -104,5 +104,57 @@ class TestChandelier(unittest.TestCase):
         self.assertGreater(r.equity_curve[-1], r.equity_curve[0])  # short profited on the decline
 
 
+class TestProfitTaking(unittest.TestCase):
+    """§8 profit-taking / giveback control: profit-conditional tightening + partial scale-out."""
+
+    def test_profit_lock_tightens_and_exits_where_wide_holds(self) -> None:
+        # rally 100->140, then a pullback to ~133. A wide 20x stop rides through it; the same run with
+        # profit-lock (tighten to 1x once +10% in profit) exits on the pullback.
+        rise = [_bar(i, 100.0 + 2.0 * i, high=100.0 + 2.0 * i + 0.5, low=100.0 + 2.0 * i - 0.5)
+                for i in range(21)]                         # 100 -> 140
+        bars = rise + [_bar(21, 134.0, high=134.5, low=133.0)]
+        common = dict(initial_capital=100_000.0, taker_fee=0.0, slippage=0.0, rebalance_band=5.0,
+                      chandelier_mult=20.0, chandelier_lookback=10)
+        plain = run_directional(bars, _AlwaysLong(), **common)
+        lock = run_directional(bars, _AlwaysLong(), **common,
+                               profit_lock_threshold=0.10, profit_lock_mult=1.0)
+        self.assertEqual(plain.extra["chandelier_exits"], 0)       # wide stop never fired
+        self.assertGreaterEqual(lock.extra["chandelier_exits"], 1)  # tightened stop locked the gain
+
+    def test_profit_lock_off_by_default_matches_plain(self) -> None:
+        bars = [_bar(i, 100.0 + i, high=100.0 + i + 1, low=100.0 + i - 1) for i in range(20)]
+        common = dict(initial_capital=100_000.0, taker_fee=0.0, slippage=0.0,
+                      chandelier_mult=8.0, chandelier_lookback=5)
+        a = run_directional(bars, _AlwaysLong(), **common)
+        b = run_directional(bars, _AlwaysLong(), **common, profit_lock_threshold=0.0,
+                            profit_lock_mult=0.0)
+        self.assertEqual(a.equity_curve, b.equity_curve)
+
+    def test_scale_out_trims_at_thresholds_and_keeps_residual(self) -> None:
+        # rally 100 -> 160 (+60%); scale out 1/3 every +20%, floor at ~1/3 residual.
+        bars = [_bar(i, 100.0 + 4.0 * i, high=100.0 + 4.0 * i + 0.5, low=100.0 + 4.0 * i - 0.5)
+                for i in range(16)]                          # 100 -> 160
+        common = dict(initial_capital=100_000.0, taker_fee=0.0, slippage=0.0, rebalance_band=0.25)
+        plain = run_directional(bars, _AlwaysLong(), **common)
+        so = run_directional(bars, _AlwaysLong(), **common,
+                             scale_out_step=0.20, scale_out_frac=0.34, scale_out_residual=0.32)
+        self.assertGreaterEqual(so.extra["scale_outs"], 2)        # trimmed at +20% and +40%
+        self.assertGreater(so.extra["final_position_base"], 0.0)  # residual still long (not flat)
+        self.assertLess(so.extra["final_position_base"],
+                        plain.extra["final_position_base"])       # but smaller than full size
+
+    def test_scale_out_ratchet_does_not_re_add_on_retrace(self) -> None:
+        # rally to +40% (two scale-outs -> residual), then retrace to +10%: must NOT rebuild the size.
+        rise = [_bar(i, 100.0 + 4.0 * i, high=100.0 + 4.0 * i + 0.5, low=100.0 + 4.0 * i - 0.5)
+                for i in range(11)]                          # 100 -> 140
+        bars = rise + [_bar(11, 110.0, high=110.5, low=109.5)]
+        common = dict(initial_capital=100_000.0, taker_fee=0.0, slippage=0.0, rebalance_band=0.25)
+        plain = run_directional(bars, _AlwaysLong(), **common)
+        so = run_directional(bars, _AlwaysLong(), **common,
+                             scale_out_step=0.20, scale_out_frac=0.34, scale_out_residual=0.32)
+        self.assertEqual(so.extra["scale_outs"], 2)               # no extra step on the way down
+        self.assertLess(so.extra["final_position_base"], 0.5 * plain.extra["final_position_base"])
+
+
 if __name__ == "__main__":
     unittest.main()
