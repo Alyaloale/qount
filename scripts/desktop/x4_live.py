@@ -338,15 +338,48 @@ def main(argv: list[str]) -> int:
     except Exception:
         hist = []
     stamp = rec["ts"][:16]   # minute granularity dedup
-    # only record a point when the balance is KNOWN (holdings_ok): an auto-capital read failure falls
-    # back to the LiveConfig default and would otherwise plant a spurious equity spike on the curve.
-    if holdings_ok and not (hist and hist[-1].get("ts", "")[:16] == stamp):
+    # CROSS-CRON CONSISTENCY GUARD. equity = trend_equity (read FRESH here) + carry_equity + idle_usdt
+    # (both from state/cxd/live/latest.json, refreshed on a SEPARATE */5 cron). When cash moves between
+    # wallets (carry autofund UMFUTURE->spot, a manual sweep, a quarterly roll) the fresh trend read and
+    # the stale cxd snapshot are momentarily inconsistent -> the curve double-counts or drops the moved
+    # cash (the 2026-06-20 $548 spike: $62 swept into the trend wallet while cxd idle_usdt still showed it).
+    # Total equity only really moves via (small, gradual) PnL or (rare) external deposit/withdrawal, so a
+    # >10% jump is a glitch UNLESS it persists. Because cxd is */5 and this runs */2, a stale-window glitch
+    # can PLATEAU for up to ~3 of our ticks, so a sustained move must be confirmed over N>=4 consecutive
+    # runs (>~5min = past the cxd refresh cycle) before it's trusted as real. A lone/short spike never
+    # reaches the count and is dropped; a true deposit re-records ~8min later. Candidate state persists.
+    N_CONFIRM = 4
+    guard_path = STATE_DIR / "equity_guard.json"
+    try:
+        _g = json.loads(guard_path.read_text())
+        cand_eq, cand_n = _g.get("cand_eq"), int(_g.get("cand_n") or 0)
+    except Exception:
+        cand_eq, cand_n = None, 0
+    cur_eq = rec["equity"]
+    last_rec = hist[-1]["equity"] if hist else cur_eq
+    def _near(a, b):
+        return abs(a - b) <= max(0.10 * abs(b), 25.0)
+    if _near(cur_eq, last_rec):          # normal small PnL drift -> trust it, clear any candidate
+        confirmed, cand_eq, cand_n = True, None, 0
+    else:                                # big jump vs last recorded: only trust if it PERSISTS N runs
+        if cand_eq is not None and _near(cur_eq, cand_eq):
+            cand_n += 1
+        else:
+            cand_eq, cand_n = cur_eq, 1
+        confirmed = cand_n >= N_CONFIRM
+        if confirmed:
+            cand_eq, cand_n = None, 0    # real move locked in; reset for next time
+    if holdings_ok and confirmed and not (hist and hist[-1].get("ts", "")[:16] == stamp):
         # label by LOCAL snapshot time (intraday 10-min points), NOT the daily bar date — else every
         # point on the same trading day shares one x label. "MM-DD HH:MM" so the curve reads as a time axis.
         hist.append({"ts": rec["ts"], "date": dt.datetime.now().strftime("%m-%d %H:%M"),
-                     "equity": rec["equity"]})
+                     "equity": cur_eq})
+    elif holdings_ok and not confirmed:
+        print(f"  [equity-guard] 跳过疑似跨-cron 不一致点 ${cur_eq:.2f} (上点 ${last_rec:.2f}, 确认 {cand_n}/{N_CONFIRM})")
     hist = hist[-720:]
     hist_path.write_text(json.dumps(hist, default=float))
+    if holdings_ok:   # persist candidate state so a SUSTAINED move can confirm across runs
+        guard_path.write_text(json.dumps({"cand_eq": cand_eq, "cand_n": cand_n, "ts": rec["ts"]}, default=float))
     rec["equity_curve"] = hist   # latest.json only (already wrote orders.jsonl above without it)
 
     # daily equity series (一日一点,看板「日线 / 盘中」切换的日线源): update today's point in place each
@@ -359,8 +392,8 @@ def main(argv: list[str]) -> int:
     except Exception:
         daily = []
     today = dt.datetime.now().strftime("%Y-%m-%d")
-    if holdings_ok:   # same guard: don't finalize a daily point on an unknown-balance run
-        pt = {"date": today[5:], "day": today, "equity": rec["equity"]}
+    if holdings_ok and confirmed:   # same guards: known balance + passes cross-cron consistency check
+        pt = {"date": today[5:], "day": today, "equity": cur_eq}
         if daily and daily[-1].get("day") == today:
             daily[-1] = pt
         else:

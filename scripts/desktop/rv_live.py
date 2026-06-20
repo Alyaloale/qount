@@ -166,8 +166,25 @@ def main(argv: list[str]) -> int:
         else:
             # credit the spot BASE already held so funding only tops up the SHORTFALL (not the full N
             # every run -> would slowly bleed the trend wallet into idle spot USDT). `current` holds the
-            # signed spot long notionals read above.
+            # signed spot long notionals read above (FREE spot only).
             cur_spot = {s: v for s, v in current.items() if "_" not in s and v > 0}
+            # ALSO credit base coin parked in Simple Earn (flexible savings): Binance reports it as a
+            # separate LD* asset OUTSIDE spot.total, so a hedge coin auto-swept into Earn looks "missing"
+            # -> funding re-buys it every run -> the long drifts past delta-neutral (the 2026-06-20 stray
+            # -ETH incident). Crediting earn here keeps funding at target. We deliberately do NOT add it to
+            # `current` (the trade-reconcile position): earn coin is locked, not free to sell, so a sell
+            # diff against it would fail. (Belt-and-suspenders: ETH001 auto-subscribe was also disabled.)
+            try:
+                earn: dict[str, float] = {}
+                for _p in (spot_ex.sapiGetSimpleEarnFlexiblePosition().get("rows") or []):
+                    earn[_p.get("asset")] = earn.get(_p.get("asset"), 0.0) + float(_p.get("totalAmount") or 0)
+                for spot_sym, _b in cfg.pairs:
+                    base = spot_sym[: -len(cfg.quote)]
+                    amt = earn.get(base, 0.0)
+                    if amt > 0 and spot_sym in prices:
+                        cur_spot[spot_sym] = cur_spot.get(spot_sym, 0.0) + amt * prices[spot_sym]
+            except Exception:
+                pass
             fund_plan = plan_funding(legs, spot_usdt, cm_coin_usdt, prices, um_available, cfg,
                                      cur_spot_usdt=cur_spot)
             print(f"  [autofund] spot ${spot_usdt:.0f} | UMFUTURE 可用 ${um_available:.0f} (缓冲 ${cfg.um_buffer_usdt:.0f}) "

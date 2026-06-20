@@ -17,6 +17,19 @@ sbtc=float((_sb.get("total") or {}).get("BTC",0) or 0)
 # neither the trend UMFUTURE wallet nor the carry ETH legs, so it must be added to equity explicitly or
 # the curve/总盈亏 sag by its amount whenever cash moves wallet->spot but isn't deployed into ETH.
 sidle=float((_sb.get("free") or {}).get("USDT",0) or 0)
+# Simple Earn (flexible savings) holdings live OUTSIDE spot.total: Binance reports them as separate LD*
+# tokens (token units at an exchange rate, not the underlying), so reading only spot total.ETH / free.USDT
+# silently omits any ETH/USDT subscribed into Earn for yield. That omission = the 2026-06-20 -$66 equity
+# "cliff" (ETH moved wallet->spot->Earn vanished from carry long_usd). Pull the TRUE underlying amounts
+# from the Simple Earn endpoint and fold each into its real bucket (ETH/BTC -> long, USDT -> idle).
+try:
+    for _p in (sx.sapiGetSimpleEarnFlexiblePosition().get("rows") or []):
+        _a=_p.get("asset"); _amt=float(_p.get("totalAmount") or 0)
+        if _a=="ETH": seth+=_amt
+        elif _a=="BTC": sbtc+=_amt
+        elif _a in ("USDT","USDC","FDUSD"): sidle+=_amt
+except Exception:
+    pass
 ceth=float((cm.fetch_balance().get("total") or {}).get("ETH",0) or 0)
 cbtc=float((cm.fetch_balance().get("total") or {}).get("BTC",0) or 0)
 CONTRACT_USD={"BTCUSD": 100.0, "ETHUSD": 10.0}
