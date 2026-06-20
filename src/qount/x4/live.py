@@ -625,7 +625,8 @@ def compute_orders(
 
 
 def unreachable_coins(bars_by_sym: dict[str, list], prices: dict[str, float],
-                      filters: dict[str, SymbolFilter], cfg: LiveConfig) -> list[dict]:
+                      filters: dict[str, SymbolFilter], cfg: LiveConfig,
+                      held: set[str] | None = None) -> list[dict]:
     """Universe coins whose **real** inverse-vol × vol-parity target notional (when held alongside the
     full universe, :func:`natural_weights`) falls below the exchange MIN order — they'd be skipped as
     dust, so on a small capital the live book is a concentrated subset (honest caveat, not a bug).
@@ -633,14 +634,20 @@ def unreachable_coins(bars_by_sym: dict[str, list], prices: dict[str, float],
     NOT equal-weight: it uses the actual (non-uniform) inverse-vol weighting, so e.g. at $115 BTC's
     larger inverse-vol share still only targets ~$18 < its ~$65 min, and ETH/LINK/ADA also fall short
     — only BNB/SOL/XRP clear their floors. Returns ``[{"symbol","min_usdt","target_usdt"}]`` sorted by
-    shortfall (worst first)."""
+    shortfall (worst first).
+
+    ``held`` (symbols with a current non-zero position) are EXCLUDED: a coin already in the book isn't
+    "skipped/missing" — it sits at one min-lot, just slightly above its sub-floor target (granularity
+    overshoot, e.g. BTC held at $63 lot vs a $59 target). Flagging it made the dashboard claim a "非完整
+    7 币" subset while all 7 were in fact held."""
 
     nat = natural_weights(bars_by_sym, cfg)
+    held = held or set()
     out: list[dict] = []
     for s in cfg.universe:
         f = filters.get(s)
         px = prices.get(s, 0.0)
-        if not f or px <= 0 or s not in nat:
+        if not f or px <= 0 or s not in nat or s in held:
             continue
         floor = max(f.min_amount * px, f.min_notional, cfg.min_order_usdt)
         tgt = nat[s] * cfg.capital_usdt

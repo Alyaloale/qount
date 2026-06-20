@@ -748,6 +748,15 @@ class TestUnreachableCoins(unittest.TestCase):
     def test_all_reachable_at_large_capital(self):
         self.assertEqual(unreachable_coins(self._bars(), self._prices, self._filt(), self._cfg(50_000.0)), [])
 
+    def test_held_coin_not_flagged(self):
+        # BTC's sub-floor target would normally flag it, but if it's ALREADY held (a min-lot in the
+        # book) it isn't "skipped/missing" -> excluded so the dashboard doesn't claim a 非完整 subset.
+        cfg = self._cfg(70.0)
+        self.assertIn("BTCUSDT", [b["symbol"] for b in
+                                  unreachable_coins(self._bars(), self._prices, self._filt(), cfg)])
+        out = unreachable_coins(self._bars(), self._prices, self._filt(), cfg, held={"BTCUSDT"})
+        self.assertNotIn("BTCUSDT", [b["symbol"] for b in out])
+
 
 class TestChandelierStopPrices(unittest.TestCase):
     """T2-2: derive the resting-stop trigger price from the persisted trail_high."""

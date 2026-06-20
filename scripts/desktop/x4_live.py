@@ -206,8 +206,11 @@ def main(argv: list[str]) -> int:
 
     res = compute_orders(tw, balances, prices, filters, cfg)
     # small-capital honesty: which universe coins can't be held at this capital — judged by the REAL
-    # inverse-vol target notional (not an equal-weight proxy), so the list is faithful to the weighting
-    blocked = unreachable_coins(aligned, prices, filters, cfg)
+    # inverse-vol target notional (not an equal-weight proxy), so the list is faithful to the weighting.
+    # EXCLUDE coins already in the book (non-zero current notional): they're held at a min-lot, not
+    # skipped, so the banner shouldn't call the book a "concentrated subset" when all 7 are present.
+    held_syms = {s for s, v in res.current_usdt.items() if abs(v) >= cfg.min_order_usdt}
+    blocked = unreachable_coins(aligned, prices, filters, cfg, held=held_syms)
     if blocked:
         print(f"  [capital] 本金 ${cfg.capital_usdt:.0f} 过小,以下币按逆波动率权重的目标额低于最小下单额,会被跳过: "
               + ", ".join(f"{b['symbol']}(目标${b['target_usdt']:.0f}<地板${b['min_usdt']:.0f})" for b in blocked))
