@@ -18,6 +18,7 @@ from qount.x4.live import (  # noqa: E402
     TargetWeight,
     apply_chandelier_stops,
     apply_scale_out,
+    carry_flow_adjusted_pnl,
     chandelier_stop_prices,
     compute_orders,
     fetch_filters,
@@ -959,6 +960,60 @@ class TestStopExchangeLayer(unittest.TestCase):
             self.assertTrue(any("error" in a for a in acted))
         finally:
             os.environ.pop("QOUNT_X4_LIVE_ENABLE", None)
+
+
+class TestCarryFlowAdjustedPnl(unittest.TestCase):
+    """P0 (2026-06-21): per-sleeve P&L must subtract internal autofund flows, else injected capital
+    is misreported as trading profit (the live trend +$68 artifact)."""
+
+    def test_unfunded_returns_none(self):
+        pnl, state = carry_flow_adjusted_pnl(0.0, {})
+        self.assertIsNone(pnl)
+        self.assertEqual(state, {})
+
+    def test_first_sight_sets_basis_zero_pnl(self):
+        pnl, state = carry_flow_adjusted_pnl(100.0, {}, autofund_draw=0.0, rv_ts="t0")
+        self.assertAlmostEqual(pnl, 0.0)
+        self.assertAlmostEqual(state["carry_equity"], 100.0)
+        self.assertAlmostEqual(state["cum_flow"], 0.0)
+        self.assertEqual(state["last_fund_ts"], "t0")
+
+    def test_pure_pnl_no_flow(self):
+        # equity grew 100 -> 105 with no funding -> +5 real P&L
+        prev = {"carry_equity": 100.0, "cum_flow": 0.0, "last_fund_ts": "t0"}
+        pnl, _ = carry_flow_adjusted_pnl(105.0, prev, autofund_draw=0.0, rv_ts="t0")
+        self.assertAlmostEqual(pnl, 5.0)
+
+    def test_injected_capital_not_counted_as_profit(self):
+        # equity 100 -> 150 but $50 of it was an autofund draw -> P&L must stay 0, not +50
+        prev = {"carry_equity": 100.0, "cum_flow": 0.0, "last_fund_ts": "t0"}
+        pnl, state = carry_flow_adjusted_pnl(150.0, prev, autofund_draw=50.0, rv_ts="t1")
+        self.assertAlmostEqual(pnl, 0.0)
+        self.assertAlmostEqual(state["cum_flow"], 50.0)
+        self.assertEqual(state["last_fund_ts"], "t1")
+
+    def test_draw_deduped_by_ts_across_reruns(self):
+        # same rv snapshot (same ts) seen twice (the */2 cron rerun) -> draw counted ONCE only
+        prev = {"carry_equity": 100.0, "cum_flow": 0.0, "last_fund_ts": "t0"}
+        _, s1 = carry_flow_adjusted_pnl(150.0, prev, autofund_draw=50.0, rv_ts="t1")
+        pnl2, s2 = carry_flow_adjusted_pnl(150.0, s1, autofund_draw=50.0, rv_ts="t1")  # rerun, same ts
+        self.assertAlmostEqual(s2["cum_flow"], 50.0)   # NOT 100
+        self.assertAlmostEqual(pnl2, 0.0)
+
+    def test_funding_then_profit(self):
+        # fund +50 (ts t1), then equity rises another +8 of real P&L (no new draw, ts unchanged)
+        prev = {"carry_equity": 100.0, "cum_flow": 0.0, "last_fund_ts": "t0"}
+        _, s1 = carry_flow_adjusted_pnl(150.0, prev, autofund_draw=50.0, rv_ts="t1")
+        pnl2, _ = carry_flow_adjusted_pnl(158.0, s1, autofund_draw=0.0, rv_ts="t1")
+        self.assertAlmostEqual(pnl2, 8.0)
+
+    def test_trend_residual_reconciles(self):
+        # trend_pnl = total_pnl - carry_pnl must sum back to total exactly
+        prev = {"carry_equity": 100.0, "cum_flow": 0.0, "last_fund_ts": "t0"}
+        carry_pnl, _ = carry_flow_adjusted_pnl(150.0, prev, autofund_draw=50.0, rv_ts="t1")
+        total_pnl = -1.79
+        trend_pnl = round(total_pnl - (carry_pnl or 0.0), 2)
+        self.assertAlmostEqual(trend_pnl + (carry_pnl or 0.0), total_pnl, places=2)
 
 
 if __name__ == "__main__":

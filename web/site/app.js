@@ -611,7 +611,6 @@ function cxdCard(d) {
   if (!d) return "";
   const t = d.trend || {}, c = d.carry || {};
   const w = d.weights || { trend: 0.6, carry: 0.4 };          // ACTUAL deployed split
-  const tw = d.target_weights || { trend: 0.6, carry: 0.4 };  // design intent
   const tArmed = !!t.armed, cArmed = !!c.armed;
   const anyArmed = tArmed || cArmed;
   const tCap = t.capital || 0, cCap = c.capital || 0;
@@ -620,7 +619,7 @@ function cxdCard(d) {
   const activeDated = (c.active_dated || []).map((s) => `<span class="coin">${s}</span>`).join("");
   const delta = c.net_delta || 0;
   return `
-    <div class="subhead">C×D 合成仓位 · 实际 趋势 ${pct(w.trend, 0)} + carry ${pct(w.carry, 0)} <span class="dim">· 目标 ${pct(tw.trend, 0)}/${pct(tw.carry, 0)}</span></div>
+    <div class="subhead">C×D 合成仓位 · 实际 趋势 ${pct(w.trend, 0)} + carry ${pct(w.carry, 0)} <span class="dim">· 运营基线 ETH-only(设计 40% 需充值解锁)</span></div>
     <table class="tbl">
       <thead><tr><th>结构</th><th>方向</th><th>当前合约</th><th>额度</th><th>占比</th><th title="净敞口,≈0 即对冲到位">净 Δ</th><th>状态</th></tr></thead>
       <tbody>
@@ -653,7 +652,7 @@ function cxdCard(d) {
         </tr>
       </tbody>
     </table>
-    <div class="note dim">C×D = 趋势永续( riding BTC 200 日大盘闸) + carry(现货多 + 季度 COIN-M 空,吃基差收敛)。carry 额度 = 全腿权益(含短腿浮盈),净 Δ ≈ 0 即对冲到位。</div>`;
+    <div class="note dim">C×D = 趋势永续( riding BTC 200 日大盘闸) + carry(现货多 + 季度 COIN-M 空,吃基差收敛)。carry 额度 = 全腿权益(含短腿浮盈),净 Δ ≈ 0 即对冲到位。⚠ 当前 carry 为 ETH-only 薄 sleeve(~21%,BTC 不可注资 + COIN-M 整张颗粒度封顶),非回测验证的 40% 压舱石——真实尾部保护弱于 §20 的 maxDD −10%,需充值 ~$650 方可达成。</div>`;
 }
 
 // ---- 加密模拟盘 ----

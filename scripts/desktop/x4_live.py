@@ -41,6 +41,7 @@ from qount.x4.live import (  # noqa: E402
     place_orders,
     plan_stop_orders,
     portfolio_gate_open,
+    carry_flow_adjusted_pnl,
     prepare_swap,
     sync_stop_orders,
     target_weights,
@@ -92,6 +93,15 @@ def main(argv: list[str]) -> int:
     _cap = 0.0 if _cap_auto else float(_cap_raw or 0)
     _short = os.environ.get("QOUNT_X4_SHORT_GATE", "").lower() in ("1", "true", "yes")
     _base = dict(short_gate=True) if _short else {}
+    # 做空敞口旋钮(env,无需改代码):QOUNT_X4_SHORT_VOL_TARGET 调熊市做空 gross(0.03≈0.6/0.02≈0.4)。
+    # 这是 owner 的风险偏好旋钮(收益换波动),NOT a new alpha 假设——震荡里失血就调小,别加择时 if 规则
+    # (docs 已证伪 ADX/regime 类增量)。仅在 short_gate 开启时生效。
+    _svt = os.environ.get("QOUNT_X4_SHORT_VOL_TARGET", "").strip()
+    if _short and _svt:
+        try:
+            _base["short_vol_target"] = float(_svt)
+        except ValueError:
+            pass
     # §10 分批止盈 arm: QOUNT_X4_SCALE_OUT=1 -> recommended 档 (step20%/frac50%/留 1/3 残仓). Books partial
     # profit as a winner runs (validated long-side: Sharpe 0.91->1.00, maxDD -28->-22%, −18pp total).
     if os.environ.get("QOUNT_X4_SCALE_OUT", "").lower() in ("1", "true", "yes"):
@@ -428,35 +438,43 @@ def main(argv: list[str]) -> int:
     rec["total_pnl"] = round(rec["equity"] - base, 2)
     rec["total_pnl_pct"] = round(rec["equity"] / base - 1.0, 4) if base else 0.0
 
-    # 拆分 trend / carry 各自的盈亏:各自首次出现时记录 inception,之后 PnL = 实时 − inception。
-    # trend_inception 存趋势腿(trend_equity);carry_inception 存 carry 全腿权益(carry_equity = 长腿+短腿浮盈)。
-    trend_incep_path = STATE_DIR / "trend_inception.json"
-    try:
-        ti = json.loads(trend_incep_path.read_text())
-    except Exception:
-        ti = {}
-    trend_base = ti.get("trend_equity")
-    if not trend_base:
-        trend_base = trend_equity
-        trend_incep_path.write_text(json.dumps({"trend_equity": trend_base, "ts": rec["ts"]}, default=float))
-    rec["trend_inception"] = round(trend_base, 2)
-    rec["trend_pnl"] = round(trend_equity - trend_base, 2)
-    rec["trend_pnl_pct"] = round(trend_equity / trend_base - 1.0, 4) if trend_base else 0.0
+    # 拆分 trend / carry 盈亏 —— FLOW-ADJUSTED(2026-06-21 P0 修):旧版各腿用静态 inception 锚,
+    # 而 carry 经 autofund 从趋势钱包注资 → 其权益增长含内部调拨,被误记为「利润」(趋势腿同理把流出
+    # 误记为亏损)。修法:carry 盈亏 = carry_equity − 成本基线 − 累计注资(autofund 是 carry 唯一注资
+    # 路径,按 rv 快照 ts 去重防跨-cron 重复计);trend 盈亏 = 总盈亏 − carry 盈亏(残差),自动吸收
+    # 闲置现金/调拨,恒满足 trend_pnl + carry_pnl = total_pnl,不受内部搬钱污染。total_pnl 仍是唯一硬真值。
     carry_incep_path = STATE_DIR / "carry_inception.json"
     try:
         ci = json.loads(carry_incep_path.read_text())
     except Exception:
         ci = {}
-    carry_base = ci.get("carry_equity")
-    if carry_equity > 0 and not carry_base:
-        carry_base = carry_equity
-        carry_incep_path.write_text(json.dumps({"carry_equity": carry_base, "ts": rec["ts"]}, default=float))
-    if carry_equity <= 0:
-        carry_base = None
+    if carry_equity > 0:
+        # carry 本轮 autofund 注资额(来自 rv/live/latest.json,趋势钱包→carry 的唯一调拨)
+        _draw, _rv_ts = 0.0, None
+        try:
+            _rv = json.loads((REPO / "state" / "rv" / "live" / "latest.json").read_text())
+            _draw = float(_rv.get("autofund_draw_usdt") or 0.0)
+            _rv_ts = _rv.get("ts")
+        except Exception:
+            pass
+        carry_pnl, cstate = carry_flow_adjusted_pnl(carry_equity, ci, _draw, _rv_ts)
+        cstate["ts"] = rec["ts"]
+        carry_incep_path.write_text(json.dumps(cstate, default=float))
+        _cbase = cstate["carry_equity"] + cstate["cum_flow"]   # flow-adjusted 成本基线
+        rec["carry_inception"] = round(cstate["carry_equity"], 2)
+        rec["carry_cum_flow"] = round(cstate["cum_flow"], 2)
+        rec["carry_pnl"] = round(carry_pnl, 2)
+        rec["carry_pnl_pct"] = round(carry_equity / _cbase - 1.0, 4) if _cbase else None
+    else:
         carry_incep_path.unlink(missing_ok=True)
-    rec["carry_inception"] = round(carry_base, 2) if carry_base else None
-    rec["carry_pnl"] = round(carry_equity - carry_base, 2) if carry_base else None
-    rec["carry_pnl_pct"] = round(carry_equity / carry_base - 1.0, 4) if carry_base else None
+        rec["carry_inception"] = rec["carry_cum_flow"] = None
+        rec["carry_pnl"] = rec["carry_pnl_pct"] = None
+    # trend 盈亏 = 总 − carry(残差,flow-consistent by construction)
+    _cp = rec["carry_pnl"] or 0.0
+    rec["trend_pnl"] = round(rec["total_pnl"] - _cp, 2)
+    _tbase = trend_equity - rec["trend_pnl"]   # 趋势腿真实成本基线 = 权益 − 盈亏
+    rec["trend_inception"] = round(_tbase, 2)
+    rec["trend_pnl_pct"] = round(rec["trend_pnl"] / _tbase, 4) if _tbase else 0.0
 
     # 复盘本地记录:每轮 append 一行精简状态(append-only 时间线,便于回放/复盘三态闸切换与盈亏轨迹)。
     # 净态 = 三选一:多头闸开→long / 闸关且做空闸触发→short / 否则 flat。分钟去重避免手动多触发刷屏。

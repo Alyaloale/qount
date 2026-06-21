@@ -661,6 +661,38 @@ def x4_live_enabled() -> bool:
     return os.environ.get("QOUNT_X4_LIVE_ENABLE", "").lower() in ("1", "true", "yes")
 
 
+def carry_flow_adjusted_pnl(
+    carry_equity: float,
+    prev_state: dict,
+    autofund_draw: float = 0.0,
+    rv_ts: str | None = None,
+) -> tuple[float | None, dict]:
+    """Flow-adjusted carry-sleeve P&L (看板 P0 修, 2026-06-21).
+
+    The carry sleeve is funded ONLY by autofund draws pulled from the trend wallet, so its raw equity
+    growth conflates inflows with trading P&L — a static inception anchor reports injected capital as
+    "profit". Fix: cost basis = first-seen equity (which already embeds the initial funding) + cumulative
+    later draws, deduped by the rv snapshot ``ts`` so the */2 cron reruns of one snapshot aren't counted
+    twice. ``pnl = carry_equity − (base + cum_flow)``.
+
+    Returns ``(pnl, new_state)``; ``carry_equity <= 0`` → ``(None, {})`` (sleeve not funded). The trend
+    sleeve P&L is then the residual ``total_pnl − carry_pnl`` (flow-consistent by construction), so this
+    is the only flow that must be tracked explicitly.
+    """
+    if carry_equity <= 0:
+        return None, {}
+    base = prev_state.get("carry_equity")
+    cum_flow = float(prev_state.get("cum_flow") or 0.0)
+    last_ts = prev_state.get("last_fund_ts")
+    if base is None:
+        base, last_ts = carry_equity, rv_ts        # first sight = cost basis (initial funding embedded)
+    elif autofund_draw > 0 and rv_ts and rv_ts != last_ts:
+        cum_flow += autofund_draw                  # a NEW funding event (ts-deduped) → into cost basis
+        last_ts = rv_ts
+    pnl = carry_equity - (base + cum_flow)
+    return pnl, {"carry_equity": base, "cum_flow": cum_flow, "last_fund_ts": last_ts}
+
+
 # ----------------------------- thin ccxt layer (mocked in tests) -----------------------------
 
 def fetch_filters(exchange, data_syms: list[str], quote: str = "USDT",
