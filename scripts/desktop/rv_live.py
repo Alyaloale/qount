@@ -50,7 +50,11 @@ STATE_DIR = REPO / "state" / "rv" / "live"
 
 def _build_coinm(settings: Settings, private: bool):
     """Raw ccxt COIN-M (delivery) client — build_exchange only does spot/linear."""
-    opts = {"enableRateLimit": True, "options": {"defaultType": "delivery", "adjustForTimeDifference": True}}
+    # timeout: ccxt defaults to 10s. dapi.binance.com (COIN-M) occasionally has slow spells; a single 10s
+    # read timeout would fail the whole carry leg -> a noisy 实盘告警 for a leg that is delta-neutral / no
+    # leverage / no liquidation and safely skips the bar. Give it more headroom (2026-06-21 timeout storm).
+    opts = {"enableRateLimit": True, "timeout": 30000,
+            "options": {"defaultType": "delivery", "adjustForTimeDifference": True}}
     if settings.https_proxy:
         opts["httpsProxy"] = settings.https_proxy
     elif settings.http_proxy:
@@ -59,6 +63,23 @@ def _build_coinm(settings: Settings, private: bool):
         opts["apiKey"] = settings.binance_api_key
         opts["secret"] = settings.binance_api_secret
     return ccxt.binance(opts)
+
+
+def _load_markets_resilient(ex, *, retries: int = 3, base_delay: float = 2.0):
+    """load_markets() with retry on transient network errors (timeout / DDoS-protection / exchange-not-
+    available). A momentary dapi/api blip should not page as an 实盘告警 — the carry leg is delta-neutral
+    and safely skips a bar. Real errors (auth, bad request) are NOT NetworkError -> still raise at once."""
+    import time
+    for attempt in range(1, retries + 1):
+        try:
+            ex.load_markets()
+            return
+        except ccxt.NetworkError as exc:
+            if attempt == retries:
+                raise
+            wait = base_delay * attempt
+            print(f"  (load_markets transient {type(exc).__name__}, retry {attempt}/{retries - 1} in {wait:g}s)")
+            time.sleep(wait)
 
 
 def main(argv: list[str]) -> int:
@@ -88,8 +109,8 @@ def main(argv: list[str]) -> int:
     live = (mode == "live")
     spot_ex = build_exchange(dataclasses.replace(settings, market_type="spot"), private=live)
     cm_ex = _build_coinm(settings, private=live)
-    spot_ex.load_markets()
-    cm_ex.load_markets()
+    _load_markets_resilient(spot_ex)
+    _load_markets_resilient(cm_ex)
 
     # prices: spot per pair + the active dated per pair
     prices: dict[str, float] = {}
