@@ -98,6 +98,28 @@ run_leg() {  # $1=script $2=success marker
 run_leg x4_live.py "[X4-LIVE"     # trend leg (60%)
 run_leg rv_live.py "[RV-LIVE"     # carry leg (40%)
 
+# carry delta-neutral guard: rv_live.py writes delta_breach=true when |net_delta| exceeds its threshold
+# (default 10% of deployed long). Notify ONCE per breach episode (a flag file de-dups the every-2-min cron;
+# cleared when the book comes back to neutral -> re-arms). Only live mode produces a trustworthy unified Δ.
+if [ "$MODE" = "live" ]; then
+  DELTA_FLAG="$HOME/.cache/qount/rv_delta_alerted"
+  mkdir -p "$(dirname "$DELTA_FLAG")"
+  RV_STATE="$REPO/state/rv/live/latest.json"
+  if [ -f "$RV_STATE" ]; then
+    BREACH=$("$PY" -c "import json;d=json.load(open('$RV_STATE'));print('1' if (d.get('delta_breach') and d.get('delta_unified')) else '0')" 2>/dev/null || echo 0)
+    if [ "$BREACH" = "1" ]; then
+      if [ ! -f "$DELTA_FLAG" ]; then
+        ND=$("$PY" -c "import json;d=json.load(open('$RV_STATE'));print(d.get('net_delta'),round(d.get('delta_long_usd') or 0,0))" 2>/dev/null)
+        echo "[ALERT] carry Δ breach: net_delta/deployed=$ND -> off delta-neutral" >> "$LOG"
+        notify "C×D carry Δ 漂移告警" "$(date '+%F %T') carry net_delta=${ND%% *} USD,偏离 delta 中性(空腿可能差合约 / -2019)。deployed long=${ND##* }"
+        touch "$DELTA_FLAG"
+      fi
+    else
+      rm -f "$DELTA_FLAG"   # back to neutral -> re-arm for the next episode
+    fi
+  fi
+fi
+
 # publish combined snapshot for the dashboard (atomic via tmp+mv)
 if [ -d "$WEB_DATA" ]; then
   if "$PY" - "$REPO/state" "$CXD_TOTAL" > /tmp/cxd_live.json.tmp <<'PYEOF'
@@ -108,9 +130,10 @@ def load(p):
         with open(p) as fh: return json.load(fh)
     except Exception: return None
 # SINGLE source of truth for carry: the reconciled state/cxd/live/latest.json (cxd_publish.py), which
-# counts the COIN-M margin coin as long -> TRUE capital (actually deployed) + TRUE net Δ (≈0). The raw
-# rv/live/latest.json under-counts the long (spot only) -> misleading −Δ; used only as a transient
-# fallback if cxd_publish hasn't run yet. trend uses the rich x4 latest for the trend-leg row.
+# counts the COIN-M margin coin as long -> TRUE capital (actually deployed) + TRUE net Δ. The raw
+# rv/live/latest.json now uses the SAME unified Δ formula (2026-06-25 fix: it used to under-count the long
+# = spot only -> misleading −Δ); still used only as a transient fallback if cxd_publish hasn't run yet.
+# trend uses the rich x4 latest for the trend-leg row.
 cxd = load(os.path.join(base, "cxd", "live", "latest.json")) or {}
 trend = load(os.path.join(base, "x4", "live", "latest.json"))
 carry = cxd.get("carry") or load(os.path.join(base, "rv", "live", "latest.json"))

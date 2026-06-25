@@ -424,6 +424,50 @@ carry sleeve(C×D,线 C),是给 spot+COIN-M 注资 + 建 `rv/live.py` 的部署�
 
 ---
 
+## 13. carry 腿 net_delta 口径 bug + 统一 + 漂移告警(2026-06-25,owner 复盘成交记录)
+
+复盘实盘成交记录时发现 **carry(线 C 现货+COIN-M)腿的 delta 在两个 publisher 之间口径不一致、连符号都反**:
+- `rv/live/latest.json` 报 `net_delta = −26.78`
+- `cxd/live/latest.json`(`cxd_publish.py` 对账)报 `net_delta = +12.51`
+- **两者差 $39、符号相反** → 对账没真正收敛,看板/告警拿不到可信的「是否偏离 delta 中性」。
+
+### 13.1 根因 = 漏算 COIN-M 保证金币
+
+差额精确 = **COIN-M 交割钱包里的抵押币(ETH)** 没被算进多头边:
+
+| | 公式 | 值 |
+|---|---|---|
+| `rv_live.py:221`(旧,错) | `sum(current.values())` = 现货多 + 空头名义 = `+63.22 + (−90.0)` | **−26.76** |
+| `cxd_publish.py:46-49`(对) | `(spot+earn+COIN-M margin coin)*px − \|空名义\|` | **+12.51** |
+
+**反向(COIN-M / inverse)合约的空头是用 base 币(ETH)做抵押的**,交割钱包里那 `0.0242 ETH ≈ $39` 本身就是
+多头 delta,必须计入;旧 `rv_live` 把 carry 当 USDT 线性合约来加,系统性漏掉它 → 一个对冲好的书被报成
+「净空 ~−保证金」。**−26.76 是有 bug 的诊断值,+12.51 才是真 delta。**(印证 sizing 是对的:target 现货 66.5 /
+空 99.75 那个 1.5× 过度做空,正是为中和「现货 + 保证金币」。)
+
+### 13.2 修复 = 统一口径(rv 跟 cxd 对齐)
+
+`rv_live.py` 的 net_delta 改成与 `cxd_publish.py` 同一套:多头 = 现货(total)+ Simple Earn + COIN-M 保证金币;
+空头 = |交割名义|;带 try/fallback 防瞬时读失败(delta 中性腿绝不能因一次瞬时读 page)。只读脚本带真 key
+对照验证:旧 −26.76 → 新 **+12.50**,与 cxd +12.51 吻合,差额精确等于保证金币 $39.26。两个 publisher 现已一致。
+
+> 注意:**口径统一 ≠ delta 归零**。统一后两边都诚实显示 **+12.5(≈12% deployed long 的净多)**——这是真实
+> 漂移:空腿差 1 张 COIN-M(第 10 张挂不上 −2019,见 cron `cxd_live_cron.sh` 的颗粒度注释)。口径修复的价值
+> 就在此:以前 −26.76 把「净多漂移」伪装成「净空」,现在如实暴露。**根治漂移仍待做**(充值让空腿有颗粒度
+> 余量 / 让 BTC 可注资,见 `docs/crypto-x4-plan.md` §20 与 [[x4-live-v2-perp-2x]])。
+
+### 13.3 接上 |net_delta| 漂移告警(已部署)
+
+- `rv_live.py`:`abs(net_delta) > QOUNT_RV_DELTA_ALERT_FRAC`(默认 **10%**)× **deployed long**(实际部署多头,
+  非 config pin)→ 置 `delta_breach=true` 写进 state(连带 `delta_long_usd` / `delta_unified` / `delta_alert_frac`);
+  仅在 **unified 路径成功**(拿得到保证金币读 = live key)时才可信。
+- `cxd_live_cron.sh`:carry 腿跑完读 state，`delta_breach && delta_unified` → 发 Server酱 告警,**每个 breach
+  episode 只发一次**(`~/.cache/qount/rv_delta_alerted` flag 去重 every-2-min cron;回到中性删 flag 重新 arm)。
+- 生产验证:`unified=True breach=True long=102.51 frac=0.1` → cron 出 `[ALERT] carry Δ breach`,flag 落、1 条
+  告警不随 tick 增长。**当前账户处于 breach(+12.5 > 10%)= 正确暴露真实漂移,等纠偏 / 充值后自动消音。**
+
+---
+
 _建档:2026-06-18(§8 快照 + §9 walletBalance 回测 + §10 出场/锁利面板)。2026-06-19 加 §11(收益口径修正 +
-做空 gross→0.6)+ §12(四方向深度优化分析)+ §12.1(轻量 ADX walk-forward 证伪)。判生死 / 上线决策仍走
-`docs/crypto-x4-plan.md`。_
+做空 gross→0.6)+ §12(四方向深度优化分析)+ §12.1(轻量 ADX walk-forward 证伪)。2026-06-25 加 §13(carry
+net_delta 口径 bug + 统一 + 漂移告警)。判生死 / 上线决策仍走 `docs/crypto-x4-plan.md`。_

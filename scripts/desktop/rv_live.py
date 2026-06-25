@@ -218,9 +218,48 @@ def main(argv: list[str]) -> int:
     if live and rv_live_enabled() and not holdings_ok:
         res.orders = []   # SAFETY: never trade against an unknown two-venue book
 
-    net_delta = sum(current.values())   # balanced carry -> ~0
+    # net delta — UNIFIED with cxd_publish.py. The naive sum(current.values()) = spot_long − short_notional
+    # OMITS the COIN-M margin coin: an inverse (COIN-M) short is COLLATERALIZED IN THE BASE COIN, so the ETH
+    # sitting in the delivery wallet (+ any base parked in Simple Earn) is itself LONG delta and MUST be
+    # counted. Omitting it made this metric read ~−$(margin) (e.g. −26.78) on a book cxd_publish correctly
+    # reports as ~+12.51 → the two publishers disagreed by the margin value (~$39). Mirror cxd_publish:
+    # long = spot(total)+earn+COIN-M margin coin; short = |dated notional|. Falls back to the naive sum if
+    # the extra balance reads fail (a delta-neutral leg must never page on a transient read).
+    delta_long_usd = 0.0   # deployed long (spot+earn+margin) — denominator for the drift guard
+    delta_unified = False  # True only when the margin-coin read succeeded (else net_delta is the naive sum)
+    try:
+        _long = sum(v for v in current.values() if v > 0)
+        _short = sum(-v for v in current.values() if v < 0)
+        _cb = cm_ex.fetch_balance()
+        _earn: dict[str, float] = {}
+        try:
+            for _p in (spot_ex.sapiGetSimpleEarnFlexiblePosition().get("rows") or []):
+                _earn[_p.get("asset")] = _earn.get(_p.get("asset"), 0.0) + float(_p.get("totalAmount") or 0)
+        except Exception:
+            pass
+        for _spot_sym, _b in cfg.pairs:
+            if _spot_sym not in prices:
+                continue
+            _base = _spot_sym[: -len(cfg.quote)]
+            _margin = float((_cb.get("total") or {}).get(_base, 0.0) or 0.0)   # COIN-M collateral coin = long Δ
+            _long += (_margin + _earn.get(_base, 0.0)) * prices[_spot_sym]      # + Earn-parked base = long Δ
+        net_delta = _long - _short
+        delta_long_usd = _long
+        delta_unified = True
+    except Exception as exc:
+        print(f"  (net_delta margin read failed: {type(exc).__name__}) -> naive sum")
+        net_delta = sum(current.values())
+
+    # delta-neutral guard: alert when the carry book drifts off Δ≈0 (e.g. the short under-fills by a whole
+    # COIN-M contract / −2019). Only trustworthy on the UNIFIED path (needs the margin-coin read = live key);
+    # denominator is the actual deployed long, not the config pin. The cron reads `delta_breach` from state
+    # and notifies once per episode. QOUNT_RV_DELTA_ALERT_FRAC overrides the 10%-of-deployed-long threshold.
+    delta_alert_frac = float(os.environ.get("QOUNT_RV_DELTA_ALERT_FRAC", "") or 0.10)
+    delta_breach = bool(delta_unified and delta_long_usd > 1.0
+                        and abs(net_delta) > delta_alert_frac * delta_long_usd)
     print(f"  current Δ ${net_delta:+.0f} (target ~0)  {len(res.orders)} order(s), {len(res.skipped)} skipped"
-          + (f"  ROLL: {', '.join(res.rolled)}" if res.rolled else ""))
+          + (f"  ROLL: {', '.join(res.rolled)}" if res.rolled else "")
+          + (f"  [RV-DELTA-BREACH] |Δ| > {delta_alert_frac:.0%} of deployed ${delta_long_usd:.0f}" if delta_breach else ""))
     for sk in res.skipped:
         print(f"    skip {sk}")
 
@@ -231,6 +270,8 @@ def main(argv: list[str]) -> int:
         "ts": now.isoformat(), "mode": mode, "armed": rv_live_enabled(),
         "capital": cfg.capital_usdt, "n_pairs": len(cfg.pairs), "liq_leverage": cfg.liq_leverage,
         "active_dated": dated_syms, "net_delta": round(net_delta, 2),
+        "delta_long_usd": round(delta_long_usd, 2), "delta_unified": delta_unified,
+        "delta_breach": delta_breach, "delta_alert_frac": delta_alert_frac,
         "autofund": cfg.autofund,
         "autofund_draw_usdt": round(fund_plan.um_draw_usdt, 2) if fund_plan else 0.0,
         "autofund_actions": len(fund_plan.actions) if fund_plan else 0,
