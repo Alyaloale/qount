@@ -37,6 +37,7 @@ from qount.rv.live import (  # noqa: E402
     compute_carry_orders,
     execute_funding,
     from_ccxt_dated,
+    neutralize_spot_targets,
     place_carry_orders,
     plan_funding,
     rv_live_enabled,
@@ -163,6 +164,27 @@ def main(argv: list[str]) -> int:
         print(f"  (no holdings access: {type(exc).__name__}) -> assuming flat")
         if live and rv_live_enabled():
             print("  [ALERT] live+armed but cannot read holdings (need SPOT+COIN-M key) -> SKIP this run")
+
+    # --- delta-neutralize: re-aim the CONTINUOUS spot leg against the QUANTIZED short the executor will
+    # actually hold (whole-contract floor) + the COIN-M margin coin, so net Δ≈0. Without this, spot+margin
+    # were sized off the un-floored model N while the short floored below it -> a permanent +residual long
+    # Δ (the 2026-06-25 +12.5 drift). Run BEFORE autofund so it provisions the (lower) neutralizing spot
+    # target, not the model's. Needs the COIN-M margin read (live key); dry / keyless -> model legs. ---
+    if holdings_ok:
+        try:
+            _mb = cm_ex.fetch_balance()
+            margin_usdt: dict[str, float] = {}
+            for _ss, _b in cfg.pairs:
+                _coin = _ss[: -len(cfg.quote)]
+                _amt = float((_mb.get("total") or {}).get(_coin, 0.0) or 0.0)
+                if _amt > 0 and _ss in prices:
+                    margin_usdt[_ss] = _amt * prices[_ss]
+            if margin_usdt:
+                legs = neutralize_spot_targets(legs, margin_usdt, cfg)
+                print(f"  [Δ-neutralize] spot re-aimed vs floored short − COIN-M margin "
+                      f"{[(k, round(v)) for k, v in margin_usdt.items()]}")
+        except Exception as exc:
+            print(f"  (Δ-neutralize margin read failed: {type(exc).__name__}) -> model legs")
 
     # --- auto-funding: pull idle USDⓈ-M USDT -> spot longs + COIN-M margin coins (before reconcile) ---
     fund_plan = None

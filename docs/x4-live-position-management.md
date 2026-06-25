@@ -464,10 +464,38 @@ carry sleeve(C×D,线 C),是给 spot+COIN-M 注资 + 建 `rv/live.py` 的部署�
 - `cxd_live_cron.sh`:carry 腿跑完读 state，`delta_breach && delta_unified` → 发 Server酱 告警,**每个 breach
   episode 只发一次**(`~/.cache/qount/rv_delta_alerted` flag 去重 every-2-min cron;回到中性删 flag 重新 arm)。
 - 生产验证:`unified=True breach=True long=102.51 frac=0.1` → cron 出 `[ALERT] carry Δ breach`,flag 落、1 条
-  告警不随 tick 增长。**当前账户处于 breach(+12.5 > 10%)= 正确暴露真实漂移,等纠偏 / 充值后自动消音。**
+  告警不随 tick 增长。**当前账户处于 breach(+12.5 > 10%)= 正确暴露真实漂移。**
+
+### 13.4 根治漂移 = 连续 spot 腿主动中和净 Δ(已修 + 已部署 + 生产收敛)
+
+口径修好后定位漂移的**结构性根因**(非 −2019 / 非保证金不足,而是 band + floor):
+
+1. **floor 截断**:`place_carry_orders` 对 COIN-M 整张**向下取整**(`int(99.75/10)=9 张=$90`),realized 短腿
+   = `floor(N/contract)·contract ≤ N`;而 `target_legs` 的 spot 长 + 保证金却按**未取整的 N=99.75** 配 →
+   长边 ~99.75、短边 floor 到 90 → 结构性 +9.75 残差。
+2. **band 卡死**:短腿想补 −90→−99.75(差 9.8% < 10% band)被当噪声跳过 → 残差永不收敛。
+3. **超配保证金**:autofund 按 99.75 配的保证金币($39.29 vs 模型 $33.25)多出 ~$6 的裸多。
+
+**修法 = 让连续的 spot 腿主动把净 Δ 归零**(纯函数 `neutralize_spot_targets`,src/qount/rv/live.py + 3 单测):
+COIN-M 短腿只能整张跳(粗、量化),spot 可任意金额(细、连续)→ 用 spot 吸收一切残差:
+
+```
+spot_target = |floored 短腿| − COIN-M 保证金币       (clamp ≥ 0)
+→ long(spot + 保证金) == short == Δ≈0,deployed 略缩、carry 收入跟短腿名义不变
+```
+
+在 `rv_live.py` live 层调用(读 COIN-M 保证金币 → 覆盖 legs,**autofund 前**跑好让它按更低的中和 spot 目标
+配资);纯模型 `target_legs` / `compute_carry_orders` 及其单测**不动**(dry/无 key 回退模型 legs)。
+
+- 生产收敛:`[Δ-neutralize] spot re-aimed vs floored short − COIN-M margin [('ETHUSDT', 39)]` → 空腿 floored
+  到 −90(不再 churn 贵腿)+ **卖 $13 现货**(64→51)→ 真实 Δ **+12.51 → +0.03**(long 90.03 / short 90.00)。
+- **根治完成**:残差从 1 整张合约($10≈10%)的系统性漂移降到亚美元的取整噪声(< min_order,不可再经济收敛)。
+- 既有独立坑(非本次引入,待办):COIN-M `fetch_ticker` 撞 dapi `RequestTimeout` 会让 rv_live 整轮 fail + 误报
+  C×D 告警;commit fde09db 只给 `load_markets` 加了重试,ticker 拉取没覆盖 → 该把瞬时网络重试也包到 ticker。
 
 ---
 
 _建档:2026-06-18(§8 快照 + §9 walletBalance 回测 + §10 出场/锁利面板)。2026-06-19 加 §11(收益口径修正 +
 做空 gross→0.6)+ §12(四方向深度优化分析)+ §12.1(轻量 ADX walk-forward 证伪)。2026-06-25 加 §13(carry
-net_delta 口径 bug + 统一 + 漂移告警)。判生死 / 上线决策仍走 `docs/crypto-x4-plan.md`。_
+net_delta 口径 bug 统一 §13.1-2 + 漂移告警 §13.3 + 根治漂移=spot 主动中和 §13.4)。判生死 / 上线决策仍走
+`docs/crypto-x4-plan.md`。_

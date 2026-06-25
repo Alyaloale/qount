@@ -23,7 +23,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from qount.rv.basis import active_expiry
 from qount.rv.data import dated_symbol, expiry_ms as _expiry_ms, quarterly_contracts
@@ -204,6 +204,51 @@ def compute_carry_orders(
                                      reason=("roll-out" if is_roll else f"{c:.0f}->{t:.0f}"),
                                      is_roll=is_roll))
     return res
+
+
+def neutralize_spot_targets(
+    targets: list[CarryLeg],
+    margin_usdt: dict[str, float],
+    cfg: CarryConfig,
+) -> list[CarryLeg]:
+    """Live override: re-aim the CONTINUOUS spot leg so net Δ≈0 against the QUANTIZED short the
+    executor will actually hold — absorbing both the whole-contract floor residual AND any excess
+    COIN-M margin coin. Pure; ``margin_usdt`` maps spot_sym -> COIN-M margin-coin USD value (the
+    inverse short's collateral, itself long Δ).
+
+    Why: the dated COIN-M short trades in whole fixed-USD contracts (``place_carry_orders`` FLOORs
+    ``notional/contract``), so the realized short is ``floor(N/contract)·contract ≤ N`` — while
+    :func:`target_legs` sizes the spot long + margin off the *un-floored* ``N``. That mismatch (plus
+    margin coin over-provisioned by autofund / drifted by price) is a permanent +residual long Δ
+    (the 2026-06-25 +12.5 drift). Spot is continuous, so it can zero it exactly::
+
+        spot_target = |floored short| − margin_coin_value      (clamped ≥ 0)
+
+    → long (spot + margin) == short == Δ≈0, at a slightly smaller *deployed* size; carry income tracks
+    the SHORT notional (unchanged). The dated target is also floored here so the reconciler stops
+    showing an unreachable sub-contract "want". A spot leg with no margin reading for its pair is left
+    untouched (dry / pre-key runs fall back to the model target)."""
+    margin_usdt = margin_usdt or {}
+    short_by_coin: dict[str, float] = {}     # base coin (e.g. "ETH") -> floored short notional (+)
+    out: list[CarryLeg] = []
+    for leg in targets:
+        if leg.kind == "dated":
+            contract = CONTRACT_USD.get(leg.base, 0.0)
+            floored = (int(abs(leg.notional_usdt) / contract) * contract) if contract else abs(leg.notional_usdt)
+            short_by_coin[leg.base.replace("USD", "")] = floored
+            out.append(replace(leg, notional_usdt=-floored))
+        else:
+            out.append(leg)
+    # second pass: re-aim each spot leg to neutralize against its pair's floored short − margin coin
+    for i, leg in enumerate(out):
+        if leg.kind != "spot" or leg.symbol not in margin_usdt:
+            continue
+        coin = leg.symbol[: -len(cfg.quote)]               # "ETHUSDT" -> "ETH"
+        short_real = short_by_coin.get(coin)
+        if short_real is None:
+            continue
+        out[i] = replace(leg, notional_usdt=max(0.0, short_real - margin_usdt[leg.symbol]))
+    return out
 
 
 # ----------------------------- pure auto-funding planner -----------------------------

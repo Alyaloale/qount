@@ -22,6 +22,7 @@ from qount.rv.live import (  # noqa: E402
     compute_carry_orders,
     execute_funding,
     from_ccxt_dated,
+    neutralize_spot_targets,
     place_carry_orders,
     plan_funding,
     rv_live_enabled,
@@ -97,6 +98,40 @@ class TestTargetLegs(unittest.TestCase):
         # skipped (the reallocation can't conjure a fundable leg out of too little capital).
         cfg = CarryConfig(capital_usdt=12.0, liq_leverage=3.0)
         self.assertEqual(target_legs(_ms(2026, 1, 15), cfg), [])
+
+
+class TestNeutralizeSpotTargets(unittest.TestCase):
+    def test_floors_short_and_reaims_spot_to_zero_delta(self):
+        # the live $133/ETH-only case: model short −99.75 floors to −90 (9× $10 ETHUSD contracts);
+        # margin coin = $39.29 of ETH in the COIN-M wallet. Spot must re-aim to 90 − 39.29 = 50.71 so
+        # long (spot+margin) == short == 90 => Δ≈0 (vs the un-fixed model spot 66.5 -> +12.5 drift).
+        cfg = CarryConfig(capital_usdt=133.0, liq_leverage=3.0)
+        legs = [CarryLeg("spot", "ETHUSDT", 66.5),
+                CarryLeg("dated", "ETHUSD_260925", -99.75, base="ETHUSD")]
+        out = neutralize_spot_targets(legs, {"ETHUSDT": 39.29}, cfg)
+        dated = next(l for l in out if l.kind == "dated")
+        spot = next(l for l in out if l.kind == "spot")
+        self.assertAlmostEqual(dated.notional_usdt, -90.0, places=6)     # floored 99.75 -> 90 (9 contracts)
+        self.assertAlmostEqual(spot.notional_usdt, 50.71, places=6)      # 90 − 39.29
+        # Δ≈0: spot + margin == |short|
+        self.assertAlmostEqual(spot.notional_usdt + 39.29, abs(dated.notional_usdt), places=6)
+
+    def test_clamps_spot_at_zero_when_margin_exceeds_short(self):
+        cfg = CarryConfig(capital_usdt=133.0, liq_leverage=3.0)
+        legs = [CarryLeg("spot", "ETHUSDT", 66.5),
+                CarryLeg("dated", "ETHUSD_260925", -90.0, base="ETHUSD")]
+        out = neutralize_spot_targets(legs, {"ETHUSDT": 150.0}, cfg)     # margin > short
+        spot = next(l for l in out if l.kind == "spot")
+        self.assertEqual(spot.notional_usdt, 0.0)                        # clamped, never negative
+
+    def test_no_margin_reading_leaves_legs_untouched(self):
+        # dry / pre-key: empty margin map -> dated still floored (cosmetic), spot keeps the model target.
+        cfg = CarryConfig(capital_usdt=133.0, liq_leverage=3.0)
+        legs = [CarryLeg("spot", "ETHUSDT", 66.5),
+                CarryLeg("dated", "ETHUSD_260925", -90.0, base="ETHUSD")]
+        out = neutralize_spot_targets(legs, {}, cfg)
+        spot = next(l for l in out if l.kind == "spot")
+        self.assertAlmostEqual(spot.notional_usdt, 66.5, places=6)       # untouched without a margin read
 
 
 class TestComputeCarryOrders(unittest.TestCase):
