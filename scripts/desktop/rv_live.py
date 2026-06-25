@@ -66,21 +66,29 @@ def _build_coinm(settings: Settings, private: bool):
     return ccxt.binance(opts)
 
 
-def _load_markets_resilient(ex, *, retries: int = 3, base_delay: float = 2.0):
-    """load_markets() with retry on transient network errors (timeout / DDoS-protection / exchange-not-
+def _resilient(fn, *, what: str, retries: int = 3, base_delay: float = 2.0):
+    """Call ``fn()`` with retry on transient network errors (timeout / DDoS-protection / exchange-not-
     available). A momentary dapi/api blip should not page as an 实盘告警 — the carry leg is delta-neutral
-    and safely skips a bar. Real errors (auth, bad request) are NOT NetworkError -> still raise at once."""
+    and safely skips a bar. Real errors (auth, bad request) are NOT NetworkError -> still raise at once.
+
+    Wraps every COIN-M / spot read on the path (load_markets AND fetch_ticker): dapi.binance.com has slow
+    spells where a single 24hr-ticker read times out and fails the whole leg + fires a false alert (the
+    2026-06-25 ticker-timeout storm — fde09db had only covered load_markets)."""
     import time
     for attempt in range(1, retries + 1):
         try:
-            ex.load_markets()
-            return
+            return fn()
         except ccxt.NetworkError as exc:
             if attempt == retries:
                 raise
             wait = base_delay * attempt
-            print(f"  (load_markets transient {type(exc).__name__}, retry {attempt}/{retries - 1} in {wait:g}s)")
+            print(f"  ({what} transient {type(exc).__name__}, retry {attempt}/{retries - 1} in {wait:g}s)")
             time.sleep(wait)
+
+
+def _load_markets_resilient(ex, *, retries: int = 3, base_delay: float = 2.0):
+    """load_markets() with transient-network retry (see :func:`_resilient`)."""
+    _resilient(ex.load_markets, what="load_markets", retries=retries, base_delay=base_delay)
 
 
 def main(argv: list[str]) -> int:
@@ -113,12 +121,16 @@ def main(argv: list[str]) -> int:
     _load_markets_resilient(spot_ex)
     _load_markets_resilient(cm_ex)
 
-    # prices: spot per pair + the active dated per pair
+    # prices: spot per pair + the active dated per pair (each ticker read retried — dapi/api blips)
     prices: dict[str, float] = {}
     for spot_sym, _base in cfg.pairs:
-        prices[spot_sym] = float(spot_ex.fetch_ticker(to_ccxt_spot(spot_sym, cfg.quote))["last"])
+        ccxt_sym = to_ccxt_spot(spot_sym, cfg.quote)
+        prices[spot_sym] = float(_resilient(lambda s=ccxt_sym: spot_ex.fetch_ticker(s),
+                                            what=f"fetch_ticker {ccxt_sym}")["last"])
     for ds in dated_syms:
-        prices[ds] = float(cm_ex.fetch_ticker(to_ccxt_dated(ds))["last"])
+        ccxt_ds = to_ccxt_dated(ds)
+        prices[ds] = float(_resilient(lambda s=ccxt_ds: cm_ex.fetch_ticker(s),
+                                      what=f"fetch_ticker {ccxt_ds}")["last"])
 
     # current signed notionals: +long spot / −short dated (dry / no-key -> assume flat)
     current: dict[str, float] = {}

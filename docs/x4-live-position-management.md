@@ -490,8 +490,10 @@ spot_target = |floored 短腿| − COIN-M 保证金币       (clamp ≥ 0)
 - 生产收敛:`[Δ-neutralize] spot re-aimed vs floored short − COIN-M margin [('ETHUSDT', 39)]` → 空腿 floored
   到 −90(不再 churn 贵腿)+ **卖 $13 现货**(64→51)→ 真实 Δ **+12.51 → +0.03**(long 90.03 / short 90.00)。
 - **根治完成**:残差从 1 整张合约($10≈10%)的系统性漂移降到亚美元的取整噪声(< min_order,不可再经济收敛)。
-- 既有独立坑(非本次引入,待办):COIN-M `fetch_ticker` 撞 dapi `RequestTimeout` 会让 rv_live 整轮 fail + 误报
-  C×D 告警;commit fde09db 只给 `load_markets` 加了重试,ticker 拉取没覆盖 → 该把瞬时网络重试也包到 ticker。
+- 既有独立坑(已修):COIN-M `fetch_ticker` 撞 dapi `RequestTimeout` 会让 rv_live 整轮 fail + 误报 C×D 告警;
+  commit fde09db 只给 `load_markets` 加了重试。已把重试抽成通用 `_resilient(fn, what=…)` helper(`NetworkError`
+  退避重试,非网络错立即抛),`load_markets` + spot/COIN-M 每个 `fetch_ticker` 全走它 → 瞬时 dapi/api blip 不再
+  整轮 fail / 误报。
 
 ---
 
