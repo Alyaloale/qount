@@ -417,6 +417,141 @@ def from_ccxt_dated(ccxt_sym: str) -> str:
     return f"{coin}USD_{yymmdd}"
 
 
+# ----------------------------- pure UNWIND planner (flatten + sweep to UMFUTURE) -----------------------------
+
+@dataclass(frozen=True)
+class UnwindAction:
+    """One step to FLATTEN the carry sleeve and sweep the proceeds back to UMFUTURE. ``kind`` in
+    {"close_short","redeem_earn","transfer_coin_to_spot","sell_spot","transfer_usdt_to_um"}."""
+
+    kind: str
+    symbol: str = ""      # close_short: internal dated sym ("ETHUSD_260925"); sell_spot: spot sym ("ETHUSDT")
+    asset: str = ""       # the base coin ("ETH"/"BTC") or "USDT"
+    amount: float = 0.0   # close_short: whole contracts; redeem/transfer_coin/sell: coin qty; usdt: USDT
+    product_id: str = ""  # redeem_earn: Simple Earn flexible productId
+    reason: str = ""
+
+
+def plan_unwind(
+    dated_positions: dict[str, float],          # internal dated sym -> signed contracts (<0 = short)
+    cm_coins: dict[str, float],                 # base coin -> qty in the COIN-M (delivery) wallet
+    spot_coins: dict[str, float],               # base coin -> free qty in the spot wallet
+    earn_rows: list[tuple[str, float, str]],    # (base coin, qty, productId) in Simple Earn
+    spot_usdt: float,                           # free USDT in the spot wallet
+    prices: dict[str, float],                   # spot sym -> price (to value the min/dust gates)
+    cfg: CarryConfig,
+    *, dust_usdt: float = 2.0,
+) -> list[UnwindAction]:
+    """Pure: the ORDERED actions to flatten the carry sleeve and sweep the USDT back to the trend leg's
+    UMFUTURE wallet (owner 2026-06-29「暂停 carry 集中趋势腿」). Sequence (executor runs in order,
+    re-reading live balances for sell/transfer):
+
+      1. close every dated COIN-M short (whole-contract market BUY, reduceOnly) -> frees the base-coin margin
+      2. redeem any carry base coin parked in Simple Earn -> spot
+      3. transfer the COIN-M wallet's base coin -> spot
+      4. market-SELL the spot base coin -> USDT
+      5. transfer the spot USDT -> UMFUTURE, leaving ``dust_usdt``
+
+    Only touches the carry coins (BTC/ETH per ``cfg.pairs``) — never other account assets. Idempotent:
+    re-run after a partial unwind plans only what's left; returns ``[]`` once flat. **May need 2 passes**:
+    the margin coin freed by closing the short can take a moment to settle, so it lands in spot on the next
+    run and is sold then. ``dust < cfg.min_order_usdt`` is left unsold (un-economic)."""
+
+    carry_coins = {s[: -len(cfg.quote)] for s, _b in cfg.pairs}     # {"BTC","ETH"}
+    coin_px = {s[: -len(cfg.quote)]: prices.get(s, 0.0) for s, _b in cfg.pairs}
+    acts: list[UnwindAction] = []
+
+    # 1. close dated shorts (whole contracts)
+    for sym, contracts in (dated_positions or {}).items():
+        n = int(round(abs(contracts)))
+        if contracts < 0 and n >= 1:
+            acts.append(UnwindAction("close_short", symbol=sym, amount=float(n),
+                                     reason="unwind: buy-close dated short"))
+    # 2. redeem Simple Earn (carry coins only)
+    for coin, qty, pid in (earn_rows or []):
+        c = (coin or "").upper()
+        if c in carry_coins and qty > 0 and qty * coin_px.get(c, 0.0) > 1.0:
+            acts.append(UnwindAction("redeem_earn", asset=c, amount=qty, product_id=pid,
+                                     reason="unwind: redeem Simple Earn -> spot"))
+    # 3. transfer COIN-M wallet base coin -> spot
+    for coin, qty in (cm_coins or {}).items():
+        c = (coin or "").upper()
+        if c in carry_coins and qty > 0 and qty * coin_px.get(c, 0.0) > 1.0:
+            acts.append(UnwindAction("transfer_coin_to_spot", asset=c, amount=qty,
+                                     reason="unwind: COIN-M margin -> spot"))
+    # 4. market-sell spot base coin -> USDT (skip dust below the exchange min notional)
+    for coin, qty in (spot_coins or {}).items():
+        c = (coin or "").upper()
+        if c not in carry_coins or qty <= 0:
+            continue
+        spot_sym = f"{c}{cfg.quote}"
+        if qty * coin_px.get(c, 0.0) >= cfg.min_order_usdt:
+            acts.append(UnwindAction("sell_spot", symbol=spot_sym, asset=c, amount=qty,
+                                     reason="unwind: sell spot -> USDT"))
+    # 5. sweep spot USDT -> UMFUTURE (leave dust)
+    sweep = spot_usdt - dust_usdt
+    if sweep >= max(cfg.min_order_usdt, 1.0):
+        acts.append(UnwindAction("transfer_usdt_to_um", asset="USDT", amount=sweep,
+                                 reason="unwind: SPOT -> UMFUTURE (sweep to trend leg)"))
+    return acts
+
+
+def execute_unwind(spot_ex, cm_ex, actions: list[UnwindAction], *, mode: str = "dry",
+                   cfg: CarryConfig | None = None, dust_usdt: float = 2.0) -> list[dict]:
+    """Run a :func:`plan_unwind` plan. ``dry`` prints, sends nothing. ``live`` (and
+    :func:`rv_live_enabled`) does the ccxt moves: close_short on ``cm_ex`` (market BUY reduceOnly), the
+    rest on ``spot_ex`` (Earn redeem + account-level transfers + spot market sell). Mirrors
+    :func:`execute_funding` — the SELL and TRANSFER amounts are re-read LIVE so coin freed/redeemed by an
+    earlier step in the same run is swept this pass (the planned amount is advisory for dry/tests)."""
+
+    quote = cfg.quote if cfg else "USDT"
+    done: list[dict] = []
+    for a in actions:
+        if a.kind == "close_short":
+            line = f"  [{mode}] CLOSE COIN-M {a.symbol} BUY x{int(a.amount)}c (reduceOnly)  ({a.reason})"
+        elif a.kind == "redeem_earn":
+            line = f"  [{mode}] REDEEM Earn {a.amount:.6g} {a.asset} -> spot  ({a.reason})"
+        elif a.kind == "transfer_coin_to_spot":
+            line = f"  [{mode}] TRANSFER {a.amount:.6g} {a.asset} COIN-M->SPOT  ({a.reason})"
+        elif a.kind == "sell_spot":
+            line = f"  [{mode}] SELL spot {a.symbol} {a.amount:.6g} {a.asset}->USDT  ({a.reason})"
+        else:  # transfer_usdt_to_um
+            line = f"  [{mode}] TRANSFER {a.amount:.2f} USDT SPOT->UMFUTURE  ({a.reason})"
+        if mode != "live":
+            print(line + "  -- DRY"); done.append({"dry": True, "action": a}); continue
+        if not rv_live_enabled():
+            print(line + "  -- BLOCKED: QOUNT_RV_LIVE_ENABLE not set"); done.append({"blocked": True, "action": a}); continue
+        print(line + "  -- SENDING")
+        try:
+            if a.kind == "close_short":
+                r = cm_ex.create_order(to_ccxt_dated(a.symbol), "market", "buy", int(a.amount), None,
+                                       {"reduceOnly": True})
+            elif a.kind == "redeem_earn":
+                r = spot_ex.sapiPostSimpleEarnFlexibleRedeem({"productId": a.product_id, "amount": a.amount})
+            elif a.kind == "transfer_coin_to_spot":
+                free = float((cm_ex.fetch_balance().get("free") or {}).get(a.asset, 0.0) or 0.0)
+                amt = free * 0.999   # actual free (just-settled margin), light haircut for dust/precision
+                if amt <= 0:
+                    raise RuntimeError(f"no free {a.asset} in COIN-M wallet")
+                r = spot_ex.transfer(a.asset, amt, "delivery", "spot")
+            elif a.kind == "sell_spot":
+                free = float((spot_ex.fetch_balance().get("free") or {}).get(a.asset, 0.0) or 0.0)
+                if free <= 0:
+                    raise RuntimeError(f"no free {a.asset} in spot wallet")
+                r = spot_ex.create_order(to_ccxt_spot(a.symbol, quote), "market", "sell", free, None, {})
+            else:  # transfer_usdt_to_um — sweep ALL free USDT minus dust
+                free = float((spot_ex.fetch_balance().get("free") or {}).get("USDT", 0.0) or 0.0)
+                amt = max(0.0, free - dust_usdt)
+                if amt <= 0:
+                    raise RuntimeError("no free USDT to sweep")
+                r = spot_ex.transfer("USDT", amt, "spot", "future")
+            done.append({"result": r, "action": a})
+        except Exception as exc:   # one step failing must not crash the unwind; re-run continues the rest
+            print(line + f"  -- failed (non-fatal): {type(exc).__name__}: {str(exc)[:120]}")
+            done.append({"error": str(exc), "action": a})
+    return done
+
+
 def place_carry_orders(exchange_spot, exchange_cm, orders: list[CarryOrder], *,
                        mode: str = "dry", cfg: CarryConfig | None = None) -> list[dict]:
     """``mode='dry'`` prints intended two-venue orders (no API write); ``mode='live'`` places market

@@ -74,9 +74,14 @@ export QOUNT_RV_CAPITAL="$RV_CAP"
 export QOUNT_RV_UM_BUFFER_USDT="${QOUNT_RV_UM_BUFFER_USDT:-100}"
 echo "  split: total=\$$CXD_TOTAL | trend=auto (full wallet) | carry=\$$RV_CAP (pinned) | um_buffer=\$$QOUNT_RV_UM_BUFFER_USDT" >> "$LOG"
 
-# ensure carry arm switches are set (the env file may not have these)
-export QOUNT_RV_LIVE_ENABLE="${QOUNT_RV_LIVE_ENABLE:-1}"
-export QOUNT_RV_AUTOFUND="${QOUNT_RV_AUTOFUND:-1}"
+# CARRY PAUSED (2026-06-29, owner 决策「暂停 carry 集中趋势腿」). 复盘结论:在 ~$500 账户 / ETH-only /
+# COIN-M 整张($10/张)颗粒度下,carry 是噪声级收益(EV≈0)+ 运营复杂度(taker 中和 / quarterly roll /
+# 双场所非原子),且 delta 在大波动期易失控(见 6/17-25 流水)。趋势腿才是会计干净的真盈利引擎。
+# 单一总开关 QOUNT_CXD_CARRY_ENABLE(默认 0=暂停);注资到 ~$5k 或改用 USDⓈ-M linear 季度合约重建后,
+# 设 =1 即重新武装。暂停 = 不再开新 carry 仓 / 不 autofund / 不 taker 中和;既有持仓需另行 unwind 撤回。
+CARRY_ENABLE="${QOUNT_CXD_CARRY_ENABLE:-0}"
+export QOUNT_RV_LIVE_ENABLE="${QOUNT_RV_LIVE_ENABLE:-$CARRY_ENABLE}"
+export QOUNT_RV_AUTOFUND="${QOUNT_RV_AUTOFUND:-$CARRY_ENABLE}"
 
 notify() {  # $1=title $2=body — no-op unless Server酱 key set
   [ -n "${QOUNT_SERVERCHAN_KEY:-}" ] || return 0
@@ -95,13 +100,21 @@ run_leg() {  # $1=script $2=success marker
   fi
 }
 
-run_leg x4_live.py "[X4-LIVE"     # trend leg (60%)
-run_leg rv_live.py "[RV-LIVE"     # carry leg (40%)
+run_leg x4_live.py "[X4-LIVE"     # trend leg — now sizes against the FULL wallet (carry paused)
+# carry leg: only reconcile when armed. PAUSED by default (2026-06-29) → no new carry orders / no autofund.
+# cxd_publish.py still reports any RESIDUAL carry positions until they are unwound, so the dashboard stays
+# honest during the wind-down. Re-arm with QOUNT_CXD_CARRY_ENABLE=1.
+if [ "$CARRY_ENABLE" = "1" ]; then
+  run_leg rv_live.py "[RV-LIVE"   # carry leg
+else
+  echo "  carry leg PAUSED (QOUNT_CXD_CARRY_ENABLE=0) — trend-only" >> "$LOG"
+fi
 
 # carry delta-neutral guard: rv_live.py writes delta_breach=true when |net_delta| exceeds its threshold
 # (default 10% of deployed long). Notify ONCE per breach episode (a flag file de-dups the every-2-min cron;
 # cleared when the book comes back to neutral -> re-arms). Only live mode produces a trustworthy unified Δ.
-if [ "$MODE" = "live" ]; then
+# Skipped while carry is paused (nothing to guard once unwound; avoids stale rv-state false alarms).
+if [ "$MODE" = "live" ] && [ "$CARRY_ENABLE" = "1" ]; then
   DELTA_FLAG="$HOME/.cache/qount/rv_delta_alerted"
   mkdir -p "$(dirname "$DELTA_FLAG")"
   RV_STATE="$REPO/state/rv/live/latest.json"

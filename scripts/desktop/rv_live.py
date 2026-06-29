@@ -36,10 +36,12 @@ from qount.rv.live import (  # noqa: E402
     CONTRACT_USD,
     compute_carry_orders,
     execute_funding,
+    execute_unwind,
     from_ccxt_dated,
     neutralize_spot_targets,
     place_carry_orders,
     plan_funding,
+    plan_unwind,
     rv_live_enabled,
     target_legs,
     to_ccxt_dated,
@@ -91,10 +93,87 @@ def _load_markets_resilient(ex, *, retries: int = 3, base_delay: float = 2.0):
     _resilient(ex.load_markets, what="load_markets", retries=retries, base_delay=base_delay)
 
 
+def _run_unwind(submode: str) -> int:
+    """Flatten the carry sleeve and sweep the USDT back to the trend leg's UMFUTURE wallet (owner
+    2026-06-29「暂停 carry 集中趋势腿」). ``submode='dry'`` prints the plan & sends nothing;
+    ``'live'`` executes the close/sell/transfer moves — still gated by QOUNT_RV_LIVE_ENABLE=1."""
+    if submode not in ("dry", "live"):
+        raise SystemExit("usage: rv_live.py unwind [dry|live]")
+    cfg = CarryConfig()
+    now = dt.datetime.now(dt.UTC)
+    print(f"[RV-UNWIND {submode}] {now:%Y-%m-%d %H:%M}  flatten carry -> sweep USDT to UMFUTURE")
+
+    settings = Settings.from_env()
+    live = (submode == "live")
+    # ALWAYS read holdings with the key (read-only); execute_unwind's mode gates the real orders/transfers.
+    # Even dry must connect privately to SHOW the true positions it would flatten (unlike the daily runner,
+    # which assumes flat in dry).
+    spot_ex = build_exchange(dataclasses.replace(settings, market_type="spot"), private=True)
+    cm_ex = _build_coinm(settings, private=True)
+    _load_markets_resilient(spot_ex)
+    _load_markets_resilient(cm_ex)
+
+    # carry-coin spot prices (value the dust / min-notional gates)
+    prices: dict[str, float] = {}
+    for spot_sym, _base in cfg.pairs:
+        ccxt_sym = to_ccxt_spot(spot_sym, cfg.quote)
+        try:
+            prices[spot_sym] = float(_resilient(lambda s=ccxt_sym: spot_ex.fetch_ticker(s),
+                                                what=f"fetch_ticker {ccxt_sym}")["last"])
+        except Exception as exc:
+            print(f"  (price read {ccxt_sym} failed: {type(exc).__name__})")
+
+    dated_positions: dict[str, float] = {}   # internal dated sym -> signed contracts
+    cm_coins: dict[str, float] = {}          # base coin -> qty in COIN-M wallet
+    spot_coins: dict[str, float] = {}        # base coin -> free qty in spot wallet
+    earn_rows: list[tuple[str, float, str]] = []
+    spot_usdt = 0.0
+    try:
+        for r in cm_ex.dapiPrivateGetPositionRisk():   # ALL COIN-M positions incl. dated quarterlies
+            sym = r.get("symbol") or ""
+            amt = float(r.get("positionAmt") or 0)
+            if amt != 0 and "_" in sym:
+                dated_positions[sym] = amt
+        cb = cm_ex.fetch_balance()
+        sb = spot_ex.fetch_balance()
+        for spot_sym, _b in cfg.pairs:
+            coin = spot_sym[: -len(cfg.quote)]
+            cm_amt = float((cb.get("total") or {}).get(coin, 0.0) or 0.0)
+            if cm_amt > 0:
+                cm_coins[coin] = cm_amt
+            sp_amt = float((sb.get("free") or {}).get(coin, 0.0) or 0.0)
+            if sp_amt > 0:
+                spot_coins[coin] = sp_amt
+        spot_usdt = float((sb.get("free") or {}).get(cfg.quote, 0.0) or 0.0)
+        try:   # Simple Earn rows carry the productId needed to redeem
+            for _p in (spot_ex.sapiGetSimpleEarnFlexiblePosition().get("rows") or []):
+                earn_rows.append((_p.get("asset"), float(_p.get("totalAmount") or 0), _p.get("productId") or ""))
+        except Exception:
+            pass
+    except Exception as exc:
+        print(f"  [ALERT] cannot read carry holdings ({type(exc).__name__}) -> abort (need SPOT+COIN-M key)")
+        return 1
+
+    print(f"  positions: dated {dict(dated_positions) or '—'} | COIN-M coin {cm_coins or '—'} | "
+          f"spot coin {spot_coins or '—'} | spot USDT ${spot_usdt:.2f}")
+    actions = plan_unwind(dated_positions, cm_coins, spot_coins, earn_rows, spot_usdt, prices, cfg)
+    if not actions:
+        print("  carry already FLAT — nothing to unwind.")
+        return 0
+    print(f"  plan: {len(actions)} action(s)")
+    execute_unwind(spot_ex, cm_ex, actions, mode=submode, cfg=cfg)
+    if live and not rv_live_enabled():
+        print("  NOTE: BLOCKED — set QOUNT_RV_LIVE_ENABLE=1 to actually execute the live unwind.")
+    print("  unwind pass done. Re-run once more to sweep any margin coin that settled after the short close.")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     mode = argv[1] if len(argv) > 1 else "dry"
+    if mode == "unwind":   # flatten carry + sweep to UMFUTURE (owner 2026-06-29 暂停 carry)
+        return _run_unwind(argv[2] if len(argv) > 2 else "dry")
     if mode not in ("dry", "live"):
-        raise SystemExit("usage: rv_live.py [dry|live]")
+        raise SystemExit("usage: rv_live.py [dry|live|unwind [dry|live]]")
     # capital overridable via env (C×D orchestrator sets the 40% carry slice); else CarryConfig default
     _cap = float(os.environ.get("QOUNT_RV_CAPITAL", "0") or 0)
     # auto-funding (owner「用合约账户闲置资金」): QOUNT_RV_AUTOFUND=1 pulls idle USDⓈ-M USDT to fund the

@@ -18,13 +18,16 @@ from qount.rv.live import (  # noqa: E402
     CarryConfig,
     CarryLeg,
     CarryOrder,
+    UnwindAction,
     active_dated,
     compute_carry_orders,
     execute_funding,
+    execute_unwind,
     from_ccxt_dated,
     neutralize_spot_targets,
     place_carry_orders,
     plan_funding,
+    plan_unwind,
     rv_live_enabled,
     target_legs,
     to_ccxt_dated,
@@ -384,6 +387,152 @@ class TestExecuteFundingTransfer(unittest.TestCase):
             self.assertEqual((code, frm, to), ("ETH", "spot", "delivery"))
             self.assertLessEqual(amt, 0.0140)            # capped to free, not the 0.0146 estimate
             self.assertGreater(amt, 0.0139)              # ~free × 0.999
+        finally:
+            os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+
+
+class TestPlanUnwind(unittest.TestCase):
+    """Unwind planner: flatten carry + sweep USDT to UMFUTURE (owner 2026-06-29「暂停 carry」)."""
+
+    def _cfg(self, **o):
+        kw = dict(min_order_usdt=10.0)
+        kw.update(o)
+        return CarryConfig(**kw)
+
+    def _px(self):
+        return {"ETHUSDT": 1600.0, "BTCUSDT": 60000.0}
+
+    def test_flat_returns_empty(self):
+        self.assertEqual(plan_unwind({}, {}, {}, [], 0.0, self._px(), self._cfg()), [])
+
+    def test_full_unwind_sequence_in_order(self):
+        acts = plan_unwind(
+            {"ETHUSD_260925": -9.0},          # dated short (9 contracts)
+            {"ETH": 0.025},                    # COIN-M margin coin
+            {"ETH": 0.03},                     # spot free coin
+            [("ETH", 0.02, "ETH001")],         # Simple Earn (asset, qty, productId)
+            50.0,                              # spot USDT
+            self._px(), self._cfg())
+        self.assertEqual([a.kind for a in acts],
+                         ["close_short", "redeem_earn", "transfer_coin_to_spot", "sell_spot", "transfer_usdt_to_um"])
+        self.assertEqual((acts[0].symbol, acts[0].amount), ("ETHUSD_260925", 9.0))   # whole contracts
+        self.assertEqual(acts[1].product_id, "ETH001")                                # earn redeem carries pid
+        self.assertEqual(acts[3].symbol, "ETHUSDT")                                   # sell on the spot pair
+        self.assertAlmostEqual(acts[-1].amount, 48.0)                                 # sweep = 50 − 2 dust
+
+    def test_long_position_is_not_closed(self):
+        acts = plan_unwind({"ETHUSD_260925": 9.0}, {}, {}, [], 0.0, self._px(), self._cfg())
+        self.assertFalse(any(a.kind == "close_short" for a in acts))                  # +contracts = long, not short
+
+    def test_idempotent_after_short_closed(self):
+        acts = plan_unwind({}, {}, {"ETH": 0.05}, [], 40.0, self._px(), self._cfg())  # only spot coin + usdt left
+        self.assertEqual([a.kind for a in acts], ["sell_spot", "transfer_usdt_to_um"])
+
+    def test_dust_spot_below_min_not_sold(self):
+        acts = plan_unwind({}, {}, {"ETH": 5.0 / 1600.0}, [], 0.0, self._px(), self._cfg())  # ~$5 < min $10
+        self.assertFalse(any(a.kind == "sell_spot" for a in acts))
+
+    def test_usdt_dust_not_swept(self):
+        self.assertEqual(plan_unwind({}, {}, {}, [], 2.5, self._px(), self._cfg()), [])  # 2.5−2 = 0.5 < min
+
+    def test_only_carry_coins_touched(self):
+        px = {"ETHUSDT": 1600.0, "BTCUSDT": 60000.0, "SOLUSDT": 100.0}
+        acts = plan_unwind({}, {"SOL": 100.0}, {"SOL": 100.0}, [("SOL", 50.0, "S")], 0.0, px, self._cfg())
+        self.assertEqual(acts, [])   # SOL is not a carry pair -> never touched
+
+
+class _UnwindMock:
+    def __init__(self, free=None):
+        self.orders, self.transfers, self.redeems = [], [], []
+        self._free = free or {}     # asset -> free balance (for the live free-balance reads)
+
+    def create_order(self, symbol, type_, side, amount, price, params):
+        self.orders.append((symbol, type_, side, amount, params)); return {"id": "o", "symbol": symbol}
+
+    def transfer(self, code, amount, fromAccount, toAccount):
+        self.transfers.append((code, amount, fromAccount, toAccount)); return {"id": "t"}
+
+    def fetch_balance(self):
+        return {"free": dict(self._free)}
+
+    def sapiPostSimpleEarnFlexibleRedeem(self, params):
+        self.redeems.append(params); return {"success": True}
+
+
+class TestExecuteUnwind(unittest.TestCase):
+    """Unwind executor (mocked ccxt): dry/blocked safety + correct close/sell/transfer routing & live reads."""
+
+    def test_dry_sends_nothing(self):
+        sp, cm = _UnwindMock(), _UnwindMock()
+        acts = [UnwindAction("close_short", symbol="ETHUSD_260925", amount=9.0),
+                UnwindAction("sell_spot", symbol="ETHUSDT", asset="ETH", amount=0.05),
+                UnwindAction("transfer_usdt_to_um", asset="USDT", amount=48.0)]
+        execute_unwind(sp, cm, acts, mode="dry", cfg=CarryConfig())
+        self.assertEqual(sp.orders + cm.orders + sp.transfers + cm.transfers, [])
+
+    def test_live_blocked_without_env(self):
+        os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+        sp, cm = _UnwindMock(), _UnwindMock()
+        execute_unwind(sp, cm, [UnwindAction("close_short", symbol="ETHUSD_260925", amount=9.0)],
+                       mode="live", cfg=CarryConfig())
+        self.assertEqual(cm.orders, [])   # gated by QOUNT_RV_LIVE_ENABLE
+
+    def test_live_close_short_is_reduceonly_buy_on_coinm(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+        try:
+            sp, cm = _UnwindMock(), _UnwindMock()
+            execute_unwind(sp, cm, [UnwindAction("close_short", symbol="ETHUSD_260925", amount=9.0)],
+                           mode="live", cfg=CarryConfig())
+            sym, type_, side, amount, params = cm.orders[0]
+            self.assertEqual((sym, type_, side, amount), ("ETH/USD:ETH-260925", "market", "buy", 9))
+            self.assertTrue(params.get("reduceOnly"))
+            self.assertEqual(sp.orders, [])   # routed to COIN-M, not spot
+        finally:
+            os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+
+    def test_live_sell_uses_live_free_not_planned(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+        try:
+            sp, cm = _UnwindMock(free={"ETH": 0.0488}), _UnwindMock()   # actual free > planned (margin merged in)
+            execute_unwind(sp, cm, [UnwindAction("sell_spot", symbol="ETHUSDT", asset="ETH", amount=0.03)],
+                           mode="live", cfg=CarryConfig())
+            sym, type_, side, amount, _ = sp.orders[0]
+            self.assertEqual((sym, type_, side, amount), ("ETH/USDT", "market", "sell", 0.0488))  # live free
+        finally:
+            os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+
+    def test_live_coin_transfer_delivery_to_spot_uses_free(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+        try:
+            sp, cm = _UnwindMock(), _UnwindMock(free={"ETH": 0.025})
+            execute_unwind(sp, cm, [UnwindAction("transfer_coin_to_spot", asset="ETH", amount=0.025)],
+                           mode="live", cfg=CarryConfig())
+            code, amt, frm, to = sp.transfers[0]
+            self.assertEqual((code, frm, to), ("ETH", "delivery", "spot"))
+            self.assertLessEqual(amt, 0.025)
+            self.assertGreater(amt, 0.0249 * 0.999)   # ~free × 0.999 haircut
+        finally:
+            os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+
+    def test_live_usdt_sweep_leaves_dust(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+        try:
+            sp, cm = _UnwindMock(free={"USDT": 100.0}), _UnwindMock()
+            execute_unwind(sp, cm, [UnwindAction("transfer_usdt_to_um", asset="USDT", amount=98.0)],
+                           mode="live", cfg=CarryConfig(), dust_usdt=2.0)
+            code, amt, frm, to = sp.transfers[0]
+            self.assertEqual((code, frm, to), ("USDT", "spot", "future"))
+            self.assertAlmostEqual(amt, 98.0)   # 100 free − 2 dust
+        finally:
+            os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
+
+    def test_live_redeem_earn_calls_sapi_with_pid(self):
+        os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
+        try:
+            sp, cm = _UnwindMock(), _UnwindMock()
+            execute_unwind(sp, cm, [UnwindAction("redeem_earn", asset="ETH", amount=0.02, product_id="ETH001")],
+                           mode="live", cfg=CarryConfig())
+            self.assertEqual(sp.redeems[0].get("productId"), "ETH001")
         finally:
             os.environ.pop("QOUNT_RV_LIVE_ENABLE", None)
 

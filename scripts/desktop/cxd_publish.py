@@ -41,7 +41,13 @@ for r in cm.dapiPrivateGetPositionRisk():
         base=sym.split("USD_")[0]+"USD" if "USD_" in sym else ""
         mult=CONTRACT_USD.get(base, 10.0)
         short_usd += abs(amt)*mult
-        short_upnl += float(r.get("unrealisedProfit") or r.get("unrealizedProfit") or 0)
+        # COIN-M(inverse)空腿浮盈修复(2026-06-29):① Binance dapi positionRisk 字段是 unRealizedProfit
+        # (大写 R)——旧码找小写 unrealisedProfit/unrealizedProfit 永远 miss → 取 0;② 该字段对 inverse
+        # 合约以 base 币(ETH/BTC)计价,必须 ×现价转 USD 再并入 USD 口径的 carry_equity。两 bug 叠加 →
+        # 空腿浮盈恒记 0 → carry_equity 退化成纯多头边市值 → ETH 跌时把 delta 中性腿显示成「亏≈跌幅」
+        # (实测 +0.00517 ETH=+$8.16 被记成 0,把真实 carry −$0.7 放大成 −$8.86,并低估 total ~$8)。
+        _upnl_base=float(r.get("unRealizedProfit") or r.get("unrealisedProfit") or r.get("unrealizedProfit") or 0)
+        short_upnl += _upnl_base * (px_btc if base=="BTCUSD" else px_eth)
         active.append(sym)
 long_usd=(seth+ceth)*px_eth + (sbtc+cbtc)*px_btc
 carry_equity=round(long_usd+short_upnl,2)

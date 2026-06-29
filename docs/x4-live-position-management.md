@@ -495,9 +495,79 @@ spot_target = |floored 短腿| − COIN-M 保证金币       (clamp ≥ 0)
   退避重试,非网络错立即抛),`load_markets` + spot/COIN-M 每个 `fetch_ticker` 全走它 → 瞬时 dapi/api blip 不再
   整轮 fail / 误报。
 
+## 14. 深度复盘 + carry 暂停(2026-06-29,owner「检查实盘 / review 成交 / 复盘 / 优化」)
+
+### 14.1 实盘体检(部署第 11 天,2026-06-18 起算)
+
+| 维度 | 显示值 | 真值(修 §14.2 后) |
+|---|---|---|
+| 总权益 / 基线 | $498.41 / $484.57 | $506.6 / $484.57 |
+| **总盈亏** | +$13.84 / +2.86% | **+$22.0 / +4.5%** |
+| └ 趋势腿(USDⓈ-M perp 2x) | +$22.70 / +6.1% | +$22.70(✓ 会计干净) |
+| └ carry 腿(ETH-only) | **−$8.86 / −8.96%** | **−$0.70(≈中性)** |
+| └ 闲置现金 | $13.57 | $13.57 |
+
+当前大盘闸 SHUT(BTC 在 200MA 下 −20.9%)→ 7 币全做空(gross 0.49),6/7 腿浮盈。**趋势腿是真盈利引擎,
+熊市做空兑现 §24;carry 显示巨亏实为会计假象(见 §14.2)。**
+
+### 14.2 🔴 carry「−8.96%」根因 = `cxd_publish.py` 空腿浮盈双 bug(显示假亏,非真亏)
+
+review 成交记录时定位:carry 显示亏 ≈ ETH 同期跌幅(−9%),而 net_delta 现已中性(0.05)——一个 delta 中性
+的腿不该有方向性亏损。VPS 只读探针坐实 `cxd_publish.py` 计算 `carry_equity = long_usd + short_upnl` 时
+`short_upnl` 恒为 **0**,双 bug 叠加:
+
+1. **字段名**:Binance dapi `positionRisk` 返回 `unRealizedProfit`(大写 R),旧码找小写
+   `unrealisedProfit`/`unrealizedProfit` → `.get()` 永远 miss → 取 0。
+2. **单位**:该字段对 COIN-M(inverse)以 **base 币(ETH)计价**,须 ×现价转 USD。
+
+实测 `ETHUSD_260925 −9 张 unRealizedProfit=+0.00517 ETH(=+$8.16)` 被记成 0 → `carry_equity` 退化成**纯
+多头边市值**(现货 ETH + 保证金币 ETH),ETH 跌 9% → 显示亏 9%。**修复**(`cxd_publish.py`,只读发布脚本零
+交易风险):取 `unRealizedProfit` + `× px_eth/px_btc`。修后 `carry_equity = 90.05 + 8.16 = 98.21`,对
+inception 98.91 → **真实 carry ≈ −$0.70(基本中性,符合设计)**;且 `total_pnl` 同步归真:**实盘真实赚
++$22/+4.5%(几乎全是趋势腿),不是看板的 +$13.84**。= §11(趋势 equity)/§13(net_delta)之后**同族第三个
+inverse 会计陷阱**,这次落在 PnL 归因层并污染 total。
+
+### 14.3 carry 在微资金结构性不可行 → owner 决策「暂停 carry,集中趋势腿」
+
+即便 PnL 修真,carry 在此规模仍**不值得运营**:① $500 « 业界 delta-neutral 门槛 **$5k+**;② **ETH-only**
+(BTC $100/张不可注资)单点;③ **COIN-M 整张 $10/张**在 $90 书上 = 11% 颗粒度,delta band(10%)几乎每根都被
+一张合约撑爆;④ 6/17-25 成交流水显示大波动 + quarterly roll 期 net_delta 在 **+67 / −100 / +49 / −38** 间失控
+摆动(一天 7+ 次 taker 中和),6/25 部署 `neutralize_spot` 后才稳。**carry 真身年化几个点 × $90 ≈ 噪声级收益,
+换不回 taker+roll 成本与双场所运营复杂度。** owner 决策:**暂停 carry，火力集中会计干净的趋势腿。**
+
+**实现(本轮,均可逆,未碰 src 模块;x4 274 / rv 86 单测回归绿)**:
+- `cxd_live_cron.sh`:加单一总开关 `QOUNT_CXD_CARRY_ENABLE`(默认 **0=暂停**)→ carry 腿不再 reconcile /
+  不 autofund / 不 taker 中和;`QOUNT_RV_LIVE_ENABLE`/`QOUNT_RV_AUTOFUND` 默认跟随它;delta 告警块同门控
+  (避免 stale rv-state 误报)。趋势腿照跑,sizing 自动用全钱包。重新武装(注资到位 / 改 linear 后)设 =1。
+- `cxd_publish.py`:§14.2 的 upnl 修复(让 wind-down 期看板诚实显示残余 carry 真值)。
+- **unwind 撤回脚本已建 + ✅ 已执行(2026-06-29)**:`rv/live.py` 加纯函数 `plan_unwind`
+  (幂等 flatten:平 dated short → 赎 Earn → COIN-M 币划 spot → 卖现货 → USDT 扫回 UMFUTURE;只碰 carry 币
+  BTC/ETH、dust < min_order 不动)+ 薄 ccxt `execute_unwind`(dry/live 门控,sell/transfer 用**实时余额**故
+  早一步释放的保证金本轮即被扫);runner `rv_live.py unwind [dry|live]` 模式。**+14 单测 → rv 共 100 绿**。
+  **VPS dry 实测**(2026-06-29):读到真实持仓 dated `ETHUSD_260925` −9 张 / COIN-M 0.0255 ETH / spot 0.0313 ETH
+  / idle $13.57,生成 4 步计划(平空 → 划币 → 卖 → 扫 $11.57 留 $2 dust)。**owner arm**:
+  `rv_live.py unwind live`(env 已有 `QOUNT_RV_LIVE_ENABLE=1`);两场所非原子,建议盯盘 + 跑 2 次(平仓释放的
+  保证金结算后第 2 轮扫尾)。**✅ 实际执行(2026-06-29,一轮即清净)**:4 步全 SENDING 无 failed,平仓保证金
+即时释放 + 转账即时到账,残留亚美元 dust(COIN-M $0.04 / spot $0.14 / USDT $2);cxd_publish carry flat
+(armed:false / weights trend 1.0 carry 0.0)、UMFUTURE walletBalance $382 → **$483.11**、total 守恒 $485.46 →
+$485.30(手续费 ~$0.16)。趋势腿独跑,下个 cron tick 按 $483 放大做空书。
+
+### 14.4 网上量化策略调研 + carry 重建路径(若日后注资)
+
+- **inverse 对小账户是公认坏选择**:「inverse 合约保证金与 P&L 用 base 币计价,即便无持仓也暴露于抵押品自身
+  市场风险」——直接印证 §14.2/14.3。delta-neutral 业界标配 **linear(USDT-margined)**。
+- **重建正解 = `BTCUSDT`/`ETHUSDT` USDⓈ-M 季度交割合约**(非 COIN-M):USDT 保证金消除币暴露 + 最小名义 $5 +
+  可下小数量(细颗粒度根治 §13.4)+ 与趋势腿同 UMFUTURE 钱包(单场所、免买保证金币/免跨钱包划转)+ **保留到期
+  收敛真锚**(rv-c 核心,§7.3 已示 linear 也过 gate、仅清算边际 +32.8% vs inverse +49.3% 窄)。代价 = 重写
+  `rv/live.py` 合约层 + 重跑 gate 回测。
+- **趋势侧无新增 alpha**:§12 已穷尽(杠杆无 alpha / 刷新日线最优 / universe TOP7 最优 / ADX walk-forward 证伪);
+  外部 CTA 调研提醒「2026 年 CTA 有回调风险、头条 Sharpe 被牛市灌高」,与「诚实前向 ~0.70」一致。可选风控仍是
+  §5 的 T3-8 动态回撤减仓(风控旋钮非 alpha)。
+
 ---
 
 _建档:2026-06-18(§8 快照 + §9 walletBalance 回测 + §10 出场/锁利面板)。2026-06-19 加 §11(收益口径修正 +
 做空 gross→0.6)+ §12(四方向深度优化分析)+ §12.1(轻量 ADX walk-forward 证伪)。2026-06-25 加 §13(carry
-net_delta 口径 bug 统一 §13.1-2 + 漂移告警 §13.3 + 根治漂移=spot 主动中和 §13.4)。判生死 / 上线决策仍走
-`docs/crypto-x4-plan.md`。_
+net_delta 口径 bug 统一 §13.1-2 + 漂移告警 §13.3 + 根治漂移=spot 主动中和 §13.4)。2026-06-29 加
+§14(深度复盘:carry upnl 双 bug 修真=显示假亏非真亏、真实 total +4.5% + owner 决策暂停 carry 集中趋势腿 +
+USDⓈ-M linear 季度合约重建路径)。判生死 / 上线决策仍走 `docs/crypto-x4-plan.md`。_
