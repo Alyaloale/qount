@@ -27,27 +27,31 @@
   `dc8d854c34a7083c2bbb676a73db042021815198b8b2f6063131debf127932ef` /
   `6c807c26e55e6520de4ea8022b67753bb8503331c72a7a7dc4edf409a6f28bf8`。
   publisher timer 保持 `disabled/inactive`，旧 production crontab、MiniTrend forward timer、订单和 live 开关均未恢复。
-  owner authorization 只允许安装，不绕过 source gate；真实审计 `2026-07-20T09:24:33+00:00` 返回
+  owner authorization 只允许安装，不绕过 source gate；writer实测后的最新真实审计返回
   `status=blocked`、`authority_bundle_verified=false`、`backup_state=prepared_empty`、
   `install_authorized=true`、`enable_authorized=false`，audit hash 为
-  `b2fc996b70fd313a97a454db341c9df1b6b904cccd4f0ca62ac367a522e8f4fa`。
+  `31a5de02b90920271a00f979c7a977f9c11a128e1d0977bfd363be4a81521458`。
   阻塞原因是六个 authority source（batch/registry/ledger/notification/health/brief）尚未生成；没有复制 fixture 或 legacy state。
-  VPS production profile 回归为 `290 OK`；完整 discovery 因 VPS 不安装 research/collector extras，仍须显式执行
+  VPS production profile 回归为 `295 OK`；完整 discovery 因 VPS 不安装 research/collector extras，仍须显式执行
   `scripts/run-vps-tests.sh discover`。
 
-- **2026-07-20 order-free authority writer 已完成本地合同并接入VPS为 disabled oneshot。** 新增
+- **2026-07-20 order-free authority writer 已完成本地合同并接入VPS为 static/inactive oneshot。** 新增
   `qount.operations.authority_writer` 和 `scripts/operations/write_authority_bundle.py`：只读验证 legacy run 的原始 hash、重复键、
   order-free flags、初始/最终 readiness、projection/dry parity、账户 flat/no-open-order，再由标准 `VerifiedDecisionBatch`、research
   `StrategyRegistry`、只读 `RuntimeLedgerSnapshot`、notification/health/DailyBrief 组成完整 bundle；authority 目录采用 staging + lock
   目录替换，失败不写半成品，不查交易所、不发通知、不授权订单。`mini_trend_um_forward_cycle.sh` 已将 dispatcher 使用的初始 readiness
-  固定保存为`dispatch_readiness.json`，最终结果另存`live_readiness.json`，避免 source hash 被覆盖。VPS 当前最新旧run缺少该初始文件，
-  projection只到`2026-07-18`且无completed decision；只读preflight还发现`BTCUSDT`多仓`0.006`、`account_flat=false`。writer因此应返回
-  `status=blocked`，不会创建runtime/authority source；没有运行被停用的forward timer或调用私有接口。authority unit hash为
-  `5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。
+  固定保存为`dispatch_readiness.json`，最终结果另存`live_readiness.json`，避免 source hash 被覆盖。authority unit已实际安装并保持
+  `static/inactive`，SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。VPS真实运行选择
+  `/root/qount/state/mini_trend/forward/runs/20260720T032512Z`，因缺`dispatch_readiness.json`返回
+  `status=blocked`、`blocker=dispatch_readiness_source_missing`、退出码`75`；systemd result hash为
+  `da4a6cca019529b8d68cf97fbe32f3fbfee4df605eecad041344e44824127819`。运行前后authority空目录hash均为
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，`/var/lib/qount/dashboard-runtime`仍不存在。
+  同一旧run的projection只到`2026-07-18`且无completed decision；只读preflight还发现`BTCUSDT`多仓`0.006`、
+  `account_flat=false`。没有运行被停用的forward timer、调用私有接口或改变账户/订单。
 
 - **2026-07-20 VPS 测试入口已按生产依赖分层。** `scripts/run-vps-tests.sh` 默认只运行不依赖 numpy/websockets 的 production surface；
   显式 `discover` 才运行全仓研究测试。此前直接 discovery 在最小 VPS 环境出现的 8 个错误均为可选依赖缺失，不是生产代码回归；
-  Mac 全量仍为 `1478 OK`，唯一 warning 为既有 `cta_data.py` UTC deprecation。
+  当前VPS production profile为`295 OK`，Mac全量为 `1484 OK`，唯一 warning 为既有 `cta_data.py` UTC deprecation。
 
 - **历史 superseded：2026-07-20 notification transport合同已完成本地fake边界，publisher生产授权仍阻断。** 新增
   `notifications/transport.py`：`ProviderResponse`要求精确字段、canonical response hash、请求`delivery_key`回显及
@@ -2539,7 +2543,7 @@ WSL聚焦`compileall`、两端CLI help、Bash语法、凭据扫描与`git diff -
 临时artifact目录已在每次复跑后定点删除，marker保护的WSL scratch已清空，Mac `state/`
 恢复约12KiB。完整回归只有既存
 `src/qount/cta_data.py` UTC deprecation warning。VPS `/root/qount` 本轮默认 production profile
-合同/账本/通知/Dashboard/运维/authority writer/X4/RV 回归为 `294 OK`；显式全量 discovery 因生产最小环境不安装
+合同/账本/通知/Dashboard/运维/authority writer/X4/RV 回归为 `295 OK`；显式全量 discovery 因生产最小环境不安装
 numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，不属于生产回归。
 `QOUNT_ALLOW_LEGACY_WSL=1` 规则不变；交易生产变更仍必须用 VPS unittest 验证。
 
@@ -2548,7 +2552,8 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
 按最新 owner 决策排序：
 
 1. 本批production-shaped publisher、authority writer、真实OS/systemd/backup探针、单写者、同盘原子release、备份/保留和恢复演练已在本地完成；
-   publisher/authority unit 已安装到VPS但保持 disabled。当前旧run因缺`dispatch_readiness.json`、无completed decision和账户非flat而被writer
+   publisher unit已安装到VPS并保持`disabled/inactive`，authority unit保持`static/inactive`。当前旧run因缺`dispatch_readiness.json`、
+   无completed decision和账户非flat而被writer
    fail closed；下一步只能等新的完整forward run（保留初始/最终readiness、完整funding且账户先由owner处理）后重跑writer，再以本轮
    `--owner-authorized` 审计结果重新评估 enable。缺失 source 时继续 fail closed，不能把安装授权当作启用授权。真实notification transport的注入式合同仍需：
    只允许`NotificationStore`提供delivery key和最小payload，校验provider响应、限流/超时、0600凭据和无密钥审计；不发送真实消息，

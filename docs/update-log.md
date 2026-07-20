@@ -20,22 +20,26 @@
 - 新增`deploy/systemd/qount-dashboard-authority.service`，`PrivateNetwork=true`、`ProtectSystem=strict`、清空proxy/live/arm/key环境、
   共享`/run/qount-dashboard/publisher.lock`，只允许oneshot手工/后续受控调度；`SuccessExitStatus=75`把source缺失表示为安全停点，unit未enable，
   SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。
-- writer本地成功/失败关闭和unit边界聚焦`28 OK`；Mac全量预期`1484 OK`。VPS最新旧run只到`2026-07-18`、无completed decision、缺
-  `dispatch_readiness.json`，只读preflight另见`BTCUSDT`多仓`0.006`/`account_flat=false`，故writer应blocked，不调用被停用的forward timer或私有API。
+- writer本地成功/失败关闭和unit边界聚焦`28 OK`，Mac全量`1484 OK`；authority unit已安装到VPS并保持`static/inactive`。真实运行选择
+  `/root/qount/state/mini_trend/forward/runs/20260720T032512Z`，因缺`dispatch_readiness.json`返回`status=blocked`、
+  `blocker=dispatch_readiness_source_missing`、退出码`75`，systemd result hash为
+  `da4a6cca019529b8d68cf97fbe32f3fbfee4df605eecad041344e44824127819`。运行前后authority空目录hash均为
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，runtime目录未创建。该旧run也只到`2026-07-18`且无completed
+  decision，只读preflight另见`BTCUSDT`多仓`0.006`/`account_flat=false`；没有调用被停用的forward timer、私有API或账户/订单路径。
 
 ### Governed architecture baseline pushed and publisher installed disabled
 
 - 审计并固定当前大工作区基线：Mac全仓`1478 OK`，Python compile、shell/Node语法、JSON/schema、凭据扫描和
   `git diff --check`通过；提交`230840c feat: establish governed quant architecture`已推送到`origin/crypto-lines-bcd`。
 - `scripts/sync-to-vps.sh --install`已把该基线同步到`/root/qount`并重新editable install。VPS保持生产最小依赖；测试入口现默认运行
-  production surface，结果`290 OK`，显式`discover`才运行需numpy/websockets等可选依赖的研究/collector测试。
+  production surface，authority writer接入后的最新结果为`295 OK`，显式`discover`才运行需numpy/websockets等可选依赖的研究/collector测试。
 - owner明确授权publisher安装后，已创建`/var/lib/qount/dashboard-authority`、`/var/lib/qount/dashboard-backups`（`0700`）和
   `/var/www/qount/data`（`0755`），安装`qount-dashboard-publisher.service/.timer`并daemon-reload。unit hash分别为
   `dc8d854c34a7083c2bbb676a73db042021815198b8b2f6063131debf127932ef`和
   `6c807c26e55e6520de4ea8022b67753bb8503331c72a7a7dc4edf409a6f28bf8`；service/timer保持inactive，timer保持disabled。
 - publisher path audit增加显式`--owner-authorized`记录：它只使`install_authorized=true`，完整source未通过时仍固定
-  `enable_authorized=false`。最新VPS审计为`blocked`、`authority_bundle_verified=false`、`backup_state=prepared_empty`，hash
-  `b2fc996b70fd313a97a454db341c9df1b6b904cccd4f0ca62ac367a522e8f4fa`。缺失项是标准batch/registry/ledger/notification/health/brief；
+  `enable_authorized=false`。writer实测后的最新VPS审计为`blocked`、`authority_bundle_verified=false`、`backup_state=prepared_empty`，hash
+  `31a5de02b90920271a00f979c7a977f9c11a128e1d0977bfd363be4a81521458`。缺失项是标准batch/registry/ledger/notification/health/brief；
   没有复制fixture/legacy state，没有恢复旧cron、MiniTrend timer、订单、真实通知或live开关。
 
 ### Injected notification transport and publisher authorization hold

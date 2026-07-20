@@ -174,8 +174,8 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
 - SQLite 审计链
 - 成本感知 `signal-review`
 - A股 ETF 20 日 research-only 状态判别、Tushare/公开复权数据和固定组合证据门（当前冻结保留）
-- VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher/authority oneshot unit已安装到VPS但保持
-  `disabled/inactive`，标准source gate未通过
+- VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher unit保持`disabled/inactive`，
+  authority oneshot保持`static/inactive`，标准source gate未通过
 
 ## 初始化
 

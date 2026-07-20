@@ -39,7 +39,7 @@
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
 - 2026-07-20 VPS只读核对已将此前误处于`enabled/active`的`qount-mini-trend-forward.timer`纠正为`disabled/inactive`；当前没有
   active qount cron/timer或qount交易进程，`QOUNT_LIVE_ENABLE=false`。Dashboard publisher unit已安装但service/timer均inactive，
-  timer disabled；authority writer oneshot也保持disabled/inactive。不要恢复MiniTrend timer，也不要在authority source gate通过前enable publisher timer。
+  timer disabled；authority writer oneshot保持`static/inactive`。不要恢复MiniTrend timer，也不要在authority source gate通过前enable publisher timer。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
@@ -127,11 +127,11 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
 
 最新真实VPS审计返回`blocked`、`install_authorized=true`、`enable_authorized=false`：authority/backup/web data目录和publisher unit已按
 owner安装授权创建，但六类标准source仍缺失；`backup_state=prepared_empty`，审计hash为
-`b2fc996b70fd313a97a454db341c9df1b6b904cccd4f0ca62ac367a522e8f4fa`。安装授权不能绕过source gate。只有production authority writer
+`31a5de02b90920271a00f979c7a977f9c11a128e1d0977bfd363be4a81521458`。安装授权不能绕过source gate。只有production authority writer
 写出完整真实batch/registry/ledger/notification/health/brief、该命令返回`ready_for_authorization`且`enable_authorized=true`后，才重新评审
 timer enable；transport发送还需要独立授权。不得复制fixture/legacy JSON、恢复crontab或打开订单/live开关。
 
-authority writer只读接入命令（当前应返回安全停点`status=blocked`，退出码75）：
+authority writer只读接入命令（已真实返回安全停点`status=blocked`，退出码75）：
 
 ```bash
 ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
@@ -145,9 +145,12 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
   --lock-path /run/qount-dashboard/publisher.lock'
 ```
 
-当前旧run缺`dispatch_readiness.json`、projection没有completed decision，且只读preflight发现`BTCUSDT`多仓`0.006`；不要手工补文件、复制fixture、
-恢复forward timer或用private API重跑来绕过writer gate。新的forward cycle必须同时保留dispatcher使用的初始readiness和最终readiness。
-authority unit SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。
+真实选择的run为`/root/qount/state/mini_trend/forward/runs/20260720T032512Z`；它缺`dispatch_readiness.json`，writer返回
+`blocker=dispatch_readiness_source_missing`，systemd result hash为`da4a6cca019529b8d68cf97fbe32f3fbfee4df605eecad041344e44824127819`。
+运行前后authority空目录hash均为`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，runtime目录未创建。
+该run的projection也没有completed decision，且只读preflight发现`BTCUSDT`多仓`0.006`；不要手工补文件、复制fixture、恢复forward timer或
+用private API重跑来绕过writer gate。新的forward cycle必须同时保留dispatcher使用的初始readiness和最终readiness。authority unit已安装并保持
+`static/inactive`，SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。
 
 常见读法：
 
@@ -209,7 +212,7 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
   tests.test_dispatch_contract_adapters
 ```
 
-当前读法：本轮notification/publisher/authority安全边界聚焦为`28 OK`，Mac全仓`1484 OK`，VPS默认production profile为`294 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
+当前读法：本轮notification/publisher/authority安全边界聚焦为`28 OK`，Mac全仓`1484 OK`，VPS默认production profile为`295 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
 `37 OK`等读数保留历史语境。更早的完整Phase A/B/C
 `101 OK`等批次读数保留在`current.md`和`update-log.md`，不覆盖其历史语境。`ledger/store.py`、legacy dry replay、冻结snapshot adapter、notification
 outbox/producers、incident sync、DailyBrief和Dashboard v1合同仍未接入
@@ -802,7 +805,7 @@ python -m qount.main walk-forward \
 
 架构支线已完成账户/回撤、四项健康和position/decision trace。注入式transport合同及fake/provider故障测试已完成，但没有真实adapter，
 也未获发送授权；legacy `Notifier`/shell ServerChan不得复用。production publisher unit及私有authority/backup目录已按owner安装授权部署到VPS，
-authority writer已安装为disabled oneshot，但旧run缺初始readiness且账户非flat，source gate仍blocked；source gate与transport授权通过前，不接真实transport、私有API、timer、cron或订单。
+authority writer已安装为`static/inactive` oneshot，但旧run缺初始readiness且账户非flat，source gate仍blocked；source gate与transport授权通过前，不接真实transport、私有API、timer、cron或订单。
 
 1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
    不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做
