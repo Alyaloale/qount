@@ -66,6 +66,7 @@ INPUT_PATH="$RUN_DIR/shadow_inputs.json"
 PREFLIGHT_PATH="$RUN_DIR/account_preflight.json"
 PAPER_PATH="$RUN_DIR/paper_runtime.json"
 PROJECTION_PATH="$RUN_DIR/latest_projection.json"
+DISPATCH_READINESS_PATH="$RUN_DIR/dispatch_readiness.json"
 READINESS_PATH="$RUN_DIR/live_readiness.json"
 DISPATCH_PATH="$RUN_DIR/dry_dispatch.json"
 RUNTIME_PROOF_PATH="$RUN_DIR/runtime_proof.json"
@@ -125,8 +126,7 @@ readiness_args=(
   --shadow-input-path "$INPUT_PATH" \
   --dry-journal-path "$DISPATCH_JOURNAL_PATH" \
   --runtime-proof-path "$RUNTIME_PROOF_PATH" \
-  --legacy-live-guard-disarmed \
-  --output-path "$READINESS_PATH"
+  --legacy-live-guard-disarmed
 )
 if [[ -x "$REPO/scripts/desktop/mini_trend_um_rollback.sh" ]]; then
   readiness_args+=(--rollback-documented)
@@ -159,19 +159,23 @@ if [[ "$legacy_runtime_disabled" == true ]]; then
   readiness_args+=(--legacy-production-cron-disabled)
 fi
 
-"$PYTHON" scripts/research/mini_trend_live_pilot_readiness.py "${readiness_args[@]}"
+"$PYTHON" scripts/research/mini_trend_live_pilot_readiness.py \
+  "${readiness_args[@]}" \
+  --output-path "$DISPATCH_READINESS_PATH"
 
 "$PYTHON" scripts/desktop/mini_trend_um_dispatch.py \
   --mode dry \
   --preflight-path "$PREFLIGHT_PATH" \
   --projection-path "$PROJECTION_PATH" \
-  --readiness-path "$READINESS_PATH" \
+  --readiness-path "$DISPATCH_READINESS_PATH" \
   --exchange-rules-path "$RULES_PATH" \
   --journal-path "$DISPATCH_JOURNAL_PATH" \
   --halt-path "$STATE_ROOT/HALT" \
   --output-path "$DISPATCH_PATH"
 
 # A newly validated completed-bar decision must count in this run's final readiness.
-"$PYTHON" scripts/research/mini_trend_live_pilot_readiness.py "${readiness_args[@]}"
+"$PYTHON" scripts/research/mini_trend_live_pilot_readiness.py \
+  "${readiness_args[@]}" \
+  --output-path "$READINESS_PATH"
 ln -sfn "runs/$STAMP" "$FORWARD_ROOT/latest"
 printf 'mini_trend_forward_cycle=complete\nrun_dir=%s\n' "$RUN_DIR"

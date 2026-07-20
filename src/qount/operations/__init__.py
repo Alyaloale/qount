@@ -7,6 +7,12 @@ from qount.operations.backups import RestoreDrillResult
 from qount.operations.backups import create_dashboard_backup
 from qount.operations.backups import read_latest_dashboard_backup
 from qount.operations.backups import verify_dashboard_restore_drill
+from qount.operations.authority_writer import AUTHORITY_WRITER_SCHEMA_VERSION
+from qount.operations.authority_writer import AuthorityWriterBlocked
+from qount.operations.authority_writer import AuthorityWriterConfig
+from qount.operations.authority_writer import AuthorityWriterError
+from qount.operations.authority_writer import AuthorityWriterResult
+from qount.operations.authority_writer import write_order_free_authority_bundle
 from qount.operations.health_probes import CommandResult
 from qount.operations.health_probes import HealthProbeConfig
 from qount.operations.health_probes import HealthProbeDependencies
@@ -21,6 +27,11 @@ from qount.operations.publisher_paths import audit_publisher_paths
 
 __all__ = [
     "BACKUP_SCHEMA_VERSION",
+    "AUTHORITY_WRITER_SCHEMA_VERSION",
+    "AuthorityWriterBlocked",
+    "AuthorityWriterConfig",
+    "AuthorityWriterError",
+    "AuthorityWriterResult",
     "BackupError",
     "BackupRecord",
     "CommandResult",
@@ -37,5 +48,6 @@ __all__ = [
     "collect_os_system_health",
     "read_latest_dashboard_backup",
     "verify_dashboard_restore_drill",
+    "write_order_free_authority_bundle",
     "audit_publisher_paths",
 ]

@@ -1,0 +1,751 @@
+"""Build one order-free authority bundle from a verified MiniTrend run.
+
+This is the narrow bridge from the existing order-free runtime artifacts to the
+standard reporting contracts.  It may read local JSON and the private runtime
+ledger, but it never creates an exchange client, calls a private API, sends a
+notification, or grants order authority.  Incomplete input is a normal,
+fail-closed result and leaves the previous authority bundle untouched.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import tempfile
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterator, Mapping
+
+from qount.contracts import canonical_hash
+from qount.contracts.trace import aware_datetime
+from qount.governance import StrategyRegistry
+from qount.ledger import RuntimeLedger
+from qount.ledger import build_runtime_ledger_snapshot
+from qount.ledger import build_verified_legacy_dispatch_batch
+from qount.ledger import reconcile_three_way
+from qount.notifications import AlertEvent
+from qount.notifications import NotificationStore
+from qount.notifications import SystemHealthObservation
+from qount.notifications import alerts_from_runtime_ledger_snapshot
+from qount.notifications import alerts_from_system_health
+from qount.notifications import alerts_from_verified_decision_batch
+from qount.notifications import build_notification_snapshot
+from qount.notifications import synchronize_producer_incidents
+from qount.operations.dashboard_publisher import DEFAULT_ALLOWED_SERVICE_NAMES
+from qount.operations.health_probes import HealthProbeConfig
+from qount.operations.health_probes import HealthProbeDependencies
+from qount.operations.health_probes import collect_os_system_health
+from qount.persistence import publish_decision_batch
+from qount.persistence import write_immutable_artifact
+from qount.reporting import build_daily_brief
+from qount.reporting import read_vps_authority_bundle
+from qount.strategies import BASE_STRATEGY_VERSION
+from qount.strategies import base_strategy_registration
+
+
+AUTHORITY_WRITER_SCHEMA_VERSION = 1
+_RUN_NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+_SOURCE_FILES = (
+    "account_preflight.json",
+    "dispatch_readiness.json",
+    "dry_dispatch.json",
+    "exchange_rules.json",
+    "latest_projection.json",
+    "live_readiness.json",
+)
+
+
+class AuthorityWriterError(ValueError):
+    """Raised when authority source validation or publication fails."""
+
+
+class AuthorityWriterBlocked(AuthorityWriterError):
+    """Raised internally for a safe, expected source gate block."""
+
+    def __init__(self, blockers: tuple[str, ...], *, run_dir: Path):
+        self.blockers = blockers
+        self.run_dir = run_dir
+        super().__init__("authority_source_blocked:" + ",".join(blockers))
+
+
+@dataclass(frozen=True)
+class AuthorityWriterConfig:
+    repo_root: Path
+    source_root: Path
+    authority_root: Path
+    runtime_root: Path
+    backup_root: Path
+    dashboard_root: Path
+    lock_path: Path
+    target_stress_loss_fraction: float = 0.01
+    service_name: str = "qount-dashboard-publisher.timer"
+
+    def validate(self) -> None:
+        paths = (
+            self.repo_root,
+            self.source_root,
+            self.authority_root,
+            self.runtime_root,
+            self.backup_root,
+            self.dashboard_root,
+            self.lock_path,
+        )
+        if any(not isinstance(path, Path) or not path.is_absolute() for path in paths):
+            raise AuthorityWriterError("authority_writer_absolute_paths_required")
+        if self.service_name not in DEFAULT_ALLOWED_SERVICE_NAMES:
+            raise AuthorityWriterError("authority_writer_service_not_allowlisted")
+        try:
+            fraction = float(self.target_stress_loss_fraction)
+        except (TypeError, ValueError) as exc:
+            raise AuthorityWriterError("authority_writer_stress_fraction_invalid") from exc
+        if isinstance(self.target_stress_loss_fraction, bool) or not 0.0 < fraction <= 1.0:
+            raise AuthorityWriterError("authority_writer_stress_fraction_invalid")
+
+
+@dataclass(frozen=True)
+class AuthorityWriterResult:
+    schema_version: int
+    status: str
+    generated_at: str
+    run_dir: str
+    blockers: tuple[str, ...]
+    batch_id: str | None
+    authority_hash: str | None
+    source_hashes: Mapping[str, str]
+    result_hash: str
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        status: str,
+        generated_at: str,
+        run_dir: Path,
+        blockers: tuple[str, ...] = (),
+        batch_id: str | None = None,
+        authority_hash: str | None = None,
+        source_hashes: Mapping[str, str] | None = None,
+    ) -> "AuthorityWriterResult":
+        core = {
+            "schema_version": AUTHORITY_WRITER_SCHEMA_VERSION,
+            "status": status,
+            "generated_at": generated_at,
+            "run_dir": str(run_dir),
+            "blockers": tuple(blockers),
+            "batch_id": batch_id,
+            "authority_hash": authority_hash,
+            "source_hashes": dict(sorted((source_hashes or {}).items())),
+        }
+        return cls(**core, result_hash=canonical_hash(core))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "status": self.status,
+            "generated_at": self.generated_at,
+            "run_dir": self.run_dir,
+            "blockers": list(self.blockers),
+            "batch_id": self.batch_id,
+            "authority_hash": self.authority_hash,
+            "source_hashes": dict(self.source_hashes),
+            "result_hash": self.result_hash,
+        }
+
+
+@contextmanager
+def _writer_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    with path.open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _canonical_bytes(value: Mapping[str, Any]) -> bytes:
+    return (
+        json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        + b"\n"
+    )
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_source(path: Path, *, name: str) -> tuple[dict[str, Any], str]:
+    if path.is_symlink() or not path.is_file():
+        raise AuthorityWriterError(f"authority_source_file_invalid:{name}")
+    if stat.S_IMODE(os.stat(path, follow_symlinks=False).st_mode) != 0o600:
+        raise AuthorityWriterError(f"authority_source_file_mode_invalid:{name}")
+    raw = path.read_bytes()
+    def reject_duplicate(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise AuthorityWriterError(
+                    f"authority_source_duplicate_key:{name}:{key}"
+                )
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(raw, object_pairs_hook=reject_duplicate)
+    except AuthorityWriterError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AuthorityWriterError(f"authority_source_json_invalid:{name}") from exc
+    if not isinstance(value, dict):
+        raise AuthorityWriterError(f"authority_source_must_be_object:{name}")
+    return value, hashlib.sha256(raw).hexdigest()
+
+
+def _resolve_run(source_root: Path) -> Path:
+    if not source_root.is_symlink():
+        raise AuthorityWriterError("authority_source_selector_must_be_symlink")
+    try:
+        run_dir = source_root.resolve(strict=True)
+    except OSError as exc:
+        raise AuthorityWriterError("authority_source_selector_unresolvable") from exc
+    runs_root = source_root.parent.joinpath("runs").resolve()
+    if run_dir.parent != runs_root or not _RUN_NAME.fullmatch(run_dir.name):
+        raise AuthorityWriterError("authority_source_selector_outside_runs")
+    if stat.S_IMODE(os.stat(run_dir, follow_symlinks=False).st_mode) != 0o700:
+        raise AuthorityWriterError("authority_source_run_directory_mode_invalid")
+    return run_dir
+
+
+def _order_free(value: Mapping[str, Any]) -> bool:
+    meta = value.get("meta")
+    if not isinstance(meta, Mapping):
+        return False
+    return not any(
+        bool(meta.get(name))
+        for name in (
+            "orders_allowed",
+            "live_orders_allowed",
+            "private_api_order_attempted",
+            "mutating_account_method_attempted",
+        )
+    )
+
+
+def _snapshot_hash_valid(snapshot: Mapping[str, Any]) -> bool:
+    core = {
+        "contract_hash": snapshot.get("contract_hash"),
+        "balance": snapshot.get("balance"),
+        "prices": snapshot.get("prices"),
+        "positions": snapshot.get("positions"),
+        "regular_open_orders": snapshot.get("regular_open_orders"),
+        "conditional_open_orders": snapshot.get("conditional_open_orders"),
+        "position_mode": snapshot.get("position_mode"),
+        "resolved_symbols": snapshot.get("resolved_symbols"),
+    }
+    return snapshot.get("snapshot_hash") == canonical_hash(core)
+
+
+def _readiness_hash_valid(readiness: Mapping[str, Any]) -> bool:
+    contract = readiness.get("contract") or {}
+    request = readiness.get("request") or {}
+    signed_request = {
+        name: request.get(name)
+        for name in (
+            "owner_requested_one_month_live",
+            "capital_usdt",
+            "start_date",
+            "duration_days",
+        )
+    }
+    return readiness.get("readiness_hash") == canonical_hash(
+        {
+            "contract_hash": contract.get("contract_hash"),
+            "request": signed_request,
+            "evidence": readiness.get("evidence") or {},
+            "gates": readiness.get("gates") or {},
+        }
+    )
+
+
+def _validate_sources(
+    config: AuthorityWriterConfig,
+) -> tuple[Path, dict[str, dict[str, Any]], dict[str, str]]:
+    run_dir = _resolve_run(config.source_root)
+    if not (run_dir / "dispatch_readiness.json").is_file():
+        raise AuthorityWriterBlocked(
+            ("dispatch_readiness_source_missing",), run_dir=run_dir
+        )
+    values: dict[str, dict[str, Any]] = {}
+    hashes: dict[str, str] = {}
+    source_key_by_name = {
+        "account_preflight.json": "preflight",
+        "dispatch_readiness.json": "readiness",
+        "dry_dispatch.json": "dry_dispatch",
+        "exchange_rules.json": "exchange_rules",
+        "latest_projection.json": "projection",
+        "live_readiness.json": "final_readiness",
+    }
+    for name in _SOURCE_FILES:
+        values[name], hashes[source_key_by_name[name]] = _read_source(
+            run_dir / name, name=name
+        )
+    projection = values["latest_projection.json"]
+    dispatch = values["dry_dispatch.json"]
+    preflight = values["account_preflight.json"]
+    readiness = values["dispatch_readiness.json"]
+    final_readiness = values["live_readiness.json"]
+    snapshot = dispatch.get("account_snapshot")
+    blockers: list[str] = []
+    if not isinstance(snapshot, Mapping):
+        blockers.append("account_snapshot_missing")
+    elif not _snapshot_hash_valid(snapshot):
+        blockers.append("account_snapshot_hash_invalid")
+    if not all(
+        _order_free(value)
+        for value in (projection, dispatch, preflight, readiness, final_readiness)
+    ):
+        blockers.append("order_capable_source_artifact")
+    if isinstance(snapshot, Mapping) and not _order_free(snapshot):
+        blockers.append("order_capable_account_snapshot")
+    for label, value in (
+        ("dispatch_readiness", readiness),
+        ("final_readiness", final_readiness),
+    ):
+        if not _readiness_hash_valid(value):
+            blockers.append(f"{label}_hash_invalid")
+        runtime_preflight = (
+            (value.get("runtime_sources") or {}).get("preflight") or {}
+        )
+        if runtime_preflight.get("sha256") != hashes["preflight"]:
+            blockers.append(f"{label}_preflight_source_mismatch")
+    projection_diag = projection.get("diagnostics")
+    if not isinstance(projection_diag, Mapping) or projection_diag.get("projection_ready") is not True:
+        blockers.extend(
+            f"projection:{value}"
+            for value in tuple((projection_diag or {}).get("blockers") or ("not_ready",))
+        )
+    if projection.get("decision") is None:
+        blockers.append("latest_completed_decision_unavailable")
+    dispatch_diag = dispatch.get("diagnostics")
+    if not isinstance(dispatch_diag, Mapping) or dispatch_diag.get("dry_evidence_valid") is not True:
+        blockers.extend(
+            f"dispatch:{value}"
+            for value in tuple((dispatch_diag or {}).get("blockers") or ("not_valid",))
+        )
+    if dispatch.get("decision") is None:
+        blockers.append("dry_dispatch_decision_unavailable")
+    if not isinstance(preflight.get("diagnostics"), Mapping) or (
+        preflight.get("diagnostics", {}).get("verdict") != "account_preflight_pass"
+    ):
+        blockers.extend(
+            f"preflight:{value}"
+            for value in tuple(
+                (preflight.get("diagnostics") or {}).get("blockers")
+                or ("not_passed",)
+            )
+        )
+    evidence = preflight.get("evidence")
+    if not isinstance(evidence, Mapping) or evidence.get("account_flat") is not True:
+        blockers.append("account_not_flat")
+    if isinstance(snapshot, Mapping):
+        snapshot_diag = snapshot.get("diagnostics")
+        if not isinstance(snapshot_diag, Mapping) or snapshot_diag.get("verdict") != "account_snapshot_pass":
+            blockers.extend(
+                f"account_snapshot:{value}"
+                for value in tuple(
+                    (snapshot_diag or {}).get("blockers") or ("not_passed",)
+                )
+            )
+        if snapshot.get("positions") or snapshot.get("regular_open_orders") or snapshot.get("conditional_open_orders"):
+            blockers.append("account_snapshot_not_flat_or_empty")
+    source_hashes = dispatch.get("source_hashes")
+    if not isinstance(source_hashes, Mapping):
+        blockers.append("dispatch_source_hashes_missing")
+    else:
+        for key in ("projection", "preflight", "readiness", "exchange_rules"):
+            if source_hashes.get(key) != hashes.get(key):
+                blockers.append(f"dispatch_source_hash_mismatch:{key}")
+    if dispatch.get("readiness_hash") != readiness.get("readiness_hash"):
+        blockers.append("dispatch_readiness_contract_mismatch")
+    try:
+        if aware_datetime(str(final_readiness["created_at"])) < aware_datetime(
+            str(dispatch["created_at"])
+        ):
+            blockers.append("final_readiness_before_dispatch")
+    except (KeyError, TypeError, ValueError):
+        blockers.append("authority_source_time_invalid")
+    if blockers:
+        raise AuthorityWriterBlocked(tuple(dict.fromkeys(blockers)), run_dir=run_dir)
+    return run_dir, values, hashes
+
+
+def _code_hash(repo_root: Path) -> str:
+    paths = (
+        Path("src/qount/strategies/base.py"),
+        Path("src/qount/mini_trend/live_pilot.py"),
+        Path("src/qount/mini_trend/pilot_projection.py"),
+        Path("src/qount/mini_trend/pilot_dispatcher.py"),
+        Path("src/qount/risk/legacy_dispatch.py"),
+        Path("src/qount/execution/legacy_dispatch.py"),
+    )
+    entries: list[dict[str, str]] = []
+    for relative in paths:
+        path = repo_root / relative
+        if not path.is_file() or path.is_symlink():
+            raise AuthorityWriterError(f"authority_code_source_missing:{relative}")
+        entries.append({"path": relative.as_posix(), "sha256": _sha256(path)})
+    return canonical_hash({"code_sources": entries})
+
+
+def _float(value: object, *, name: str, minimum: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise AuthorityWriterError(f"authority_{name}_invalid") from exc
+    if not number == number or number in (float("inf"), float("-inf")) or number < minimum:
+        raise AuthorityWriterError(f"authority_{name}_invalid")
+    return number
+
+
+def _account_values(snapshot: Mapping[str, Any]) -> tuple[float, float, float, float]:
+    balance = snapshot.get("balance")
+    if not isinstance(balance, Mapping):
+        raise AuthorityWriterError("authority_account_balance_missing")
+    wallet = _float(balance.get("wallet_balance"), name="wallet_balance")
+    available = _float(balance.get("quote_free"), name="available_balance")
+    margin = _float(balance.get("quote_used"), name="margin_used")
+    positions = snapshot.get("positions") or ()
+    gross = sum(
+        _float(row.get("notional_usdt"), name="position_notional")
+        for row in positions
+        if isinstance(row, Mapping)
+    )
+    return wallet, available, gross, margin
+
+
+def _health(
+    config: AuthorityWriterConfig,
+    *,
+    captured_at: str,
+    dependencies: HealthProbeDependencies | None,
+):
+    return collect_os_system_health(
+        HealthProbeConfig(
+            disk_path=config.dashboard_root,
+            service_name=config.service_name,
+            allowed_service_names=DEFAULT_ALLOWED_SERVICE_NAMES,
+            backup_root=config.backup_root,
+        ),
+        observed_at=captured_at,
+        captured_at=captured_at,
+        dependencies=dependencies,
+    )
+
+
+def _notification_snapshot(
+    batch: Any,
+    ledger_snapshot: Any,
+    health: Any,
+    *,
+    notification_path: Path,
+    captured_at: str,
+) -> Any:
+    store = NotificationStore(notification_path)
+    alerts = list(alerts_from_verified_decision_batch(batch))
+    alerts.extend(alerts_from_runtime_ledger_snapshot(ledger_snapshot))
+    for row in health.observations:
+        observation = SystemHealthObservation.create(
+            component=str(row["component"]),
+            status=str(row["status"]),
+            observed_at=str(row["observed_at"]),
+            detail_codes=tuple(row["detail_codes"]),
+            source_id=str(row["source_id"]),
+            source_hash=str(row["source_hash"]),
+            trace_id_value=str(row["observation_id"]),
+        )
+        alerts.extend(alerts_from_system_health(observation))
+    if not alerts:
+        source_id = canonical_hash({"batch_id": batch.manifest.batch_id, "health": health.snapshot_hash})
+        alerts.append(
+            AlertEvent.create(
+                severity="INFO",
+                category="system_health",
+                title="Order-free authority bundle assembled",
+                summary="All standard sources were assembled without execution authority.",
+                occurred_at=captured_at,
+                source_type="system",
+                source_id=source_id,
+                source_hash=health.snapshot_hash,
+                dedupe_key=f"system:authority_bundle:{batch.manifest.batch_id}",
+                trace_id_value=batch.manifest.batch_id,
+            )
+        )
+    categories = {}
+    for alert in alerts:
+        categories.setdefault(alert.source_type, []).append(alert)
+    scopes = {
+        "decision_batch": ("data_quality", "portfolio_allocation", "risk_decision", "execution_plan"),
+        "runtime_ledger": ("order_recovery", "accounting_residual"),
+        "reconciliation": ("reconciliation",),
+        "system": ("system_health",),
+    }
+    for source_type, category_names in scopes.items():
+        scoped = tuple(
+            alert
+            for alert in categories.get(source_type, ())
+            if alert.category in category_names
+        )
+        synchronize_producer_incidents(
+            store,
+            scoped,
+            source_type=source_type,
+            categories=category_names,
+            observed_at=captured_at,
+        )
+    return build_notification_snapshot(store, captured_at=captured_at)
+
+
+def _write_json(path: Path, value: Mapping[str, Any]) -> None:
+    path.write_bytes(_canonical_bytes(value))
+    os.chmod(path, 0o600)
+
+
+def _replace_authority(authority_root: Path, staged: Path) -> None:
+    parent = authority_root.parent
+    previous: Path | None = None
+    if authority_root.exists() or authority_root.is_symlink():
+        if authority_root.is_symlink() or not authority_root.is_dir():
+            raise AuthorityWriterError("authority_root_existing_path_invalid")
+        previous = parent / f".{authority_root.name}.previous-{os.getpid()}"
+        os.rename(authority_root, previous)
+    try:
+        os.rename(staged, authority_root)
+        directory_fd = os.open(parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except Exception:
+        if authority_root.exists() and authority_root.is_dir():
+            shutil.rmtree(authority_root)
+        if previous is not None and previous.exists():
+            os.rename(previous, authority_root)
+        raise
+    if previous is not None and previous.exists():
+        shutil.rmtree(previous)
+
+
+def write_order_free_authority_bundle(
+    config: AuthorityWriterConfig,
+    *,
+    captured_at: str,
+    health_dependencies: HealthProbeDependencies | None = None,
+) -> AuthorityWriterResult:
+    """Translate one complete order-free run into an immutable authority bundle."""
+
+    config.validate()
+    captured_at = aware_datetime(captured_at).isoformat()
+    try:
+        run_dir, sources, source_hashes = _validate_sources(config)
+    except AuthorityWriterBlocked as exc:
+        return AuthorityWriterResult.create(
+            status="blocked",
+            generated_at=captured_at,
+            run_dir=exc.run_dir,
+            blockers=exc.blockers,
+        )
+
+    dispatch = sources["dry_dispatch.json"]
+    projection = sources["latest_projection.json"]
+    snapshot = dispatch["account_snapshot"]
+    wallet, available, gross, margin = _account_values(snapshot)
+    config.runtime_root.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.runtime_root, 0o700)
+    config.authority_root.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.authority_root.parent, 0o700)
+
+    with _writer_lock(config.lock_path):
+        ledger = RuntimeLedger(config.runtime_root / "runtime.sqlite3")
+        if ledger.position_quantities():
+            return AuthorityWriterResult.create(
+                status="blocked",
+                generated_at=captured_at,
+                run_dir=run_dir,
+                blockers=("runtime_ledger_nonflat",),
+                source_hashes=source_hashes,
+            )
+        try:
+            batch = build_verified_legacy_dispatch_batch(
+                projection,
+                dispatch,
+                projection_evidence_hash=source_hashes["projection"],
+                target_stress_loss_fraction=config.target_stress_loss_fraction,
+                created_at=str(dispatch["created_at"]),
+            )
+            code_hash = _code_hash(config.repo_root)
+            config_hash = canonical_hash(
+                {
+                    "live_pilot_contract_hash": projection["contract"][
+                        "live_pilot_contract_hash"
+                    ],
+                    "strategy_version": BASE_STRATEGY_VERSION,
+                    "target_stress_loss_fraction": config.target_stress_loss_fraction,
+                    "maximum_gross": 1.0,
+                }
+            )
+            registry_entry = base_strategy_registration(
+                promotion_status="research",
+                code_hash=code_hash,
+                config_hash=config_hash,
+                promotion_artifact_hash=None,
+                owner_authorization_hash=None,
+                maximum_stress_loss_fraction=config.target_stress_loss_fraction,
+                maximum_gross=1.0,
+                registered_at=batch.manifest.created_at,
+            )
+            registry = StrategyRegistry.create(
+                (registry_entry,), created_at=batch.manifest.created_at
+            )
+            ledger.record_verified_batch(batch, recorded_at=batch.manifest.created_at)
+            ledger.record_account_observation(
+                batch_id=batch.manifest.batch_id,
+                observed_at=str(snapshot["created_at"]),
+                quote_asset="USDT",
+                wallet_balance=wallet,
+                available_balance=available,
+                actual_gross_notional=gross,
+                margin_used=margin,
+                source_id=canonical_hash({"account_snapshot": snapshot["snapshot_hash"]}),
+                source_hash=source_hashes["dry_dispatch"],
+            )
+            nav = ledger.record_nav_mark(
+                marked_at=str(snapshot["created_at"]),
+                opening_equity=wallet,
+                equity=_float(
+                    (snapshot.get("balance") or {}).get("margin_balance"),
+                    name="margin_balance",
+                ),
+                trading_pnl=0.0,
+                residual_tolerance=0.001,
+                source_hash=source_hashes["dry_dispatch"],
+            )
+            reconciliation = reconcile_three_way(
+                batch_id=batch.manifest.batch_id,
+                reconciled_at=str(dispatch["created_at"]),
+                target_positions=dict(batch.plan.expected_positions),
+                ledger_positions=ledger.position_quantities(),
+                exchange_positions={},
+                position_tolerances=dict(batch.plan.reconciliation_tolerance),
+                ledger_open_order_ids=ledger.open_order_ids(),
+                exchange_open_order_ids=(),
+                equity_residual=nav.residual,
+                equity_residual_tolerance=nav.residual_tolerance,
+            )
+            ledger.record_reconciliation(reconciliation)
+            ledger_snapshot = build_runtime_ledger_snapshot(
+                ledger, batch, captured_at=captured_at
+            )
+            health = _health(
+                config,
+                captured_at=captured_at,
+                dependencies=health_dependencies,
+            )
+            notification = _notification_snapshot(
+                batch,
+                ledger_snapshot,
+                health,
+                notification_path=config.runtime_root / "notifications.sqlite3",
+                captured_at=captured_at,
+            )
+            brief = build_daily_brief(
+                batch,
+                registry,
+                ledger_snapshot,
+                notification,
+                generated_at=captured_at,
+            )
+            stage = Path(
+                tempfile.mkdtemp(
+                    prefix=f".{config.authority_root.name}-",
+                    dir=config.authority_root.parent,
+                )
+            )
+            os.chmod(stage, 0o700)
+            try:
+                batch_path = stage / "decision_batch" / batch.manifest.batch_id
+                publish_decision_batch(
+                    batch_path,
+                    snapshot=batch.snapshot,
+                    intents=batch.intents,
+                    target=batch.target,
+                    risk=batch.risk,
+                    plan=batch.plan,
+                    created_at=batch.manifest.created_at,
+                )
+                os.chmod(batch_path.parent, 0o700)
+                write_immutable_artifact(stage / "strategy_registry.json", registry)
+                for name, value in (
+                    ("runtime_ledger_snapshot.json", ledger_snapshot.as_dict()),
+                    ("notification_snapshot.json", notification.as_dict()),
+                    ("system_health_snapshot.json", health.as_dict()),
+                    ("daily_brief.json", brief.as_dict()),
+                ):
+                    _write_json(stage / name, value)
+                bundle = read_vps_authority_bundle(stage)
+                authority_hash = canonical_hash(
+                    {
+                        "batch": bundle.batch.manifest.manifest_hash,
+                        "registry": bundle.registry.registry_hash,
+                        "ledger": bundle.ledger_snapshot.snapshot_hash,
+                        "notification": bundle.notification_snapshot.snapshot_hash,
+                        "health": bundle.system_health.snapshot_hash,
+                        "brief": bundle.daily_brief.brief_hash,
+                    }
+                )
+                _replace_authority(config.authority_root, stage)
+                stage = None  # type: ignore[assignment]
+            finally:
+                if stage is not None and stage.exists():
+                    shutil.rmtree(stage)
+            return AuthorityWriterResult.create(
+                status="written",
+                generated_at=captured_at,
+                run_dir=run_dir,
+                batch_id=batch.manifest.batch_id,
+                authority_hash=authority_hash,
+                source_hashes=source_hashes,
+            )
+        except (AuthorityWriterBlocked, AuthorityWriterError):
+            raise
+        except (OSError, TypeError, ValueError, KeyError) as exc:
+            raise AuthorityWriterError(
+                f"authority_writer_failed:{type(exc).__name__}:{exc}"
+            ) from exc
+
+
+__all__ = [
+    "AUTHORITY_WRITER_SCHEMA_VERSION",
+    "AuthorityWriterBlocked",
+    "AuthorityWriterConfig",
+    "AuthorityWriterError",
+    "AuthorityWriterResult",
+    "write_order_free_authority_bundle",
+]

@@ -174,7 +174,8 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
 - SQLite 审计链
 - 成本感知 `signal-review`
 - A股 ETF 20 日 research-only 状态判别、Tushare/公开复权数据和固定组合证据门（当前冻结保留）
-- VPS 运行脚本、同步脚本和Dashboard v1原子发布合同；production-shaped publisher unit已安装到VPS但保持`disabled/inactive`，标准authority source尚未接入
+- VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher/authority oneshot unit已安装到VPS但保持
+  `disabled/inactive`，标准source gate未通过
 
 ## 初始化
 
@@ -426,7 +427,8 @@ live和paper forward生产真相仍只能从 VPS `/root/qount` 读取，但当�
 served root没有`data/`；publisher service/timer已安装，authority/backup/web data目录已按`0700/0700/0755`创建，timer保持
 `disabled/inactive`。owner授权只允许安装，不绕过完整batch/registry/ledger/notification/health/brief source gate；当前
 `enable_authorized=false`，因此页面继续失败关闭。notification transport当前也只有注入式合同和本地fake provider，不含真实消息adapter。
-标准authority writer完成且真实审计通过前，cron、systemd timer、订单和live开关必须保持关闭。
+authority writer只接受保留初始dispatcher readiness的完整order-free run；当前旧run缺`dispatch_readiness.json`、没有completed decision且
+账户有未管理BTC多仓，因此返回blocked，不写authority bundle。writer与publisher真实审计通过前，cron、systemd timer、订单和live开关必须保持关闭。
 Mac
 `/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
 `--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL

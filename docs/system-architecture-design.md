@@ -1251,6 +1251,10 @@ publisher已实现；静态前端与publisher unit已部署到VPS，但publisher
   11个JSON，静态schema为13份；Playwright桌面/移动已检查Live、Positions、Decisions、System和fail-closed页面；
 - 旧CTA-R SwiftBar/Übersicht展示源、缓存和`cta.json`推送链已删除，本机`com.qount.dashboard`已卸载；独立
   `com.qount.ctar-daily`研究采集任务保留。
+- `operations/authority_writer.py`已把VPS order-free MiniTrend run作为唯一输入适配到上述六类标准source：它要求保留
+  dispatcher初始`dispatch_readiness.json`和最终`live_readiness.json`，重放projection/dry plan hash与legacy parity，拒绝非flat账户、
+  open orders、缺失source或任意order-capable flag；成功路径只记录`PLANNED` orders、只读账户/NAV/reconciliation和research registry，
+  然后以staging目录导入校验后的bundle。它不读取exchange、私有API、legacy state数据库，不发送通知，也不设置live authority。
 
 交付：
 
@@ -1270,6 +1274,8 @@ production publisher评审结论：本地已具备只读VPS artifact importer、
 VPS，但timer保持`disabled/inactive`。它只能读取完整batch/registry/ledger/notification/health/brief，不得直接查询交易所、读取legacy
 state JSON或复制测试release。静态前端已部署且无`data/`；安装授权不等于enable授权，只有标准authority writer生成完整真实source且
 VPS路径审计返回`enable_authorized=true`后才能重新评审timer。
+authority writer另有disabled oneshot unit，当前VPS旧run缺初始dispatcher readiness且账户非flat，预期为blocked；它与publisher共享lock并
+允许返回`75`安全停点，不应被当成正常发布。
 
 ### Phase D：Base最小实盘审查
 

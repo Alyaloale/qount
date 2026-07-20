@@ -30,6 +30,7 @@ if [[ "$TEST_TARGET" == "production" ]]; then
     tests.test_daily_brief \
     tests.test_dashboard_read_models \
     tests.test_authority_importer \
+    tests.test_authority_writer \
     tests.test_system_health \
     tests.test_operations_publisher \
     tests.test_publisher_path_audit \

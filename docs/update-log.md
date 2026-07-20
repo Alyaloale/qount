@@ -8,6 +8,21 @@
 
 ## 2026-07-20
 
+### Order-free authority writer and readiness lineage hold
+
+- 新增`qount.operations.authority_writer`与`scripts/operations/write_authority_bundle.py`。writer只读选择的VPS forward run，拒绝
+  symlink越界、非`0600`文件、重复JSON键、缺失/覆盖的dispatcher readiness、非order-free flags、projection/dry hash/parity错误、非flat
+  账户和open orders；通过后才把标准`VerifiedDecisionBatch`、research`StrategyRegistry`、只读`RuntimeLedgerSnapshot`、
+  `NotificationSnapshot`、四项OS`SystemHealthSnapshot`和`DailyBrief`写入staging并导入回读。它不查询交易所、不读取legacy DB、不发送真实
+  通知、不生成订单授权；runtime冲突或发布异常保留旧authority目录。
+- `scripts/desktop/mini_trend_um_forward_cycle.sh`修正source lineage：dispatcher第一次使用的readiness保存为
+  `dispatch_readiness.json`，dispatch完成后最终readiness另存`live_readiness.json`，`dry_dispatch.source_hashes.readiness`不再指向会被覆盖的文件。
+- 新增`deploy/systemd/qount-dashboard-authority.service`，`PrivateNetwork=true`、`ProtectSystem=strict`、清空proxy/live/arm/key环境、
+  共享`/run/qount-dashboard/publisher.lock`，只允许oneshot手工/后续受控调度；`SuccessExitStatus=75`把source缺失表示为安全停点，unit未enable，
+  SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。
+- writer本地成功/失败关闭和unit边界聚焦`28 OK`；Mac全量预期`1484 OK`。VPS最新旧run只到`2026-07-18`、无completed decision、缺
+  `dispatch_readiness.json`，只读preflight另见`BTCUSDT`多仓`0.006`/`account_flat=false`，故writer应blocked，不调用被停用的forward timer或私有API。
+
 ### Governed architecture baseline pushed and publisher installed disabled
 
 - 审计并固定当前大工作区基线：Mac全仓`1478 OK`，Python compile、shell/Node语法、JSON/schema、凭据扫描和

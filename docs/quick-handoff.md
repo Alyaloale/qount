@@ -39,7 +39,7 @@
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
 - 2026-07-20 VPS只读核对已将此前误处于`enabled/active`的`qount-mini-trend-forward.timer`纠正为`disabled/inactive`；当前没有
   active qount cron/timer或qount交易进程，`QOUNT_LIVE_ENABLE=false`。Dashboard publisher unit已安装但service/timer均inactive，
-  timer disabled；不要恢复MiniTrend timer，也不要在authority source gate通过前enable publisher timer。
+  timer disabled；authority writer oneshot也保持disabled/inactive。不要恢复MiniTrend timer，也不要在authority source gate通过前enable publisher timer。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
@@ -131,6 +131,24 @@ owner安装授权创建，但六类标准source仍缺失；`backup_state=prepare
 写出完整真实batch/registry/ledger/notification/health/brief、该命令返回`ready_for_authorization`且`enable_authorized=true`后，才重新评审
 timer enable；transport发送还需要独立授权。不得复制fixture/legacy JSON、恢复crontab或打开订单/live开关。
 
+authority writer只读接入命令（当前应返回安全停点`status=blocked`，退出码75）：
+
+```bash
+ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
+  scripts/operations/write_authority_bundle.py \
+  --repo-root /root/qount \
+  --source-root /root/qount/state/mini_trend/forward/latest \
+  --authority-root /var/lib/qount/dashboard-authority \
+  --runtime-root /var/lib/qount/dashboard-runtime \
+  --backup-root /var/lib/qount/dashboard-backups \
+  --dashboard-root /var/www/qount/data \
+  --lock-path /run/qount-dashboard/publisher.lock'
+```
+
+当前旧run缺`dispatch_readiness.json`、projection没有completed decision，且只读preflight发现`BTCUSDT`多仓`0.006`；不要手工补文件、复制fixture、
+恢复forward timer或用private API重跑来绕过writer gate。新的forward cycle必须同时保留dispatcher使用的初始readiness和最终readiness。
+authority unit SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。
+
 常见读法：
 
 - `cxd_live_cron.sh` 是当前加密组合实盘入口；standalone `x4_live_cron.sh` 不应同时交易同一账户。
@@ -150,7 +168,7 @@ timer enable；transport发送还需要独立授权。不得复制fixture/legacy
   `clock/disk/service/backup`四项强类型观测并使用独立freshness。
   Dashboard当前有`overview/positions/orders/strategies/decisions/risk/readiness/system/alerts/reports`十页，原子release为十份模型加
   `publication.json`共11个JSON，静态schema共13份。positions可点击进入decision trace；浏览器不读取legacy JSON、生产SQLite或
-  交易所，也不重算PnL。当前仍未运行publisher scheduler、真实webhook或authority writer，order latency/slippage继续显式unavailable。
+  交易所，也不重算PnL。当前仍未运行publisher scheduler、真实webhook；authority writer已安装但因source gate blocked，order latency/slippage继续显式unavailable。
 - `ledger/legacy_replay.py`只用于隔离的本地migration replay：输入必须是相互hash链接的projection与legacy dry plan，输出
   完整`VerifiedDecisionBatch`、仅`PLANNED`的临时账本和哈希报告。它不读取生产文件、不导入dispatcher或交易所adapter，
   也不能把已有transition/fill/cash/NAV/reconciliation状态重标成dry；不要把测试golden或临时SQLite复制到VPS当生产状态。
@@ -191,11 +209,11 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
   tests.test_dispatch_contract_adapters
 ```
 
-当前读法：本轮notification/publisher安全边界聚焦为`48 OK`，Mac全仓`1478 OK`，VPS默认production profile为`290 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
+当前读法：本轮notification/publisher/authority安全边界聚焦为`28 OK`，Mac全仓`1484 OK`，VPS默认production profile为`294 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
 `37 OK`等读数保留历史语境。更早的完整Phase A/B/C
 `101 OK`等批次读数保留在`current.md`和`update-log.md`，不覆盖其历史语境。`ledger/store.py`、legacy dry replay、冻结snapshot adapter、notification
 outbox/producers、incident sync、DailyBrief和Dashboard v1合同仍未接入
-`mini_trend/pilot_dispatcher.py`、producer scheduler或真实webhook；publisher unit虽已部署，但标准source为空。不要用fixture创建生产DB/read model，
+`mini_trend/pilot_dispatcher.py`、producer scheduler或真实webhook；authority writer/publisher unit虽已部署，但当前标准source为空。不要用fixture创建生产DB/read model，
 也不要据此打开live。
 最新read-model QA使用Playwright 1.60 + Chromium 1223，桌面`1440x1000`和移动`390x844`检查Live、Positions到Decisions点击追踪、
 System四项健康、移动菜单和缺release页面；无控制台异常、页面级横向溢出、重叠或裁切。测试release只来自本地fixture，未部署。
@@ -784,7 +802,7 @@ python -m qount.main walk-forward \
 
 架构支线已完成账户/回撤、四项健康和position/decision trace。注入式transport合同及fake/provider故障测试已完成，但没有真实adapter，
 也未获发送授权；legacy `Notifier`/shell ServerChan不得复用。production publisher unit及私有authority/backup目录已按owner安装授权部署到VPS，
-但标准authority writer/source仍缺失，timer保持disabled。source gate与transport授权通过前，不接真实transport、私有API、timer、cron或订单。
+authority writer已安装为disabled oneshot，但旧run缺初始readiness且账户非flat，source gate仍blocked；source gate与transport授权通过前，不接真实transport、私有API、timer、cron或订单。
 
 1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
    不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做

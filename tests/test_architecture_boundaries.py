@@ -82,6 +82,9 @@ OPERATIONS_MODULES = (
     "src/qount/operations/dashboard_publisher.py",
     "src/qount/operations/health_probes.py",
 )
+AUTHORITY_WRITER_MODULES = (
+    "src/qount/operations/authority_writer.py",
+)
 FORBIDDEN_PERSISTENCE_IMPORTS = (
     "aiohttp",
     "ccxt",
@@ -247,6 +250,47 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "qount.settings",
         )
         for relative_path in OPERATIONS_MODULES:
+            tree = ast.parse((ROOT / relative_path).read_text(encoding="utf-8"))
+            imported_modules: list[str] = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported_modules.extend(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported_modules.append(node.module)
+            violations = [
+                imported
+                for imported in imported_modules
+                if any(
+                    imported == value or imported.startswith(f"{value}.")
+                    for value in forbidden
+                )
+            ]
+            environment_reads = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "os"
+                and node.attr in {"environ", "getenv"}
+            ]
+            with self.subTest(module=relative_path):
+                self.assertEqual(violations, [])
+                self.assertEqual(environment_reads, [])
+
+    def test_authority_writer_bridge_does_not_import_exchange_or_settings(self) -> None:
+        forbidden = (
+            "aiohttp",
+            "ccxt",
+            "httpx",
+            "requests",
+            "urllib",
+            "qount.exchange_utils",
+            "qount.executor",
+            "qount.mini_trend.pilot_dispatcher",
+            "qount.notifier",
+            "qount.settings",
+        )
+        for relative_path in AUTHORITY_WRITER_MODULES:
             tree = ast.parse((ROOT / relative_path).read_text(encoding="utf-8"))
             imported_modules: list[str] = []
             for node in ast.walk(tree):
