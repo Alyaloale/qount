@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from qount.operations import PUBLISHER_AUTHORIZATION_GRANTED
 from qount.operations import PUBLISHER_AUTHORIZATION_PENDING
 from qount.operations import audit_publisher_paths
 from tests.test_authority_importer import _publish_authority_bundle
@@ -77,6 +78,42 @@ class PublisherPathAuditTest(unittest.TestCase):
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(before, after)
+
+    def test_owner_authorization_allows_install_but_not_incomplete_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            authority = root / "authority"
+            backup = root / "backups"
+            authority.mkdir(mode=0o700)
+            backup.mkdir(mode=0o700)
+            os.chmod(authority, 0o700)
+            os.chmod(backup, 0o700)
+
+            blocked = audit_publisher_paths(
+                authority,
+                backup,
+                audited_at=AUDITED_AT,
+                owner_authorized=True,
+            )
+            self.assertEqual(blocked.status, "blocked")
+            self.assertEqual(
+                blocked.authorization_status,
+                PUBLISHER_AUTHORIZATION_GRANTED,
+            )
+            self.assertTrue(blocked.install_authorized)
+            self.assertFalse(blocked.enable_authorized)
+
+            authority.rmdir()
+            _publish_authority_bundle(root)
+            ready = audit_publisher_paths(
+                root / "authority",
+                backup,
+                audited_at=AUDITED_AT,
+                owner_authorized=True,
+            )
+            self.assertEqual(ready.status, "ready_for_authorization")
+            self.assertTrue(ready.install_authorized)
+            self.assertTrue(ready.enable_authorized)
 
 
 if __name__ == "__main__":

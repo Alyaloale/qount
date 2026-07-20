@@ -12,6 +12,7 @@ from qount.operations.health_probes import HealthProbeConfig
 from qount.operations.health_probes import HealthProbeDependencies
 from qount.operations.health_probes import HealthProbeError
 from qount.operations.health_probes import collect_os_system_health
+from qount.operations.publisher_paths import PUBLISHER_AUTHORIZATION_GRANTED
 from qount.operations.publisher_paths import PUBLISHER_AUTHORIZATION_PENDING
 from qount.operations.publisher_paths import PUBLISHER_PATH_AUDIT_SCHEMA_VERSION
 from qount.operations.publisher_paths import PublisherPathAudit
@@ -26,6 +27,7 @@ __all__ = [
     "HealthProbeConfig",
     "HealthProbeDependencies",
     "HealthProbeError",
+    "PUBLISHER_AUTHORIZATION_GRANTED",
     "PUBLISHER_AUTHORIZATION_PENDING",
     "PUBLISHER_PATH_AUDIT_SCHEMA_VERSION",
     "PublisherPathAudit",

@@ -107,7 +107,7 @@ runtime proof
 | `x4/`、`rv/`、C×D 和旧 cron 仍在仓库 | 容易把 legacy 状态或执行器误接回生产 |
 | 入口分散在大量 `scripts/research` 和 `scripts/desktop` | 业务逻辑容易继续进入脚本，难以复用和测试 |
 | 多策略 `StrategyIntent` 和 allocator 只在本机代码 | 目标组合架构尚未进入 VPS 生产运行链 |
-| Dashboard v1 read-model链、通知outbox和production-shaped publisher只在本地闭合；VPS仅部署fail-closed静态前端，尚未接production publisher/transport | VPS站点和真实投递不能用本地fixture冒充生产状态 |
+| Dashboard v1 read-model链、通知outbox和production-shaped publisher合同已闭合；VPS静态前端和publisher unit已安装，但timer disabled且标准authority source/transport未接入 | VPS站点和真实投递不能用本地fixture冒充生产状态 |
 | 旧顶层`Notifier`与新`notifications/`并存 | 接入真实transport前必须收敛producer、凭据、限流和投递责任边界 |
 | 本机 worktree 有大量未提交文件 | 当前实现尚未形成可复现的干净 production release |
 
@@ -1220,7 +1220,8 @@ residual和三方差异。它证明本地迁移/存储/恢复合同，不证明�
 目标：系统可看、可告警、可解释。
 
 状态：**本地通知告警、只读producer adapters、显式incident生命周期、确定性DailyBrief、十页Dashboard和production-shaped
-publisher已实现；静态前端已部署，真实scheduler、transport和VPS production publisher仍未接入**。
+publisher已实现；静态前端与publisher unit已部署到VPS，但publisher timer保持disabled，标准authority writer/source、真实scheduler
+运行和transport仍未接入**。
 
 当前实现包括：
 
@@ -1265,9 +1266,10 @@ publisher已实现；静态前端已部署，真实scheduler、transport和VPS p
 幂等、provider响应验证、限流/超时、0600凭据、最小payload和无密钥审计，并在systemd单实例worker和故障测试闭合后再申请真实发送授权。
 
 production publisher评审结论：本地已具备只读VPS artifact importer、四项OS/systemd/backup探针、非阻塞systemd形单写者、同盘
-原子发布、当前+最近N个release保留、逐文件备份和临时恢复演练；`qount-dashboard-publisher.service/.timer`只是未启用模板。它只能
-读取完整batch/registry/ledger/notification/health/brief，不得直接查询交易所、读取legacy state JSON或复制测试release。静态前端已部署
-且无`data/`，VPS接入仍需owner授权并保持fail closed。
+原子发布、当前+最近N个release保留、逐文件备份和临时恢复演练；`qount-dashboard-publisher.service/.timer`已在owner安装授权下部署到
+VPS，但timer保持`disabled/inactive`。它只能读取完整batch/registry/ledger/notification/health/brief，不得直接查询交易所、读取legacy
+state JSON或复制测试release。静态前端已部署且无`data/`；安装授权不等于enable授权，只有标准authority writer生成完整真实source且
+VPS路径审计返回`enable_authorized=true`后才能重新评审timer。
 
 ### Phase D：Base最小实盘审查
 

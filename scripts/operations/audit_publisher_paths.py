@@ -21,6 +21,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--authority-root", type=Path, required=True)
     parser.add_argument("--backup-root", type=Path, required=True)
+    parser.add_argument(
+        "--owner-authorized",
+        action="store_true",
+        help="Record explicit owner authorization without bypassing source gates.",
+    )
     return parser
 
 
@@ -30,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.authority_root,
         args.backup_root,
         audited_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        owner_authorized=args.owner_authorized,
     )
     print(
         json.dumps(

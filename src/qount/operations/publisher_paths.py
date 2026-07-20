@@ -16,6 +16,7 @@ from qount.reporting import read_vps_authority_bundle
 
 PUBLISHER_PATH_AUDIT_SCHEMA_VERSION = 1
 PUBLISHER_AUTHORIZATION_PENDING = "pending_explicit_owner_authorization"
+PUBLISHER_AUTHORIZATION_GRANTED = "explicit_owner_authorization_recorded"
 
 
 class PublisherPathAuditError(ValueError):
@@ -171,6 +172,7 @@ def audit_publisher_paths(
     backup_root: str | Path,
     *,
     audited_at: str,
+    owner_authorized: bool = False,
 ) -> PublisherPathAudit:
     """Verify actual host paths without writing files or changing services."""
 
@@ -288,6 +290,11 @@ def audit_publisher_paths(
         and backup_state in {"prepared_empty", "verified_snapshot"}
         and all(bool(row["ok"]) for row in checks)
     )
+    authorization_status = (
+        PUBLISHER_AUTHORIZATION_GRANTED
+        if owner_authorized
+        else PUBLISHER_AUTHORIZATION_PENDING
+    )
     core = {
         "schema_version": PUBLISHER_PATH_AUDIT_SCHEMA_VERSION,
         "audited_at": normalized_time,
@@ -298,14 +305,15 @@ def audit_publisher_paths(
         "authority_bundle_verified": authority_verified,
         "backup_state": backup_state,
         "backup_id": backup_id,
-        "authorization_status": PUBLISHER_AUTHORIZATION_PENDING,
-        "install_authorized": False,
-        "enable_authorized": False,
+        "authorization_status": authorization_status,
+        "install_authorized": bool(owner_authorized),
+        "enable_authorized": bool(owner_authorized and ready),
     }
     return PublisherPathAudit(**core, audit_hash=canonical_hash(core))
 
 
 __all__ = [
+    "PUBLISHER_AUTHORIZATION_GRANTED",
     "PUBLISHER_AUTHORIZATION_PENDING",
     "PUBLISHER_PATH_AUDIT_SCHEMA_VERSION",
     "PublisherPathAudit",

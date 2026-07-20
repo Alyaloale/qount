@@ -20,6 +20,25 @@
 [crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，交易、账本、对账、通知、Dashboard和LLM的系统工程
 主设计看 [system-architecture-design.md](system-architecture-design.md)。
 
+- **2026-07-20 本轮 owner 已授权 publisher 安装，VPS 接入完成到 disabled 安全停点。** 已将提交
+  `230840c` 同步到 `/root/qount` 并安装 `qount-dashboard-publisher.service/.timer`，创建
+  `/var/lib/qount/dashboard-authority`、`/var/lib/qount/dashboard-backups`（均`0700`）和
+  `/var/www/qount/data`（`0755`）；unit hash 分别为
+  `dc8d854c34a7083c2bbb676a73db042021815198b8b2f6063131debf127932ef` /
+  `6c807c26e55e6520de4ea8022b67753bb8503331c72a7a7dc4edf409a6f28bf8`。
+  publisher timer 保持 `disabled/inactive`，旧 production crontab、MiniTrend forward timer、订单和 live 开关均未恢复。
+  owner authorization 只允许安装，不绕过 source gate；真实审计 `2026-07-20T09:24:33+00:00` 返回
+  `status=blocked`、`authority_bundle_verified=false`、`backup_state=prepared_empty`、
+  `install_authorized=true`、`enable_authorized=false`，audit hash 为
+  `b2fc996b70fd313a97a454db341c9df1b6b904cccd4f0ca62ac367a522e8f4fa`。
+  阻塞原因是六个 authority source（batch/registry/ledger/notification/health/brief）尚未生成；没有复制 fixture 或 legacy state。
+  VPS production profile 回归为 `290 OK`；完整 discovery 因 VPS 不安装 research/collector extras，仍须显式执行
+  `scripts/run-vps-tests.sh discover`。
+
+- **2026-07-20 VPS 测试入口已按生产依赖分层。** `scripts/run-vps-tests.sh` 默认只运行不依赖 numpy/websockets 的 production surface；
+  显式 `discover` 才运行全仓研究测试。此前直接 discovery 在最小 VPS 环境出现的 8 个错误均为可选依赖缺失，不是生产代码回归；
+  Mac 全量仍为 `1478 OK`，唯一 warning 为既有 `cta_data.py` UTC deprecation。
+
 - **2026-07-20 notification transport合同已完成本地fake边界，publisher生产授权仍阻断。** 新增
   `notifications/transport.py`：`ProviderResponse`要求精确字段、canonical response hash、请求`delivery_key`回显及
   `ACCEPTED/DUPLICATE/REJECTED`一致性；`ProviderTransport`只接受注入provider，使用固定窗口fail-closed限流、调用deadline、
@@ -2501,7 +2520,7 @@ VPS unittest:   ./scripts/run-vps-tests.sh
 ```
 
 最近一次本地完整结果：2026-07-20 Phase B/C账户事实、健康合同、仓位/决策追踪、publisher运维层和前端替换完成后，
-`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为`1468 OK`；本批 operations/health/publisher 聚焦为`34 OK`，唯一warning仍为既有
+`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为`1478 OK`；本批 operations/health/publisher 聚焦为`34 OK`，唯一warning仍为既有
 `src/qount/cta_data.py` UTC deprecation。此前paper v0.3聚焦在Mac/WSL均为`5 OK`，paper/shadow/readiness聚焦在WSL为`16 OK`，
 exchange route聚焦另为`9 OK`，此前episode/信号退出冷却/
 回测变换聚焦在Mac与WSL均为`14 OK`，相关 X4 funding/账本/波动率/吊灯最近一次为`37 OK`；Mac全量及
@@ -2509,20 +2528,22 @@ WSL聚焦`compileall`、两端CLI help、Bash语法、凭据扫描与`git diff -
 含unavailable health的11个release JSON、Chromium fallback桌面/移动QA和Playwright桌面/移动QA也通过。Mac全量测试生成的六个
 临时artifact目录已在每次复跑后定点删除，marker保护的WSL scratch已清空，Mac `state/`
 恢复约12KiB。完整回归只有既存
-`src/qount/cta_data.py` UTC deprecation warning。VPS `/root/qount` 上一次已知聚焦
-cron/exchange/X4/RV 回归为 `141 OK`、
-全量为 `865 OK`；本轮没有同步 Alpha 代码、没有恢复服务或 crontab，也没有跑远端测试。
+`src/qount/cta_data.py` UTC deprecation warning。VPS `/root/qount` 本轮默认 production profile
+合同/账本/通知/Dashboard/运维/X4/RV 回归为 `290 OK`；显式全量 discovery 因生产最小环境不安装
+numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，不属于生产回归。
 `QOUNT_ALLOW_LEGACY_WSL=1` 规则不变；交易生产变更仍必须用 VPS unittest 验证。
 
 ## 下一步
 
 按最新 owner 决策排序：
 
-1. 本批production-shaped publisher、真实OS/systemd/backup探针、单写者、同盘原子release、备份/保留和恢复演练已在本地完成，
-   但仍未部署或enable systemd，不能把本地结果称为production发布。下一步进入真实notification transport的注入式合同实现：
+1. 本批production-shaped publisher、真实OS/systemd/backup探针、单写者、同盘原子release、备份/保留和恢复演练已在本地完成；
+   publisher unit 已安装到VPS但保持 disabled。下一步是实现并接入 authority writer：只允许完整 order-free batch、registry、ledger、
+   notification、health、brief 经过交叉校验后写入`/var/lib/qount/dashboard-authority`，再以本轮 `--owner-authorized` 审计结果重新评估
+   enable。缺失 source 时继续 fail closed，不能把安装授权当作启用授权。真实notification transport的注入式合同仍需：
    只允许`NotificationStore`提供delivery key和最小payload，校验provider响应、限流/超时、0600凭据和无密钥审计；不发送真实消息，
-   不接legacy `Notifier`/shell ServerChan，完成本地故障测试后再单独请求transport发送授权。VPS publisher也仍需独立owner授权；
-   它只能读取完整batch/registry/ledger/notification/health/brief，不能查询交易所、读取legacy state JSON或复制fixture。
+   不接legacy `Notifier`/shell ServerChan，完成本地故障测试后再单独请求transport发送授权。VPS publisher仍只能读取完整
+   batch/registry/ledger/notification/health/brief，不能查询交易所、读取legacy state JSON或复制fixture。
 2. 当前主动路线保留三条隔离的 research-only 记录：spot TOP3 forward 继续只追加完成的 spot 1d bars；
    UM base-trend v0.2 已完成完整 forward preregistration，等待新的完整 UM 日线后再收集；Equity Mapping
    只在纽约`09:24:30-09:25:00`冻结窗口追加有raw readback hash的同步三腿/日历/公司行动/压力证据。

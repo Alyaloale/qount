@@ -34,11 +34,12 @@
 - 加密 X4 / C×D 实盘看 `QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`、
   `QOUNT_CXD_CARRY_ENABLE` 和 VPS state，不用 `QOUNT_LIVE_ENABLE` 推断。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
-- 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。transport和publisher分别取得
-  owner明确授权前，不得恢复live/paper cron或任何systemd timer。未来重新评审时，外层lock仍必须直接放在
+- 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。publisher已取得安装授权，但没有
+  enable授权；transport也没有发送授权。不得恢复live/paper cron或任何systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
 - 2026-07-20 VPS只读核对已将此前误处于`enabled/active`的`qount-mini-trend-forward.timer`纠正为`disabled/inactive`；当前没有
-  qount cron/timer、dashboard publisher unit或qount交易进程，`QOUNT_LIVE_ENABLE=false`。不要恢复该timer。
+  active qount cron/timer或qount交易进程，`QOUNT_LIVE_ENABLE=false`。Dashboard publisher unit已安装但service/timer均inactive，
+  timer disabled；不要恢复MiniTrend timer，也不要在authority source gate通过前enable publisher timer。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
@@ -114,19 +115,21 @@ ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json
 ssh qount-vps 'free -m; ps -eo pid,rss,comm,args --sort=-rss | head -n 15'
 ```
 
-production publisher授权前的只读路径评审：
+production publisher当前路径评审：
 
 ```bash
 ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
-  scripts/operations/audit_publisher_paths.py \
-  --authority-root /var/lib/qount/dashboard-authority \
-  --backup-root /var/lib/qount/dashboard-backups'
+	  scripts/operations/audit_publisher_paths.py \
+	  --authority-root /var/lib/qount/dashboard-authority \
+	  --backup-root /var/lib/qount/dashboard-backups \
+	  --owner-authorized'
 ```
 
-本次真实VPS审计返回`blocked`：`/var/lib/qount`及authority/backup候选目录均缺失，远端代码没有authority writer/source，审计hash为
-`fb66f3c3c8f45c90ed9429cca59e9b9b843c61e335ad5d179a37a2921c059c5f`。只有该命令在真实VPS返回`ready_for_authorization`、生产authority writer/source已经单独确认、transport也另有明确授权后，才向owner
-提交production publisher install/enable申请；审计通过本身不等于授权。本次已取得真实`blocked`证据，不能安装unit、enable timer或恢复
-crontab；只有authority writer/source和backup目录补齐后才能重新审计。
+最新真实VPS审计返回`blocked`、`install_authorized=true`、`enable_authorized=false`：authority/backup/web data目录和publisher unit已按
+owner安装授权创建，但六类标准source仍缺失；`backup_state=prepared_empty`，审计hash为
+`b2fc996b70fd313a97a454db341c9df1b6b904cccd4f0ca62ac367a522e8f4fa`。安装授权不能绕过source gate。只有production authority writer
+写出完整真实batch/registry/ledger/notification/health/brief、该命令返回`ready_for_authorization`且`enable_authorized=true`后，才重新评审
+timer enable；transport发送还需要独立授权。不得复制fixture/legacy JSON、恢复crontab或打开订单/live开关。
 
 常见读法：
 
@@ -140,14 +143,14 @@ crontab；只有authority writer/source和backup目录补齐后才能重新审�
 - 1.6G VPS 的常驻大户当前是 new-api/sub2api，不是 qount。若 `MemAvailable` 长时间低于约 250M、
   swap 持续增长或协议层再次超时，先看 top RSS 和残留 qount 进程；不要只看端口是否 listen。
 - 仓库前端已改成只读Dashboard v1并部署到`https://qount.alyaloale.com/#/live`。served root只有
-  `index.html/app.js/style.css`，旧`data/*.json`已移出并备份到`/root/qount-dashboard-backup-20260719T183341Z`；生产v1 publisher
-  尚未接入，所以认证后页面应显示`PRODUCTION STOPPED`，Mac/WSL fixture不得复制上线。
+  `index.html/app.js/style.css`，旧`data/*.json`已移出并备份到`/root/qount-dashboard-backup-20260719T183341Z`；production publisher
+  unit已安装但没有authority source且timer disabled，所以认证后页面应显示`PRODUCTION STOPPED`，Mac/WSL fixture不得复制上线。
   `RuntimeLedgerSnapshot` schema v3用同一SQLite读事务冻结positions、orders/events、fills、cash、recoveries、完整NAV历史、账户观测和
   三方对账；balance/available、actual gross、margin和peak/current drawdown已有权威账本合同。`SystemHealthSnapshot`固定要求
   `clock/disk/service/backup`四项强类型观测并使用独立freshness。
   Dashboard当前有`overview/positions/orders/strategies/decisions/risk/readiness/system/alerts/reports`十页，原子release为十份模型加
   `publication.json`共11个JSON，静态schema共13份。positions可点击进入decision trace；浏览器不读取legacy JSON、生产SQLite或
-  交易所，也不重算PnL。当前仍未接scheduler、真实webhook或production publisher，order latency/slippage继续显式unavailable。
+  交易所，也不重算PnL。当前仍未运行publisher scheduler、真实webhook或authority writer，order latency/slippage继续显式unavailable。
 - `ledger/legacy_replay.py`只用于隔离的本地migration replay：输入必须是相互hash链接的projection与legacy dry plan，输出
   完整`VerifiedDecisionBatch`、仅`PLANNED`的临时账本和哈希报告。它不读取生产文件、不导入dispatcher或交易所adapter，
   也不能把已有transition/fill/cash/NAV/reconciliation状态重标成dry；不要把测试golden或临时SQLite复制到VPS当生产状态。
@@ -188,11 +191,12 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
   tests.test_dispatch_contract_adapters
 ```
 
-当前读法：本轮notification/publisher安全边界聚焦为`48 OK`，全仓`1478 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
+当前读法：本轮notification/publisher安全边界聚焦为`48 OK`，Mac全仓`1478 OK`，VPS默认production profile为`290 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
 `37 OK`等读数保留历史语境。更早的完整Phase A/B/C
 `101 OK`等批次读数保留在`current.md`和`update-log.md`，不覆盖其历史语境。`ledger/store.py`、legacy dry replay、冻结snapshot adapter、notification
-outbox/producers、incident sync、DailyBrief和Dashboard v1都只是Mac本地新架构基础，尚未接入
-`mini_trend/pilot_dispatcher.py`、producer scheduler、真实webhook或部署VPS；不要创建生产DB/read model，也不要据此打开live。
+outbox/producers、incident sync、DailyBrief和Dashboard v1合同仍未接入
+`mini_trend/pilot_dispatcher.py`、producer scheduler或真实webhook；publisher unit虽已部署，但标准source为空。不要用fixture创建生产DB/read model，
+也不要据此打开live。
 最新read-model QA使用Playwright 1.60 + Chromium 1223，桌面`1440x1000`和移动`390x844`检查Live、Positions到Decisions点击追踪、
 System四项健康、移动菜单和缺release页面；无控制台异常、页面级横向溢出、重叠或裁切。测试release只来自本地fixture，未部署。
 
@@ -584,6 +588,7 @@ VPS 测试：
 ./scripts/run-vps-tests.sh
 ```
 
+默认只跑production最小依赖surface；显式全仓discovery使用`./scripts/run-vps-tests.sh discover`，需要VPS另装research/collector可选依赖。
 这两个脚本只同步代码和跑 unittest，不会改 VPS `~/.config/qount/x4_live.env`，不会开关 cron，
 不会改变 live arming。
 
@@ -778,8 +783,8 @@ python -m qount.main walk-forward \
 预注册 anti-overfit/correlation-stress 证据，不借此恢复旧价格/频段扫描。
 
 架构支线已完成账户/回撤、四项健康和position/decision trace。注入式transport合同及fake/provider故障测试已完成，但没有真实adapter，
-也未获启用授权；legacy `Notifier`/shell ServerChan不得复用。production publisher本地合同已完成，但真实VPS authority source/权限/
-backup目录仍未只读核验，且仓库没有production authority writer。两者均明确授权前，不接真实transport、私有API、timer、cron或订单。
+也未获发送授权；legacy `Notifier`/shell ServerChan不得复用。production publisher unit及私有authority/backup目录已按owner安装授权部署到VPS，
+但标准authority writer/source仍缺失，timer保持disabled。source gate与transport授权通过前，不接真实transport、私有API、timer、cron或订单。
 
 1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
    不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做

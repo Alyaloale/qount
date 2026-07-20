@@ -8,6 +8,21 @@
 
 ## 2026-07-20
 
+### Governed architecture baseline pushed and publisher installed disabled
+
+- 审计并固定当前大工作区基线：Mac全仓`1478 OK`，Python compile、shell/Node语法、JSON/schema、凭据扫描和
+  `git diff --check`通过；提交`230840c feat: establish governed quant architecture`已推送到`origin/crypto-lines-bcd`。
+- `scripts/sync-to-vps.sh --install`已把该基线同步到`/root/qount`并重新editable install。VPS保持生产最小依赖；测试入口现默认运行
+  production surface，结果`290 OK`，显式`discover`才运行需numpy/websockets等可选依赖的研究/collector测试。
+- owner明确授权publisher安装后，已创建`/var/lib/qount/dashboard-authority`、`/var/lib/qount/dashboard-backups`（`0700`）和
+  `/var/www/qount/data`（`0755`），安装`qount-dashboard-publisher.service/.timer`并daemon-reload。unit hash分别为
+  `dc8d854c34a7083c2bbb676a73db042021815198b8b2f6063131debf127932ef`和
+  `6c807c26e55e6520de4ea8022b67753bb8503331c72a7a7dc4edf409a6f28bf8`；service/timer保持inactive，timer保持disabled。
+- publisher path audit增加显式`--owner-authorized`记录：它只使`install_authorized=true`，完整source未通过时仍固定
+  `enable_authorized=false`。最新VPS审计为`blocked`、`authority_bundle_verified=false`、`backup_state=prepared_empty`，hash
+  `b2fc996b70fd313a97a454db341c9df1b6b904cccd4f0ca62ac367a522e8f4fa`。缺失项是标准batch/registry/ledger/notification/health/brief；
+  没有复制fixture/legacy state，没有恢复旧cron、MiniTrend timer、订单、真实通知或live开关。
+
 ### Injected notification transport and publisher authorization hold
 
 - 新增`notifications/transport.py`的严格`ProviderResponse`与`ProviderTransport`。provider response必须精确匹配schema、状态、
