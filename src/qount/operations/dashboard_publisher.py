@@ -23,11 +23,14 @@ from qount.contracts import canonical_hash
 from qount.contracts import is_sha256
 from qount.contracts.trace import aware_datetime
 from qount.operations.backups import BackupRecord
+from qount.operations.backups import BackupRetentionResult
 from qount.operations.backups import RestoreDrillResult
 from qount.operations.backups import create_dashboard_backup
+from qount.operations.backups import prune_dashboard_backups
 from qount.operations.backups import verify_dashboard_restore_drill
 from qount.operations.health_probes import HealthProbeConfig
 from qount.operations.health_probes import HealthProbeDependencies
+from qount.operations.health_probes import DEFAULT_ALLOWED_SERVICE_NAMES
 from qount.operations.health_probes import collect_os_system_health
 from qount.reporting import DashboardPublication
 from qount.reporting import build_dashboard_v1
@@ -35,12 +38,6 @@ from qount.reporting import publish_dashboard_v1
 from qount.reporting import read_dashboard_release_v1
 from qount.reporting import read_dashboard_v1
 from qount.reporting import read_vps_authority_bundle
-
-
-DEFAULT_ALLOWED_SERVICE_NAMES = (
-    "qount-dashboard-publisher.timer",
-    "caddy.service",
-)
 
 
 class DashboardPublisherError(ValueError):
@@ -61,6 +58,7 @@ class PublisherConfig:
     service_name: str = "qount-dashboard-publisher.timer"
     allowed_service_names: tuple[str, ...] = DEFAULT_ALLOWED_SERVICE_NAMES
     retain_previous_releases: int = 4
+    retain_previous_backups: int = 60
     stale_after_seconds: int = 900
     alert_stale_after_seconds: int = 300
     report_stale_after_seconds: int = 90_000
@@ -82,6 +80,9 @@ class PublisherConfig:
             or not isinstance(self.retain_previous_releases, int)
             or isinstance(self.retain_previous_releases, bool)
             or self.retain_previous_releases < 1
+            or not isinstance(self.retain_previous_backups, int)
+            or isinstance(self.retain_previous_backups, bool)
+            or self.retain_previous_backups < 1
         ):
             raise DashboardPublisherError("publisher_configuration_invalid")
         for value in (
@@ -117,6 +118,9 @@ class PublisherResult:
     retained_release_ids: tuple[str, ...]
     pruned_release_ids: tuple[str, ...]
     skipped_release_names: tuple[str, ...]
+    retained_backup_ids: tuple[str, ...]
+    pruned_backup_ids: tuple[str, ...]
+    skipped_backup_names: tuple[str, ...]
     result_hash: str
 
     @classmethod
@@ -129,7 +133,8 @@ class PublisherResult:
         system_health_hash: str,
         backup: BackupRecord,
         restore: RestoreDrillResult,
-        retention: ReleaseRetentionResult,
+        release_retention: ReleaseRetentionResult,
+        backup_retention: BackupRetentionResult,
     ) -> PublisherResult:
         core = {
             "completed_at": aware_datetime(completed_at).isoformat(),
@@ -142,9 +147,12 @@ class PublisherResult:
             "backup_file_count": backup.file_count,
             "backup_total_bytes": backup.total_bytes,
             "restore_drill_verified": restore.verified,
-            "retained_release_ids": retention.retained_release_ids,
-            "pruned_release_ids": retention.pruned_release_ids,
-            "skipped_release_names": retention.skipped_release_names,
+            "retained_release_ids": release_retention.retained_release_ids,
+            "pruned_release_ids": release_retention.pruned_release_ids,
+            "skipped_release_names": release_retention.skipped_release_names,
+            "retained_backup_ids": backup_retention.retained_backup_ids,
+            "pruned_backup_ids": backup_retention.pruned_backup_ids,
+            "skipped_backup_names": backup_retention.skipped_backup_names,
         }
         result = cls(**core, result_hash=canonical_hash(core))
         result.validate()
@@ -168,6 +176,8 @@ class PublisherResult:
         for values in (
             self.retained_release_ids,
             self.pruned_release_ids,
+            self.retained_backup_ids,
+            self.pruned_backup_ids,
         ):
             if (
                 not isinstance(values, tuple)
@@ -178,13 +188,15 @@ class PublisherResult:
                 raise DashboardPublisherError("publisher_result_releases_invalid")
         if set(self.retained_release_ids) & set(self.pruned_release_ids):
             raise DashboardPublisherError("publisher_result_release_overlap")
+        if set(self.retained_backup_ids) & set(self.pruned_backup_ids):
+            raise DashboardPublisherError("publisher_result_backup_overlap")
         if self.publication_id not in self.retained_release_ids:
             raise DashboardPublisherError("publisher_result_current_not_retained")
-        if (
-            tuple(sorted(self.skipped_release_names)) != self.skipped_release_names
-            or len(self.skipped_release_names) != len(set(self.skipped_release_names))
-        ):
-            raise DashboardPublisherError("publisher_result_skipped_invalid")
+        if self.backup_id not in self.retained_backup_ids:
+            raise DashboardPublisherError("publisher_result_latest_backup_not_retained")
+        for values in (self.skipped_release_names, self.skipped_backup_names):
+            if tuple(sorted(values)) != values or len(values) != len(set(values)):
+                raise DashboardPublisherError("publisher_result_skipped_invalid")
         core = self.as_dict()
         core.pop("result_hash")
         if self.result_hash != canonical_hash(core):
@@ -205,6 +217,9 @@ class PublisherResult:
             "retained_release_ids": list(self.retained_release_ids),
             "pruned_release_ids": list(self.pruned_release_ids),
             "skipped_release_names": list(self.skipped_release_names),
+            "retained_backup_ids": list(self.retained_backup_ids),
+            "pruned_backup_ids": list(self.pruned_backup_ids),
+            "skipped_backup_names": list(self.skipped_backup_names),
             "result_hash": self.result_hash,
         }
 
@@ -388,7 +403,11 @@ def run_dashboard_publisher(
             or restore.publication_hash != publication.publication_hash
         ):
             raise DashboardPublisherError("publisher_restore_publication_mismatch")
-        retention = prune_dashboard_releases(
+        backup_retention = prune_dashboard_backups(
+            config.backup_root,
+            retain_previous_backups=config.retain_previous_backups,
+        )
+        release_retention = prune_dashboard_releases(
             config.dashboard_root,
             retain_previous_releases=config.retain_previous_releases,
         )
@@ -399,7 +418,8 @@ def run_dashboard_publisher(
             system_health_hash=health.snapshot_hash,
             backup=backup,
             restore=restore,
-            retention=retention,
+            release_retention=release_retention,
+            backup_retention=backup_retention,
         )
 
 
@@ -418,6 +438,7 @@ def _parser() -> argparse.ArgumentParser:
         default="qount-dashboard-publisher.timer",
     )
     parser.add_argument("--retain-previous-releases", type=int, default=4)
+    parser.add_argument("--retain-previous-backups", type=int, default=60)
     parser.add_argument("--stale-after-seconds", type=int, default=900)
     parser.add_argument("--alert-stale-after-seconds", type=int, default=300)
     parser.add_argument("--report-stale-after-seconds", type=int, default=90_000)
@@ -435,6 +456,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         disk_path=args.disk_path,
         service_name=args.service_name,
         retain_previous_releases=args.retain_previous_releases,
+        retain_previous_backups=args.retain_previous_backups,
         stale_after_seconds=args.stale_after_seconds,
         alert_stale_after_seconds=args.alert_stale_after_seconds,
         report_stale_after_seconds=args.report_stale_after_seconds,

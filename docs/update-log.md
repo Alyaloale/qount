@@ -8,6 +8,36 @@
 
 ## 2026-07-20
 
+### Verified dashboard publishing activated with bounded backups
+
+- 新的授权order-free周期`/root/qount/state/mini_trend/forward/runs/20260720T101653Z`通过账户flat、TOP3仓位/普通单/条件单均0、
+  latest projection、dry dispatcher和`exchange_mutation_attempted=false`校验；authority writer生成batch
+  `5a1c94a4280bb578c9ff1e8745cb309983f0f978096070819865c4b4024f4815`，authority/result hash为
+  `d2648116252cc23235caa2bacf69e845d9190e343046466c4685609e79c8f34b` /
+  `720c5c5f2336eab1edff4be40884143904bf15b04b8439d0d2a9761d0f2d2118`。最后一次授权账户观测为wallet/available
+  `486.15970914 USDT`、gross/margin/仓位均0；publisher不会调用私有API刷新它，10:32:05 UTC后Dashboard按合同显示stale。
+- VPS缺`systemd-timesyncd`的`OffsetUSec`接口，clock探针新增严格`chronyc -c tracking` CSV fallback；格式错误、非有限偏差、未知leap状态或
+  `Not synchronised`全部失败关闭。authority/publisher unit只增加`/run/chrony`访问和`CAP_DAC_OVERRIDE`，继续
+  `PrivateNetwork=true`、`AF_UNIX` only且无`CAP_NET_*`。把service allowlist移到`health_probes.py`后，VPS
+  `python -W error -m qount.operations.dashboard_publisher --help`及实际周期均不再出现runpy warning。
+- 审计发现publisher只裁剪release而备份snapshot无限增长；先执行`disable --now`保护停机，再新增备份保留合同。每轮在新backup逐文件验证、
+  restore drill通过后，只删除完整验签、非latest且超出“latest+60个历史”的snapshot；损坏、非法名、异常类型和symlink只报告不删除。
+  `PublisherResult`把retained/pruned/skipped backup IDs纳入result hash，systemd显式固定`--retain-previous-backups 60`。本地5轮测试以
+  `retain_previous_backups=2`收敛到3份并证明latest保留，异常snapshot保持不动且被报告。
+- Mac聚焦`29 OK`、全仓`1488 OK`，VPS production profile `299 OK`；compileall、`-W error` CLI、`git diff --check`和
+  `systemd-analyze verify`通过，后者只报告无关cloudmonitor旧unit警告。publisher unit最终SHA-256为
+  `f571cc52b386ffc3fd70a822a1270327a02896ed725feb09b0c40be463e3fd43`；authority/timer unit分别保持
+  `bf9773e7d5509b21534996a14679a20847f4896ee9bf0cfd9fe4bfb3c7372f9e` /
+  `6c807c26e55e6520de4ea8022b67753bb8503331c72a7a7dc4edf409a6f28bf8`。
+- publisher timer恢复为`enabled/active`后，手工周期、Persistent触发和19:38 CST完整日历周期均成功且health=`healthy`、restore drill通过、
+  无warning。19:38周期的publication/result/backup为
+  `e4ff138bc0b22899fdac65f8e5eae8a993285959ca021c783bf2c10e4d2ad751` /
+  `77f70e9958c519f97009824253575a864d01a333b19ae4e06fd7b9f8b6af5a07` /
+  `8e3618b4e36c172c3d543022a83fd6c17c2fa34f018f67c952ef0f812b40b163`。路径审计记录为
+  `ready_for_authorization`、`authority_bundle_verified=true`、`backup_state=verified_snapshot`，audit hash
+  `0dcabe64e648b358f9a280806f23d6eb8d64a6c0df303a2799107d9c4c7bcf1f`。MiniTrend forward timer仍`disabled/inactive`，
+  authority oneshot仍`static/inactive`，production cron零入口；没有调用私有API、改账户/订单、恢复live/manual arm或发送真实通知。
+
 ### Order-free authority writer and readiness lineage hold
 
 - 新增`qount.operations.authority_writer`与`scripts/operations/write_authority_bundle.py`。writer只读选择的VPS forward run，拒绝

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import os
@@ -54,6 +55,14 @@ class BackupRecord:
     total_bytes: int
     source_id: str
     source_hash: str
+
+
+@dataclass(frozen=True)
+class BackupRetentionResult:
+    latest_backup_id: str
+    retained_backup_ids: tuple[str, ...]
+    pruned_backup_ids: tuple[str, ...]
+    skipped_backup_names: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -457,12 +466,71 @@ def verify_dashboard_restore_drill(
     )
 
 
+def prune_dashboard_backups(
+    backup_root: str | Path,
+    *,
+    retain_previous_backups: int,
+) -> BackupRetentionResult:
+    """Delete only verified snapshots outside the latest-backed retention set."""
+
+    if (
+        not isinstance(retain_previous_backups, int)
+        or isinstance(retain_previous_backups, bool)
+        or retain_previous_backups < 1
+    ):
+        raise BackupError("backup_retention_invalid")
+    root = Path(backup_root)
+    latest = read_latest_dashboard_backup(root).backup_id
+    snapshots = root / "snapshots"
+    _require_directory(snapshots, name="backup_snapshots", mode=0o700)
+    verified: list[tuple[dt.datetime, str]] = []
+    skipped: list[str] = []
+    for path in snapshots.iterdir():
+        if path.name.startswith("."):
+            skipped.append(path.name)
+            continue
+        if path.is_symlink() or not path.is_dir() or not is_sha256(path.name):
+            skipped.append(path.name)
+            continue
+        try:
+            manifest, _ = _read_backup(root, path.name)
+            completed_at = aware_datetime(manifest["completed_at"])
+        except (OSError, TypeError, ValueError):
+            skipped.append(path.name)
+            continue
+        verified.append((completed_at, path.name))
+    if latest not in {name for _, name in verified}:
+        raise BackupError("backup_latest_not_verified_for_retention")
+    verified.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    previous = [name for _, name in verified if name != latest]
+    keep = {latest, *previous[:retain_previous_backups]}
+    prune = sorted(name for _, name in verified if name not in keep)
+    for backup_id in prune:
+        if read_latest_dashboard_backup(root).backup_id != latest:
+            raise BackupError("backup_latest_changed_during_prune")
+        target = snapshots / backup_id
+        if target.is_symlink() or not target.is_dir():
+            raise BackupError("backup_prune_target_invalid")
+        _read_backup(root, backup_id)
+        shutil.rmtree(target)
+    if prune:
+        _fsync_directory(snapshots)
+    return BackupRetentionResult(
+        latest_backup_id=latest,
+        retained_backup_ids=tuple(sorted(keep)),
+        pruned_backup_ids=tuple(prune),
+        skipped_backup_names=tuple(sorted(skipped)),
+    )
+
+
 __all__ = [
     "BACKUP_SCHEMA_VERSION",
     "BackupError",
     "BackupRecord",
+    "BackupRetentionResult",
     "RestoreDrillResult",
     "create_dashboard_backup",
+    "prune_dashboard_backups",
     "read_latest_dashboard_backup",
     "verify_dashboard_restore_drill",
 ]

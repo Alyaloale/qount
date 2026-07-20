@@ -107,7 +107,7 @@ runtime proof
 | `x4/`、`rv/`、C×D 和旧 cron 仍在仓库 | 容易把 legacy 状态或执行器误接回生产 |
 | 入口分散在大量 `scripts/research` 和 `scripts/desktop` | 业务逻辑容易继续进入脚本，难以复用和测试 |
 | 多策略 `StrategyIntent` 和 allocator 只在本机代码 | 目标组合架构尚未进入 VPS 生产运行链 |
-| Dashboard v1 read-model链、通知outbox和production-shaped publisher合同已闭合；VPS静态前端、publisher和authority writer unit已安装，但timer disabled且真实authority bundle/transport未生成 | VPS站点和真实投递不能用本地fixture冒充生产状态 |
+| Dashboard v1 read-model链和publisher已在VPS用真实order-free authority运行；authority按独立freshness变stale，真实transport仍未接 | 不能把publisher健康刷新误当账户/决策刷新，也不能用本地fixture或旧JSON洗新 |
 | 旧顶层`Notifier`与新`notifications/`并存 | 接入真实transport前必须收敛producer、凭据、限流和投递责任边界 |
 | 本机 worktree 有大量未提交文件 | 当前实现尚未形成可复现的干净 production release |
 
@@ -121,7 +121,7 @@ runtime proof
 | 执行代码 | Level 2 | 幂等、保护单、对账代码已存在，但没有live证据 |
 | 内部账本 | 本地Level 2 / production Level 1 | SQLite WAL、event/cash/NAV/outbox基础已本地实现；legacy运行链尚未迁移 |
 | 恢复机制 | 本地Level 2 / production Level 1-2 | UNKNOWN/client-ID恢复合同和故障重放已本地实现；尚无真实交易所接入证据 |
-| Dashboard | 本地Level 2 / production Level 1 | v1十页已接ledger v3、四项健康和trace；VPS已替换静态前端但没有真实v1 release，因此认证后失败关闭 |
+| Dashboard | 本地Level 2 / production Level 2 | v1十页已接ledger v3、四项健康和trace；VPS publisher每两分钟发布真实order-free authority，账户/决策stale与系统健康fresh独立显示 |
 | 通知与日报 | 本地Level 2 / production Level 1 | 分级事件、只读producer、WAL outbox、重试、投递审计、显式incident supersession/resolve、确定性DailyBrief及alerts/reports已本地实现；scheduler和真实transport尚未接入 |
 | 实盘证据 | Level 0 | Base尚未manual arm，没有新系统live成交样本 |
 
@@ -1220,8 +1220,8 @@ residual和三方差异。它证明本地迁移/存储/恢复合同，不证明�
 目标：系统可看、可告警、可解释。
 
 状态：**本地通知告警、只读producer adapters、显式incident生命周期、确定性DailyBrief、十页Dashboard和production-shaped
-publisher已实现；静态前端、publisher与authority writer unit已部署到VPS，但writer真实运行被source gate阻断，尚无真实authority
-bundle，publisher timer保持disabled，真实scheduler运行和transport仍未接入**。
+publisher已实现；静态前端与publisher scheduler已在VPS读取真实order-free authority运行，authority writer保持手工oneshot，
+真实notification transport仍未接入**。
 
 当前实现包括：
 
@@ -1270,12 +1270,11 @@ bundle，publisher timer保持disabled，真实scheduler运行和transport仍未
 幂等、provider响应验证、限流/超时、0600凭据、最小payload和无密钥审计，并在systemd单实例worker和故障测试闭合后再申请真实发送授权。
 
 production publisher评审结论：本地已具备只读VPS artifact importer、四项OS/systemd/backup探针、非阻塞systemd形单写者、同盘
-原子发布、当前+最近N个release保留、逐文件备份和临时恢复演练；`qount-dashboard-publisher.service/.timer`已在owner安装授权下部署到
-VPS，但timer保持`disabled/inactive`。它只能读取完整batch/registry/ledger/notification/health/brief，不得直接查询交易所、读取legacy
-state JSON或复制测试release。静态前端已部署且无`data/`；安装授权不等于enable授权，只有标准authority writer生成完整真实source且
-VPS路径审计返回`enable_authorized=true`后才能重新评审timer。
-authority writer另有`static/inactive` oneshot unit；VPS真实运行已因旧run缺初始dispatcher readiness返回`blocked`/`75`，且运行前后
-authority保持空、runtime目录未创建。旧run同时无completed decision且账户非flat；writer与publisher共享lock，该安全停点不应被当成正常发布。
+原子发布、当前+4个release保留、逐文件备份、latest+60个backup保留和临时恢复演练；`qount-dashboard-publisher.timer`已在
+authority完整且路径审计`enable_authorized=true`后受控启用。publisher只能读取完整batch/registry/ledger/notification/health/brief，
+不得直接查询交易所、读取legacy state JSON或复制测试release；每轮只刷新OS健康、release和备份，不改变authority source time。
+authority writer另有`static/inactive` oneshot unit并与publisher共享lock；最后一次成功writer来自flat/0挂单、完全order-free run，
+但账户/决策authority已按15分钟规则变stale。要恢复fresh必须重新获得具体私有API/order-free周期授权，不能提高阈值或复制旧数据。
 
 ### Phase D：Base最小实盘审查
 

@@ -215,6 +215,9 @@ class AuthorityWriterTest(unittest.TestCase):
             / "deploy/systemd/qount-dashboard-authority.service"
         ).read_text()
         self.assertIn("PrivateNetwork=true", unit)
+        self.assertIn("ReadWritePaths=-/run/chrony", unit)
+        self.assertIn("CapabilityBoundingSet=CAP_DAC_OVERRIDE", unit)
+        self.assertNotIn("CAP_NET_", unit)
         self.assertIn("SuccessExitStatus=75", unit)
         self.assertIn("QOUNT_LIVE_ENABLE=false", unit)
         self.assertIn("QOUNT_MINI_TREND_LIVE_ENABLE=false", unit)

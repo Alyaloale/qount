@@ -20,38 +20,28 @@
 [crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，交易、账本、对账、通知、Dashboard和LLM的系统工程
 主设计看 [system-architecture-design.md](system-architecture-design.md)。
 
-- **2026-07-20 本轮 owner 已授权 publisher 安装，VPS 接入完成到 disabled 安全停点。** 已将提交
-  `230840c` 同步到 `/root/qount` 并安装 `qount-dashboard-publisher.service/.timer`，创建
-  `/var/lib/qount/dashboard-authority`、`/var/lib/qount/dashboard-backups`（均`0700`）和
-  `/var/www/qount/data`（`0755`）；unit hash 分别为
-  `dc8d854c34a7083c2bbb676a73db042021815198b8b2f6063131debf127932ef` /
-  `6c807c26e55e6520de4ea8022b67753bb8503331c72a7a7dc4edf409a6f28bf8`。
-  publisher timer 保持 `disabled/inactive`，旧 production crontab、MiniTrend forward timer、订单和 live 开关均未恢复。
-  owner authorization 只允许安装，不绕过 source gate；writer实测后的最新真实审计返回
-  `status=blocked`、`authority_bundle_verified=false`、`backup_state=prepared_empty`、
-  `install_authorized=true`、`enable_authorized=false`，audit hash 为
-  `31a5de02b90920271a00f979c7a977f9c11a128e1d0977bfd363be4a81521458`。
-  阻塞原因是六个 authority source（batch/registry/ledger/notification/health/brief）尚未生成；没有复制 fixture 或 legacy state。
-  VPS production profile 回归为 `295 OK`；完整 discovery 因 VPS 不安装 research/collector extras，仍须显式执行
-  `scripts/run-vps-tests.sh discover`。
-
-- **2026-07-20 order-free authority writer 已完成本地合同并接入VPS为 static/inactive oneshot。** 新增
-  `qount.operations.authority_writer` 和 `scripts/operations/write_authority_bundle.py`：只读验证 legacy run 的原始 hash、重复键、
-  order-free flags、初始/最终 readiness、projection/dry parity、账户 flat/no-open-order，再由标准 `VerifiedDecisionBatch`、research
-  `StrategyRegistry`、只读 `RuntimeLedgerSnapshot`、notification/health/DailyBrief 组成完整 bundle；authority 目录采用 staging + lock
-  目录替换，失败不写半成品，不查交易所、不发通知、不授权订单。`mini_trend_um_forward_cycle.sh` 已将 dispatcher 使用的初始 readiness
-  固定保存为`dispatch_readiness.json`，最终结果另存`live_readiness.json`，避免 source hash 被覆盖。authority unit已实际安装并保持
-  `static/inactive`，SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。VPS真实运行选择
-  `/root/qount/state/mini_trend/forward/runs/20260720T032512Z`，因缺`dispatch_readiness.json`返回
-  `status=blocked`、`blocker=dispatch_readiness_source_missing`、退出码`75`；systemd result hash为
-  `da4a6cca019529b8d68cf97fbe32f3fbfee4df605eecad041344e44824127819`。运行前后authority空目录hash均为
-  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，`/var/lib/qount/dashboard-runtime`仍不存在。
-  同一旧run的projection只到`2026-07-18`且无completed decision；只读preflight还发现`BTCUSDT`多仓`0.006`、
-  `account_flat=false`。没有运行被停用的forward timer、调用私有接口或改变账户/订单。
+- **2026-07-20 verified Dashboard publisher 已在VPS受控启用，交易侧继续关闭。** 新的order-free cycle
+  `/root/qount/state/mini_trend/forward/runs/20260720T101653Z`通过账户flat/0仓位/0挂单、projection、dry dispatcher和
+  `exchange_mutation_attempted=false`校验，authority writer写出batch
+  `5a1c94a4280bb578c9ff1e8745cb309983f0f978096070819865c4b4024f4815`及六类标准source；authority hash为
+  `d2648116252cc23235caa2bacf69e845d9190e343046466c4685609e79c8f34b`，result hash为
+  `720c5c5f2336eab1edff4be40884143904bf15b04b8439d0d2a9761d0f2d2118`。最后一次授权账户观测为
+  wallet/available `486.15970914 USDT`、TOP3实际仓位全0、gross/margin均0；该authority在`10:32:05 UTC`后已按15分钟规则
+  标记stale，publisher不会查询账户或把它洗新。
+- publisher timer现为`enabled/active`，authority oneshot仍为`static/inactive`，MiniTrend forward timer为`disabled/inactive`，
+  root production crontab仍为零active entry。publisher unit hash为
+  `f571cc52b386ffc3fd70a822a1270327a02896ed725feb09b0c40be463e3fd43`，只保留`CAP_DAC_OVERRIDE`读取chrony Unix socket，
+  `PrivateNetwork=true`且无`CAP_NET_*`。19:38 CST首个完整日历周期发布publication
+  `e4ff138bc0b22899fdac65f8e5eae8a993285959ca021c783bf2c10e4d2ad751`、result
+  `77f70e9958c519f97009824253575a864d01a333b19ae4e06fd7b9f8b6af5a07`、backup
+  `8e3618b4e36c172c3d543022a83fd6c17c2fa34f018f67c952ef0f812b40b163`；health为fresh/healthy，恢复演练通过，
+  release保留当前+4个，备份保留latest+60个，异常/损坏目录只报告不删除。路径审计为`ready_for_authorization`，最终复核hash
+  `46e8aa740143a753e9238ca88fd0a3c7744a25fa24ce5405a01fdd4b8b0842a8`。没有恢复forward/live/manual arm、调用私有API、
+  修改账户/订单或发送真实通知；`live_orders_allowed=false`。
 
 - **2026-07-20 VPS 测试入口已按生产依赖分层。** `scripts/run-vps-tests.sh` 默认只运行不依赖 numpy/websockets 的 production surface；
   显式 `discover` 才运行全仓研究测试。此前直接 discovery 在最小 VPS 环境出现的 8 个错误均为可选依赖缺失，不是生产代码回归；
-  当前VPS production profile为`295 OK`，Mac全量为 `1484 OK`，唯一 warning 为既有 `cta_data.py` UTC deprecation。
+  当前VPS production profile为`299 OK`，Mac全量为 `1488 OK`，唯一 warning 为既有 `cta_data.py` UTC deprecation。
 
 - **历史 superseded：2026-07-20 notification transport合同已完成本地fake边界，publisher生产授权仍阻断。** 新增
   `notifications/transport.py`：`ProviderResponse`要求精确字段、canonical response hash、请求`delivery_key`回显及
@@ -102,7 +92,8 @@
   导航`13px`、面板标题`15px`、移动标题`20px`、关键指标`18-21px`，移动菜单等待动画稳定后侧栏位于`x=0`，文档宽度与视口一致。
   `https://qount.alyaloale.com/#/live`已替换为新静态前端；served root只保留`index.html/app.js/style.css`，旧`data/*.json`
   已删除并备份到`/root/qount-dashboard-backup-20260719T183341Z`。Caddy仍active，未认证返回401并保留Basic Auth、`no-store`、
-  `nosniff`、`DENY`和`no-referrer`；qount cron保持停用。production v1 publisher尚未接入，因此认证后应失败关闭，本地fixture未部署。
+  `nosniff`、`DENY`和`no-referrer`；qount cron保持停用。production v1 publisher现已接入真实order-free authority，authority stale时
+  页面明确显示stale，不回退本地fixture或legacy JSON。
 
 - **2026-07-20 本地 production-shaped publisher、OS健康探针、备份恢复和release保留已闭合。** 新增独立
   `operations/health_probes.py`、`operations/backups.py` 和 `operations/dashboard_publisher.py`：clock使用
@@ -2534,7 +2525,8 @@ VPS unittest:   ./scripts/run-vps-tests.sh
 ```
 
 最近一次本地完整结果：2026-07-20 Phase B/C账户事实、健康合同、仓位/决策追踪、publisher运维层和前端替换完成后，
-`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为`1484 OK`；本批 operations/health/publisher/authority 聚焦为`28 OK`，唯一warning仍为既有
+`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为`1488 OK`；本批
+operations/health/publisher/authority/system-health 聚焦为`29 OK`，唯一warning仍为既有
 `src/qount/cta_data.py` UTC deprecation。此前paper v0.3聚焦在Mac/WSL均为`5 OK`，paper/shadow/readiness聚焦在WSL为`16 OK`，
 exchange route聚焦另为`9 OK`，此前episode/信号退出冷却/
 回测变换聚焦在Mac与WSL均为`14 OK`，相关 X4 funding/账本/波动率/吊灯最近一次为`37 OK`；Mac全量及
@@ -2543,7 +2535,7 @@ WSL聚焦`compileall`、两端CLI help、Bash语法、凭据扫描与`git diff -
 临时artifact目录已在每次复跑后定点删除，marker保护的WSL scratch已清空，Mac `state/`
 恢复约12KiB。完整回归只有既存
 `src/qount/cta_data.py` UTC deprecation warning。VPS `/root/qount` 本轮默认 production profile
-合同/账本/通知/Dashboard/运维/authority writer/X4/RV 回归为 `295 OK`；显式全量 discovery 因生产最小环境不安装
+合同/账本/通知/Dashboard/运维/authority writer/X4/RV 回归为 `299 OK`；显式全量 discovery 因生产最小环境不安装
 numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，不属于生产回归。
 `QOUNT_ALLOW_LEGACY_WSL=1` 规则不变；交易生产变更仍必须用 VPS unittest 验证。
 
@@ -2551,11 +2543,10 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
 
 按最新 owner 决策排序：
 
-1. 本批production-shaped publisher、authority writer、真实OS/systemd/backup探针、单写者、同盘原子release、备份/保留和恢复演练已在本地完成；
-   publisher unit已安装到VPS并保持`disabled/inactive`，authority unit保持`static/inactive`。当前旧run因缺`dispatch_readiness.json`、
-   无completed decision和账户非flat而被writer
-   fail closed；下一步只能等新的完整forward run（保留初始/最终readiness、完整funding且账户先由owner处理）后重跑writer，再以本轮
-   `--owner-authorized` 审计结果重新评估 enable。缺失 source 时继续 fail closed，不能把安装授权当作启用授权。真实notification transport的注入式合同仍需：
+1. production publisher、authority writer、真实OS/systemd/backup探针、单写者、同盘原子release、有界release/backup保留和恢复演练
+   已在VPS闭合；publisher timer保持`enabled/active`，authority unit保持`static/inactive`，forward timer和production cron保持关闭。
+   当前publisher只刷新系统健康和备份，不能刷新已stale的账户/决策authority。后续若要让Dashboard账户事实恢复fresh，必须先获得新的
+   明确私有API授权，再运行完整order-free forward + authority writer；不得通过提高stale阈值或复制旧JSON洗新。真实notification transport的注入式合同仍需：
    只允许`NotificationStore`提供delivery key和最小payload，校验provider响应、限流/超时、0600凭据和无密钥审计；不发送真实消息，
    不接legacy `Notifier`/shell ServerChan，完成本地故障测试后再单独请求transport发送授权。VPS publisher仍只能读取完整
    batch/registry/ledger/notification/health/brief，不能查询交易所、读取legacy state JSON或复制fixture。
@@ -2566,8 +2557,8 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    已拒绝的 UM 2.0% 全局档、三阶段 overlay 和stop-latch都不进入forward；funding-veto虽通过历史门和
    条件Bootstrap稳健门，也只冻结为首选 consumed-history 候选，不调50%阈值、不自动获得paper/live资格。
    双状态shadow-forward已从`2026-07-19`预登记；VPS canonical UM日线已到`2026-07-18`，但冻结起点尚无完成bar，
-   当前仍为0根和`await_shadow_forward_data`。order-free timer现由VPS直连刷新公开REST/日包；只在价格与每日三次funding
-   同时完整后追加两套权益、仓位/deadband/latch
+   当前仍为0根和`await_shadow_forward_data`。MiniTrend forward timer当前保持关闭；未来只有在重新获得明确授权的order-free周期中，
+   才能由VPS直连刷新公开REST/日包，并且只在价格与每日三次funding同时完整后追加两套权益、仓位/deadband/latch
    状态，首次权重同步不能作为停止跟踪条件。禁止使用苏菲家宽代理，缺失funding禁止填0。
    Equity Mapping首个目标现金日是`2026-07-20`，当前`await_collection_window`；窗口前不得生成伪样本，窗口
    错过后不得用异步历史报价补写。只有同现金日sealed manifest逐项覆盖8类source hash，G0 v0.4才允许声称
@@ -2576,7 +2567,7 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    Nasdaq当前delayed quote不能代替现金腿，也不得用HTTP接收时点冒充市场quote时点。仍需累计30个独立现金交易日，
    且不因此进入shadow/paper/live。
 3. 一个月小资金实盘作为`paper_live`目标，当前严格停在readiness：本金在manual arm前动态读取已审计USD-M余额，
-   当前为`488.89481071 USDT`，不设账户单日止损。owner接受当前VPS-only key和Spot/Margin权限；Reading/Futures/
+   最后一次授权观测为`486.15970914 USDT`且已经stale，不设账户单日止损。owner接受当前VPS-only key和Spot/Margin权限；Reading/Futures/
    IP限制、提现关闭、空仓/one-way/1x逐仓/0挂单均已通过。独立systemd runtime、exchange-native stop、幂等
    dispatcher、哈希journal和回读对账已经验证；只剩Funding完整记录、60/10 forward、30天paper和7个唯一dry
    决策日，随后仍须单独生成manual final arm。不得恢复旧X4/C×D cron。全局2.0%风险档和Funding Veto只能做

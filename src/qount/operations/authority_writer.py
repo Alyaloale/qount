@@ -38,7 +38,7 @@ from qount.notifications import alerts_from_system_health
 from qount.notifications import alerts_from_verified_decision_batch
 from qount.notifications import build_notification_snapshot
 from qount.notifications import synchronize_producer_incidents
-from qount.operations.dashboard_publisher import DEFAULT_ALLOWED_SERVICE_NAMES
+from qount.operations.health_probes import DEFAULT_ALLOWED_SERVICE_NAMES
 from qount.operations.health_probes import HealthProbeConfig
 from qount.operations.health_probes import HealthProbeDependencies
 from qount.operations.health_probes import collect_os_system_health

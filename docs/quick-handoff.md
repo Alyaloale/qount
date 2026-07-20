@@ -34,12 +34,12 @@
 - 加密 X4 / C×D 实盘看 `QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`、
   `QOUNT_CXD_CARRY_ENABLE` 和 VPS state，不用 `QOUNT_LIVE_ENABLE` 推断。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
-- 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。publisher已取得安装授权，但没有
-  enable授权；transport也没有发送授权。不得恢复live/paper cron或任何systemd timer。未来重新评审时，外层lock仍必须直接放在
+- 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只有只读
+  `qount-dashboard-publisher.timer`已获授权并保持`enabled/active`；transport没有发送授权。不得恢复live/paper cron、MiniTrend forward
+  或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
-- 2026-07-20 VPS只读核对已将此前误处于`enabled/active`的`qount-mini-trend-forward.timer`纠正为`disabled/inactive`；当前没有
-  active qount cron/timer或qount交易进程，`QOUNT_LIVE_ENABLE=false`。Dashboard publisher unit已安装但service/timer均inactive，
-  timer disabled；authority writer oneshot保持`static/inactive`。不要恢复MiniTrend timer，也不要在authority source gate通过前enable publisher timer。
+- 2026-07-20 `qount-mini-trend-forward.timer`已纠正并保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
+  publisher timer是唯一active qount timer，只读发布既有authority、系统健康和备份，不访问交易所、不刷新账户。不要恢复MiniTrend timer。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
@@ -125,13 +125,13 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
 	  --owner-authorized'
 ```
 
-最新真实VPS审计返回`blocked`、`install_authorized=true`、`enable_authorized=false`：authority/backup/web data目录和publisher unit已按
-owner安装授权创建，但六类标准source仍缺失；`backup_state=prepared_empty`，审计hash为
-`31a5de02b90920271a00f979c7a977f9c11a128e1d0977bfd363be4a81521458`。安装授权不能绕过source gate。只有production authority writer
-写出完整真实batch/registry/ledger/notification/health/brief、该命令返回`ready_for_authorization`且`enable_authorized=true`后，才重新评审
-timer enable；transport发送还需要独立授权。不得复制fixture/legacy JSON、恢复crontab或打开订单/live开关。
+2026-07-20 19:37 CST记录的真实VPS审计返回`ready_for_authorization`、`authority_bundle_verified=true`、
+`backup_state=verified_snapshot`、`enable_authorized=true`，audit hash为
+`0dcabe64e648b358f9a280806f23d6eb8d64a6c0df303a2799107d9c4c7bcf1f`。publisher timer现已受控启用；它只读完整真实
+batch/registry/ledger/notification/health/brief、OS健康和备份，不查询交易所、不授权订单。transport发送仍需独立授权；不得复制
+fixture/legacy JSON、恢复production crontab、MiniTrend forward timer或打开订单/live开关。
 
-authority writer只读接入命令（已真实返回安全停点`status=blocked`，退出码75）：
+authority writer只读接入命令（仅在重新获得具体私有API/order-free周期授权并生成新run后执行）：
 
 ```bash
 ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
@@ -145,12 +145,14 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
   --lock-path /run/qount-dashboard/publisher.lock'
 ```
 
-真实选择的run为`/root/qount/state/mini_trend/forward/runs/20260720T032512Z`；它缺`dispatch_readiness.json`，writer返回
-`blocker=dispatch_readiness_source_missing`，systemd result hash为`da4a6cca019529b8d68cf97fbe32f3fbfee4df605eecad041344e44824127819`。
-运行前后authority空目录hash均为`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，runtime目录未创建。
-该run的projection也没有completed decision，且只读preflight发现`BTCUSDT`多仓`0.006`；不要手工补文件、复制fixture、恢复forward timer或
-用private API重跑来绕过writer gate。新的forward cycle必须同时保留dispatcher使用的初始readiness和最终readiness。authority unit已安装并保持
-`static/inactive`，SHA-256为`5f22cd1efc2124aff4d6f30f167f84479df9690397c8d5d88c8ecc983a8d0bff`。
+成功authority来自`/root/qount/state/mini_trend/forward/runs/20260720T101653Z`：账户preflight为flat、TOP3仓位/挂单为0，
+projection与dry dispatcher通过且`exchange_mutation_attempted=false`。batch为
+`5a1c94a4280bb578c9ff1e8745cb309983f0f978096070819865c4b4024f4815`，authority/result hash分别为
+`d2648116252cc23235caa2bacf69e845d9190e343046466c4685609e79c8f34b` /
+`720c5c5f2336eab1edff4be40884143904bf15b04b8439d0d2a9761d0f2d2118`。最后一次授权账户观测为
+`486.15970914 USDT`、TOP3全平、0挂单；它已按15分钟规则标记stale，不能被publisher刷新成当前账户事实。不要为了刷新页面调用
+private API、手工补文件、复制fixture或恢复forward timer。authority unit保持`static/inactive`，SHA-256为
+`bf9773e7d5509b21534996a14679a20847f4896ee9bf0cfd9fe4bfb3c7372f9e`。
 
 常见读法：
 
@@ -164,14 +166,16 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
 - 1.6G VPS 的常驻大户当前是 new-api/sub2api，不是 qount。若 `MemAvailable` 长时间低于约 250M、
   swap 持续增长或协议层再次超时，先看 top RSS 和残留 qount 进程；不要只看端口是否 listen。
 - 仓库前端已改成只读Dashboard v1并部署到`https://qount.alyaloale.com/#/live`。served root只有
-  `index.html/app.js/style.css`，旧`data/*.json`已移出并备份到`/root/qount-dashboard-backup-20260719T183341Z`；production publisher
-  unit已安装但没有authority source且timer disabled，所以认证后页面应显示`PRODUCTION STOPPED`，Mac/WSL fixture不得复制上线。
+  静态assets和publisher生成的`data/v1`；旧legacy `data/*.json`已移出并备份到`/root/qount-dashboard-backup-20260719T183341Z`。
+  publisher timer现为`enabled/active`，每两分钟验证真实authority、刷新四项系统健康、原子发布release、创建逐文件hash备份并做恢复演练；
+  release保留当前+4个，备份保留latest+60个。Mac/WSL fixture不得复制上线。
   `RuntimeLedgerSnapshot` schema v3用同一SQLite读事务冻结positions、orders/events、fills、cash、recoveries、完整NAV历史、账户观测和
   三方对账；balance/available、actual gross、margin和peak/current drawdown已有权威账本合同。`SystemHealthSnapshot`固定要求
   `clock/disk/service/backup`四项强类型观测并使用独立freshness。
   Dashboard当前有`overview/positions/orders/strategies/decisions/risk/readiness/system/alerts/reports`十页，原子release为十份模型加
   `publication.json`共11个JSON，静态schema共13份。positions可点击进入decision trace；浏览器不读取legacy JSON、生产SQLite或
-  交易所，也不重算PnL。当前仍未运行publisher scheduler、真实webhook；authority writer已安装但因source gate blocked，order latency/slippage继续显式unavailable。
+  交易所，也不重算PnL。最后一次授权账户快照为TOP3全平和`486.15970914 USDT`，但已按15分钟规则显示stale；system health
+  独立保持fresh。authority writer保持`static/inactive`，publisher不刷新账户；真实webhook未接，order latency/slippage继续显式unavailable。
 - `ledger/legacy_replay.py`只用于隔离的本地migration replay：输入必须是相互hash链接的projection与legacy dry plan，输出
   完整`VerifiedDecisionBatch`、仅`PLANNED`的临时账本和哈希报告。它不读取生产文件、不导入dispatcher或交易所adapter，
   也不能把已有transition/fill/cash/NAV/reconciliation状态重标成dry；不要把测试golden或临时SQLite复制到VPS当生产状态。
@@ -212,14 +216,15 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
   tests.test_dispatch_contract_adapters
 ```
 
-当前读法：本轮notification/publisher/authority安全边界聚焦为`28 OK`，Mac全仓`1484 OK`，VPS默认production profile为`295 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
+当前读法：本轮operations/health/publisher/authority/system-health边界聚焦为`29 OK`，Mac全仓`1488 OK`，VPS默认production profile为
+`299 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
 `37 OK`等读数保留历史语境。更早的完整Phase A/B/C
 `101 OK`等批次读数保留在`current.md`和`update-log.md`，不覆盖其历史语境。`ledger/store.py`、legacy dry replay、冻结snapshot adapter、notification
-outbox/producers、incident sync、DailyBrief和Dashboard v1合同仍未接入
-`mini_trend/pilot_dispatcher.py`、producer scheduler或真实webhook；authority writer/publisher unit虽已部署，但当前标准source为空。不要用fixture创建生产DB/read model，
-也不要据此打开live。
+outbox/producers、incident sync、DailyBrief和Dashboard v1合同仍未接入订单路径、producer scheduler或真实webhook；publisher只读既有
+标准source且`live_orders_allowed=false`。不要用fixture创建生产DB/read model，也不要据此打开live。
 最新read-model QA使用Playwright 1.60 + Chromium 1223，桌面`1440x1000`和移动`390x844`检查Live、Positions到Decisions点击追踪、
-System四项健康、移动菜单和缺release页面；无控制台异常、页面级横向溢出、重叠或裁切。测试release只来自本地fixture，未部署。
+System四项健康、移动菜单和缺release页面；无控制台异常、页面级横向溢出、重叠或裁切。生产release来自VPS authority writer，
+不是测试fixture。
 
 research ML 依赖检查：
 
@@ -804,8 +809,9 @@ python -m qount.main walk-forward \
 预注册 anti-overfit/correlation-stress 证据，不借此恢复旧价格/频段扫描。
 
 架构支线已完成账户/回撤、四项健康和position/decision trace。注入式transport合同及fake/provider故障测试已完成，但没有真实adapter，
-也未获发送授权；legacy `Notifier`/shell ServerChan不得复用。production publisher unit及私有authority/backup目录已按owner安装授权部署到VPS，
-authority writer已安装为`static/inactive` oneshot，但旧run缺初始readiness且账户非flat，source gate仍blocked；source gate与transport授权通过前，不接真实transport、私有API、timer、cron或订单。
+也未获发送授权；legacy `Notifier`/shell ServerChan不得复用。production publisher已在VPS以唯一active qount timer运行，只读发布完整
+authority、系统健康和有界备份；authority writer保持`static/inactive`，最后一次授权账户快照已stale。不要为了刷新页面调用私有API或恢复
+forward/cron；真实transport、订单和live仍未获授权。
 
 1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
    不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做

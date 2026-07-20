@@ -24,7 +24,7 @@ Environment=HTTP_PROXY=
 Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 UnsetEnvironment=QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN BINANCE_API_KEY BINANCE_SECRET
-ExecStart=/root/qount/.venv/bin/python -m qount.operations.dashboard_publisher --authority-root /var/lib/qount/dashboard-authority --dashboard-root /var/www/qount/data --backup-root /var/lib/qount/dashboard-backups --lock-path /run/qount-dashboard/publisher.lock --disk-path /var/www/qount --service-name qount-dashboard-publisher.timer --retain-previous-releases 4
+ExecStart=/root/qount/.venv/bin/python -m qount.operations.dashboard_publisher --authority-root /var/lib/qount/dashboard-authority --dashboard-root /var/www/qount/data --backup-root /var/lib/qount/dashboard-backups --lock-path /run/qount-dashboard/publisher.lock --disk-path /var/www/qount --service-name qount-dashboard-publisher.timer --retain-previous-releases 4 --retain-previous-backups 60
 RuntimeDirectory=qount-dashboard
 RuntimeDirectoryMode=0700
 UMask=0077
@@ -43,6 +43,7 @@ ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/var/www/qount/data
 ReadWritePaths=/var/lib/qount/dashboard-backups
+ReadWritePaths=-/run/chrony
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -50,4 +51,5 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictAddressFamilies=AF_UNIX
-CapabilityBoundingSet=
+# chronyc needs DAC access to its 0700 runtime directory and client socket.
+CapabilityBoundingSet=CAP_DAC_OVERRIDE

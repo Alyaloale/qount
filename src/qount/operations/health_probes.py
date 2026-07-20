@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import math
 import re
 import shutil
@@ -21,6 +22,10 @@ from qount.operations.backups import read_latest_dashboard_backup
 _SERVICE_STATES = {"active", "inactive", "failed"}
 _OFFSET_RE = re.compile(r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(us|ms|s)?$")
 _OFFSET_SCALE = {None: 0.000001, "us": 0.000001, "ms": 0.001, "s": 1.0}
+DEFAULT_ALLOWED_SERVICE_NAMES = (
+    "qount-dashboard-publisher.timer",
+    "caddy.service",
+)
 
 
 class HealthProbeError(ValueError):
@@ -153,6 +158,27 @@ def _parse_offset_seconds(raw: str) -> float:
     return value * _OFFSET_SCALE[match.group(2)]
 
 
+def _parse_chrony_tracking(raw: str) -> tuple[float, bool]:
+    lines = raw.strip().splitlines()
+    if len(lines) != 1:
+        raise ValueError("chrony_tracking_invalid")
+    fields = next(csv.reader(lines))
+    if len(fields) != 14:
+        raise ValueError("chrony_tracking_invalid")
+    drift_seconds = float(fields[4])
+    if not math.isfinite(drift_seconds):
+        raise ValueError("chrony_tracking_invalid")
+    leap_status = fields[13].strip().lower()
+    if leap_status not in {
+        "normal",
+        "insert second",
+        "delete second",
+        "not synchronised",
+    }:
+        raise ValueError("chrony_tracking_invalid")
+    return drift_seconds, leap_status != "not synchronised"
+
+
 def probe_clock(
     config: HealthProbeConfig,
     runner: CommandRunner,
@@ -169,9 +195,16 @@ def probe_clock(
         "--property=OffsetUSec",
         "--value",
     )
+    chrony_argv = ("chronyc", "-c", "tracking")
     source_id = _source_id(
         "clock",
-        {"commands": [list(sync_argv), list(offset_argv)]},
+        {
+            "commands": [
+                list(sync_argv),
+                list(offset_argv),
+                list(chrony_argv),
+            ]
+        },
     )
     evidence: dict[str, object] = {}
     try:
@@ -181,18 +214,32 @@ def probe_clock(
             "synchronization": _command_evidence(sync_argv, sync),
             "offset": _command_evidence(offset_argv, offset),
         }
-        if sync.returncode != 0 or offset.returncode != 0:
-            return _measurement(
-                status="unavailable",
-                detail_codes=("clock_probe_failed",),
-                metrics={"drift_seconds": None},
-                source_id=source_id,
-                source_hash=canonical_hash(evidence),
+        synchronized: str | None = None
+        if sync.returncode == 0:
+            synchronized = sync.stdout.strip().lower()
+            if synchronized not in {"yes", "no", "true", "false", "1", "0"}:
+                raise ValueError("clock_sync_state_invalid")
+        if sync.returncode == 0 and offset.returncode == 0:
+            drift_seconds = _parse_offset_seconds(offset.stdout)
+            synchronized_value = synchronized in {"yes", "true", "1"}
+        else:
+            chrony = runner(chrony_argv)
+            evidence["chrony_tracking"] = _command_evidence(chrony_argv, chrony)
+            if chrony.returncode != 0:
+                return _measurement(
+                    status="unavailable",
+                    detail_codes=("clock_probe_failed",),
+                    metrics={"drift_seconds": None},
+                    source_id=source_id,
+                    source_hash=canonical_hash(evidence),
+                )
+            drift_seconds, chrony_synchronized = _parse_chrony_tracking(
+                chrony.stdout
             )
-        synchronized = sync.stdout.strip().lower()
-        if synchronized not in {"yes", "no", "true", "false", "1", "0"}:
-            raise ValueError("clock_sync_state_invalid")
-        drift_seconds = _parse_offset_seconds(offset.stdout)
+            synchronized_value = chrony_synchronized and (
+                synchronized is None
+                or synchronized in {"yes", "true", "1"}
+            )
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         evidence = dict(evidence) | {
             "parse_error": _failure_evidence("clock", exc)
@@ -204,7 +251,6 @@ def probe_clock(
             source_id=source_id,
             source_hash=canonical_hash(evidence),
         )
-    synchronized_value = synchronized in {"yes", "true", "1"}
     absolute_drift = abs(drift_seconds)
     if not synchronized_value:
         status = "unavailable"
@@ -405,6 +451,7 @@ def collect_os_system_health(
 
 __all__ = [
     "CommandResult",
+    "DEFAULT_ALLOWED_SERVICE_NAMES",
     "HealthProbeConfig",
     "HealthProbeDependencies",
     "HealthProbeError",

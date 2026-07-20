@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +21,7 @@ from qount.operations.health_probes import CommandResult
 from qount.operations.health_probes import HealthProbeConfig
 from qount.operations.health_probes import HealthProbeDependencies
 from qount.operations.health_probes import collect_os_system_health
+from qount.operations.health_probes import probe_clock
 from qount.reporting import read_dashboard_v1
 from tests.test_authority_importer import _publish_authority_bundle
 
@@ -56,6 +59,7 @@ def _config(root: Path) -> PublisherConfig:
         lock_path=root / "locks" / "publisher.lock",
         disk_path=root / "dashboard",
         retain_previous_releases=2,
+        retain_previous_backups=2,
     )
 
 
@@ -117,8 +121,86 @@ class OperationsHealthProbeTest(unittest.TestCase):
         )
         self.assertEqual(observations["service"]["metrics"]["active_state"], "unknown")
 
+    def test_clock_probe_falls_back_to_synchronized_chrony(self) -> None:
+        def chrony_runner(argv: tuple[str, ...]) -> CommandResult:
+            if argv[:2] == ("timedatectl", "show"):
+                return CommandResult(0, "yes\n")
+            if argv[:2] == ("timedatectl", "show-timesync"):
+                return CommandResult(1, "", "timesync1 unavailable")
+            if argv == ("chronyc", "-c", "tracking"):
+                return CommandResult(
+                    0,
+                    "64643D58,100.100.61.88,3,1784542050.380453474,"
+                    "-0.000585097,0.000499939,0.000189562,1.037,0.002,"
+                    "0.030,0.019752068,0.011192053,1034.7,Normal\n",
+                )
+            raise AssertionError(f"unexpected command: {argv}")
+
+        measurement = probe_clock(
+            HealthProbeConfig(
+                disk_path=Path("/tmp"),
+                service_name="qount-dashboard-publisher.timer",
+                allowed_service_names=("qount-dashboard-publisher.timer",),
+                backup_root=Path("/tmp"),
+            ),
+            chrony_runner,
+        )
+
+        self.assertEqual(measurement["status"], "healthy")
+        self.assertEqual(measurement["detail_codes"], ())
+        self.assertAlmostEqual(
+            measurement["metrics"]["drift_seconds"], -0.000585097
+        )
+
+    def test_clock_probe_rejects_unsynchronized_chrony(self) -> None:
+        def chrony_runner(argv: tuple[str, ...]) -> CommandResult:
+            if argv[:2] == ("timedatectl", "show"):
+                return CommandResult(0, "yes\n")
+            if argv[:2] == ("timedatectl", "show-timesync"):
+                return CommandResult(1, "", "timesync1 unavailable")
+            if argv == ("chronyc", "-c", "tracking"):
+                return CommandResult(
+                    0,
+                    "00000000,0.0.0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,"
+                    "0.0,0.0,0.0,0.0,Not synchronised\n",
+                )
+            raise AssertionError(f"unexpected command: {argv}")
+
+        measurement = probe_clock(
+            HealthProbeConfig(
+                disk_path=Path("/tmp"),
+                service_name="qount-dashboard-publisher.timer",
+                allowed_service_names=("qount-dashboard-publisher.timer",),
+                backup_root=Path("/tmp"),
+            ),
+            chrony_runner,
+        )
+
+        self.assertEqual(measurement["status"], "unavailable")
+        self.assertEqual(measurement["detail_codes"], ("clock_not_synchronized",))
+
 
 class DashboardPublisherOperationsTest(unittest.TestCase):
+    def test_module_cli_loads_without_runpy_warning(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-W",
+                "error",
+                "-m",
+                "qount.operations.dashboard_publisher",
+                "--help",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("RuntimeWarning", completed.stderr)
+
     def test_end_to_end_publish_backup_restore_and_retention(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -141,6 +223,11 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
                 for path in (config.dashboard_root / "releases").iterdir()
                 if path.is_dir()
             }
+            backup_names = {
+                path.name
+                for path in (config.backup_root / "snapshots").iterdir()
+                if path.is_dir()
+            }
 
         self.assertEqual(results[0].system_health_status, "unavailable")
         self.assertEqual(results[1].system_health_status, "healthy")
@@ -152,6 +239,10 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertEqual(len(release_names), 3)
         self.assertEqual(release_names, set(results[-1].retained_release_ids))
         self.assertTrue(results[-1].pruned_release_ids)
+        self.assertEqual(len(backup_names), 3)
+        self.assertEqual(backup_names, set(results[-1].retained_backup_ids))
+        self.assertIn(results[-1].backup_id, backup_names)
+        self.assertTrue(results[-1].pruned_backup_ids)
 
     def test_lock_busy_fails_without_changing_current_release(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -234,6 +325,28 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
             with self.assertRaisesRegex(BackupError, "payload_hash_mismatch"):
                 read_latest_dashboard_backup(config.backup_root)
 
+    def test_invalid_backup_snapshot_is_preserved_and_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _publish_authority_bundle(root)
+            config = _config(root)
+            run_dashboard_publisher(
+                config,
+                observed_at="2026-07-20T00:09:00+00:00",
+                dependencies=_dependencies(),
+            )
+            invalid = config.backup_root / "snapshots" / ("f" * 64)
+            invalid.mkdir(mode=0o700)
+            result = run_dashboard_publisher(
+                config,
+                observed_at="2026-07-20T00:10:00+00:00",
+                dependencies=_dependencies(),
+            )
+            invalid_preserved = invalid.exists()
+
+        self.assertTrue(invalid_preserved)
+        self.assertIn("f" * 64, result.skipped_backup_names)
+
     def test_systemd_template_is_hardened_and_not_enabled_by_repo_change(self) -> None:
         service = (ROOT / "deploy/systemd/qount-dashboard-publisher.service").read_text()
         timer = (ROOT / "deploy/systemd/qount-dashboard-publisher.timer").read_text()
@@ -243,9 +356,13 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertIn("PrivateNetwork=true", service)
         self.assertIn("ProtectSystem=strict", service)
         self.assertIn("ReadWritePaths=/var/www/qount/data", service)
+        self.assertIn("ReadWritePaths=-/run/chrony", service)
+        self.assertIn("CapabilityBoundingSet=CAP_DAC_OVERRIDE", service)
+        self.assertNotIn("CAP_NET_", service)
         self.assertIn("QOUNT_LIVE_ENABLE=false", service)
         self.assertNotIn("EnvironmentFile=", service)
         self.assertIn("qount.operations.dashboard_publisher", service)
+        self.assertIn("--retain-previous-backups 60", service)
         self.assertIn("Unit=qount-dashboard-publisher.service", timer)
 
 

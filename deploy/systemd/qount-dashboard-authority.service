@@ -44,6 +44,7 @@ PrivateNetwork=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/var/lib/qount
+ReadWritePaths=-/run/chrony
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -51,4 +52,5 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictAddressFamilies=AF_UNIX
-CapabilityBoundingSet=
+# chronyc needs DAC access to its 0700 runtime directory and client socket.
+CapabilityBoundingSet=CAP_DAC_OVERRIDE

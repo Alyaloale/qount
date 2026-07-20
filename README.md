@@ -153,7 +153,9 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
   - Equity Mapping G0 v0.3已落成离线point-in-time合同：三腿决策前同步报价、bid/ask gap边界、公司行动
     归一化、压力场景血缘、经济事件/证据修订双hash和独立日期计数。当前仅2行合成fixture/1个独立日期，严格
     `collect`，不计算PnL，也没有shadow/paper/live/order资格
-  - 站点：`https://qount.alyaloale.com/#/live`，已部署Dashboard v1静态前端；production read model未接入时失败关闭
+  - 站点：`https://qount.alyaloale.com/#/live`，Dashboard v1静态前端已接入真实order-free authority read model；
+    publisher每两分钟只读刷新系统健康、原子release和已验证备份。最后一次授权账户观测为TOP3全平、0挂单，但authority已按
+    15分钟规则标记stale；publisher不查询账户或交易所，也不赋予订单权限
 - `Windows / WSL`
   - 正式CPU/GPU计算环境，代码路径`/home/alyaloale/Code/qount`
   - 大数据与最终artifact写外置盘`/mnt/e/qount_data/qount`；WSL ext4只作临时scratch
@@ -174,8 +176,9 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
 - SQLite 审计链
 - 成本感知 `signal-review`
 - A股 ETF 20 日 research-only 状态判别、Tushare/公开复权数据和固定组合证据门（当前冻结保留）
-- VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher unit保持`disabled/inactive`，
-  authority oneshot保持`static/inactive`，标准source gate未通过
+- VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher timer为`enabled/active`，
+  每轮验证authority、健康、恢复演练，并保留当前+4个release及latest+60个备份。authority oneshot保持`static/inactive`，
+  MiniTrend forward timer和production cron保持关闭，`live_orders_allowed=false`
 
 ## 初始化
 
@@ -424,11 +427,12 @@ ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json
 
 当前基线：旧 line A `qount.main` 仍 research-only / live disabled；加密 X4 / C×D 的
 live和paper forward生产真相仍只能从 VPS `/root/qount` 读取，但当前生产 crontab 已停。Dashboard静态前端已部署，
-served root没有`data/`；publisher service/timer已安装，authority/backup/web data目录已按`0700/0700/0755`创建，timer保持
-`disabled/inactive`。owner授权只允许安装，不绕过完整batch/registry/ledger/notification/health/brief source gate；当前
-`enable_authorized=false`，因此页面继续失败关闭。notification transport当前也只有注入式合同和本地fake provider，不含真实消息adapter。
-authority writer只接受保留初始dispatcher readiness的完整order-free run；当前旧run缺`dispatch_readiness.json`、没有completed decision且
-账户有未管理BTC多仓，因此返回blocked，不写authority bundle。writer与publisher真实审计通过前，cron、systemd timer、订单和live开关必须保持关闭。
+served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
+publisher timer现为`enabled/active`，只读完整batch/registry/ledger/notification/health/brief，每两分钟刷新系统健康、release、
+备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单，
+但authority已按15分钟规则标记stale，不能当当前实时账户。notification transport仍只有注入式合同和本地fake provider，不含真实消息adapter。
+authority writer保持`static/inactive`，MiniTrend forward timer、production cron、真实通知、订单和live开关均关闭；publisher不查询交易所，
+`live_orders_allowed=false`。
 Mac
 `/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
 `--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL
