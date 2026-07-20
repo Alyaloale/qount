@@ -3,8 +3,7 @@
 # Mac so the模拟盘 forward books advance 7x24 even when the Mac is off. The 墙外 VPS reaches
 # binance.vision directly, so NO proxy is needed. Pure simulation, NO real orders.
 #
-# Runs the 4 tracks, then bundles state/x4/paper/*.json into the dashboard web dir as x4_paper.json
-# (replaces the Mac push_dashboard.sh paper step — the VPS now owns x4_paper.json).
+# Runs the 4 tracks and retains their state artifacts. Dashboard v1 has a separate publisher.
 #   forward / forward-s7 / forward-s7-vt3 / forward-combo / holdings  -> state/x4/paper/*.json
 #   (forward-s7-vt3 = S7 at vol_target=3% 小资金搏盈利档,真前向 since-deploy -> s7_vt3_latest.json)
 # Counterpart of the macOS x4_paper_daily.sh (launchd). Alerts go to the log + optional Server酱.
@@ -12,9 +11,12 @@ set -u
 REPO="${QOUNT_REPO:-/root/qount}"
 PY="$REPO/.venv/bin/python"
 LOG="$HOME/x4_paper.log"
-WEB_DATA="/var/www/qount/data"
-PAPER="$REPO/state/x4/paper"
 ENV_FILE="$HOME/.config/qount/x4_live.env"   # reuse for optional QOUNT_SERVERCHAN_KEY
+
+# shellcheck disable=SC1091
+source "$REPO/scripts/desktop/cron_guard.sh"
+qount_cron_guard "$0" "x4-paper" "${QOUNT_X4_PAPER_TIMEOUT_SECONDS:-1800}" "$LOG" "$@"
+
 echo "=== $(date '+%F %T %Z') ===" >> "$LOG"
 cd "$REPO" || { echo "[ALERT] cannot cd $REPO" >> "$LOG"; exit 1; }
 # shellcheck disable=SC1090
@@ -42,27 +44,3 @@ run_track forward-s7    "[X4-PAPER forward-s7]"
 run_track forward-s7-vt3 "[X4-PAPER forward-s7-vt3]"
 run_track forward-combo "[X4-PAPER forward-combo]"
 run_track holdings      "[X4-PAPER holdings]"
-
-# Publish the bundled paper snapshot to the dashboard (atomic via tmp+mv).
-if [ -d "$WEB_DATA" ]; then
-  if "$PY" - "$PAPER" > /tmp/x4_paper.json.tmp <<'PYEOF'
-import json, os, sys, datetime
-base = sys.argv[1]
-def load(n):
-    try:
-        with open(os.path.join(base, n)) as fh: return json.load(fh)
-    except Exception: return None
-print(json.dumps({
-    "generated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-    "holdings": load("holdings_latest.json"), "three": load("latest.json"),
-    "s7": load("s7_latest.json"), "s7_vt3": load("s7_vt3_latest.json"),
-    "combo": load("combo_latest.json"),
-}, ensure_ascii=False, default=float))
-PYEOF
-  then
-    mv /tmp/x4_paper.json.tmp "$WEB_DATA/x4_paper.json"
-    echo "[web] published x4_paper.json" >> "$LOG"
-  else
-    echo "[ALERT] bundle x4_paper.json failed" >> "$LOG"
-  fi
-fi

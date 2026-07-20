@@ -1,16 +1,18 @@
 # qount 快速接手手册
 
-更新时间：2026-06-05
+更新时间：2026-07-20
 
 当前版本：`0.2.0`
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
-[optimization-plan.md](optimization-plan.md)。
+[system-architecture-design.md](system-architecture-design.md)。
 
 ## 文档地图
 
 - [current.md](current.md)：当前事实、能力边界、下一步。
+- [project-rules.md](project-rules.md)：项目规则、文档分类、研究线隔离、代码清理纪律。
+- [storage-topology.md](storage-topology.md)：Windows外置盘、WSL计算、迁移校验和清理边界。
 - [holdout.md](holdout.md)：`discovery_pool` / `validation_pool_v1` 和 `G_paper` / `G_live`。
 - [quick-handoff.md](quick-handoff.md)：接手命令和运维坑点。
 - [update-log.md](update-log.md)：近期 artifact、验证结果、读法。
@@ -19,19 +21,38 @@
   [holdout.md](holdout.md) 取代。
 - [profit-engineering-plan.md](profit-engineering-plan.md)：2026-06-05 终审后的盈利工程
   主线；落地以 §10 的 S0 -> S1' -> S-CARRY 或 S2/S3 分叉为准。
+- [alpha-agent-plan.md](alpha-agent-plan.md)：Alpha Agents research-only 架构、Strategy V0 和 S3 collector。
 
 ## 第一原则
 
-- Mac 是编辑和 git 工作区：`/Users/alyaloale/Code/qount`。
-- WSL 是生产和回测真相：`/home/alyaloale/Code/qount`。
-- WSL 目录不一定有 `.git`，不要用 WSL `git status` 判断提交状态。
-- live 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
-- 不要启动 `qount-runner.timer`，除非当前 promotion gate 已通过且用户明确要求。
-- WSL 跑联网命令前必须 `source .env`，否则代理不会生效。
+- Mac是研究设计、代码主仓和git工作区：`/Users/alyaloale/Code/qount`；不长期保存全量数据。
+- Windows外置盘`E:\qount_data`是数据和artifact存储真相；WSL路径为`/mnt/e/qount_data`。
+- WSL `/home/alyaloale/Code/qount`是7945HX/RTX 4060计算工作区，代码按需更新，不要求每次镜像Mac。
+- VPS 是所有 live / paper forward / dashboard 的生产真相：`qount-vps:/root/qount`；真实host只存仓库外inventory。
+- WSL不作为当前实盘依据；完成数据必须发布到外置盘，WSL ext4只留可清理scratch。
+- 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
+- 加密 X4 / C×D 实盘看 `QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`、
+  `QOUNT_CXD_CARRY_ENABLE` 和 VPS state，不用 `QOUNT_LIVE_ENABLE` 推断。
+- 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
+- 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。transport和publisher分别取得
+  owner明确授权前，不得恢复live/paper cron或任何systemd timer。未来重新评审时，外层lock仍必须直接放在
+  `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
+- 2026-07-20 VPS只读核对已将此前误处于`enabled/active`的`qount-mini-trend-forward.timer`纠正为`disabled/inactive`；当前没有
+  qount cron/timer、dashboard publisher unit或qount交易进程，`QOUNT_LIVE_ENABLE=false`。不要恢复该timer。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
 - 当前盈利工程主线不是继续默认 5m 调参，而是先跑 S1' 频段 × 策略族选择扫描。
+- 每批有意义执行完成后必须更新记录文档：本线 changelog；若影响当前事实、生产或全局规则，
+  同步更新 [current.md](current.md) 和 [update-log.md](update-log.md)。
+- 新增研究或清理弃用代码前先按 [project-rules.md](project-rules.md) 做线归属和引用审计。
+
+WSL存储预检：
+
+```bash
+ssh -o ClearAllForwardings=yes home \
+  'wsl.exe bash -lc "cd /home/alyaloale/Code/qount && scripts/storage/wsl_compute_storage.sh status"'
+```
 
 ## 当前状态检查
 
@@ -42,59 +63,101 @@ cd /Users/alyaloale/Code/qount
 git status --short --branch
 ```
 
-再从 Mac 查 WSL 运行状态：
+Alpha S3 的正式 7 天 public-data session 已在约 21 小时后中断并 fail closed；它不是训练或 promotion
+证据。以下命令只用于检查和保留失败现场，不得 resume 或拼接：
 
 ```bash
-ssh -o ClearAllForwardings=yes home 'wsl.exe bash -s' <<'EOF'
-cd /home/alyaloale/Code/qount || exit 1
-printf '%s\n' '--- env ---'
-grep -E '^(QOUNT_MODE|QOUNT_MARKET_TYPE|QOUNT_RULE_MODE|QOUNT_LIVE_ENABLE|QOUNT_SYMBOLS|QOUNT_CONTRACT_LEVERAGE|QOUNT_MAX_OPEN_POSITIONS|QOUNT_AI_MODEL|HTTP_PROXY|HTTPS_PROXY)=' .env || true
-printf '%s\n' '--- systemd ---'
-systemctl --user is-active qount-runner.timer qount-runner.service || true
-printf '%s\n' '--- runtime ---'
-set -a
-source .env
-set +a
-./.venv/bin/python -m qount.main runtime-status | python3 -m json.tool
-printf '%s\n' '--- live guard ---'
-./.venv/bin/python -m qount.main live-guard-status | python3 -m json.tool
-EOF
+ssh qount-vps 'systemctl status qount-alpha-collector.service --no-pager'
+ssh qount-vps 'cd /root/qount-alpha && python3 -m json.tool \
+  state/alpha-collector-current/alpha_agent_live_collector_session.json'
+ssh qount-vps 'cd /root/qount-alpha && find state/alpha-collector-current/segments \
+  -name "events.jsonl.gz.partial" -printf "%p %s bytes\n"'
+launchctl print gui/$(id -u)/com.qount.alpha-collector-offload
+tail -n 80 state/logs/alpha_collector_offload.log
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+  --verify-session-dir \
+  state/research_runs/20260714T135630Z-alpha-agent-live-collector-session-7d-vps
 ```
+
+读法：当前预期是 systemd `inactive/dead`、manifest `continuous_gate_eligible=false`、Mac offload
+`last exit code=1`。22 个闭段中 19 pass/3 block，并有 orphan partial；这些文件保留为失败证据。不要启动
+第二份，也不要让 offloader 删除失败段。需要确认服务保持停止时：
+
+```bash
+ssh qount-vps 'systemctl stop qount-alpha-collector.service'
+```
+
+旧 Mac session `20260714T112649Z-...-7d` 和失败 VPS session 都不得拼接。研究主路径改为 Mac 上的
+checksum-verified Binance 历史归档：
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_historical_microstructure.py
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_historical_derivatives.py \
+  --start-date 2024-01-01 --end-date 2024-03-31
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_historical_tradeflow.py \
+  --symbols ETHUSDT --start-date 2024-01-01 --end-date 2024-03-31 \
+  --datasets aggTrades --cadence monthly
+```
+
+冻结 trade-flow v1 的 ETH anchor 已过 Q1/April 历史 IC/成本，但预注册 BTC/BNB/SOL Q1 复制全败，
+DSR/PBO/G5/G6 仍 block。不要改冻结参数后复用 Q1/April，不要下载复制 April 追结果，也不做 runtime parity；
+7 天连续采集不再是构造历史 dataset 的前置条件。
+
+再从 Mac 查 VPS 运行状态：
+
+```bash
+ssh qount-vps 'cd /root/qount && git status --short --branch || true'
+ssh qount-vps 'cd /root/qount && crontab -l'
+ssh qount-vps 'cd /root/qount && tail -n 120 ~/cxd_live.log'
+ssh qount-vps 'cd /root/qount && python3 -m json.tool state/x4/live/latest.json'
+ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json 2>/dev/null || true'
+ssh qount-vps 'free -m; ps -eo pid,rss,comm,args --sort=-rss | head -n 15'
+```
+
+production publisher授权前的只读路径评审：
+
+```bash
+ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
+  scripts/operations/audit_publisher_paths.py \
+  --authority-root /var/lib/qount/dashboard-authority \
+  --backup-root /var/lib/qount/dashboard-backups'
+```
+
+本次真实VPS审计返回`blocked`：`/var/lib/qount`及authority/backup候选目录均缺失，远端代码没有authority writer/source，审计hash为
+`fb66f3c3c8f45c90ed9429cca59e9b9b843c61e335ad5d179a37a2921c059c5f`。只有该命令在真实VPS返回`ready_for_authorization`、生产authority writer/source已经单独确认、transport也另有明确授权后，才向owner
+提交production publisher install/enable申请；审计通过本身不等于授权。本次已取得真实`blocked`证据，不能安装unit、enable timer或恢复
+crontab；只有authority writer/source和backup目录补齐后才能重新审计。
 
 常见读法：
 
-- `live-guard-status ok=false reason=live_disabled` 是当前正确状态。
-- `.env` 仍可能是旧 4-symbol live 形状；研究读数不要继承它。
-- `Network is unreachable` 多数是 WSL 没 `source .env` 或代理不通。
+- `cxd_live_cron.sh` 是当前加密组合实盘入口；standalone `x4_live_cron.sh` 不应同时交易同一账户。
+- `QOUNT_CXD_CARRY_ENABLE=0` 是当前默认：carry 暂停，趋势腿仍跑。
+- `cron_guard.sh` 是未来若获授权后仍必须保留的脚本内防线：live 110 秒、publisher 90 秒、paper 1800 秒；
+  crontab 外层 timeout 略大，只做最后兜底。`[SKIP] previous run still active` 是正常防重入，
+  `[ALERT] exceeded ... runtime limit` 才是需要排查的超时。
+- `build_exchange()` 默认 `fetchCurrencies=False`。Qount 不依赖 Binance 币种充值元数据，不要为了
+  `load_markets()` 重新打开会访问私有 SAPI 的 currency fetch。
+- 1.6G VPS 的常驻大户当前是 new-api/sub2api，不是 qount。若 `MemAvailable` 长时间低于约 250M、
+  swap 持续增长或协议层再次超时，先看 top RSS 和残留 qount 进程；不要只看端口是否 listen。
+- 仓库前端已改成只读Dashboard v1并部署到`https://qount.alyaloale.com/#/live`。served root只有
+  `index.html/app.js/style.css`，旧`data/*.json`已移出并备份到`/root/qount-dashboard-backup-20260719T183341Z`；生产v1 publisher
+  尚未接入，所以认证后页面应显示`PRODUCTION STOPPED`，Mac/WSL fixture不得复制上线。
+  `RuntimeLedgerSnapshot` schema v3用同一SQLite读事务冻结positions、orders/events、fills、cash、recoveries、完整NAV历史、账户观测和
+  三方对账；balance/available、actual gross、margin和peak/current drawdown已有权威账本合同。`SystemHealthSnapshot`固定要求
+  `clock/disk/service/backup`四项强类型观测并使用独立freshness。
+  Dashboard当前有`overview/positions/orders/strategies/decisions/risk/readiness/system/alerts/reports`十页，原子release为十份模型加
+  `publication.json`共11个JSON，静态schema共13份。positions可点击进入decision trace；浏览器不读取legacy JSON、生产SQLite或
+  交易所，也不重算PnL。当前仍未接scheduler、真实webhook或production publisher，order latency/slippage继续显式unavailable。
+- `ledger/legacy_replay.py`只用于隔离的本地migration replay：输入必须是相互hash链接的projection与legacy dry plan，输出
+  完整`VerifiedDecisionBatch`、仅`PLANNED`的临时账本和哈希报告。它不读取生产文件、不导入dispatcher或交易所adapter，
+  也不能把已有transition/fill/cash/NAV/reconciliation状态重标成dry；不要把测试golden或临时SQLite复制到VPS当生产状态。
+- `notifications/store.py`只由注入transport发送，固定delivery idempotency key并持久化attempt/audit；
+  `notifications/transport.py`现有严格provider response、限流/超时、0600 credential和无key审计，但只提供fake provider，当前
+  transport和本地`alerts.json`都是fixture。旧CTA-R SwiftBar/Übersicht与`cta.json`前端推送已删除，`com.qount.dashboard`已从Mac
+  launchd卸载；`com.qount.ctar-daily`是独立研究任务，仍保留。
+- WSL 的 `7907` 代理、`.env`、`qount-runner.timer` 只属于历史 line A 运维链路。
 
-如果 WSL 报 `binance GET https://fapi.binance.com/fapi/v1/exchangeInfo` 且代理是
-`192.168.128.1:7907` 超时，先从 Mac 恢复 Windows 侧 qount 专线：
-
-```bash
-ssh -o ClearAllForwardings=yes home 'powershell.exe -NoProfile -Command -' <<'EOF'
-Start-ScheduledTask -TaskName QountBinanceProxy
-Start-Sleep -Seconds 6
-Get-ScheduledTask -TaskName QountBinanceProxy | Select-Object TaskName,State
-Get-NetTCPConnection -LocalPort 7907 -ErrorAction SilentlyContinue |
-  Select-Object LocalAddress,LocalPort,State,OwningProcess
-EOF
-```
-
-再从 WSL 复测：
-
-```bash
-ssh -o ClearAllForwardings=yes home 'wsl.exe bash -s' <<'EOF'
-(timeout 5 bash -lc 'cat </dev/null >/dev/tcp/192.168.128.1/7907') >/dev/null 2>&1 &&
-  echo 'wsl_7907_tcp=ok' || echo 'wsl_7907_tcp=fail'
-curl -sS --max-time 12 --proxy http://192.168.128.1:7907 \
-  https://fapi.binance.com/fapi/v1/time
-EOF
-```
-
-2026-06-04 已验证：`QountBinanceProxy` 任务启动后由 `verge-mihomo.exe` 监听 7907，
-WSL 代理访问 Binance futures public API 恢复。
-
-## 本地与 WSL 验证
+## 本地与 VPS 验证
 
 本地测试：
 
@@ -102,6 +165,36 @@ WSL 代理访问 Binance futures public API 恢复。
 cd /Users/alyaloale/Code/qount
 PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
 ```
+
+架构Phase B/C本地聚焦验证：
+
+```bash
+./.venv/bin/python -m unittest \
+  tests.test_runtime_ledger \
+  tests.test_legacy_dispatch_replay \
+  tests.test_ledger_dashboard_bridge \
+  tests.test_dashboard_read_models \
+  tests.test_notifications \
+  tests.test_notification_producers \
+  tests.test_daily_brief
+
+./.venv/bin/python -m unittest \
+  tests.test_mini_trend_signals \
+  tests.test_mini_trend_risk \
+  tests.test_mini_trend_execution \
+  tests.test_mini_trend_scorecard \
+  tests.test_mini_trend_backtest \
+  tests.test_mini_trend_pilot_dispatcher \
+  tests.test_dispatch_contract_adapters
+```
+
+当前读法：本轮notification/publisher安全边界聚焦为`48 OK`，全仓`1478 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
+`37 OK`等读数保留历史语境。更早的完整Phase A/B/C
+`101 OK`等批次读数保留在`current.md`和`update-log.md`，不覆盖其历史语境。`ledger/store.py`、legacy dry replay、冻结snapshot adapter、notification
+outbox/producers、incident sync、DailyBrief和Dashboard v1都只是Mac本地新架构基础，尚未接入
+`mini_trend/pilot_dispatcher.py`、producer scheduler、真实webhook或部署VPS；不要创建生产DB/read model，也不要据此打开live。
+最新read-model QA使用Playwright 1.60 + Chromium 1223，桌面`1440x1000`和移动`390x844`检查Live、Positions到Decisions点击追踪、
+System四项健康、移动菜单和缺release页面；无控制台异常、页面级横向溢出、重叠或裁切。测试release只来自本地fixture，未部署。
 
 research ML 依赖检查：
 
@@ -114,6 +207,8 @@ PYTHON_BIN=./.venv/bin/python ./scripts/check-research-deps.sh
 可安装但 import 缺 `libomp.dylib`，所以后续默认用 sklearn `HistGradientBoosting`。
 
 S1' 频段 × 策略族 discovery 扫描：
+
+以下 WSL 研究命令只作为历史证据链保留；当前不要把它当 live / paper 生产入口。
 
 ```bash
 ssh -o ClearAllForwardings=yes home 'wsl.exe bash -s' <<'EOF'
@@ -477,22 +572,24 @@ fold4=+0.2462749954
 fold 仍为负，不能 paper。下一刀应是更稳健的 exit 设计、模型层 purged-CV，或新的完整 OOS，
 不是重复 fixed close/replay/purged 读数。
 
-同步到 WSL 并安装：
+同步到 VPS 并安装：
 
 ```bash
-./scripts/sync-to-wsl.sh --install
+./scripts/sync-to-vps.sh --install
 ```
 
-WSL 测试：
+VPS 测试：
 
 ```bash
-./scripts/run-wsl-tests.sh
+./scripts/run-vps-tests.sh
 ```
 
-这两个脚本使用 here-doc 进入 WSL，避免 Mac -> Windows PowerShell -> WSL 多层引号把
-`-p 'test*.py'` 吞掉。脚本不会修改 WSL `.env`、不会启动 timer、不会打开 live。
+这两个脚本只同步代码和跑 unittest，不会改 VPS `~/.config/qount/x4_live.env`，不会开关 cron，
+不会改变 live arming。
 
-## 从 Mac 在 WSL 上跑长任务(L6 跑批等)的坑
+## 历史 WSL 长任务坑(legacy only)
+
+本节只用于追溯 2026-06 的 L6/WSL 数据批处理，不是当前生产部署说明。
 
 - **后台进程不持久**:`ssh home "wsl.exe bash -lc 'tmux new -d ...'"` 起的 tmux / nohup 后台
   进程,在 ssh 命令一返回后会被 WSL 连同 `/tmp` 一起回收(WSL 会话结束即拆)。只有从 Windows 侧
@@ -506,7 +603,9 @@ WSL 测试：
   同样保活。
 - **嵌套引号**:走 `'wsl.exe bash -s' <<'EOF' ... EOF`(quoted heredoc)最稳,`$VAR` / `$(...)`
   在 WSL 侧展开,不被 Mac/PowerShell 层吃掉;`wsl.exe bash -lc '...'` 里带 `$` 容易被吞。
-- **`l6_pipeline.sh`(external 消费模式)**:`.7z` 下到 `/mnt/d/BaiduNetdiskDownload/` →
+- **`l6_pipeline.sh`(external消费模式)**：`.7z`默认下到
+  `/mnt/e/qount_data/qount/scratch/l6-incoming/`，归档写
+  `/mnt/e/qount_data/qount/datasets/l6_l2_archive/`；可用`QOUNT_L2_SOURCE_DIR/QOUNT_L2_ARCHIVE`覆盖。
   `touch .../.l6_download_done` 让它处理完自退。失败的 `.7z`(损坏 / etl 错 / scored<6000 / xz 坏)
   自动移入 `_bad/`,不再重试。合法的低标的交易日(源数据本身 <6000,如 20260210=5178)登记到脚本里
   `LOW_OK_DATES` 白名单即可放行。幂等:archive 已存在的日子自动 SKIP。
@@ -641,19 +740,30 @@ python -m qount.main walk-forward \
 - AI：`src/qount/ai_client.py`、`src/qount/orchestrator.py`
 - review / scan：`src/qount/review.py`、`src/qount/research_slice_scan.py`
 - artifact：`src/qount/artifacts.py`
+- 线 B GRID：`src/qount/grid/`、`scripts/research/grid_b_*.py`
+- 线 C RV：`src/qount/rv/`、`scripts/desktop/rv_live.py`
+- 线 D X4 / C×D：`src/qount/x4/`、`scripts/desktop/*x4*`、`scripts/desktop/cxd_*`
+- 重启线 L1/L3/L4/L6：`src/qount/l*_*.py`、`scripts/research/l*_*.py`
+- Alpha Agents / S3 collector：`src/qount/alpha_agents/`、`scripts/research/alpha_agent_*.py`
 - 主测试：`tests/test_strategy_optimization.py`
 - 交易所边界测试：`tests/test_exchange_throttling.py`
 
 ## 当前禁止事项
 
 - 不把 `QOUNT_LIVE_ENABLE` 改成 `true`。
-- 不启动或 enable `qount-runner.timer`。
+- 不安装production crontab，不enable任何qount systemd timer，不运行订单或真实notification transport。
+- 不在 WSL 启动或 enable `qount-runner.timer`。
 - 不把旧 `wf-*` 窗口当 validation。
 - 不把 2026-06-01..2026-06-04 已看过窗口当新的 promotion 验证。
 - 不用旧 G1/G2 解释 promotion。
 - 不为了成交频率放宽 broad `range_noise`、`short_rebound_fail` 或 reclaim-long gate。
 - 不把 Kronos 接到 candidate / risk / live。
-- 不把 WSL `.env` 的 4-symbol 形状当 ETH-only 研究口径。
+- 不把 WSL `.env` 的 4-symbol 形状当 ETH-only 研究口径或生产实盘状态。
+- 不把 WSL 当 live / paper / dashboard 生产面。
+- 不新增未归类的计划文档；新研究线必须先写清归属、artifact 规则、promotion gate 和退出条件。
+- 不删除 legacy 代码入口，除非先完成 `rg` 引用审计、文档改口和最小测试。
+- 不启动第二份 Alpha S3 7 天 collector；失败 session 不 resume/拼接。历史 dataset 已替代 7 天前置 gate，
+  但 frozen v1 的 G4/G5/G6 未过，仍不启动 A10/paper/live。
 
 ## 下一步执行顺序
 
@@ -663,15 +773,26 @@ python -m qount.main walk-forward \
 > 已证伪、CARRY 已证伪。完整对账见 profit-engineering-plan.md §11.8。**不要再开新的特征 /
 > 频段搜索**——那只会触发 §7 多重检验假象。
 
-1. **默认不再跑新研究扫描。** 整套反过拟合 harness（triple-barrier、purged-CV+embargo、DSR、
+2026-07-08 owner 另行授权的 Alpha Agents / Strategy V0 属于“新微结构信息源”研究组织层，不推翻上述
+旧特征空间停止结论。S3 public archive 数据 gate 和 frozen v1 historical OOS 已完成；当前只允许补其
+预注册 anti-overfit/correlation-stress 证据，不借此恢复旧价格/频段扫描。
+
+架构支线已完成账户/回撤、四项健康和position/decision trace。注入式transport合同及fake/provider故障测试已完成，但没有真实adapter，
+也未获启用授权；legacy `Notifier`/shell ServerChan不得复用。production publisher本地合同已完成，但真实VPS authority source/权限/
+backup目录仍未只读核验，且仓库没有production authority writer。两者均明确授权前，不接真实transport、私有API、timer、cron或订单。
+
+1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
+   不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做
+   runtime parity，也不恢复 7 天 collector。重启必须先有结构性新信息或新的 ex-ante protocol。
+2. **默认不再跑旧空间的新研究扫描。** 整套反过拟合 harness（triple-barrier、purged-CV+embargo、DSR、
    PBO/CSCV、effective-breadth、频段×族选择扫描）已作为研究成果固化；维护可跑回归测试，但不
    在已穷尽的特征/频段空间继续找 edge。
-2. **重启的唯一触发条件是结构性新输入**：真正低相关的新 universe / 新资产类别，或可执行的低延迟
+3. **重启的唯一触发条件是结构性新输入**：真正低相关的新 universe / 新资产类别，或可执行的低延迟
    微结构通道。普通的「再换一个特征 / 再加一个币」不构成重启理由（广度天花板与多重检验都封死）。
-3. 已证伪、**不要重复**：`4h xs_mom` 的 exit/regime/barrier/purged-CV 复核；funding/basis 作
+4. 已证伪、**不要重复**：`4h xs_mom` 的 exit/regime/barrier/purged-CV 复核；funding/basis 作
    预测特征（xs_funding/xs_funding_rev）；WLD/SOL entry-only basis filter；top12 1d TS-MOM；
    S-CARRY 现金流。
-4. 硬纪律全不变：live 关闭、不 forward paper、不放宽 broad gate、`validation_v1` once-only 资格
+5. 硬纪律全不变：live 关闭、不 forward paper、不放宽 broad gate、`validation_v1` once-only 资格
    继续保留。止盈是停止投入，不是放松边界。
-5. 只有 `G_paper` 通过后才讨论 forward paper；只有 forward paper 后才讨论 `G_live`——当前无
+6. 只有 `G_paper` 通过后才讨论 forward paper；只有 forward paper 后才讨论 `G_live`——当前无
    promotion 证据，二者都不触发。

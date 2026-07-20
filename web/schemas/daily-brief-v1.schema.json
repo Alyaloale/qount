@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/daily-brief-v1.schema.json",
+  "title": "qount deterministic DailyBrief v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "brief_id", "report_date", "generated_at", "source_updated_at", "source_hashes", "status", "account", "positions", "orders", "pnl", "strategies", "readiness", "alerts", "llm", "owner_actions", "brief_hash"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "brief_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+    "report_date": { "type": "string", "format": "date" },
+    "generated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+    "source_updated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+    "source_hashes": { "$ref": "#/$defs/source_hashes" },
+    "status": { "$ref": "#/$defs/brief_status" },
+    "account": { "$ref": "#/$defs/account" },
+    "positions": { "type": "array", "items": { "$ref": "#/$defs/position" } },
+    "orders": { "$ref": "#/$defs/orders" },
+    "pnl": { "$ref": "#/$defs/pnl" },
+    "strategies": { "type": "array", "items": { "$ref": "#/$defs/strategy" } },
+    "readiness": { "$ref": "#/$defs/readiness" },
+    "alerts": { "$ref": "#/$defs/alerts" },
+    "llm": { "$ref": "#/$defs/llm" },
+    "owner_actions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["reconcile_before_any_recovery", "resolve_recoverable_order_states", "review_open_halt_alerts", "review_open_critical_alerts", "review_open_warning_alerts", "review_notification_dead_letters"]
+      }
+    },
+    "brief_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "brief_status": { "enum": ["clear", "attention_required", "halt_required"] },
+    "source_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_batch_manifest", "strategy_registry", "runtime_ledger", "notification_store"],
+      "properties": {
+        "decision_batch_manifest": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "strategy_registry": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "runtime_ledger": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "notification_store": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "string_list": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["equity", "previous_equity", "equity_change", "approved_target_gross", "actual_position_count", "accounting_passed", "account_observation_id", "observation_hash", "quote_asset", "wallet_balance", "available_balance", "actual_gross_notional", "actual_gross_fraction", "margin_used", "margin_fraction", "peak_equity", "current_drawdown_fraction", "peak_drawdown_fraction", "peak_drawdown_at", "unavailable_fields"],
+      "properties": {
+        "equity": { "type": "number", "minimum": 0 },
+        "previous_equity": { "type": "number", "minimum": 0 },
+        "equity_change": { "type": "number" },
+        "approved_target_gross": { "type": "number", "minimum": 0, "maximum": 1 },
+        "actual_position_count": { "type": "integer", "minimum": 0 },
+        "accounting_passed": { "type": "boolean" },
+        "account_observation_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "observation_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "quote_asset": { "type": "string", "pattern": "^[A-Z0-9]{2,16}$" },
+        "wallet_balance": { "type": "number", "minimum": 0 },
+        "available_balance": { "type": "number", "minimum": 0 },
+        "actual_gross_notional": { "type": "number", "minimum": 0 },
+        "actual_gross_fraction": { "type": "number", "minimum": 0 },
+        "margin_used": { "type": "number", "minimum": 0 },
+        "margin_fraction": { "type": "number", "minimum": 0 },
+        "peak_equity": { "type": "number", "minimum": 0 },
+        "current_drawdown_fraction": { "type": "number", "minimum": 0 },
+        "peak_drawdown_fraction": { "type": "number", "minimum": 0 },
+        "peak_drawdown_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "unavailable_fields": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "strategy_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy_id", "decision_id", "reason_codes"],
+      "properties": {
+        "strategy_id": { "type": "string", "minLength": 1 },
+        "decision_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "reason_codes": { "$ref": "#/$defs/string_list" }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "actual_quantity", "expected_quantity", "approved_target_weight", "strategy_links"],
+      "properties": {
+        "symbol": { "type": "string", "minLength": 1 },
+        "actual_quantity": { "type": "number", "minimum": 0 },
+        "expected_quantity": { "type": "number", "minimum": 0 },
+        "approved_target_weight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "strategy_links": { "type": "array", "items": { "$ref": "#/$defs/strategy_link" } }
+      }
+    },
+    "orders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "planned_order_count", "planned_cancellation_count", "runtime_order_count", "protective_order_count", "protective_order_runtime_statuses", "plan_executable", "open_order_ids", "unresolved_order_ids", "status_counts", "fill_count", "fill_quantity", "fill_notional", "fill_fees_by_asset", "latest_recovery_status", "unavailable_fields"],
+      "properties": {
+        "scope": { "const": "runtime_ledger_orders_and_fills" },
+        "planned_order_count": { "type": "integer", "minimum": 0 },
+        "planned_cancellation_count": { "type": "integer", "minimum": 0 },
+        "runtime_order_count": { "type": "integer", "minimum": 0 },
+        "protective_order_count": { "type": "integer", "minimum": 0 },
+        "protective_order_runtime_statuses": { "$ref": "#/$defs/count_map" },
+        "plan_executable": { "type": "boolean" },
+        "open_order_ids": { "$ref": "#/$defs/string_list" },
+        "unresolved_order_ids": { "$ref": "#/$defs/string_list" },
+        "status_counts": { "$ref": "#/$defs/count_map" },
+        "fill_count": { "type": "integer", "minimum": 0 },
+        "fill_quantity": { "type": "number", "minimum": 0 },
+        "fill_notional": { "type": "number", "minimum": 0 },
+        "fill_fees_by_asset": { "$ref": "#/$defs/nonnegative_map" },
+        "latest_recovery_status": { "enum": ["none", "passed", "blocked"] },
+        "unavailable_fields": { "const": ["order_latency", "slippage"] }
+      }
+    },
+    "count_map": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 },
+      "propertyNames": { "minLength": 1 }
+    },
+    "nonnegative_map": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0 },
+      "propertyNames": { "minLength": 1 }
+    },
+    "nullable_number": { "oneOf": [{ "type": "null" }, { "type": "number", "minimum": 0 }] },
+    "pnl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "marked_at", "trading_pnl", "funding", "fees", "transfers", "residual", "residual_tolerance", "passed", "signal_nav", "standalone_executable_nav", "realized_equity", "peak_equity", "current_drawdown_fraction", "peak_drawdown_fraction", "peak_drawdown_at", "unavailable_fields"],
+      "properties": {
+        "scope": { "const": "latest_nav_mark" },
+        "marked_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "trading_pnl": { "type": "number" },
+        "funding": { "type": "number" },
+        "fees": { "type": "number", "minimum": 0 },
+        "transfers": { "type": "number" },
+        "residual": { "type": "number" },
+        "residual_tolerance": { "type": "number", "minimum": 0 },
+        "passed": { "type": "boolean" },
+        "signal_nav": { "$ref": "#/$defs/nullable_number" },
+        "standalone_executable_nav": { "$ref": "#/$defs/nullable_number" },
+        "realized_equity": { "type": "number", "minimum": 0 },
+        "peak_equity": { "type": "number", "minimum": 0 },
+        "current_drawdown_fraction": { "type": "number", "minimum": 0 },
+        "peak_drawdown_fraction": { "type": "number", "minimum": 0 },
+        "peak_drawdown_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "unavailable_fields": { "const": ["slippage"] }
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 },
+      "propertyNames": { "minLength": 1 }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "reason_codes", "target_weights"],
+      "properties": {
+        "decision_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "reason_codes": { "$ref": "#/$defs/string_list" },
+        "target_weights": { "$ref": "#/$defs/weights" }
+      }
+    },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy_id", "strategy_version", "promotion_status", "maximum_gross", "maximum_stress_loss_fraction", "decision", "live_orders_allowed"],
+      "properties": {
+        "strategy_id": { "type": "string", "minLength": 1 },
+        "strategy_version": { "type": "string", "minLength": 1 },
+        "promotion_status": { "enum": ["draft", "research", "frozen_candidate", "shadow", "paper", "minimal_live", "scaled_live", "halted"] },
+        "maximum_gross": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximum_stress_loss_fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+        "decision": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/decision" }] },
+        "live_orders_allowed": { "const": false }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "status", "detail"],
+      "properties": {
+        "gate": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["pass", "warn", "block"] },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "gates", "reconciliation_id", "reconciliation_hash"],
+      "properties": {
+        "status": { "$ref": "#/$defs/brief_status" },
+        "gates": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/gate" } },
+        "reconciliation_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "reconciliation_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "unresolved_alert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alert_id", "severity", "category", "title", "summary", "occurred_at", "source_type", "source_id", "source_hash", "trace_id", "event_hash"],
+      "properties": {
+        "alert_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "severity": { "enum": ["INFO", "WARNING", "CRITICAL", "HALT"] },
+        "category": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "occurred_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "source_type": { "type": "string", "minLength": 1 },
+        "source_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "trace_id": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }] },
+        "event_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "alerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["open_alert_count", "open_severity_counts", "delivery_state_counts", "unresolved", "audit_last_hash", "audit_row_count"],
+      "properties": {
+        "open_alert_count": { "type": "integer", "minimum": 0 },
+        "open_severity_counts": { "$ref": "dashboard-v1-alerts.schema.json#/$defs/severity_counts" },
+        "delivery_state_counts": { "$ref": "dashboard-v1-alerts.schema.json#/$defs/delivery_counts" },
+        "unresolved": { "type": "array", "items": { "$ref": "#/$defs/unresolved_alert" } },
+        "audit_last_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "audit_row_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "llm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reports"],
+      "properties": {
+        "status": { "const": "not_requested_deterministic_only" },
+        "reports": { "type": "array", "maxItems": 0 }
+      }
+    }
+  }
+}

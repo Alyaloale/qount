@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-overview.schema.json",
+  "title": "qount Dashboard v1 overview",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "overview" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "latest_batch", "account", "portfolio", "risk", "pnl"],
+          "properties": {
+            "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
+            "latest_batch": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["batch_id", "manifest_id", "manifest_hash", "snapshot_id", "decision_time", "data_cutoff", "complete", "decision_count"],
+              "properties": {
+                "batch_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "manifest_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "manifest_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "snapshot_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "decision_time": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+                "data_cutoff": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+                "complete": { "const": true },
+                "decision_count": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "account": {
+              "oneOf": [
+                { "$ref": "dashboard-v1-envelope.schema.json#/$defs/ledger_unavailable" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "values"],
+                  "properties": {
+                    "status": { "const": "available" },
+                    "source": { "const": "runtime_ledger" },
+                    "values": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["account_observation_id", "batch_id", "observed_at", "quote_asset", "wallet_balance", "available_balance", "actual_gross_notional", "actual_gross_fraction", "margin_used", "margin_fraction", "source_id", "source_hash", "observation_hash", "peak_equity", "current_drawdown_fraction", "peak_drawdown_fraction", "peak_drawdown_at"],
+                      "properties": {
+                        "account_observation_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                        "batch_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                        "observed_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+                        "quote_asset": { "type": "string", "pattern": "^[A-Z0-9]{2,16}$" },
+                        "wallet_balance": { "type": "number", "minimum": 0 },
+                        "available_balance": { "type": "number", "minimum": 0 },
+                        "actual_gross_notional": { "type": "number", "minimum": 0 },
+                        "actual_gross_fraction": { "type": "number", "minimum": 0 },
+                        "margin_used": { "type": "number", "minimum": 0 },
+                        "margin_fraction": { "type": "number", "minimum": 0 },
+                        "source_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                        "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                        "observation_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                        "peak_equity": { "type": "number", "minimum": 0 },
+                        "current_drawdown_fraction": { "type": "number", "minimum": 0 },
+                        "peak_drawdown_fraction": { "type": "number", "minimum": 0 },
+                        "peak_drawdown_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "portfolio": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["portfolio_target_id", "approved_target", "approved_target_gross", "actual_positions", "planned_order_count", "planned_cancellation_count", "plan_executable"],
+              "properties": {
+                "portfolio_target_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "approved_target": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/weights" },
+                "approved_target_gross": { "type": "number", "minimum": 0, "maximum": 1 },
+                "actual_positions": {
+                  "oneOf": [
+                    { "$ref": "dashboard-v1-envelope.schema.json#/$defs/ledger_unavailable" },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["status", "source", "values"],
+                      "properties": {
+                        "status": { "const": "available" },
+                        "source": { "const": "runtime_ledger" },
+                        "values": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["positions", "open_order_ids", "unresolved_order_ids"],
+                          "properties": {
+                            "positions": {
+                              "type": "object",
+                              "additionalProperties": { "type": "number", "minimum": 0 },
+                              "propertyNames": { "minLength": 1 }
+                            },
+                            "open_order_ids": {
+                              "type": "array",
+                              "items": { "type": "string", "minLength": 1 },
+                              "uniqueItems": true
+                            },
+                            "unresolved_order_ids": {
+                              "type": "array",
+                              "items": { "type": "string", "minLength": 1 },
+                              "uniqueItems": true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "planned_order_count": { "type": "integer", "minimum": 0 },
+                "planned_cancellation_count": { "type": "integer", "minimum": 0 },
+                "plan_executable": { "type": "boolean" }
+              }
+            },
+            "risk": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["risk_decision_id", "approved", "increase_risk_allowed", "reduce_risk_allowed", "adjustments", "violations", "blockers"],
+              "properties": {
+                "risk_decision_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "approved": { "type": "boolean" },
+                "increase_risk_allowed": { "type": "boolean" },
+                "reduce_risk_allowed": { "type": "boolean" },
+                "adjustments": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+                "violations": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+                "blockers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+              }
+            },
+            "pnl": {
+              "oneOf": [
+                { "$ref": "dashboard-v1-envelope.schema.json#/$defs/ledger_unavailable" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "values"],
+                  "properties": {
+                    "status": { "const": "available" },
+                    "source": { "const": "runtime_ledger" },
+                    "values": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["nav_mark_id", "mark_hash", "marked_at", "previous_equity", "equity", "equity_change", "trading_pnl", "funding", "fees", "transfers", "residual", "residual_tolerance", "passed", "trading_pnl_cumulative", "funding_cumulative", "fees_cumulative", "transfers_cumulative", "peak_equity", "current_drawdown_fraction", "peak_drawdown_fraction", "peak_drawdown_at"],
+                      "properties": {
+                        "nav_mark_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                        "mark_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                        "marked_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+                        "previous_equity": { "type": "number", "minimum": 0 },
+                        "equity": { "type": "number", "minimum": 0 },
+                        "equity_change": { "type": "number" },
+                        "trading_pnl": { "type": "number" },
+                        "funding": { "type": "number" },
+                        "fees": { "type": "number", "minimum": 0 },
+                        "transfers": { "type": "number" },
+                        "residual": { "type": "number" },
+                        "residual_tolerance": { "type": "number", "minimum": 0 },
+                        "passed": { "type": "boolean" },
+                        "trading_pnl_cumulative": { "type": "number" },
+                        "funding_cumulative": { "type": "number" },
+                        "fees_cumulative": { "type": "number", "minimum": 0 },
+                        "transfers_cumulative": { "type": "number" },
+                        "peak_equity": { "type": "number", "minimum": 0 },
+                        "current_drawdown_fraction": { "type": "number", "minimum": 0 },
+                        "peak_drawdown_fraction": { "type": "number", "minimum": 0 },
+                        "peak_drawdown_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

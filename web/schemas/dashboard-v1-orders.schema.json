@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-orders.schema.json",
+  "title": "qount Dashboard v1 orders and fills",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "orders" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "summary", "orders", "fills"],
+          "properties": {
+            "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
+            "summary": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "total_order_count", "open_order_count", "unresolved_order_count", "partial_fill_count", "rejected_count", "protective_order_count", "fill_count", "fill_quantity", "fill_notional", "fill_fees_by_asset", "latest_recovery_status", "unavailable_fields"],
+                  "properties": {
+                    "status": { "const": "unavailable_until_phase_b_ledger" },
+                    "total_order_count": { "type": "null" },
+                    "open_order_count": { "type": "null" },
+                    "unresolved_order_count": { "type": "null" },
+                    "partial_fill_count": { "type": "null" },
+                    "rejected_count": { "type": "null" },
+                    "protective_order_count": { "type": "null" },
+                    "fill_count": { "type": "null" },
+                    "fill_quantity": { "type": "null" },
+                    "fill_notional": { "type": "null" },
+                    "fill_fees_by_asset": { "type": "null" },
+                    "latest_recovery_status": { "type": "null" },
+                    "unavailable_fields": { "const": ["order_latency", "slippage"] }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "total_order_count", "open_order_count", "unresolved_order_count", "partial_fill_count", "rejected_count", "protective_order_count", "fill_count", "fill_quantity", "fill_notional", "fill_fees_by_asset", "latest_recovery_status", "unavailable_fields"],
+                  "properties": {
+                    "status": { "const": "available" },
+                    "total_order_count": { "$ref": "#/$defs/count" },
+                    "open_order_count": { "$ref": "#/$defs/count" },
+                    "unresolved_order_count": { "$ref": "#/$defs/count" },
+                    "partial_fill_count": { "$ref": "#/$defs/count" },
+                    "rejected_count": { "$ref": "#/$defs/count" },
+                    "protective_order_count": { "$ref": "#/$defs/count" },
+                    "fill_count": { "$ref": "#/$defs/count" },
+                    "fill_quantity": { "type": "number", "minimum": 0 },
+                    "fill_notional": { "type": "number", "minimum": 0 },
+                    "fill_fees_by_asset": { "$ref": "#/$defs/nonnegative_map" },
+                    "latest_recovery_status": { "enum": ["none", "passed", "blocked"] },
+                    "unavailable_fields": { "const": ["order_latency", "slippage"] }
+                  }
+                }
+              ]
+            },
+            "orders": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/order" }
+            },
+            "fills": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/fill" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "nullable_number": { "type": ["number", "null"], "minimum": 0 },
+    "nullable_text": { "type": ["string", "null"], "minLength": 1 },
+    "nonnegative_map": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0 },
+      "propertyNames": { "minLength": 1 }
+    },
+    "fill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fill_id", "client_order_id", "exchange_trade_id", "quantity", "price", "fee", "fee_asset", "occurred_at", "source_hash", "fill_hash"],
+      "properties": {
+        "fill_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "client_order_id": { "type": "string", "minLength": 1 },
+        "exchange_trade_id": { "type": "string", "minLength": 1 },
+        "quantity": { "type": "number", "exclusiveMinimum": 0 },
+        "price": { "type": "number", "exclusiveMinimum": 0 },
+        "fee": { "type": "number", "minimum": 0 },
+        "fee_asset": { "type": "string", "minLength": 1 },
+        "occurred_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "fill_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "order": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["client_order_id", "batch_id", "symbol", "side", "phase", "order_type", "status", "planned_quantity", "executed_quantity", "remaining_quantity", "fill_count", "fill_quantity", "fill_notional", "fill_fees_by_asset", "exchange_order_id", "average_price", "reduce_only", "close_position", "limit_price", "stop_price", "last_transition_at", "latest_reason", "plan_spec_hash", "last_observation_hash"],
+      "properties": {
+        "client_order_id": { "type": "string", "minLength": 1 },
+        "batch_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "symbol": { "type": "string", "minLength": 1 },
+        "side": { "enum": ["buy", "sell"] },
+        "phase": { "enum": ["reduce", "increase", "protective"] },
+        "order_type": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["PLANNED", "SUBMITTING", "ACKNOWLEDGED", "PARTIALLY_FILLED", "FILLED", "REJECTED", "CANCELED", "EXPIRED", "UNKNOWN"] },
+        "planned_quantity": { "$ref": "#/$defs/nullable_number" },
+        "executed_quantity": { "type": "number", "minimum": 0 },
+        "remaining_quantity": { "$ref": "#/$defs/nullable_number" },
+        "fill_count": { "$ref": "#/$defs/count" },
+        "fill_quantity": { "type": "number", "minimum": 0 },
+        "fill_notional": { "type": "number", "minimum": 0 },
+        "fill_fees_by_asset": { "$ref": "#/$defs/nonnegative_map" },
+        "exchange_order_id": { "$ref": "#/$defs/nullable_text" },
+        "average_price": { "$ref": "#/$defs/nullable_number" },
+        "reduce_only": { "type": "boolean" },
+        "close_position": { "type": "boolean" },
+        "limit_price": { "$ref": "#/$defs/nullable_number" },
+        "stop_price": { "$ref": "#/$defs/nullable_number" },
+        "last_transition_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "latest_reason": { "$ref": "#/$defs/nullable_text" },
+        "plan_spec_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "last_observation_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    }
+  }
+}

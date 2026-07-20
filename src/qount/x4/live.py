@@ -404,6 +404,77 @@ def apply_chandelier_stops(
     return adjusted, new_state, triggered
 
 
+def _holding_symbol(holding: dict) -> str | None:
+    raw = holding.get("symbol") or holding.get("s")
+    return str(raw) if raw else None
+
+
+def _holding_side(holding: dict) -> int:
+    side = str(holding.get("side") or "").lower()
+    if side == "long":
+        return 1
+    if side == "short":
+        return -1
+    for key in ("value", "weight", "qty"):
+        val = holding.get(key)
+        try:
+            f = float(val)
+        except (TypeError, ValueError):
+            continue
+        if f > 0:
+            return 1
+        if f < 0:
+            return -1
+    return 0
+
+
+def sync_external_stop_latches(
+    targets: list[TargetWeight],
+    positions_base: dict[str, float],
+    prices: dict[str, float],
+    stop_state: dict[str, dict],
+    previous_holdings: list[dict] | None,
+    cfg: LiveConfig,
+) -> tuple[dict[str, dict], list[str]]:
+    """Latch symbols that were flattened by an exchange-native stop between live polls.
+
+    The Chandelier overlay normally latches when the local poll observes a stop breach. With
+    exchange-native ``STOP_MARKET closePosition`` orders, Binance can flatten the leg before the next
+    poll. The local runner then sees a flat book while the daily target is still active; without this
+    bridge it may immediately re-enter the same stopped symbol. Treat that external flatten as the same
+    stop event, but only when the previous snapshot proves we actually held that same-side leg.
+    """
+
+    if cfg.market_type != "swap" or not previous_holdings:
+        return dict(stop_state), []
+    target_side = {t.symbol: (1 if t.weight > 0 else -1 if t.weight < 0 else 0) for t in targets}
+    prev_side: dict[str, int] = {}
+    for h in previous_holdings:
+        s = _holding_symbol(h)
+        side = _holding_side(h)
+        if s and side:
+            prev_side[s] = side
+
+    out = dict(stop_state)
+    synced: list[str] = []
+    for s, side in target_side.items():
+        if side == 0 or prev_side.get(s) != side:
+            continue
+        prev = stop_state.get(s) or {}
+        if prev.get("latched"):
+            continue
+        trail_key = "trail_high" if side > 0 else "trail_low"
+        if trail_key not in prev:
+            continue
+        cur_notional = positions_base.get(s, 0.0) * prices.get(s, 0.0)
+        cur_side = 1 if cur_notional > 0 else -1 if cur_notional < 0 else 0
+        if cur_side == side and abs(cur_notional) >= cfg.min_order_usdt:
+            continue
+        out[s] = {"latched": True}
+        synced.append(s)
+    return out, synced
+
+
 def apply_scale_out(
     targets: list[TargetWeight],
     live_prices: dict[str, float],          # data_sym -> current LIVE price (intraday)

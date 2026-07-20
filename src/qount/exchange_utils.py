@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from decimal import ROUND_CEILING
+import os
 import time
 from typing import Any
 
@@ -84,6 +85,10 @@ def build_exchange(settings: Settings, private: bool = False):
         "fetchMarkets": {
             "types": ["linear"] if settings.contract_market else ["spot"],
         },
+        # Binance implements this nominally public CCXT method through the private
+        # /sapi/v1/capital/config/getall endpoint when credentials are present. Qount only needs
+        # market metadata and balances, so avoid the extra private DNS/API failure surface.
+        "fetchCurrencies": False,
     }
     if settings.contract_market:
         exchange_options["defaultSubType"] = "linear"
@@ -107,16 +112,37 @@ def build_exchange(settings: Settings, private: bool = False):
         }
     options: dict[str, Any] = {
         "enableRateLimit": True,
+        "timeout": _ccxt_timeout_ms(),
         "options": exchange_options,
     }
-    if settings.https_proxy:
+    bypass_proxy = os.getenv("QOUNT_EXCHANGE_BYPASS_PROXY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if settings.https_proxy and not bypass_proxy:
         options["httpsProxy"] = settings.https_proxy
-    elif settings.http_proxy:
+    elif settings.http_proxy and not bypass_proxy:
         options["httpProxy"] = settings.http_proxy
     if private:
         options["apiKey"] = settings.binance_api_key
         options["secret"] = settings.binance_api_secret
-    return exchange_class(options)
+    exchange = exchange_class(options)
+    if bypass_proxy:
+        session = getattr(exchange, "session", None)
+        if session is not None and hasattr(session, "trust_env"):
+            session.trust_env = False
+    return exchange
+
+
+def _ccxt_timeout_ms() -> int:
+    raw = os.getenv("QOUNT_CCXT_TIMEOUT_MS", "10000")
+    try:
+        timeout_ms = int(raw)
+    except (TypeError, ValueError):
+        timeout_ms = 10000
+    return min(max(timeout_ms, 1000), 60000)
 
 
 class ExchangePool:

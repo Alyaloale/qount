@@ -1,868 +1,569 @@
 "use strict";
 
-// 固定 TOP7 现货币池(线 D §21,逆波动率 · 1x · BTC 200d 大盘闸)
-const UNIVERSE = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "LINK"];
+const ROUTES = {
+  live: ["权威读模型", "实时运行", "账户、组合与运行状态"],
+  positions: ["组合事实", "仓位", "实际仓位、批准目标与决策追踪"],
+  orders: ["执行事实", "订单", "订单状态、成交、费用与恢复"],
+  strategies: ["治理注册表", "策略", "策略版本、治理状态与最新决定"],
+  decisions: ["证据链", "决策追踪", "从市场快照到三方对账的完整链路"],
+  risk: ["确定性控制", "风险", "风险决定、会计恒等式与对账"],
+  readiness: ["运行门", "就绪检查", "运行门、策略资格与订单权限"],
+  system: ["系统观测", "系统健康", "账本完整性与显式健康观测"],
+  alerts: ["事件管理", "告警", "分级事件、状态与投递审计"],
+  reports: ["确定性报告", "日报", "确定性日报与来源覆盖"],
+};
 
-// ---- helpers ----
+const MODEL_PATHS = {
+  overview: "data/v1/overview.json",
+  positions: "data/v1/positions.json",
+  orders: "data/v1/orders.json",
+  strategies: "data/v1/strategies.json",
+  decisions: "data/v1/decisions.json",
+  risk: "data/v1/risk.json",
+  readiness: "data/v1/readiness.json",
+  system: "data/v1/system.json",
+  alerts: "data/v1/alerts.json",
+  reports: "data/v1/reports.json",
+};
+
+const ROUTE_MODELS = {
+  live: "overview",
+  positions: "positions",
+  orders: "orders",
+  strategies: "strategies",
+  decisions: "decisions",
+  risk: "risk",
+  readiness: "readiness",
+  system: "system",
+  alerts: "alerts",
+  reports: "reports",
+};
+
+const state = { status: "loading", publication: null, models: {}, error: null };
 const $ = (id) => document.getElementById(id);
-const cls = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "dim");
-const sign = (n) => (n > 0 ? "+" : "");
-const r2 = (n) => Math.round((n + (n >= 0 ? 1 : -1) * Number.EPSILON) * 100) / 100;  // 舍到分,符号一致
-const arw = (n) => (n > 0 ? '<span class="arw">▲</span>' : n < 0 ? '<span class="arw">▼</span>' : "");
-const store = {};
-const livePx = {};                 // live mark prices fetched client-side (real-time tick between cron runs)
-let liveOnly = false;              // true during a price-tick re-render -> skip count-up (no constant re-animate)
-let liveCurveMode = "intra";       // 加密实盘权益曲线:"intra"=盘中实时 / "daily"=日线
 
-// proper signed money (+$1.23 / -$0.45) — `sign()` alone drops the minus after Math.abs
-function signed(x, cur) {
-  if (x == null || isNaN(x)) return "—";
-  return (x >= 0 ? "+" : "-") + (cur || "") + money(Math.abs(x));
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  })[character]);
 }
 
-// ---- theme (dark / light, persisted) ----
-function applyTheme(t) {
-  document.documentElement.setAttribute("data-theme", t);
-  try { localStorage.setItem("qount-theme", t); } catch (e) {}
-  const b = document.getElementById("theme-btn");
-  if (b) { b.textContent = t === "light" ? "☾" : "☀"; b.title = t === "light" ? "切换深色" : "切换浅色"; }
-}
-function toggleTheme() {
-  const cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
-  applyTheme(cur === "light" ? "dark" : "light");
+function shortHash(value) {
+  const text = String(value || "");
+  return text.length === 64 ? `${text.slice(0, 9)}...${text.slice(-7)}` : (text || "-");
 }
 
-// ---- 涨跌配色 (红涨绿跌 cn / 绿涨红跌 us, persisted) ----
-function applyColor(c) {
-  c = c === "us" ? "us" : "cn";
-  document.documentElement.setAttribute("data-color", c);
-  try { localStorage.setItem("qount-color", c); } catch (e) {}
-  const b = document.getElementById("color-btn");
-  if (b) b.title = c === "us" ? "涨跌配色 · 当前绿涨红跌 → 切红涨绿跌" : "涨跌配色 · 当前红涨绿跌 → 切绿涨红跌";
-}
-function toggleColor() {
-  applyColor(document.documentElement.getAttribute("data-color") === "us" ? "cn" : "us");
-}
-
-// ---- count-up animation for big numbers ----
-let booted = false;
-const prevVals = {};
-const REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const grp = (v, dec) => (dec ? v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec })
-                              : Math.round(v).toLocaleString("en-US"));
-function counted(key, value, dec = 0) {
-  if (value == null || isNaN(value)) return "—";
-  return `<span class="num" data-count data-key="${key}" data-val="${value}" data-dec="${dec}">${grp(value, dec)}</span>`;
-}
-function applyCounts() {
-  document.querySelectorAll("[data-count]").forEach((el) => {
-    const key = el.dataset.key, to = parseFloat(el.dataset.val), dec = +(el.dataset.dec || 0);
-    if (isNaN(to)) return;
-    const from = booted && key in prevVals ? prevVals[key] : 0;
-    prevVals[key] = to;
-    if (REDUCE || liveOnly || from === to) { el.textContent = grp(to, dec); return; }
-    const dur = 850, t0 = performance.now();
-    (function step(t) {
-      const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 4);
-      el.textContent = grp(from + (to - from) * e, dec);
-      if (p < 1) requestAnimationFrame(step); else el.textContent = grp(to, dec);
-    })(t0);
-  });
+function formatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
-// ---- page subtitle: per-route compact status line in the header ----
-function pageSub(route) {
-  const el = $("page-sub");
-  if (!el) return;
-  const c = store.cta, l = store.live, p = store.paper;
-  let s = "";
-  if (route === "overview") {
-    if (l && l.btc_px) s = `BTC $${money(l.btc_px)} · 距开闸 ${pct(l.btc_to_sma || 0, 1)}`;
-  } else if (route === "live" && l) {
-    const { longOn, shortOn } = liveNetState(l);
-    const hasCarry = !!l.carry && !!l.carry.active_dated && l.carry.active_dated.length > 0;
-    s = `${longOn ? "做多" : shortOn ? "做空对冲" : "空仓"}${hasCarry ? " · carry" : ""} · ${l.armed ? "已武装" : "未武装"} · 更新 ${ago(l.ts)}`;
-  } else if (route === "cta" && c) {
-    s = `累计 ${pct(c.total_pnl_pct || 0)} · 数据 ${c.data_date || "—"}`;
-  } else if (route === "paper" && p) {
-    s = `各 $100k 前向 · ${(p.holdings && p.holdings.deploy_date) || "—"}`;
+function formatMoney(value, asset) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  const formatted = new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(number);
+  return asset ? `${formatted} ${asset}` : formatted;
+}
+
+function formatPercent(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${(number * 100).toFixed(2)}%` : "-";
+}
+
+function formatQuantity(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 8 }).format(number);
+}
+
+function statusText(value) {
+  return ({
+    fresh: "数据有效",
+    stale: "已过期",
+    available: "可用",
+    healthy: "健康",
+    degraded: "降级",
+    unavailable: "不可用",
+    attention_required: "需要关注",
+    halt_required: "需要停机",
+    clear: "清晰",
+    pass: "通过",
+    warn: "警告",
+    block: "阻断",
+    blocked: "阻断",
+    passed: "通过",
+    none: "无",
+    OPEN: "待处理",
+    RESOLVED: "已解决",
+    INFO: "信息",
+    WARNING: "警告",
+    CRITICAL: "严重",
+    HALT: "停机",
+    PENDING: "待投递",
+    RETRY_WAIT: "等待重试",
+    DELIVERED: "已投递",
+    DEAD_LETTER: "投递失败",
+    PLANNED: "已计划",
+    SUBMITTING: "提交中",
+    ACKNOWLEDGED: "已确认",
+    PARTIALLY_FILLED: "部分成交",
+    FILLED: "已成交",
+    REJECTED: "已拒绝",
+    CANCELED: "已取消",
+    EXPIRED: "已过期",
+    UNKNOWN: "未知",
+    BUY: "买入",
+    SELL: "卖出",
+    entry: "建仓",
+    exit: "退出",
+    protective: "保护",
+    promoted: "已晋级",
+    shadow: "影子运行",
+    paper: "模拟运行",
+    research_only: "仅研究",
+    read_model_ready: "读模型就绪",
+  })[value] || String(value || "-");
+}
+
+function tone(value) {
+  if (["fresh", "available", "healthy", "clear", "pass", "passed", "FILLED", "RESOLVED", "DELIVERED", "INFO"].includes(value)) return "ok";
+  if (["stale", "unavailable", "halt_required", "block", "blocked", "UNKNOWN", "REJECTED", "DEAD_LETTER", "CRITICAL", "HALT"].includes(value)) return "bad";
+  return "warn";
+}
+
+function pill(value) {
+  return `<span class="status-pill ${tone(value)}">${escapeHtml(statusText(value))}</span>`;
+}
+
+function metric(label, value, detail, valueTone) {
+  return `<article class="metric"><span>${escapeHtml(label)}</span><strong class="${escapeHtml(valueTone || "")}">${escapeHtml(value)}</strong><small>${escapeHtml(detail || "")}</small></article>`;
+}
+
+function traceLink(identifier, label) {
+  if (!identifier) return "-";
+  return `<a class="trace-link mono" href="#/decisions?trace=${escapeHtml(identifier)}">${escapeHtml(label || shortHash(identifier))}</a>`;
+}
+
+function componentText(value) {
+  return ({ clock: "时钟", disk: "磁盘", service: "服务", backup: "备份" })[value] || String(value || "-");
+}
+
+function traceTypeText(value) {
+  return ({
+    decision_batch: "决策批次",
+    market_snapshot: "市场快照",
+    strategy_decision: "策略决定",
+    portfolio_target: "组合目标",
+    risk_decision: "风险决定",
+    order_plan: "订单计划",
+    runtime_ledger: "运行账本",
+    reconciliation: "三方对账",
+  })[value] || String(value || "-");
+}
+
+function traceLabel(node) {
+  const labels = {
+    "Verified decision batch": "已验证决策批次",
+    "Market snapshot": "市场快照",
+    "Portfolio target": "组合目标",
+    "Risk decision": "风险决定",
+    "Order plan": "订单计划",
+    "Runtime ledger snapshot": "运行账本快照",
+    "Three-way reconciliation": "三方对账",
+  };
+  return labels[node && node.label] || (node && node.label) || "完整批次";
+}
+
+function routeInfo() {
+  const raw = (location.hash || "#/live").replace(/^#\/?/, "");
+  const [path, query = ""] = raw.split("?", 2);
+  const valid = Object.hasOwn(ROUTES, path);
+  const route = valid ? path : "live";
+  return { route, trace: new URLSearchParams(query).get("trace"), valid };
+}
+
+function canonicalRouteInfo() {
+  const info = routeInfo();
+  if (!location.hash || !info.valid) {
+    history.replaceState(null, "", "#/live");
+    return { route: "live", trace: null, valid: true };
   }
-  el.textContent = s;
+  return info;
 }
 
-function money(x, cur) {
-  if (x == null || isNaN(x)) return "—";
-  const s = Math.abs(x) >= 1000 ? Math.round(x).toLocaleString("en-US")
-                                : x.toLocaleString("en-US", { maximumFractionDigits: 2 });
-  return (cur || "") + s;
+function modelForRoute(route) {
+  return state.models[ROUTE_MODELS[route]] || null;
 }
-function pct(x, digits = 2) {
-  if (x == null || isNaN(x)) return "—";
-  return sign(x) + (x * 100).toFixed(digits) + "%";
+
+function isStale(model) {
+  if (!model || !model.freshness) return true;
+  return model.freshness.status === "stale" || Date.now() >= new Date(model.freshness.stale_at).getTime();
 }
-function ago(iso) {
-  if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (isNaN(t)) return "";
-  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (s < 90) return s + " 秒前";
-  if (s < 5400) return Math.floor(s / 60) + " 分钟前";
-  if (s < 172800) return Math.floor(s / 3600) + " 小时前";
-  return Math.floor(s / 86400) + " 天前";
-}
-async function getJSON(path) {
-  // 境内访问墙外 VPS 时 HTTPS 请求可能挂住(既不成功也不报错)。没有超时的话 load() 永不 settle,
-  // 刷新按钮会一直转圈、画面停在上一次成功的快照。加 AbortController 兜底:到点中止,让 load() 必定结束。
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
+
+async function fetchJSON(path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    const r = await fetch(path + "?t=" + Date.now(), { cache: "no-store", signal: ctrl.signal });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    return await r.json();
-  } catch (e) {
-    throw ctrl.signal.aborted ? new Error("请求超时(8s)") : e;
+    const response = await fetch(`${path}?t=${Date.now()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
   } finally {
     clearTimeout(timer);
   }
 }
 
-// ---- interactive equity chart (axes + hover crosshair/tooltip; vanilla SVG, no CDN) ----
-const CHARTS = {};
-let CHART_N = 0;
-function normCurve(input) {
-  if (!input) return { vals: [], dates: null };
-  if (Array.isArray(input)) {
-    if (input.length && typeof input[0] === "object")
-      return { vals: input.map((p) => p.equity).filter((v) => v != null), dates: input.map((p) => p.date) };
-    return { vals: input.filter((v) => v != null), dates: null };
+function assertObject(value, name) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${name} 格式错误`);
   }
-  if (input.curve) return { vals: input.curve, dates: input.dates || null };
-  return { vals: [], dates: null };
 }
-function fmtAxis(v, cur, dec) {
-  const a = Math.abs(v);
-  const s = a >= 1e6 ? (v / 1e6).toFixed(2) + "M" : a >= 1e4 ? Math.round(v / 1e3) + "k" : grp(v, dec || 0);
-  return (cur || "") + s;
+
+function validatePublication(publication) {
+  assertObject(publication, "publication");
+  assertObject(publication.read_models, "publication.read_models");
+  if (publication.schema_version !== 1) throw new Error("publication schema 不匹配");
+  const expected = Object.keys(MODEL_PATHS).sort();
+  const actual = Object.keys(publication.read_models).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("read model 集合不完整");
 }
-function chart(input, opts) {
-  opts = opts || {};
-  const cur = opts.cur || "";
-  const { vals, dates } = normCurve(input);
-  const n = vals.length;
-  if (n < 2) return "";
-  const cz = !!opts.compact;   // narrow book cards: smaller viewBox so axis text isn't shrunk away
-  const W = cz ? 340 : 600, H = cz ? 150 : 170;
-  const L = cz ? 46 : 58, R = cz ? 10 : 12, T = cz ? 10 : 12, B = cz ? 22 : 24;
-  const plotW = W - L - R, plotH = H - T - B, baseY = T + plotH;
-  // 成本线 / 基准线:折进 y 轴值域,保证始终可见(即便权益一直在成本上方)
-  const ref = (opts.ref != null && isFinite(opts.ref)) ? opts.ref : null;
-  let minV = Math.min(...vals), maxV = Math.max(...vals);
-  if (ref != null) { minV = Math.min(minV, ref); maxV = Math.max(maxV, ref); }
-  const pad = (maxV - minV) * 0.06 || Math.abs(maxV) * 0.01 || 1;
-  const lo = minV - pad, hi = maxV + pad, span = hi - lo || 1;
-  const X = (i) => L + (i / (n - 1)) * plotW;
-  const Y = (v) => T + (1 - (v - lo) / span) * plotH;
-  const xy = vals.map((v, i) => [X(i), Y(v)]);
-  const d = xy.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  const up = vals[n - 1] >= vals[0];
-  const color = up ? "var(--up)" : "var(--down)";
-  const area = d + ` L${X(n - 1).toFixed(1)} ${baseY} L${X(0).toFixed(1)} ${baseY} Z`;
-  const id = "ch" + CHART_N, gid = "cg" + CHART_N;
-  CHART_N++;
-  let grid = "";
-  const TICKS = cz ? 3 : 4;
-  // y-axis decimals scale to the value RANGE so a tight curve (e.g. $483.6–$484.4) isn't all "$484"
-  const axSpan = maxV - minV;
-  const axDec = axSpan === 0 ? (Math.abs(maxV) < 100 ? 2 : 0)
-    : axSpan < 2 ? 3 : axSpan < 20 ? 2 : axSpan < 200 ? 1 : 0;
-  for (let k = 0; k <= TICKS; k++) {
-    const val = minV + (maxV - minV) * k / TICKS, y = Y(val).toFixed(1);
-    grid += `<line class="grid" x1="${L}" y1="${y}" x2="${L + plotW}" y2="${y}"/>` +
-            `<text class="ylbl" x="${L - 7}" y="${(+y + 3).toFixed(1)}">${fmtAxis(val, cur, axDec)}</text>`;
+
+function validateModel(model, type, publication) {
+  assertObject(model, type);
+  assertObject(model.payload, `${type}.payload`);
+  assertObject(model.freshness, `${type}.freshness`);
+  assertObject(model.source_hashes, `${type}.source_hashes`);
+  if (model.schema_version !== 1 || model.read_model_type !== type) throw new Error(`${type} schema 不匹配`);
+  const reference = publication.read_models[type];
+  if (!reference || reference.read_model_id !== model.read_model_id || reference.read_model_hash !== model.read_model_hash) {
+    throw new Error(`${type} 与 publication 不一致`);
   }
-  let xlab = "";
-  const XT = Math.min(cz ? 3 : 4, n);
-  for (let k = 0; k < XT; k++) {
-    const i = Math.round((k / (XT - 1)) * (n - 1));
-    const raw = dates ? String(dates[i]) : "#" + i;
-    // only slice the year off ISO dates ("2026-06-18"->"26-06-18"); leave time/short labels intact
-    const lab = /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(2) : raw;
-    const anchor = k === 0 ? "start" : k === XT - 1 ? "end" : "middle";
-    xlab += `<text class="axlbl" x="${X(i).toFixed(1)}" y="${H - 7}" text-anchor="${anchor}">${lab}</text>`;
+  if (!["system", "alerts", "reports"].includes(type) && JSON.stringify(model.source_hashes) !== JSON.stringify(publication.source_hashes)) {
+    throw new Error(`${type} 权威来源不一致`);
   }
-  // 成本线:横虚线 + 右端标签(权益在线上=盈利,在线下=亏损)
-  let refLine = "";
-  if (ref != null) {
-    const ry = Y(ref).toFixed(1);
-    refLine = `<line class="refline" x1="${L}" y1="${ry}" x2="${L + plotW}" y2="${ry}"/>` +
-      `<text class="reflbl" x="${L + plotW - 2}" y="${(+ry - 5).toFixed(1)}" text-anchor="end">` +
-      `${opts.refLabel || "成本"} ${cur}${grp(ref, Math.abs(ref) < 1000 ? 2 : 0)}</text>`;
-  }
-  CHARTS[id] = { vals, dates, n, W, H, L, T, plotW, plotH, lo, span, cur, ref };
-  return `<div class="chartwrap">
-    <svg class="chart${cz ? " compact" : ""}" viewBox="0 0 ${W} ${H}" data-cid="${id}">
-      <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0" stop-color="${color}" stop-opacity=".16"/>
-        <stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
-      ${grid}
-      <path d="${area}" fill="url(#${gid})"/>
-      <path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-      ${refLine}
-      ${xlab}
-      <line class="cx" x1="0" y1="${T}" x2="0" y2="${baseY}"/>
-      <circle class="hot" r="3.6" cx="0" cy="0"/>
-    </svg>
-    <div class="chart-tip"></div>
-  </div>`;
-}
-function onChartMove(e) {
-  const svg = e.currentTarget, c = CHARTS[svg.dataset.cid];
-  if (!c) return;
-  const rect = svg.getBoundingClientRect();
-  // 命中映射:鼠标 → viewBox x → 扣掉绘图区左右边距(L/R)后的数据区比例,再吸附到最近数据点。
-  // (宽高比由 viewBox 保持,clientX→viewBox 为线性;此前按整幅宽算、没扣 L 导致点位滞后鼠标。)
-  const svgX = (e.clientX - rect.left) / rect.width * c.W;
-  let f = c.plotW > 0 ? (svgX - c.L) / c.plotW : 0;
-  f = Math.max(0, Math.min(1, f));
-  const i = Math.round(f * (c.n - 1)), v = c.vals[i];
-  const xv = c.L + (i / (c.n - 1)) * c.plotW;
-  const yv = c.T + (1 - (v - c.lo) / c.span) * c.plotH;
-  const cx = svg.querySelector(".cx"), hot = svg.querySelector(".hot");
-  cx.setAttribute("x1", xv); cx.setAttribute("x2", xv); cx.style.opacity = 1;
-  hot.setAttribute("cx", xv); hot.setAttribute("cy", yv); hot.style.opacity = 1;
-  const tip = svg.parentNode.querySelector(".chart-tip");
-  const dlab = c.dates ? c.dates[i] : "#" + i;
-  // 结合本金基线(ref)显示该点盈亏金额 + 百分比(股市做法:浮在点上,红涨绿跌跟随配色)
-  let pnlHtml = "";
-  if (c.ref != null && isFinite(c.ref) && c.ref !== 0) {
-    const pnl = v - c.ref, rate = pnl / c.ref;
-    pnlHtml = `<span class="tip-pnl ${cls(pnl)}">${signed(pnl, c.cur)} · ${pct(rate)}</span>`;
-  }
-  tip.innerHTML = `<b>${c.cur}${grp(v, Math.abs(v) < 1000 ? 2 : 0)}</b><span>${dlab}</span>${pnlHtml}`;
-  const px = (xv / c.W) * rect.width, py = (yv / c.H) * rect.height;
-  // 不压点:水平跟随光标(夹在边界内),竖直永远放到点的对侧 —— 点在上半区则框落底部,反之升到顶部。
-  // 这样十字线 + 圆点始终露出,能看清落在哪个点(股市 tooltip 做法)。
-  const tw = tip.offsetWidth || 80, th = tip.offsetHeight || 48;
-  tip.style.left = Math.max(tw / 2 + 2, Math.min(rect.width - tw / 2 - 2, px)) + "px";
-  tip.style.top = (py < rect.height / 2 ? rect.height - th - 4 : 4) + "px";
-  tip.style.opacity = 1;
-}
-function onChartLeave(e) {
-  const svg = e.currentTarget;
-  svg.querySelector(".cx").style.opacity = 0;
-  svg.querySelector(".hot").style.opacity = 0;
-  const tip = svg.parentNode.querySelector(".chart-tip");
-  if (tip) tip.style.opacity = 0;
-}
-function wireCharts() {
-  document.querySelectorAll("svg.chart").forEach((svg) => {
-    if (svg._wired) return;
-    svg._wired = true;
-    svg.addEventListener("pointermove", onChartMove);
-    svg.addEventListener("pointerleave", onChartLeave);
-  });
 }
 
-// ---- mini sparkline (no axes/hover) for the sidebar nav ----
-function spark(input) {
-  const vals = normCurve(input).vals;
-  if (vals.length < 2) return "";
-  const W = 100, H = 22, n = vals.length;
-  const mn = Math.min(...vals), mx = Math.max(...vals), sp = (mx - mn) || 1;
-  const X = (i) => (i / (n - 1)) * W, Y = (v) => H - 2 - ((v - mn) / sp) * (H - 4);
-  const dd = vals.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
-  const up = vals[n - 1] >= vals[0];
-  const col = up ? "var(--up)" : "var(--down)";
-  return `<svg class="spk" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-    <path d="${dd} L${W} ${H} L0 ${H} Z" fill="${col}" opacity=".10"/>
-    <path d="${dd}" fill="none" stroke="${col}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
-}
-function updateSparks() {
-  const set = (id, input) => { const el = $(id); if (el) el.innerHTML = spark(input); };
-  set("spark-live", store.live && (store.live.equity_curve_daily && store.live.equity_curve_daily.length > 1
-    ? store.live.equity_curve_daily : store.live.equity_curve));
-  set("spark-cta", store.cta && store.cta.equity_curve);
-  const cb = store.paper && store.paper.combo && store.paper.combo.portfolio;
-  set("spark-paper", cb && cb.equity_curve);
+function unavailableBlock(title, detail) {
+  return `<div class="unavailable-block"><span class="unavailable-mark" aria-hidden="true">!</span><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></div>`;
 }
 
-// ---- 全局概览 ----
-function renderOverview() {
-  const el = $("overview");
-  const c = store.cta, l = store.live, p = store.paper;
-  const tiles = [];
-
-  // 加密实盘(主账,置顶)
-  if (l && l.capital != null) {
-    const { longOn, shortOn } = liveNetState(l);
-    const lUp = l.unrealized_pnl;
-    const hasCarry = !!l.carry && !!l.carry.active_dated && l.carry.active_dated.length > 0;
-    const state = longOn ? "做多 · 持多仓" : shortOn ? "做空 · 对冲" : "空仓 · 观望";
-    tiles.push(`<div class="otile" data-route="live">
-      <div class="ok"><span class="live-dot"></span>加密实盘 · ${longOn ? "趋势做多" : shortOn ? "做空对冲" : "空仓"}${hasCarry ? " + carry" : ""}<span class="ot-tag real">实盘</span></div>
-      <div class="oe"><span class="cur">$</span>${counted("ov-live", l.equity != null ? l.equity : l.capital, 2)}</div>
-      <div class="os ${l.total_pnl != null ? cls(l.total_pnl) : ""}">${state}${l.trend_pnl != null ? ` · 趋势 ${signed(l.trend_pnl, "$")}` : ""}${l.carry_pnl != null ? ` · carry ${signed(l.carry_pnl, "$")}` : ""}${l.total_pnl != null ? ` · 总 ${signed(l.total_pnl, "$")}` : lUp != null ? ` · ${arw(lUp)}未实现 ${signed(lUp, "$")}` : ""} · ${l.armed ? "已武装" : "未武装"}</div>
-    </div>`);
-    const tag = $("nav-live-tag");
-    if (tag) { tag.textContent = longOn ? "做多" : shortOn ? "做空" : "空仓";
-               tag.className = "ni-tag " + (longOn ? "long" : shortOn ? "short" : ""); }
-  } else tiles.push(`<div class="otile" data-route="live"><div class="ok">加密实盘</div><div class="oe dim">—</div></div>`);
-
-  // A股
-  if (c && c.equity != null) {
-    const day = c.day_pnl || 0, dayPct = c.equity ? day / (c.equity - day) : 0;
-    tiles.push(`<div class="otile" data-route="cta">
-      <div class="ok">A股 · CTA-R<span class="ot-tag paper">模拟</span></div>
-      <div class="oe"><span class="cur">¥</span>${counted("ov-cta", c.equity)}</div>
-      <div class="os ${cls(day)}">${arw(day)}今日 ${signed(day, "¥")} · ${pct(dayPct, 2)}</div>
-    </div>`);
-  } else tiles.push(`<div class="otile" data-route="cta"><div class="ok">A股 · 模拟盘</div><div class="oe dim">—</div></div>`);
-
-  // 加密模拟(3 本 book 合计)
-  if (p && p.holdings && p.holdings.books) {
-    const bk = p.holdings.books;
-    const eq = Object.values(bk).reduce((s, b) => s + (b.fwd_equity || 0), 0);
-    const base = Object.keys(bk).length * (p.holdings.initial_capital || 100000);
-    const ret = base ? eq / base - 1 : 0;
-    tiles.push(`<div class="otile" data-route="paper">
-      <div class="ok">加密 · 模拟盘(前向)<span class="ot-tag paper">模拟</span></div>
-      <div class="oe"><span class="cur">$</span>${counted("ov-paper", eq)}</div>
-      <div class="os ${cls(ret)}">${Object.keys(bk).length} 本 · 前向 ${arw(ret)}${pct(ret)}</div>
-    </div>`);
-  } else tiles.push(`<div class="otile" data-route="paper"><div class="ok">加密模拟盘</div><div class="oe dim">—</div></div>`);
-
-  el.innerHTML = tiles.join("");
-  renderSummary();
-  updateSparks();
-}
-
-// 概览汇总卡:真实资金头条 + 跨账户 今日 P&L 汇总(分币种,不混真/模拟)
-function renderSummary() {
-  const el = $("ov-summary");
-  if (!el) return;
-  const c = store.cta, l = store.live, p = store.paper;
-  const lUp = l && l.unrealized_pnl;
-  const cDay = c && (c.day_pnl || 0);
-  // 真实头条 = 加密实盘权益(唯一真金账户)
-  const realEq = l && (l.equity != null ? l.equity : l.capital);
-  const realTot = l && l.total_pnl;
-  const realChg = realTot != null
-    ? `<span class="sc-chg ${cls(realTot)}">${arw(realTot)}总盈亏 ${signed(realTot, "$")} · ${pct(l.total_pnl_pct || 0)}</span>`
-    : lUp != null ? `<span class="sc-chg ${cls(lUp)}">${arw(lUp)}未实现 ${signed(lUp, "$")}</span>` : "";
-  // 模拟合计(两币种分列,不与真金混合)
-  const paperEq = p && p.holdings && p.holdings.books
-    ? Object.values(p.holdings.books).reduce((s, b) => s + (b.fwd_equity || 0), 0) : null;
-  const cells = [];
-  cells.push(`<div class="sc-cell"><div class="sc-ck">A股 CTA-R · 模拟</div>
-    <div class="sc-cv">${c ? "¥" + money(c.equity) : "—"}</div>
-    <div class="sc-cs ${cls(cDay || 0)}">${c ? `今日 ${signed(cDay, "¥")} · ${pct(c.total_pnl_pct || 0)}` : ""}</div></div>`);
-  cells.push(`<div class="sc-cell"><div class="sc-ck">加密模拟 · 前向</div>
-    <div class="sc-cv">${paperEq != null ? "$" + money(paperEq) : "—"}</div>
-    <div class="sc-cs dim">各 $100k · 纯模拟</div></div>`);
-  cells.push(`<div class="sc-cell"><div class="sc-ck">今日盈亏汇总(分币种)</div>
-    <div class="sc-cv sc-sum">${cDay != null ? `<span class="${cls(cDay)}">${signed(cDay, "¥")}</span>` : "—"}
-      ${lUp != null ? `<span class="${cls(lUp)}">${signed(lUp, "$")}</span>` : ""}</div>
-    <div class="sc-cs dim">A股(¥)+ 加密实盘未实现($)</div></div>`);
-
-  el.innerHTML = `
-    <div class="sc-main">
-      <div class="sc-k"><span class="live-dot"></span>真实资金 · 加密实盘 C×D</div>
-      <div class="sc-v"><span class="cur">$</span>${realEq != null ? counted("sum-real", realEq, 2) : "—"} ${realChg}</div>
+function renderLive() {
+  const model = state.models.overview;
+  const payload = model.payload;
+  const account = payload.account.status === "available" ? payload.account.values : null;
+  const pnl = payload.pnl.status === "available" ? payload.pnl.values : null;
+  const portfolio = payload.portfolio;
+  const risk = payload.risk;
+  const batch = payload.latest_batch;
+  const actual = portfolio.actual_positions.status === "available" ? portfolio.actual_positions.values.positions : {};
+  const symbols = [...new Set([...Object.keys(portfolio.approved_target), ...Object.keys(actual)])].sort();
+  const accountMetrics = account ? `
+    <div class="metrics metrics-six">
+      ${metric("钱包余额", formatMoney(account.wallet_balance, account.quote_asset), `可用余额 ${formatMoney(account.available_balance)}`, "good")}
+      ${metric("账户权益", formatMoney(pnl.equity, account.quote_asset), `本期变化 ${formatMoney(pnl.equity_change)}`, pnl.passed ? "good" : "bad")}
+      ${metric("实际总敞口", formatPercent(account.actual_gross_fraction), formatMoney(account.actual_gross_notional, account.quote_asset), "accent")}
+      ${metric("保证金占用", formatPercent(account.margin_fraction), formatMoney(account.margin_used, account.quote_asset), "")}
+      ${metric("峰值回撤", formatPercent(account.peak_drawdown_fraction), `峰值权益 ${formatMoney(account.peak_equity)}`, account.peak_drawdown_fraction > 0.1 ? "bad" : "")}
+      ${metric("当前回撤", formatPercent(account.current_drawdown_fraction), `峰值时点 ${formatTime(account.peak_drawdown_at)}`, account.current_drawdown_fraction > 0.1 ? "bad" : "")}
+    </div>` : unavailableBlock("权威账户读数不可用", "当前发布没有可验证的 RuntimeLedger 账户观测。");
+  $("view-live").innerHTML = `${accountMetrics}
+    <div class="account-strip">
+      <div><span>交易损益</span><strong>${pnl ? escapeHtml(formatMoney(pnl.trading_pnl)) : "-"}</strong></div>
+      <div><span>资金费</span><strong>${pnl ? escapeHtml(formatMoney(pnl.funding)) : "-"}</strong></div>
+      <div><span>手续费</span><strong>${pnl ? escapeHtml(formatMoney(pnl.fees)) : "-"}</strong></div>
+      <div><span>转账</span><strong>${pnl ? escapeHtml(formatMoney(pnl.transfers)) : "-"}</strong></div>
+      <div><span>未解释残差</span><strong>${pnl ? escapeHtml(formatMoney(pnl.residual)) : "-"}</strong></div>
+      <div><span>账目核验</span>${pnl ? pill(pnl.passed ? "pass" : "block") : pill("unavailable")}</div>
     </div>
-    <div class="sc-cells">${cells.join("")}</div>`;
-}
-
-// ---- A股 CTA-R ----
-function renderCTA(d) {
-  store.cta = d;
-  const body = $("body-cta");
-  const totPct = d.total_pnl_pct || 0, day = d.day_pnl || 0, tot = d.total_pnl || 0;
-  const live = d.price_source === "sina_live";
-  const positions = (d.positions || []).slice().sort((a, b) => b.market_value - a.market_value);
-  const maxW = Math.max(...positions.map((p) => p.target_weight || p.weight || 0), 0.01);
-  const elapsed = d.trading_days_elapsed || 0, cycle = 21;
-  const drift = (d.max_weight_drift || 0) * 100;
-
-  let rows = positions.map((p) => {
-    const pp = p.pnl_pct || 0, w = (p.weight || 0) * 100;
-    return `<tr>
-      <td class="name">${p.name || p.symbol}<span class="sym">${p.symbol}</span></td>
-      <td class="opt">${money(p.last_px, "¥")}</td>
-      <td class="opt">${money(p.market_value, "¥")}</td>
-      <td class="${cls(pp)}">${sign(pp)}${(pp * 100).toFixed(1)}%</td>
-      <td>${w.toFixed(1)}%<span class="wbar" style="width:${Math.round((p.weight || 0) / maxW * 40)}px"></span></td>
-    </tr>`;
-  }).join("");
-
-  body.innerHTML = `
-    <div class="hero">
-      <div class="equity"><span class="cur">¥</span>${counted("cta-eq", d.equity)}</div>
-      <div class="sub">总资产 · 现金 ¥${money(d.cash)} · 持仓市值 ¥${money(d.total_market_value)}</div>
-    </div>
-    ${chart(d.equity_curve, { cur: "¥" })}
-    <div class="chips">
-      <div class="chip"><div class="k">今日盈亏</div><div class="v ${cls(day)}">${arw(day)}${sign(day)}¥${money(Math.abs(day))}</div></div>
-      <div class="chip"><div class="k">累计盈亏</div><div class="v ${cls(tot)}">${arw(tot)}${sign(tot)}¥${money(Math.abs(tot))}</div></div>
-      <div class="chip"><div class="k">累计收益率</div><div class="v ${cls(totPct)}">${arw(totPct)}${pct(totPct)}</div></div>
-      <div class="chip"><div class="k">持仓 / 漂移</div><div class="v dim">${positions.length} · ${drift.toFixed(1)}%</div></div>
-    </div>
-    <div class="subhead">持仓明细</div>
-    <table class="tbl">
-      <thead><tr><th>标的</th><th class="opt">现价</th><th class="opt">市值</th><th>收益</th><th>权重</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="progblock">
-      <div class="prog-meta"><span>调仓周期</span><span>${d.due ? "⚠ 已到调仓点" : `${elapsed} / ${cycle} 交易日`}</span></div>
-      <div class="prog"><i style="width:${Math.min(100, elapsed / cycle * 100)}%"></i></div>
-    </div>
-    <div class="note"><b>模拟盘</b> · 数据 ${d.data_date} · ${live ? "新浪实时价" : "缓存收盘价"}</div>`;
-}
-
-// ---- 加密实盘 ----
-function gateMeter(btc, sma) {
-  if (!btc || !sma) return "";
-  const lo = Math.min(btc, sma) * 0.93, hi = Math.max(btc, sma) * 1.04;
-  const pos = (v) => Math.max(3, Math.min(97, (v - lo) / (hi - lo) * 100));
-  const pb = pos(btc), ps = pos(sma);
-  const above = btc >= sma;
-  const gapL = Math.min(pb, ps), gapW = Math.abs(ps - pb);
-  // edge-aware label anchor: near right edge → extend left (translateX -100%), near left → extend right
-  const anchor = (p) => p > 76 ? "transform:translateX(-100%);padding-right:10px"
-    : p < 24 ? "transform:translateX(0);padding-left:10px" : "transform:translateX(-50%)";
-  return `<div class="gate ${above ? "long" : "risk"}">
-    <div class="gate-bar">
-      <div class="gate-fill" style="width:${pb}%"></div>
-      <div class="gate-gap" style="left:${gapL}%;width:${gapW}%"></div>
-      <div class="gate-th" style="left:${ps}%"></div>
-      <div class="gate-btc" style="left:${pb}%"></div>
-      <div class="gate-lbl gate-th-lbl" style="left:${ps}%;${anchor(ps)}">开闸线 $${money(sma)}</div>
-      <div class="gate-lbl gate-btc-lbl" style="left:${pb}%;${anchor(pb)}">BTC $${money(btc)}</div>
-    </div>
-    <div class="gate-need ${above ? "on" : ""}">${above
-      ? "✓ BTC 已站上 200 日线 · 多头闸开启 · 做多"
-      : "大盘闸关闭 · 当前做空对冲 → BTC 需重回 200 日线上方才切多头闸"}</div>
-  </div>`;
-}
-// 3-态闸:多头闸(站上 200 线)/ 空头闸(熊市对冲)/ 空仓,互斥,高亮当前态
-function liveNetState(d) {
-  const longOn = !!d.gate_open;
-  const shortOn = !longOn && (!!d.shorting || (d.holdings || []).some((h) => (h.value || 0) < 0));
-  return { longOn, shortOn, flatOn: !longOn && !shortOn };
-}
-function gateStates(d) {
-  const { longOn, shortOn, flatOn } = liveNetState(d);
-  // 两道闸(各自独立 on/off,始终都清晰显示)+ 推导出的净态
-  const gcard = (on, kind, name, status, desc) => `<div class="gcard ${on ? "on " + kind : "off"}">
-    <div class="gc-k"><span class="gc-dot"></span>${name}</div>
-    <div class="gc-v">${status}</div><div class="gc-d">${desc}</div></div>`;
-  const netKind = longOn ? "long" : shortOn ? "short" : "flat";
-  const netTxt = longOn ? "做多 · 持多仓" : shortOn ? "做空 · 持空仓" : "空仓 · 现金";
-  return `<div class="gates2">
-    ${gcard(longOn, "long", "① 多头闸", longOn ? "开启" : "关闭", "BTC 站上 200 日线")}
-    ${gcard(shortOn, "short", "② 空头闸", shortOn ? "触发" : d.short_gate ? "待命" : "未启用", "真熊 → 做空对冲")}
-    <div class="gnet ${netKind}">
-      <div class="gn-k">当前净态(二选一闸 → 三态)</div>
-      <div class="gn-v">${netTxt}</div>
-    </div>
-  </div>`;
-}
-// 权益曲线 + 24小时/日线切换
-function liveCurveBlock(d) {
-  const cutoff = Date.now() - 24 * 3600 * 1000;             // 真正的滚动 24h:按时间戳过滤最近 24 小时的点
-  const intra = (d.equity_curve || []).filter((p) => p.ts && new Date(p.ts).getTime() >= cutoff);
-  const daily = d.equity_curve_daily || [];
-  const series = liveCurveMode === "daily" ? daily : intra;
-  const hasDaily = daily.length > 1, hasIntra = intra.length > 1;
-  if (!hasDaily && !hasIntra) return "";
-  const seg = (mode, label, enabled) =>
-    `<button class="seg ${liveCurveMode === mode ? "on" : ""}" data-curve="${mode}" ${enabled ? "" : "disabled"}>${label}</button>`;
-  const toggle = `<div class="segbar">${seg("intra", "24 小时", hasIntra)}${seg("daily", "日线", hasDaily)}</div>`;
-  const cap = liveCurveMode === "daily" ? "账户权益 · 日线" : "账户权益 · 滚动 24 小时(10 分钟/点)";
-  const body = series.length > 1
-    ? chart(series, { cur: "$", ref: d.inception_equity, refLabel: "成本" })
-    : `<div class="empty">${liveCurveMode === "daily" ? "日线(次日起)" : "24 小时"}数据累积中…</div>`;
-  return `<div class="cap-row"><div class="chart-cap">${cap}</div>${toggle}</div>${body}`;
-}
-function renderLive(d) {
-  store.live = d;
-  const body = $("body-live");
-  const head = $("panel-live").querySelector(".panel-head");
-  head.querySelectorAll(".badge.gate-open,.badge.gate-closed,.badge.shorting,.badge.lev,.badge.carry").forEach((e) => e.remove());
-  const isPerp = d.market_type === "swap";
-  const lev = d.max_leverage || 2;
-  if (d.market_type) {
-    const lb = document.createElement("span");
-    lb.className = "badge lev";
-    lb.textContent = isPerp ? `USDⓈ-M 永续 ${lev}x` : "现货 1x";
-    head.appendChild(lb);
-  }
-  const holdings = d.holdings || [];
-  const shorting = !!d.shorting || holdings.some((h) => (h.value || 0) < 0);
-  const hasCarry = !!d.carry && !!d.carry.active_dated && d.carry.active_dated.length > 0;
-  const gb = document.createElement("span");
-  gb.className = "badge " + (d.gate_open ? "gate-open" : shorting ? "shorting" : "gate-closed");
-  gb.textContent = d.gate_open ? "做多" : shorting ? "做空对冲" : "空仓";
-  head.appendChild(gb);
-  if (hasCarry) {
-    const cb = document.createElement("span");
-    cb.className = "badge carry";
-    cb.textContent = "carry Δ" + (d.carry.net_delta != null ? (Math.abs(d.carry.net_delta) < (d.carry.capital || 1) * 0.05 ? "≈0" : "偏" + (d.carry.net_delta > 0 ? "+" : "") + money(d.carry.net_delta)) : "");
-    head.appendChild(cb);
-  }
-
-  const toSma = d.btc_to_sma || 0;
-  const exp = d.gross_exposure || 0;
-  const coins = (d.universe && d.universe.length ? d.universe : UNIVERSE)
-    .map((c) => `<span class="coin">${c}</span>`).join("");
-
-  // alerts: 盘中硬止损触发 / 杠杆未能确认(拒绝交易)/ 本金过小纳不进的币
-  let banners = "";
-  if (d.stopped && d.stopped.length)
-    banners += `<div class="banner warn">⛔ 盘中硬止损触发,已强平:<b>${d.stopped.join("、")}</b></div>`;
-  if (d.leverage_unsafe && d.leverage_unsafe.length)
-    banners += `<div class="banner warn">⚠ 杠杆未确认为 ${lev}x,已拒绝交易:<b>${d.leverage_unsafe.join("、")}</b>(去交易所手动设逐仓)</div>`;
-  if (d.capital_blocked && d.capital_blocked.length)
-    banners += `<div class="banner">ℹ 本金 $${money(d.capital)} 偏小,以下币按逆波动率权重的目标额低于最小下单额、会被跳过:<b>${d.capital_blocked.map((b) => `${b.symbol}(目标$${money(b.target_usdt)}<地板$${money(b.min_usdt)})`).join("、")}</b> · 实盘为集中子集,非完整 ${(d.universe || UNIVERSE).length} 币</div>`;
-
-  // 未实现(总浮盈):严格 = 各标的浮盈「按显示的分」之和,消除分项四舍五入错位(逐个加起来=总数)。
-  const upnlShown = holdings.length
-    ? holdings.reduce((s, h) => s + (h.upnl != null ? r2(h.upnl) : 0), 0)
-    : d.unrealized_pnl;
-  const upnl = upnlShown != null ? r2(upnlShown) : d.unrealized_pnl;
-  // 已实现 = 钱包余额 − 入金成本(已平仓盈亏 + 资金费 + 手续费,已落袋)。总盈亏 = 已实现 + 未实现,
-  // 所以「各标的浮盈之和」(只是未实现)≠ 总盈亏,差额就是这块已实现 —— 显式列出消除歧义。
-  const realized = (d.inception_equity != null && d.capital != null) ? r2(d.capital - d.inception_equity) : null;
-  // 总盈亏 = 后端算好的「全账户」口径(趋势 + carry vs 入金基线);退回逐项相加仅在旧数据无 total_pnl 时
-  const totalShown = d.total_pnl != null ? r2(d.total_pnl)
-    : (realized != null && upnl != null) ? r2(realized + upnl) : d.total_pnl;
-  // 仓位口径:gross = 各腿名义之和(持仓占比的分母);bp = 购买力(本金 × 杠杆),当前仓位条的满格
-  const gross = holdings.reduce((s, h) => s + Math.abs(h.value || 0), 0);
-  const bp = (d.capital || 0) * (d.max_leverage || 1) || gross;
-  const used = bp > 0 ? gross / bp : 0;
-  const posbar = holdings.length
-    ? `<div class="subhead">当前仓位 · 部署名义 ${money(gross, "$")} / 购买力 ${money(bp, "$")}</div>
-       <div class="posbar">
-         <div class="posbar-meta"><span>已用 <b>${pct(used, 0)}</b> 购买力</span><span>空闲保证金 <b>${money(Math.max(0, d.capital - (d.margin_used || 0)), "$")}</b></span></div>
-         <div class="posbar-track">${holdings.map((h) => {
-           const v = Math.abs(h.value || 0); if (!v || bp <= 0) return "";
-           const sh = h.side === "short" || (h.value || 0) < 0;
-           return `<div class="posbar-seg${sh ? " short" : ""}" style="width:${(v / bp * 100).toFixed(2)}%" title="${h.symbol || h.sym} ${money(v, "$")}"></div>`;
-         }).join("")}<div class="posbar-seg free" style="width:${(Math.max(0, bp - gross) / bp * 100).toFixed(2)}%"></div></div>
-       </div>`
-    : "";
-  const holdHtml = holdings.length
-    ? `<div class="subhead">当前持仓 · ${shorting ? "永续做空对冲(§24 做空闸)" : isPerp ? "永续多头(名义)" : "现货"}</div><table class="tbl">
-        <thead><tr><th>币种</th><th>方向</th><th class="opt">入场</th><th class="opt">现价</th><th>名义</th><th>占比</th><th>浮盈</th><th title="按名义,不含杠杆">收益率</th><th title="按保证金 ROE,含 ${lev}x 杠杆(同币安持仓页)">ROE</th><th class="opt">止损</th></tr></thead>
-        <tbody>${holdings.map((h) => {
-          const sh = h.side === "short" || (h.value || 0) < 0;
-          const up = h.upnl || 0;
-          const share = gross > 0 ? Math.abs(h.value || 0) / gross : 0;
-          // 收益率 = 浮盈 / 入场名义(entry×qty);缺入场则退回当前名义。与本行「浮盈」自洽。
-          const roeDenom = (h.entry && h.qty) ? Math.abs(h.entry * h.qty) : Math.abs(h.value || 0);
-          const roe = (h.upnl != null && roeDenom > 0) ? h.upnl / roeDenom : null;
-          // ROE(按保证金,含杠杆)= 收益率 × 杠杆,与币安持仓页一致
-          const roeMargin = roe != null ? roe * lev : null;
-          return `<tr>
-          <td class="name">${h.symbol || h.sym || ""}</td>
-          <td><span class="side ${sh ? "neg" : "pos"}">${sh ? "空" : "多"}</span></td>
-          <td class="opt">${h.entry != null ? money(h.entry, "$") : "—"}</td>
-          <td class="opt">${h.price != null ? money(h.price, "$") : "—"}</td>
-          <td>${h.value != null ? money(Math.abs(h.value), "$") : "—"}</td>
-          <td>${(share * 100).toFixed(1)}%<span class="wbar" style="width:${Math.round(share * 46)}px"></span></td>
-          <td class="${cls(up)}">${h.upnl != null ? signed(r2(up), "$") : "—"}</td>
-          <td class="${cls(roe || 0)}">${roe != null ? pct(roe) : "—"}</td>
-          <td class="${cls(roeMargin || 0)}">${roeMargin != null ? pct(roeMargin) : "—"}</td>
-          <td class="opt">${h.stop != null ? money(h.stop, "$") : "—"}</td></tr>`;
-        }).join("")}</tbody></table>`
-    : `<div class="empty">空仓 — BTC 低于 200 日线,大盘闸关闭,${isPerp ? "永续仓位已全平,资金留在保证金钱包" : "资金全在现金"}</div>`;
-
-  // C×D 合成账作为实盘页内的一个合成仓位卡片(不再单独成页)
-  const cxdBlock = cxdCard(store.cxd);
-
-  body.innerHTML = `
-    ${banners}
-    <div class="hero">
-      <div class="equity"><span class="cur">$</span>${counted("live-eq", d.equity != null ? d.equity : d.capital, 2)}</div>
-      ${totalShown != null ? `<div class="pnl-tag ${cls(totalShown)}" title="总盈亏 = 已实现 + 未实现(各标的浮盈只是未实现那部分)">总盈亏 ${arw(totalShown)}${signed(totalShown, "$")} · ${pct(d.total_pnl_pct || 0)}</div>` : ""}
-      <div class="sub">全账户 · 趋势权益 $${money(d.trend_equity != null ? d.trend_equity : d.capital)}${d.carry ? ` <span class="dim">+</span> carry $${money(d.carry.equity || d.carry.capital)}` : ""}${d.idle_usdt ? ` <span class="dim">+</span> 闲置 $${money(d.idle_usdt)}` : ""}${d.trend_pnl != null ? ` · 趋势 <span class="${cls(d.trend_pnl)}">${signed(r2(d.trend_pnl), "$")}</span> ${pct(d.trend_pnl_pct || 0)}` : ""}${d.carry_pnl != null ? ` · carry <span class="${cls(d.carry_pnl)}">${signed(r2(d.carry_pnl), "$")}</span> ${pct(d.carry_pnl_pct || 0)}` : ""} · 部署名义 $${money(d.deployed)} · 占用保证金 $${money(d.margin_used)}</div>
-    </div>
-    ${liveCurveBlock(d)}
-    <div class="subhead">交易闸 · 两道闸 → 三态(BTC 站上 200 线做多 / 真熊做空对冲 / 否则空仓)</div>
-    ${gateStates(d)}
-    <div class="subhead">大盘闸门 · BTC vs 200 日线</div>
-    ${gateMeter(d.btc_px, d.btc_sma200)}
-    <div class="chips">
-      <div class="chip"><div class="k">距开闸</div><div class="v ${cls(toSma)}">${arw(toSma)}${pct(toSma, 1)}</div></div>
-      <div class="chip"><div class="k">BTC 现价 <span class="live-dot"></span>实时</div><div class="v">$${money(d.btc_px)}</div></div>
-      <div class="chip"><div class="k">200日线 · 收盘</div><div class="v dim">$${money(d.btc_sma200)}</div></div>
-      <div class="chip"><div class="k">实际敞口 / 上限</div><div class="v ${exp > 0 ? "" : "dim"}">${exp.toFixed(2)}× <span class="dim" style="font-size:12px">/ ${lev}x</span></div></div>
-      <div class="chip"><div class="k">状态</div><div class="v ${d.armed ? "" : "dim"}">${d.armed ? "已武装" : "未武装"}</div></div>
-    </div>
-    <div class="subhead">候选币池 · ${(d.universe || UNIVERSE).length} 币</div>
-    <div class="uni">${coins}</div>
-    ${posbar}
-    ${holdHtml}
-    ${cxdBlock}
-    <div class="note"><b>实盘</b> · ${isPerp ? `USDⓈ-M 永续 ${lev}x · 逆波动率平价` : "现货 1x"}${d.chandelier_mult ? ` · chandelier ${d.chandelier_mult}× 兜底止损` : ""} · 更新于 ${ago(d.ts)}</div>`;
-}
-
-// ---- 加密 C×D 合成账(作为实盘页内的一个合成仓位卡片) ----
-function cxdCard(d) {
-  if (!d) return "";
-  const t = d.trend || {}, c = d.carry || {};
-  const w = d.weights || { trend: 0.6, carry: 0.4 };          // ACTUAL deployed split
-  const tArmed = !!t.armed, cArmed = !!c.armed;
-  const anyArmed = tArmed || cArmed;
-  const tCap = t.capital || 0, cCap = c.capital || 0;
-  const cEq = c.equity || cCap;   // carry 全腿权益(含短腿浮盈),fallback to capital for old data
-  const total = d.total_capital || (tCap + cCap);
-  const activeDated = (c.active_dated || []).map((s) => `<span class="coin">${s}</span>`).join("");
-  const delta = c.net_delta || 0;
-  return `
-    <div class="subhead">C×D 合成仓位 · 实际 趋势 ${pct(w.trend, 0)} + carry ${pct(w.carry, 0)} <span class="dim">· 运营基线 ETH-only(设计 40% 需充值解锁)</span></div>
-    <table class="tbl">
-      <thead><tr><th>结构</th><th>方向</th><th>当前合约</th><th>额度</th><th>占比</th><th title="净敞口,≈0 即对冲到位">净 Δ</th><th>状态</th></tr></thead>
-      <tbody>
-        <tr>
-          <td class="name">C×D 合成</td>
-          <td><span class="side">对冲+趋势</span></td>
-          <td>${activeDated || "—"}</td>
-          <td>${money(total, "$")}</td>
-          <td>100%</td>
-          <td class="${Math.abs(delta) < (cCap || 1) * 0.05 ? "" : "neg"}">${signed(r2(delta), "$")}</td>
-          <td class="${anyArmed ? "" : "dim"}">${anyArmed ? "已武装" : "未武装"}</td>
-        </tr>
-        <tr>
-          <td class="name">&nbsp;└ 趋势腿</td>
-          <td><span class="side ${t.gate_open ? "pos" : (t.shorting ? "neg" : "dim")}">${t.gate_open ? "多头" : (t.shorting ? "做空" : "空仓")}</span></td>
-          <td>USDⓈ-M ${t.max_leverage ? t.max_leverage + "x" : ""}</td>
-          <td>${money(tCap, "$")}</td>
-          <td>${pct(w.trend, 0)}</td>
-          <td>—</td>
-          <td class="${tArmed ? "" : "dim"}">${tArmed ? "已武装" : "未武装"}</td>
-        </tr>
-        <tr>
-          <td class="name">&nbsp;└ carry 腿</td>
-          <td><span class="side">Δ 中性</span></td>
-          <td>${activeDated || "—"}</td>
-          <td>${money(cEq, "$")}</td>
-          <td>${pct(w.carry, 0)}</td>
-          <td class="${Math.abs(delta) < (cCap || 1) * 0.05 ? "" : "neg"}">${signed(r2(delta), "$")}</td>
-          <td class="${cArmed ? "" : "dim"}">${cArmed ? "已武装" : "未武装"}</td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="note dim">C×D = 趋势永续( riding BTC 200 日大盘闸) + carry(现货多 + 季度 COIN-M 空,吃基差收敛)。carry 额度 = 全腿权益(含短腿浮盈),净 Δ ≈ 0 即对冲到位。⚠ 当前 carry 为 ETH-only 薄 sleeve(~21%,BTC 不可注资 + COIN-M 整张颗粒度封顶),非回测验证的 40% 压舱石——真实尾部保护弱于 §20 的 maxDD −10%,需充值 ~$650 方可达成。</div>`;
-}
-
-// ---- 加密模拟盘 ----
-function bookCard(name, b, btReturn, btSharpe, btDD, curve) {
-  if (!b) return "";
-  const ret = b.fwd_return || 0, flat = b.flat;
-  let holdHtml = (b.positions && b.positions.length)
-    ? `<div class="meta-row" style="flex-wrap:wrap">` + b.positions.map((p) => `<span>${p.instrument} <b>${p.side}</b></span>`).join("") + `</div>`
-    : `<div class="meta-row"><span>${flat ? "当前空仓" : (b.n_held != null ? b.n_held + " 个持仓" : "")}</span></div>`;
-  const curveHtml = (curve && curve.curve && curve.curve.length > 1)
-    ? `<div class="chart-cap">回测净值 · 样本内</div>${chart(curve, { cur: "$", compact: true })}` : "";
-  return `<div class="bookcard">
-    <div class="bh"><span class="bn">${name}</span>
-      <span class="badge ${flat ? "flat" : "paper"}">${flat ? "空仓" : "持仓"}</span></div>
-    <div class="be">$${money(b.fwd_equity)}</div>
-    <div class="br ${cls(ret)}">${arw(ret)}${pct(ret)} <span class="dim" style="font-size:11px">前向</span></div>
-    ${curveHtml}
-    ${holdHtml}
-    <div class="meta-row">
-      ${btSharpe != null ? `<span>回测 Sharpe <b>${btSharpe.toFixed(2)}</b></span>` : ""}
-      ${btReturn != null ? `<span>回测 <b>${pct(btReturn, 0)}</b></span>` : ""}
-      ${btDD != null ? `<span>回撤 <b>${pct(btDD, 0)}</b></span>` : ""}
-    </div>
-  </div>`;
-}
-function renderPaper(d) {
-  store.paper = d;
-  const body = $("body-paper");
-  const books = (d.holdings && d.holdings.books) || {};
-  const three = d.three && d.three.portfolio, s7 = d.s7 && d.s7.portfolio, combo = d.combo && d.combo.portfolio;
-  // S7 盈利档(vol_target=3%):真前向在 s7_vt3.forward,回测在 s7_vt3.portfolio(非 holdings.books)
-  const v3 = d.s7_vt3, v3p = v3 && v3.portfolio;
-  const v3book = v3 && v3.forward ? { ...v3.forward, flat: v3.trend_flat } : null;
-
-  const cards = [
-    bookCard("3腿组合 · S1+S3+S4", books["3leg"], three && three.total_return, three && three.sharpe, three && three.max_drawdown, three && three.equity_curve),
-    bookCard("S7 多币趋势", books["s7"], s7 && s7.total_return, s7 && s7.sharpe, s7 && s7.max_drawdown, s7 && s7.equity_curve),
-    bookCard("S7 盈利档 · vol_target 3%", v3book, v3p && v3p.total_return, v3p && v3p.sharpe, v3p && v3p.max_drawdown, v3 && v3.equity_curve),
-    bookCard("C×D 趋势+carry", books["combo"], combo && combo.total_return, combo && combo.sharpe, combo && combo.max_drawdown, combo && combo.equity_curve),
-  ].join("");
-
-  // 分散度洞察(combo:趋势 + carry 负相关压舱石)
-  let insight = "";
-  if (d.combo && d.combo.corr != null) {
-    const cb = d.combo, ta = cb.trend_alone || {}, ca = cb.carry_alone || {};
-    insight = `<div class="insight">
-      <div class="ins-h">分散效应 · C×D 组合</div>
-      <div class="ins-row">
-        <span>趋势腿 Sharpe <b>${(ta.sharpe || 0).toFixed(2)}</b></span>
-        <span>carry 腿 Sharpe <b>${(ca.sharpe || 0).toFixed(2)}</b></span>
-        <span>相关性 ρ <b>${(cb.corr).toFixed(2)}</b></span>
-        <span>合成 Sharpe <b>${(combo.sharpe || 0).toFixed(2)}</b> · 回撤砍至 <b>${pct(combo.max_drawdown, 0)}</b></span>
-      </div>
+    <div class="split-layout">
+      <section class="panel">
+        <header class="panel-head"><div><h2>目标与实际</h2><p>RiskDecision / RuntimeLedger</p></div>${traceLink(portfolio.portfolio_target_id)}</header>
+        <div class="table-wrap"><table><thead><tr><th>标的</th><th>批准权重</th><th>实际数量</th><th>追踪</th></tr></thead><tbody>
+          ${symbols.length ? symbols.map((symbol) => `<tr><td><strong>${escapeHtml(symbol)}</strong></td><td>${escapeHtml(formatPercent(portfolio.approved_target[symbol]))}</td><td>${escapeHtml(formatQuantity(actual[symbol]))}</td><td>${traceLink(batch.batch_id, "查看")}</td></tr>`).join("") : `<tr><td colspan="4" class="empty-cell">全现金</td></tr>`}
+        </tbody></table></div>
+      </section>
+      <section class="panel">
+        <header class="panel-head"><div><h2>当前批次</h2><p>${batch.decision_count} 个策略决定</p></div>${pill(model.freshness.status)}</header>
+        <dl class="fact-list">
+          <div><dt>批次</dt><dd>${traceLink(batch.batch_id)}</dd></div>
+          <div><dt>清单哈希</dt><dd class="mono">${escapeHtml(shortHash(batch.manifest_hash))}</dd></div>
+          <div><dt>市场快照</dt><dd>${traceLink(batch.snapshot_id)}</dd></div>
+          <div><dt>决策时间</dt><dd>${escapeHtml(formatTime(batch.decision_time))}</dd></div>
+          <div><dt>风险结论</dt><dd>${pill(risk.approved ? "pass" : "block")}</dd></div>
+          <div><dt>订单计划</dt><dd>${portfolio.planned_order_count} 笔 / 撤单 ${portfolio.planned_cancellation_count} 笔</dd></div>
+        </dl>
+      </section>
     </div>`;
-  }
-
-  body.innerHTML = `
-    <div class="cards">${cards}</div>
-    ${insight}
-    <div class="note"><b>模拟盘</b> · 各 $100k 前向部署于 ${d.holdings && (d.holdings.deploy_date || d.holdings.as_of) || "—"} · 回测数字仅样本内参考</div>`;
 }
 
-// ---- orchestration ----
+function renderPositions() {
+  const payload = state.models.positions.payload;
+  if (payload.summary.status !== "available") {
+    $("view-positions").innerHTML = unavailableBlock("仓位读模型不可用", "当前发布没有权威 ledger position facts。");
+    return;
+  }
+  $("view-positions").innerHTML = `
+    <div class="metrics metrics-four">
+      ${metric("跟踪标的", String(payload.summary.position_count), "目标、预期与实际的并集", "accent")}
+      ${metric("非零仓位", String(payload.summary.nonzero_position_count), "权威账本记录", "")}
+      ${metric("对账状态", statusText(payload.summary.reconciled ? "pass" : "block"), shortHash(payload.summary.reconciliation_id), payload.summary.reconciled ? "good" : "bad")}
+      ${metric("追踪覆盖", "完整", "批次到订单计划", "good")}
+    </div>
+    <section class="panel full-panel">
+      <header class="panel-head"><div><h2>仓位事实</h2><p>实际值不在浏览器推导</p></div>${traceLink(payload.summary.reconciliation_id)}</header>
+      <div class="table-wrap"><table><thead><tr><th>标的</th><th>实际</th><th>预期</th><th>差异</th><th>目标权重</th><th>成本</th><th>已实现</th><th>追踪</th></tr></thead><tbody>
+        ${payload.positions.map((row) => `<tr><td><strong>${escapeHtml(row.symbol)}</strong><small>${row.updated_at ? escapeHtml(formatTime(row.updated_at)) : "账本无记录，按零仓位"}</small></td><td>${escapeHtml(formatQuantity(row.actual_quantity))}</td><td>${escapeHtml(formatQuantity(row.expected_quantity))}</td><td class="${Number(row.quantity_difference) === 0 ? "good" : "warn-text"}">${escapeHtml(formatQuantity(row.quantity_difference))}</td><td>${escapeHtml(formatPercent(row.approved_target_weight))}</td><td>${escapeHtml(formatMoney(row.average_cost))}</td><td>${escapeHtml(formatMoney(row.realized_trading_pnl))}</td><td><a class="trace-link" href="${escapeHtml(row.trace.href)}">查看链路</a><small class="mono">${escapeHtml(shortHash(row.position_hash))}</small></td></tr>`).join("")}
+      </tbody></table></div>
+    </section>`;
+}
+
+function renderOrders() {
+  const payload = state.models.orders.payload;
+  const summary = payload.summary;
+  if (summary.status !== "available") {
+    $("view-orders").innerHTML = unavailableBlock("订单读模型不可用", "当前发布没有权威 ledger order facts。");
+    return;
+  }
+  $("view-orders").innerHTML = `
+    <div class="metrics metrics-four">
+      ${metric("订单总数", String(summary.total_order_count), `未完成 ${summary.open_order_count}`, summary.open_order_count ? "bad" : "good")}
+      ${metric("成交记录", String(summary.fill_count), `成交名义 ${formatMoney(summary.fill_notional)}`, "accent")}
+      ${metric("部分成交 / 拒绝", `${summary.partial_fill_count} / ${summary.rejected_count}`, `保护单 ${summary.protective_order_count}`, summary.partial_fill_count || summary.rejected_count ? "bad" : "")}
+      ${metric("恢复状态", statusText(summary.latest_recovery_status), `未解决订单 ${summary.unresolved_order_count}`, summary.unresolved_order_count ? "bad" : "good")}
+    </div>
+    <section class="panel full-panel"><header class="panel-head"><div><h2>订单状态机</h2><p>逐单累计观察</p></div><span class="mono">${escapeHtml(shortHash(state.models.orders.source_hashes.runtime_ledger))}</span></header>
+      <div class="table-wrap"><table><thead><tr><th>订单</th><th>标的</th><th>阶段</th><th>状态</th><th>计划</th><th>累计</th><th>成交名义</th><th>最后观察</th></tr></thead><tbody>
+        ${payload.orders.map((row) => `<tr><td>${traceLink(row.batch_id, shortHash(row.client_order_id))}</td><td><strong>${escapeHtml(row.symbol)}</strong><small>${escapeHtml(statusText(row.side))} / ${escapeHtml(row.order_type)}</small></td><td>${pill(row.phase)}</td><td>${pill(row.status)}</td><td>${escapeHtml(formatQuantity(row.planned_quantity))}</td><td>${escapeHtml(formatQuantity(row.executed_quantity))}</td><td>${escapeHtml(formatMoney(row.fill_notional))}</td><td>${escapeHtml(formatTime(row.last_transition_at))}<small class="mono">${escapeHtml(shortHash(row.last_observation_hash))}</small></td></tr>`).join("") || `<tr><td colspan="8" class="empty-cell">无订单</td></tr>`}
+      </tbody></table></div>
+    </section>
+    <section class="panel full-panel"><header class="panel-head"><div><h2>成交记录</h2><p>${payload.fills.length} 笔权威成交</p></div></header>
+      <div class="table-wrap"><table><thead><tr><th>成交</th><th>订单</th><th>交易所成交 ID</th><th>数量</th><th>价格</th><th>费用</th><th>时间</th></tr></thead><tbody>
+        ${payload.fills.map((fill) => `<tr><td class="mono">${escapeHtml(shortHash(fill.fill_id))}</td><td class="mono">${escapeHtml(shortHash(fill.client_order_id))}</td><td>${escapeHtml(fill.exchange_trade_id)}</td><td>${escapeHtml(formatQuantity(fill.quantity))}</td><td>${escapeHtml(formatMoney(fill.price))}</td><td>${escapeHtml(formatMoney(fill.fee, fill.fee_asset))}</td><td>${escapeHtml(formatTime(fill.occurred_at))}</td></tr>`).join("") || `<tr><td colspan="7" class="empty-cell">无成交</td></tr>`}
+      </tbody></table></div>
+    </section>`;
+}
+
+function renderStrategies() {
+  const rows = state.models.strategies.payload.strategies;
+  $("view-strategies").innerHTML = `<section class="panel full-panel"><header class="panel-head"><div><h2>策略注册表</h2><p>${rows.length} 个当前版本</p></div><span class="mono">${escapeHtml(shortHash(state.models.strategies.source_hashes.strategy_registry))}</span></header>
+    <div class="table-wrap"><table><thead><tr><th>策略</th><th>状态</th><th>风险预算</th><th>本批决定</th><th>目标</th><th>NAV</th></tr></thead><tbody>
+      ${rows.map((row) => { const decision = row.latest_decision; const nav = row.nav.status === "available" ? row.nav.values : null; return `<tr><td><strong>${escapeHtml(row.strategy_id)}</strong><small>v${escapeHtml(row.strategy_version)} / ${escapeHtml(row.strategy_kind)}</small></td><td>${pill(row.promotion_status)}</td><td>${escapeHtml(formatPercent(row.maximum_gross))}<small>压力损失 ${escapeHtml(formatPercent(row.maximum_stress_loss_fraction))}</small></td><td>${decision ? traceLink(decision.decision_id) : "-"}${decision ? `<small>${escapeHtml(decision.reason_codes.join(" / "))}</small>` : ""}</td><td>${decision ? escapeHtml(formatPercent(decision.standalone_target_gross)) : "-"}</td><td>${nav ? escapeHtml(formatMoney(nav.standalone_executable_nav)) : "-"}<small>${nav ? `信号净值 ${escapeHtml(formatMoney(nav.signal_nav))}` : "账本不可用"}</small></td></tr>`; }).join("")}
+    </tbody></table></div></section>`;
+}
+
+function renderDecisions() {
+  const payload = state.models.decisions.payload;
+  const selected = routeInfo().trace;
+  const selectedNode = payload.trace.nodes.find((node) => node.id === selected) || null;
+  $("view-decisions").innerHTML = `
+    <div class="trace-summary">
+      <div><span>已选链路</span><strong>${escapeHtml(traceLabel(selectedNode))}</strong><small class="mono">${escapeHtml(shortHash(selectedNode ? selectedNode.id : payload.batch.batch_id))}</small></div>
+      <div>${pill(payload.risk.approved ? "pass" : "block")}<span>风险决定</span></div>
+      <div>${pill(payload.order_plan.executable ? "pass" : "block")}<span>订单计划</span></div>
+    </div>
+    <section class="panel full-panel"><header class="panel-head"><div><h2>决策证据链</h2><p>${payload.trace.nodes.length} 个节点 / ${payload.trace.edges.length} 条连接</p></div>${traceLink(payload.batch.batch_id, "批次根节点")}</header>
+      <div class="trace-flow">${payload.trace.nodes.map((node, index) => `<a href="${escapeHtml(node.href)}" class="trace-node ${node.id === selected ? "selected" : ""}"><span>${String(index + 1).padStart(2, "0")}</span><div><small>${escapeHtml(traceTypeText(node.type))}</small><strong>${escapeHtml(traceLabel(node))}</strong><code>${escapeHtml(shortHash(node.integrity_hash))}</code></div></a>`).join("")}</div>
+    </section>
+    <div class="split-layout">
+      <section class="panel"><header class="panel-head"><div><h2>策略决定</h2><p>理由与独立目标</p></div></header><div class="decision-list">
+        ${payload.strategies.map((row) => `<a href="${escapeHtml(row.href)}" class="decision-row ${row.decision_id === selected ? "selected" : ""}"><div><strong>${escapeHtml(row.strategy_id)}</strong><small>v${escapeHtml(row.strategy_version)} / ${escapeHtml(formatTime(row.decision_time))}</small></div><span>${escapeHtml(formatPercent(Object.values(row.target_weights)[0]))}</span><small>${escapeHtml(row.reason_codes.join(" / "))}</small></a>`).join("")}
+      </div></section>
+      <section class="panel"><header class="panel-head"><div><h2>证据标识</h2><p>已验证批次引用</p></div></header><dl class="fact-list">
+        <div><dt>清单哈希</dt><dd class="mono">${escapeHtml(shortHash(payload.batch.manifest_hash))}</dd></div>
+        <div><dt>组合目标</dt><dd>${traceLink(payload.portfolio.portfolio_target_id)}</dd></div>
+        <div><dt>风险决定</dt><dd>${traceLink(payload.risk.risk_decision_id)}</dd></div>
+        <div><dt>订单计划</dt><dd>${traceLink(payload.order_plan.order_plan_id)}</dd></div>
+        <div><dt>订单数量</dt><dd>${payload.order_plan.order_ids.length}</dd></div>
+        <div><dt>订单授权</dt><dd>${pill(payload.batch.orders_authorized ? "pass" : "block")}</dd></div>
+      </dl></section>
+    </div>`;
+}
+
+function renderRisk() {
+  const payload = state.models.risk.payload;
+  if (payload.runtime.status !== "available") {
+    $("view-risk").innerHTML = unavailableBlock("运行风险事实不可用", "RiskDecision 存在，但没有权威 ledger reconciliation。");
+    return;
+  }
+  const runtime = payload.runtime.values;
+  const reconciliation = runtime.reconciliation;
+  const accounting = runtime.accounting;
+  $("view-risk").innerHTML = `
+    <div class="metrics metrics-four">
+      ${metric("决策门", statusText(payload.decision.increase_risk_allowed ? "pass" : "block"), `${payload.decision.violations.length} 项违规`, payload.decision.increase_risk_allowed ? "good" : "bad")}
+      ${metric("运行门", statusText(runtime.gate_status), `${runtime.reason_codes.length} 个原因码`, runtime.gate_status === "pass" ? "good" : "bad")}
+      ${metric("三方对账", statusText(reconciliation.passed ? "pass" : "block"), `${reconciliation.blockers.length} 个阻断项`, reconciliation.passed ? "good" : "bad")}
+      ${metric("账目核验", statusText(accounting.passed ? "pass" : "block"), `未解释残差 ${formatMoney(accounting.residual)}`, accounting.passed ? "good" : "bad")}
+    </div>
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>三方仓位差异</h2><p>批准目标 / 内部账本 / 交易所</p></div>${traceLink(reconciliation.reconciliation_id)}</header><div class="table-wrap"><table><thead><tr><th>标的</th><th>目标减账本</th><th>账本减交易所</th></tr></thead><tbody>${Object.entries(reconciliation.position_differences).map(([symbol, row]) => `<tr><td><strong>${escapeHtml(symbol)}</strong></td><td>${escapeHtml(formatQuantity(row.target_minus_ledger))}</td><td>${escapeHtml(formatQuantity(row.ledger_minus_exchange))}</td></tr>`).join("") || `<tr><td colspan="3" class="empty-cell">无差异</td></tr>`}</tbody></table></div></section>
+      <section class="panel"><header class="panel-head"><div><h2>账目事实</h2><p>最新 NAV 标记</p></div><span class="mono">${escapeHtml(shortHash(accounting.mark_hash))}</span></header><dl class="fact-list"><div><dt>资金费</dt><dd>${escapeHtml(formatMoney(accounting.funding))}</dd></div><div><dt>手续费</dt><dd>${escapeHtml(formatMoney(accounting.fees))}</dd></div><div><dt>转账</dt><dd>${escapeHtml(formatMoney(accounting.transfers))}</dd></div><div><dt>未解释残差</dt><dd>${escapeHtml(formatMoney(accounting.residual))}</dd></div><div><dt>容差</dt><dd>${escapeHtml(formatMoney(accounting.residual_tolerance))}</dd></div><div><dt>结论</dt><dd>${pill(accounting.passed ? "pass" : "block")}</dd></div></dl></section></div>`;
+}
+
+function renderReadiness() {
+  const payload = state.models.readiness.payload;
+  $("view-readiness").innerHTML = `<div class="readiness-head"><div><span>读模型就绪状态</span><strong>${escapeHtml(statusText(payload.status))}</strong></div>${pill(payload.status)}</div>
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>运行检查项</h2><p>所有订单权限保持关闭</p></div></header><div class="gate-list">${payload.gates.map((gate) => `<div class="gate-row"><span class="gate-signal ${tone(gate.status)}"></span><div><strong>${escapeHtml(gate.gate)}</strong><small>${escapeHtml(gate.detail)}</small></div>${pill(gate.status)}</div>`).join("")}</div></section>
+    <section class="panel"><header class="panel-head"><div><h2>策略就绪状态</h2><p>${payload.strategies.length} 个策略</p></div></header><div class="gate-list">${payload.strategies.map((row) => `<div class="gate-row"><span class="gate-signal ${row.current_batch_decision_present ? "ok" : "warn"}"></span><div><strong>${escapeHtml(row.strategy_id)} v${escapeHtml(row.strategy_version)}</strong><small>${escapeHtml(statusText(row.promotion_status))} / 所有者授权${row.owner_authorization_present ? "已存在" : "缺失"}</small></div>${pill(row.live_orders_allowed ? "pass" : "block")}</div>`).join("")}</div></section></div>`;
+}
+
+function healthMetric(row) {
+  const metrics = row.metrics;
+  if (row.component === "clock") return metrics.drift_seconds == null ? "时钟偏差观测不可用" : `时钟偏差 ${metrics.drift_seconds} 秒`;
+  if (row.component === "disk") return metrics.free_bytes == null || metrics.total_bytes == null ? "磁盘容量观测不可用" : `可用 ${formatMoney(metrics.free_bytes / 1000000000)} GB / 总计 ${formatMoney(metrics.total_bytes / 1000000000)} GB`;
+  if (row.component === "service") return `${metrics.service_name} / 状态 ${metrics.active_state}`;
+  return metrics.last_success_at ? `最近成功 ${formatTime(metrics.last_success_at)} / 距今 ${metrics.age_seconds} 秒` : "没有成功备份记录";
+}
+
+function renderSystem() {
+  const payload = state.models.system.payload;
+  const ledger = payload.ledger.status === "available" ? payload.ledger.values : null;
+  const health = payload.health.status === "available" ? payload.health.values : null;
+  $("view-system").innerHTML = `
+    <div class="metrics metrics-four">
+      ${metric("系统状态", statusText(payload.summary.status), `${payload.summary.reason_codes.length} 个原因码`, tone(payload.summary.status) === "ok" ? "good" : tone(payload.summary.status) === "bad" ? "bad" : "accent")}
+      ${metric("内部账本", ledger ? "已验证" : "不可用", ledger ? `Schema v${ledger.schema_version}` : "没有快照", ledger ? "good" : "bad")}
+      ${metric("审计行数", ledger ? String(ledger.audit_row_count) : "-", ledger ? shortHash(ledger.audit_last_hash) : "", "")}
+      ${metric("健康观测", health ? String(health.observations.length) : "0", health ? statusText(health.status) : "缺失", health ? (health.status === "healthy" ? "good" : "bad") : "bad")}
+    </div>
+    ${health ? `<section class="health-band">${health.observations.map((row) => `<article><header><strong>${escapeHtml(componentText(row.component))}</strong>${pill(row.status)}</header><p>${escapeHtml(healthMetric(row))}</p><small>${escapeHtml(formatTime(row.observed_at))} / ${escapeHtml(shortHash(row.observation_hash))}</small></article>`).join("")}</section>` : unavailableBlock("系统健康观测缺失", "时钟、磁盘、服务和备份尚未由生产发布器提供。")}
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>账本完整性</h2><p>SQLite 快照 / JSONL 审计链</p></div><span class="mono">${escapeHtml(shortHash(ledger && ledger.snapshot_hash))}</span></header>${ledger ? `<dl class="fact-list"><div><dt>快照完整性</dt><dd>${pill(ledger.integrity_status === "verified" ? "pass" : "block")}</dd></div><div><dt>审计链</dt><dd>${pill(ledger.audit_chain_status === "verified" ? "pass" : "block")}</dd></div><div><dt>三方对账</dt><dd>${pill(ledger.reconciliation_passed ? "pass" : "block")}</dd></div><div><dt>可恢复订单</dt><dd>${ledger.recoverable_order_count}</dd></div><div><dt>恢复报告</dt><dd>${ledger.recovery_report_count}</dd></div><div><dt>来源更新时间</dt><dd>${escapeHtml(formatTime(ledger.source_updated_at))}</dd></div></dl>` : unavailableBlock("账本不可用", "没有可验证账本快照。")}</section>
+      <section class="panel"><header class="panel-head"><div><h2>原因码</h2><p>显式运行结论</p></div>${pill(payload.summary.status)}</header><div class="code-list">${payload.summary.reason_codes.map((reason) => `<code>${escapeHtml(reason)}</code>`).join("") || `<span class="empty-cell">无异常理由</span>`}${payload.summary.unavailable_fields.map((field) => `<code class="muted-code">缺失:${escapeHtml(field)}</code>`).join("")}</div></section></div>`;
+}
+
+function renderAlerts() {
+  const payload = state.models.alerts.payload;
+  if (payload.summary.status !== "available") {
+    $("view-alerts").innerHTML = unavailableBlock("通知快照不可用", "当前发布没有 NotificationStore 权威快照。");
+    return;
+  }
+  const summary = payload.summary;
+  $("view-alerts").innerHTML = `<div class="metrics metrics-four">${metric("待处理事件", String(summary.open_alert_count), `审计行 ${summary.audit_row_count}`, summary.open_alert_count ? "bad" : "good")}${metric("严重事件", String(summary.severity_counts.CRITICAL), `停机事件 ${summary.severity_counts.HALT}`, summary.severity_counts.CRITICAL || summary.severity_counts.HALT ? "bad" : "good")}${metric("等待投递", String(summary.delivery_state_counts.PENDING + summary.delivery_state_counts.RETRY_WAIT), `等待重试 ${summary.delivery_state_counts.RETRY_WAIT}`, "")}${metric("投递失败", String(summary.delivery_state_counts.DEAD_LETTER), `已投递 ${summary.delivery_state_counts.DELIVERED}`, summary.delivery_state_counts.DEAD_LETTER ? "bad" : "good")}</div>
+    <section class="panel full-panel"><header class="panel-head"><div><h2>事件列表</h2><p>事件状态与投递</p></div><span class="mono">${escapeHtml(shortHash(summary.audit_last_hash))}</span></header><div class="incident-list">${payload.alerts.map((row) => `<article><div class="incident-status">${pill(row.severity)}${pill(row.status)}</div><div><strong>${escapeHtml(row.title)}</strong><p>${escapeHtml(row.summary)}</p><small>${escapeHtml(formatTime(row.occurred_at))} / ${escapeHtml(row.category)} / ${traceLink(row.trace_id || row.source_id)}</small></div><div class="delivery-list">${row.deliveries.map((delivery) => `<span>${escapeHtml(delivery.channel)} ${pill(delivery.status)} <small>${delivery.attempt_count}/${delivery.max_attempts}</small></span>`).join("") || "未配置投递通道"}</div></article>`).join("") || `<div class="empty-cell">无告警</div>`}</div></section>`;
+}
+
+function renderReports() {
+  const payload = state.models.reports.payload;
+  if (payload.summary.status !== "available") {
+    $("view-reports").innerHTML = unavailableBlock("确定性日报不可用", "当前发布没有已验证 DailyBrief。");
+    return;
+  }
+  const brief = payload.brief;
+  const account = brief.account;
+  const pnl = brief.pnl;
+  $("view-reports").innerHTML = `<div class="metrics metrics-four">${metric("日报状态", statusText(brief.status), brief.report_date, tone(brief.status) === "ok" ? "good" : "bad")}${metric("钱包余额", formatMoney(account.wallet_balance, account.quote_asset), `可用余额 ${formatMoney(account.available_balance)}`, "good")}${metric("实际总敞口", formatPercent(account.actual_gross_fraction), formatMoney(account.actual_gross_notional), "accent")}${metric("峰值回撤", formatPercent(pnl.peak_drawdown_fraction), `当前 ${formatPercent(pnl.current_drawdown_fraction)}`, pnl.peak_drawdown_fraction > 0.1 ? "bad" : "")}</div>
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>日报仓位</h2><p>策略意图追踪链</p></div><span class="mono">${escapeHtml(shortHash(brief.source_hashes.runtime_ledger))}</span></header><div class="table-wrap"><table><thead><tr><th>标的</th><th>实际</th><th>预期</th><th>目标</th><th>策略</th></tr></thead><tbody>${brief.positions.map((row) => `<tr><td><strong>${escapeHtml(row.symbol)}</strong></td><td>${escapeHtml(formatQuantity(row.actual_quantity))}</td><td>${escapeHtml(formatQuantity(row.expected_quantity))}</td><td>${escapeHtml(formatPercent(row.approved_target_weight))}</td><td>${row.strategy_links.map((link) => traceLink(link.decision_id, link.strategy_id)).join(" ") || "-"}</td></tr>`).join("")}</tbody></table></div></section>
+      <section class="panel"><header class="panel-head"><div><h2>所有者待办</h2><p>${brief.owner_actions.length} 项</p></div>${pill(brief.status)}</header><div class="code-list">${brief.owner_actions.map((action) => `<code>${escapeHtml(action)}</code>`).join("") || `<span class="empty-cell">无待办</span>`}</div></section></div>`;
+}
+
+function renderAll() {
+  renderLive();
+  renderPositions();
+  renderOrders();
+  renderStrategies();
+  renderDecisions();
+  renderRisk();
+  renderReadiness();
+  renderSystem();
+  renderAlerts();
+  renderReports();
+}
+
+function renderOffline() {
+  const detail = state.error || "Dashboard v1 权威发布不可用";
+  const markup = `<div class="offline-state"><div class="offline-kicker">生产已停止 / PRODUCTION STOPPED</div><h2>权威运行来源不可用</h2><p>当前站点没有可验证的 Dashboard v1 生产发布。旧版数据源已停用，页面不会展示过期的账户和交易状态。</p><dl><div><dt>订单执行</dt><dd>已禁用</dd></div><div><dt>权威发布器</dt><dd>不可用</dd></div><div><dt>旧数据回退</dt><dd>已移除</dd></div><div><dt>读取错误</dt><dd>${escapeHtml(detail)}</dd></div></dl></div>`;
+  Object.keys(ROUTES).forEach((route) => { $(`view-${route}`).innerHTML = markup; });
+}
+
+function renderStatus() {
+  const { route } = routeInfo();
+  const model = modelForRoute(route);
+  const stale = state.status !== "ready" || isStale(model);
+  const badge = $("freshness-badge");
+  badge.textContent = state.status === "ready" ? (stale ? "已过期" : "数据有效") : "不可用";
+  badge.className = `status-pill ${stale ? "bad" : "ok"}`;
+  $("side-signal").className = `signal ${stale ? "bad" : "ok"}`;
+  $("side-status").textContent = state.status === "ready" ? (stale ? "数据已过期" : "权威发布已验证") : "生产来源不可用";
+  $("as-of").textContent = model ? `截至 ${formatTime(model.freshness.source_updated_at)}` : "未加载";
+}
+
+function showRoute() {
+  const { route } = canonicalRouteInfo();
+  document.querySelectorAll("[data-view]").forEach((view) => { view.hidden = view.dataset.view !== route; });
+  document.querySelectorAll("[data-route]").forEach((link) => {
+    const active = link.dataset.route === route;
+    link.classList.toggle("active", active);
+    if (active) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+  $("page-eyebrow").textContent = ROUTES[route][0];
+  $("page-title").textContent = ROUTES[route][1];
+  $("page-subtitle").textContent = ROUTES[route][2];
+  document.body.classList.remove("nav-open");
+  if (route === "decisions" && state.status === "ready") renderDecisions();
+  renderStatus();
+}
+
 async function load() {
-  for (const k in CHARTS) delete CHARTS[k];   // charts are rebuilt fresh each render
-  // C×D 合成账数据不再单独成页,先取到 store 里供实盘页合成仓位卡片使用
-  try { store.cxd = await getJSON("data/cxd_live.json"); } catch (e) { store.cxd = null; }
-  const tasks = [
-    ["data/cta.json", renderCTA, "body-cta"],
-    ["data/x4_live.json", renderLive, "body-live"],
-    ["data/x4_paper.json", renderPaper, "body-paper"],
-  ];
-  await Promise.all(tasks.map(async ([path, render, bodyId]) => {
-    try {
-      const d = await getJSON(path);
-      if (d && d.error) throw new Error(d.error);
-      render(d);
-    } catch (e) {
-      $(bodyId).innerHTML = `<div class="err">取数失败:${e.message}</div>`;
-    }
-  }));
-  renderOverview();
-  applyCounts();
-  wireCharts();
-  pageSub(currentRoute());
-  booted = true;
-  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-}
-function tick() {
-  const btn = $("refresh");
-  btn.classList.add("spin");
-  // 先拉 cron JSON 快照,再立刻刷一次币安实时价(否则点刷新只更新 10min 级快照、不动实时价)
-  load()
-    .then(() => refreshLivePrices())
-    .finally(() => setTimeout(() => btn.classList.remove("spin"), 600));
-}
-
-// ---- router: hash-based, one view visible at a time (keeps each page short) ----
-const ROUTES = {
-  overview: "概览", live: "加密实盘", cta: "A股 · CTA-R 跨资产",
-  paper: "加密模拟盘",
-};
-function currentRoute() {
-  const r = (location.hash || "").replace(/^#\/?/, "");
-  return ROUTES[r] ? r : "overview";
-}
-function showRoute(route) {
-  document.querySelectorAll(".view").forEach((v) => { v.hidden = v.id !== "view-" + route; });
-  document.querySelectorAll(".nav-item").forEach((a) => a.classList.toggle("active", a.dataset.route === route));
-  const t = $("page-title"); if (t) t.textContent = ROUTES[route] || "概览";
-  pageSub(route);
-  document.body.classList.remove("nav-open");           // close mobile drawer on navigate
-  window.scrollTo(0, 0);
-}
-function go(route) { location.hash = "#/" + route; }
-window.addEventListener("hashchange", () => showRoute(currentRoute()));
-
-// ---- real-time: poll Binance USDⓈ-M public mark prices between the 10-min cron snapshots and re-derive
-//      live uPnL / equity / gate distance in the browser (no key, public CORS endpoint) ----
-const SPOT_TICKER = "https://api.binance.com/api/v3/ticker/price?symbol=";
-function liveSymbols() {
-  const u = (store.live && store.live.universe) || UNIVERSE;
-  const set = new Set(u.map((c) => (c.endsWith("USDT") ? c : c + "USDT")));
-  set.add("BTCUSDT");                                   // always need BTC for the gate
-  return [...set];
-}
-async function refreshLivePrices() {
-  if (!store.live || document.hidden) return;
-  // per-symbol fetch (the single-symbol endpoint is the simplest/most portable; CORS = * on Binance
-  // public market data). A blocked/offline fetch is swallowed -> the cron snapshot stays on screen.
-  // api.binance.com 在境内被墙;没超时的话被卡住的请求永不 settle -> 把刷新链路一起拖住转圈不停。
-  const tfetch6 = (u) => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 6000);
-    return fetch(u, { cache: "no-store", signal: ctrl.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .finally(() => clearTimeout(timer));
-  };
-  const results = await Promise.allSettled(liveSymbols().map((s) => tfetch6(SPOT_TICKER + s)));
-  let any = false;
-  results.forEach((res) => {
-    const o = res.status === "fulfilled" && res.value;
-    if (o && o.symbol && o.price) { livePx[o.symbol] = parseFloat(o.price); any = true; }
-  });
-  if (any) patchLive();
-}
-function patchLive() {
-  const base = store.live;
-  if (!base) return;
-  const d = JSON.parse(JSON.stringify(base));          // clone — never corrupt the cron snapshot
-  let acc = 0, anyLive = false;
-  (d.holdings || []).forEach((h) => {
-    const px = livePx[h.symbol];
-    if (px && h.entry && h.qty) {
-      anyLive = true;
-      const isShort = h.side === "short" || (h.value || 0) < 0;
-      h.price = px;
-      h.value = (isShort ? -1 : 1) * px * h.qty;
-      h.upnl = (isShort ? h.entry - px : px - h.entry) * h.qty;
-    }
-    if (h.upnl != null) acc += h.upnl;
-  });
-  if (d.holdings && d.holdings.length && anyLive) {
-    d.unrealized_pnl = acc;
-    d.trend_equity = (d.capital || 0) + acc;             // 趋势腿实时 = USDⓈ-M 钱包 + 未实现
-    const carryValue = (d.carry && (d.carry.equity || d.carry.capital)) || 0; // carry 全腿净值(含短腿浮盈)
-    d.equity = d.trend_equity + carryValue + (d.idle_usdt || 0); // 全账户实时 = 趋势 + carry + 闲置现金,守恒
-    if (d.inception_equity) {                            // 总盈亏 also ticks live with full equity
-      d.total_pnl = d.equity - d.inception_equity;
-      d.total_pnl_pct = d.inception_equity ? d.equity / d.inception_equity - 1 : 0;
-    }
-    if (d.trend_inception) {                              // 趋势腿盈亏 live tick
-      d.trend_pnl = d.trend_equity - d.trend_inception;
-      d.trend_pnl_pct = d.trend_inception ? d.trend_equity / d.trend_inception - 1 : 0;
-    }
+  $("refresh-button").classList.add("spinning");
+  $("error-banner").hidden = true;
+  try {
+    const publication = await fetchJSON("data/v1/publication.json");
+    validatePublication(publication);
+    const entries = await Promise.all(Object.entries(MODEL_PATHS).map(async ([type, path]) => [type, await fetchJSON(path)]));
+    const models = Object.fromEntries(entries);
+    Object.entries(models).forEach(([type, model]) => validateModel(model, type, publication));
+    state.status = "ready";
+    state.publication = publication;
+    state.models = models;
+    state.error = null;
+    renderAll();
+  } catch (error) {
+    state.status = "offline";
+    state.publication = null;
+    state.models = {};
+    state.error = error && error.name === "AbortError" ? "请求超时" : String(error && error.message ? error.message : error);
+    renderOffline();
+    const banner = $("error-banner");
+    banner.textContent = "生产读模型不可用；实时订单执行保持禁用。";
+    banner.hidden = false;
+  } finally {
+    $("refresh-button").classList.remove("spinning");
+    showRoute();
   }
-  const bpx = livePx["BTCUSDT"];
-  if (bpx) { d.btc_px = bpx; if (d.btc_sma200) d.btc_to_sma = d.btc_px / d.btc_sma200 - 1; d.live_price = true; }
-  liveOnly = true;                                      // skip count-up re-animation on a price tick
-  store.live = d;
-  renderLive(d);
-  renderOverview();
-  applyCounts();
-  wireCharts();
-  // prune chart registry to DOM-present ids (live panel re-renders its chart each tick — avoid leak)
-  Object.keys(CHARTS).forEach((id) => { if (!document.querySelector(`[data-cid="${id}"]`)) delete CHARTS[id]; });
-  liveOnly = false;
-  if (currentRoute() === "live" || currentRoute() === "overview") pageSub(currentRoute());
-  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false }) + " · 实时";
 }
 
-// ---- wiring ----
-$("refresh").addEventListener("click", tick);
-$("theme-btn").addEventListener("click", toggleTheme);
-$("color-btn").addEventListener("click", toggleColor);
-$("menu-btn").addEventListener("click", () => document.body.classList.toggle("nav-open"));
-$("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
-document.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.dataset.route); }));
-document.addEventListener("click", (e) => { const t = e.target.closest(".otile[data-route]"); if (t) go(t.dataset.route); });
-document.addEventListener("click", (e) => {                 // 权益曲线 盘中/日线 切换
-  const b = e.target.closest(".seg[data-curve]");
-  if (!b || b.disabled || !store.live) return;
-  liveCurveMode = b.dataset.curve;
-  liveOnly = true; renderLive(store.live); applyCounts(); wireCharts(); liveOnly = false;
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("qount-theme", theme); } catch (error) {}
+}
+
+$("theme-button").addEventListener("click", () => {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
 });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); refreshLivePrices(); } });
-applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
-applyColor(document.documentElement.getAttribute("data-color") === "us" ? "us" : "cn");
-showRoute(currentRoute());
-tick();
-setInterval(load, 20000);                              // cron JSON snapshot (positions/stops/capital)
-setInterval(refreshLivePrices, 4000);                  // live spot price -> uPnL/equity/gate, every 4s
-setInterval(() => pageSub(currentRoute()), 1000);      // “更新 X 分钟前”按墙钟走:UI 不假死,数据卡住时数字一直爬 = stale 指示
+$("refresh-button").addEventListener("click", load);
+$("menu-button").addEventListener("click", () => document.body.classList.toggle("nav-open"));
+$("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
+window.addEventListener("hashchange", showRoute);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+
+showRoute();
+load();
+setInterval(load, 30000);
+setInterval(renderStatus, 1000);

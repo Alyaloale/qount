@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-positions.schema.json",
+  "title": "qount Dashboard v1 positions",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "positions" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "summary", "positions"],
+          "properties": {
+            "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
+            "summary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "position_count", "nonzero_position_count", "reconciliation_id", "reconciled"],
+              "properties": {
+                "status": { "enum": ["unavailable_until_phase_b_ledger", "available"] },
+                "position_count": { "type": "integer", "minimum": 0 },
+                "nonzero_position_count": { "type": "integer", "minimum": 0 },
+                "reconciliation_id": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }] },
+                "reconciled": { "type": "boolean" }
+              }
+            },
+            "positions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/position" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "nullable_hash": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }] },
+    "nullable_timestamp": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["batch_id", "manifest_hash", "snapshot_id", "decision_ids", "portfolio_target_id", "risk_decision_id", "order_plan_id", "href"],
+      "properties": {
+        "batch_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "manifest_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "snapshot_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "decision_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" } },
+        "portfolio_target_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "risk_decision_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "order_plan_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "href": { "type": "string", "pattern": "^#/decisions\\?trace=[0-9a-f]{64}$" }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "actual_quantity", "average_cost", "realized_trading_pnl", "expected_quantity", "quantity_difference", "approved_target_weight", "updated_at", "source_hash", "position_hash", "trace"],
+      "properties": {
+        "symbol": { "type": "string", "minLength": 1 },
+        "actual_quantity": { "type": "number", "minimum": 0 },
+        "average_cost": { "type": "number", "minimum": 0 },
+        "realized_trading_pnl": { "type": "number" },
+        "expected_quantity": { "type": "number", "minimum": 0 },
+        "quantity_difference": { "type": "number" },
+        "approved_target_weight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "updated_at": { "$ref": "#/$defs/nullable_timestamp" },
+        "source_hash": { "$ref": "#/$defs/nullable_hash" },
+        "position_hash": { "$ref": "#/$defs/nullable_hash" },
+        "trace": { "$ref": "#/$defs/trace" }
+      }
+    }
+  }
+}

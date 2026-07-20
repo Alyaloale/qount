@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-readiness.schema.json",
+  "title": "qount Dashboard v1 readiness",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "readiness" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "status", "gates", "strategies"],
+          "properties": {
+            "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
+            "status": { "enum": ["blocked_phase_b_required", "blocked_runtime_state", "read_model_ready", "stale"] },
+            "gates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["gate", "status", "detail"],
+                "properties": {
+                  "gate": { "type": "string", "minLength": 1 },
+                  "status": { "enum": ["pass", "block", "unavailable"] },
+                  "detail": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "strategies": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["strategy_id", "strategy_version", "promotion_status", "current_batch_decision_present", "promotion_evidence_present", "owner_authorization_present", "live_orders_allowed"],
+                "properties": {
+                  "strategy_id": { "type": "string", "minLength": 1 },
+                  "strategy_version": { "type": "string", "minLength": 1 },
+                  "promotion_status": { "enum": ["draft", "research", "frozen_candidate", "shadow", "paper", "minimal_live", "scaled_live", "halted"] },
+                  "current_batch_decision_present": { "type": "boolean" },
+                  "promotion_evidence_present": { "type": "boolean" },
+                  "owner_authorization_present": { "type": "boolean" },
+                  "live_orders_allowed": { "const": false }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

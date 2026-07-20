@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import tempfile
 import unittest
 import zipfile
 
 from qount.grid.data import Bar
 from qount.grid.data import Funding
+from qount.grid.data import checksum_url
 from qount.grid.data import day_url
 from qount.grid.data import download_month
 from qount.grid.data import funding_url
@@ -17,7 +19,10 @@ from qount.grid.data import load_klines
 from qount.grid.data import month_url
 from qount.grid.data import parse_funding_csv
 from qount.grid.data import parse_kline_csv
+from qount.grid.data import parse_checksum_sidecar
 from qount.grid.data import parse_zip_bytes
+from qount.grid.data import validate_archive_checksum
+from qount.grid.data import verified_archive_fetch
 
 # A couple of real Binance-vision rows (BTCUSDT 1d, 2021-01) -- header-less layout.
 _ROW0 = "1609459200000,28923.63,29600.00,28624.57,29331.69,54182.92,1609545599999,0,0,0,0,0"
@@ -32,6 +37,48 @@ def _make_zip(csv_text: str, name: str = "k.csv") -> bytes:
 
 
 class TestParsing(unittest.TestCase):
+    def test_verified_archive_fetch_requires_matching_official_sidecar(self) -> None:
+        url = (
+            "https://data.binance.vision/data/futures/um/monthly/klines/"
+            "BTCUSDT/1d/BTCUSDT-1d-2024-01.zip"
+        )
+        blob = _make_zip(_ROW0)
+        digest = hashlib.sha256(blob).hexdigest()
+        calls = []
+
+        def fetch(requested: str) -> bytes:
+            calls.append(requested)
+            if requested == url:
+                return blob
+            if requested == checksum_url(url):
+                return f"{digest}  BTCUSDT-1d-2024-01.zip\n".encode("ascii")
+            raise AssertionError(requested)
+
+        self.assertEqual(verified_archive_fetch(url, fetch=fetch), blob)
+        self.assertEqual(calls, [url, f"{url}.CHECKSUM"])
+
+    def test_archive_checksum_rejects_hash_and_filename_mismatch(self) -> None:
+        blob = b"archive"
+        digest = hashlib.sha256(blob).hexdigest()
+        self.assertEqual(
+            parse_checksum_sidecar(
+                f"{digest}  expected.zip".encode("ascii"), "expected.zip"
+            ),
+            digest,
+        )
+        with self.assertRaisesRegex(ValueError, "filename"):
+            validate_archive_checksum(
+                blob,
+                f"{digest}  other.zip".encode("ascii"),
+                expected_filename="expected.zip",
+            )
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            validate_archive_checksum(
+                blob + b"changed",
+                f"{digest}  expected.zip".encode("ascii"),
+                expected_filename="expected.zip",
+            )
+
     def test_parses_headerless_rows(self) -> None:
         bars = parse_kline_csv("\n".join([_ROW0, _ROW1]))
         self.assertEqual(len(bars), 2)
@@ -40,6 +87,16 @@ class TestParsing(unittest.TestCase):
         self.assertAlmostEqual(bars[0].high, 29600.00)
         self.assertAlmostEqual(bars[1].close, 32178.33)
         self.assertEqual(bars[0].date, "2021-01-01")
+
+    def test_preserves_native_kline_flow_fields(self) -> None:
+        row = (
+            "1609459200000,100,110,90,105,20,1609545599999,2100,42,12,1260,0"
+        )
+        bar = parse_kline_csv(row)[0]
+        self.assertEqual(bar.quote_volume, 2100.0)
+        self.assertEqual(bar.trade_count, 42)
+        self.assertEqual(bar.taker_buy_base_volume, 12.0)
+        self.assertEqual(bar.taker_buy_quote_volume, 1260.0)
 
     def test_normalizes_microsecond_timestamps(self) -> None:
         # Binance 2025+ dumps use microseconds; must normalize to ms (else year overflows).

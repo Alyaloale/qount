@@ -1,3 +1,8 @@
+# LEGACY WSL / line A sample only.
+# Current crypto live and paper production runs on the VPS via crontab and
+# scripts/desktop/*_cron.sh. Do not enable this timer as the production
+# scheduler unless the owner explicitly revives the old qount.main line.
+
 [Unit]
 Description=Run qount every 5 minutes with duplicate-bar protection
 

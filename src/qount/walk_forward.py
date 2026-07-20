@@ -348,7 +348,7 @@ class WalkForwardService:
         if explicit:
             return Path(explicit).expanduser()
         stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
-        return self.settings.project_root / "state" / "walk_forward" / stamp
+        return self.settings.state_dir / "walk_forward" / stamp
 
     def _window_model_paths(self, root: Path, index: int, window: WalkForwardWindow) -> tuple[Path, Path]:
         window_dir = root / f"{index:02d}-{_sanitize_label(window.label)}"

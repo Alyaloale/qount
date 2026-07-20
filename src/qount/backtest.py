@@ -366,7 +366,7 @@ class BacktestService:
             return Path(explicit).expanduser()
         stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
         label = f"{start.strftime('%Y%m%dT%H%M')}-{end.strftime('%Y%m%dT%H%M')}"
-        return self.settings.project_root / "state" / "backtests" / f"{stamp}-{label}"
+        return self.settings.state_dir / "backtests" / f"{stamp}-{label}"
 
     def _isolated_settings(
         self,

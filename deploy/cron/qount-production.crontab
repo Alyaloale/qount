@@ -1,0 +1,15 @@
+# qount VPS production schedule template.
+#
+# SAFETY HOLD: this file intentionally contains zero active cron entries.
+# Do not uncomment or install any schedule until notification transport and the
+# production publisher have each received explicit owner authorization.
+#
+# Lock files live directly under /run/lock because that directory exists after boot.
+# Each script also creates and owns its inner lock under /run/lock/qount.
+
+# CxD/X4 live: trend-only while QOUNT_CXD_CARRY_ENABLE=0. Daily signal,
+# exchange-native stops, five-minute reconciliation.
+# DISABLED: */5 * * * * QOUNT_CXD_CAPITAL=auto /usr/bin/flock -n /run/lock/qount-cxd-live-cron.lock /usr/bin/timeout --signal=TERM --kill-after=10s 125s /bin/bash /root/qount/scripts/desktop/cxd_live_cron.sh live
+
+# X4 paper forward, once daily.
+# DISABLED: 0 10 * * * /usr/bin/flock -n /run/lock/qount-x4-paper-cron.lock /usr/bin/timeout --signal=TERM --kill-after=10s 1900s /bin/bash /root/qount/scripts/desktop/x4_paper_cron.sh

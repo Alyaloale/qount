@@ -1,88 +1,79 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="dark light">
-<meta name="robots" content="noindex, nofollow">
-<title>qount · 监控台</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23000'/><g fill='%23fff'><rect x='24' y='52' width='12' height='24'/><rect x='44' y='38' width='12' height='38'/><rect x='64' y='24' width='12' height='52'/></g></svg>">
-<link rel="stylesheet" href="style.css">
-<script>
-  // apply saved/system theme + 涨跌配色 before first paint (no flash)
-  (function () {
-    var t; try { t = localStorage.getItem("qount-theme"); } catch (e) {}
-    if (!t) t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", t);
-    var c; try { c = localStorage.getItem("qount-color"); } catch (e) {}
-    document.documentElement.setAttribute("data-color", c === "us" ? "us" : "cn");  // 默认红涨绿跌
-  })();
-</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="robots" content="noindex, nofollow">
+  <title>qount | 运行控制台</title>
+  <link rel="stylesheet" href="style.css?v=21">
+  <script>
+    (function () {
+      var saved;
+      try { saved = localStorage.getItem("qount-theme"); } catch (error) {}
+      var preferred = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", saved || preferred);
+    })();
+  </script>
 </head>
 <body>
-<div class="shell">
-  <!-- ===== 侧边栏导航 ===== -->
-  <aside class="sidebar" id="sidebar">
-    <div class="brand">
-      <span class="logo"><span class="dot">◆</span> qount</span>
-      <span class="tag">监控台</span>
-    </div>
-    <nav class="nav">
-      <a class="nav-item" data-route="overview"><div class="ni-top"><span class="ni-ic">▦</span><span class="ni-label">概览</span></div></a>
-      <div class="nav-sec">实盘 · 真金</div>
-      <a class="nav-item" data-route="live"><div class="ni-top"><span class="ni-ic">●</span><span class="ni-label">加密实盘</span><span class="ni-tag" id="nav-live-tag"></span></div><span class="ni-spark" id="spark-live"></span></a>
-      <div class="nav-sec">模拟 · 纸面</div>
-      <a class="nav-item" data-route="cta"><div class="ni-top"><span class="ni-ic">◆</span><span class="ni-label">A股 CTA-R</span></div><span class="ni-spark" id="spark-cta"></span></a>
-      <a class="nav-item" data-route="paper"><div class="ni-top"><span class="ni-ic">◇</span><span class="ni-label">加密模拟盘</span></div><span class="ni-spark" id="spark-paper"></span></a>
-    </nav>
-    <div class="side-foot">
-      <div class="side-status"><span class="live-dot"></span><span id="clock">—</span></div>
-      <div class="side-ctrl">
-        <button id="theme-btn" class="iconbtn" title="切换深色 / 浅色">☀</button>
-        <button id="color-btn" class="iconbtn" title="涨跌配色 · 红涨绿跌 / 绿涨红跌">涨</button>
-        <button id="refresh" class="iconbtn" title="立即刷新">↻</button>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div><strong>qount</strong><small>运行控制台</small></div>
       </div>
-    </div>
-  </aside>
 
-  <!-- ===== 内容区 ===== -->
-  <main class="content">
-    <header class="page-head">
-      <button class="menu-btn iconbtn" id="menu-btn" title="菜单">☰</button>
-      <h1 id="page-title">概览</h1>
-      <div class="page-sub" id="page-sub"></div>
-    </header>
+      <nav class="nav" aria-label="主导航">
+        <a href="#/live" data-route="live"><span class="nav-key">01</span><span>实时状态</span></a>
+        <a href="#/positions" data-route="positions"><span class="nav-key">02</span><span>仓位</span></a>
+        <a href="#/orders" data-route="orders"><span class="nav-key">03</span><span>订单</span></a>
+        <a href="#/strategies" data-route="strategies"><span class="nav-key">04</span><span>策略</span></a>
+        <a href="#/decisions" data-route="decisions"><span class="nav-key">05</span><span>决策追踪</span></a>
+        <a href="#/risk" data-route="risk"><span class="nav-key">06</span><span>风险</span></a>
+        <a href="#/readiness" data-route="readiness"><span class="nav-key">07</span><span>就绪检查</span></a>
+        <a href="#/system" data-route="system"><span class="nav-key">08</span><span>系统健康</span></a>
+        <a href="#/alerts" data-route="alerts"><span class="nav-key">09</span><span>告警</span></a>
+        <a href="#/reports" data-route="reports"><span class="nav-key">10</span><span>日报</span></a>
+      </nav>
 
-    <section class="view" id="view-overview">
-      <div class="sumcard" id="ov-summary"></div>
-      <div class="overview" id="overview"></div>
-      <div class="ov-note">点击任意卡片进入明细 · A股 / 加密模拟盘为模拟,加密实盘为真实小仓</div>
-    </section>
-
-    <section class="view" id="view-live" hidden>
-      <div class="panel" id="panel-live">
-        <div class="panel-head"><h2>加密 · X4 固定 TOP7 趋势</h2><span class="badge real">实盘</span></div>
-        <div class="panel-body" id="body-live"><div class="skeleton">加载中…</div></div>
+      <div class="sidebar-foot">
+        <div class="connection"><span class="signal pending" id="side-signal"></span><span id="side-status">等待权威发布</span></div>
+        <div class="toolbar">
+          <button class="icon-button" id="theme-button" type="button" title="切换主题" aria-label="切换主题"><span aria-hidden="true">◐</span></button>
+          <button class="icon-button" id="refresh-button" type="button" title="刷新数据" aria-label="刷新数据"><span aria-hidden="true">↻</span></button>
+        </div>
       </div>
-    </section>
+    </aside>
 
-    <section class="view" id="view-cta" hidden>
-      <div class="panel" id="panel-cta">
-        <div class="panel-head"><h2>A股 · CTA-R 跨资产组合</h2><span class="badge paper">模拟盘</span></div>
-        <div class="panel-body" id="body-cta"><div class="skeleton">加载中…</div></div>
-      </div>
-    </section>
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="menu-button" type="button" title="打开菜单" aria-label="打开菜单"><span aria-hidden="true">☰</span></button>
+        <div class="title-block">
+          <p class="eyebrow" id="page-eyebrow">权威读模型</p>
+          <h1 id="page-title">实时运行</h1>
+          <p id="page-subtitle">账户、组合与运行状态</p>
+        </div>
+        <div class="top-status">
+          <span class="as-of" id="as-of">未加载</span>
+          <span class="status-pill pending" id="freshness-badge" aria-live="polite">加载中</span>
+        </div>
+      </header>
 
-    <section class="view" id="view-paper" hidden>
-      <div class="panel" id="panel-paper">
-        <div class="panel-head"><h2>加密 · X4 模拟盘(前向)</h2><span class="badge paper">模拟盘</span></div>
-        <div class="panel-body" id="body-paper"><div class="skeleton">加载中…</div></div>
-      </div>
-    </section>
-  </main>
-</div>
-<div class="scrim" id="scrim"></div>
-
-<script src="app.js?v=5"></script>
+      <div class="banner" id="error-banner" role="status" aria-live="polite" hidden></div>
+      <section class="view" id="view-live" data-view="live"></section>
+      <section class="view" id="view-positions" data-view="positions" hidden></section>
+      <section class="view" id="view-orders" data-view="orders" hidden></section>
+      <section class="view" id="view-strategies" data-view="strategies" hidden></section>
+      <section class="view" id="view-decisions" data-view="decisions" hidden></section>
+      <section class="view" id="view-risk" data-view="risk" hidden></section>
+      <section class="view" id="view-readiness" data-view="readiness" hidden></section>
+      <section class="view" id="view-system" data-view="system" hidden></section>
+      <section class="view" id="view-alerts" data-view="alerts" hidden></section>
+      <section class="view" id="view-reports" data-view="reports" hidden></section>
+    </main>
+  </div>
+  <button class="scrim" id="scrim" type="button" aria-label="关闭菜单"></button>
+  <script src="app.js?v=21"></script>
 </body>
 </html>

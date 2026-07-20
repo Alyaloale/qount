@@ -1,11 +1,12 @@
 # qount 当前状态
 
-更新时间：2026-06-09
+更新时间：2026-07-20
 
 当前版本：`0.2.0`
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
-[quick-handoff.md](quick-handoff.md)，发现/验证边界看
+[quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
+[project-rules.md](project-rules.md)，发现/验证边界看
 [holdout.md](holdout.md)，长证据链看 [update-log.md](update-log.md)，架构评审和路线看
 [optimization-plan.md](optimization-plan.md)，历史盈利研究路线看
 [profit-research-plan.md](profit-research-plan.md)，架构天花板与现代量化 ML 升级看
@@ -13,7 +14,265 @@
 [l3-information-edge-plan.md](l3-information-edge-plan.md)，跨资产趋势重启线（L1,攻 BR,首个真 edge 但
 已固化暂停）看 [l1-cross-asset-plan.md](l1-cross-asset-plan.md)，跨所套利重启线（L4,换游戏,S1 已证伪）看
 [l4-cross-exchange-plan.md](l4-cross-exchange-plan.md)，A股 L2 微观结构重启线（L6,换信息源攻 IC,
-当前在推进）看 [l6-microstructure-plan.md](l6-microstructure-plan.md)。
+当前在推进）看 [l6-microstructure-plan.md](l6-microstructure-plan.md)，新多智能体研究组织层看
+[alpha-agent-plan.md](alpha-agent-plan.md)，A股 ETF 20 日战术研究看
+[ashare-etf-month-plan.md](ashare-etf-month-plan.md)，1000 USDT加密多策略组合架构、策略合同和90天推进顺序看
+[crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，交易、账本、对账、通知、Dashboard和LLM的系统工程
+主设计看 [system-architecture-design.md](system-architecture-design.md)。
+
+- **2026-07-20 notification transport合同已完成本地fake边界，publisher生产授权仍阻断。** 新增
+  `notifications/transport.py`：`ProviderResponse`要求精确字段、canonical response hash、请求`delivery_key`回显及
+  `ACCEPTED/DUPLICATE/REJECTED`一致性；`ProviderTransport`只接受注入provider，使用固定窗口fail-closed限流、调用deadline、
+  provider故障/超时/错误响应审计，并继续复用outbox固定delivery key。provider credential只从非symlink、父目录无group/world权限、
+  文件精确`0600`的显式路径读取，不查环境变量；无key模式生成不含key material的显式审计。仓库只提供
+  `FakeNotificationProvider`，没有HTTP/webhook/ServerChan adapter；fake幂等、故障重试、响应篡改、拒绝、限流、超时、0600和无key
+  共7项新测试通过，没有发送真实消息。
+  新增只读`operations/publisher_paths.py`及`scripts/operations/audit_publisher_paths.py`，复用完整authority importer和backup
+  readback验证真实绝对路径、symlink、`0700/0600`及最新snapshot；结果无论通过与否均固定
+  `pending_explicit_owner_authorization`且不能授权install/enable。systemd模板声明的候选路径仍是
+  `/var/lib/qount/dashboard-authority`和`/var/lib/qount/dashboard-backups`，但仓库没有生产authority bundle writer；首次本地尝试因
+  alias缺失未连通，随后已恢复仓库外alias并完成真实VPS审计（结果见下一条），因此没有申请或执行production publisher安装/enable。
+  `deploy/cron/qount-production.crontab`已改成零active entry的注释模板，避免被直接安装恢复live/paper。聚焦48项、全仓1478项回归通过；
+  仓库内真实通知、production cron、publisher/交易timer、订单执行和全部live开关保持关闭，本批没有访问私有API、交易所或生产文件；
+  VPS实际运行状态因host不可解析而未复核，不能把本地安全状态冒充生产证明。
+
+- **2026-07-20 VPS 只读路径审计已执行，结果为 `blocked`，并已纠正一个真实 timer 状态。** 已在仓库外 SSH 配置恢复
+  `qount-vps` alias，使用既有 root key 只读进入 `/root/qount`。核对结果：root crontab 只有停用注释；
+  `qount-dashboard-publisher.timer/service`、`qount-runner.timer/service` 均为 `not-found`/inactive；发现的
+  `qount-mini-trend-forward.timer` 原为 enabled/active，已执行 `systemctl disable --now`，复核为 disabled/inactive；没有 qount
+  交易或 publisher 进程，`QOUNT_LIVE_ENABLE=false`。
+  `/var/lib/qount`、`/var/lib/qount/dashboard-authority`、`/var/lib/qount/dashboard-backups` 和 `/var/www/qount/data` 均不存在；
+  `/root/qount` 代码没有 authority writer/source 引用。将本地只读审计代码临时放入 VPS `/tmp` 后运行，输出
+  `status=blocked`、`authority_bundle_verified=false`、`backup_state=invalid`，audit hash 为
+  `fb66f3c3c8f45c90ed9429cca59e9b9b843c61e335ad5d179a37a2921c059c5f`；临时代码已清理。
+  因真实 authority writer/source、目录权限和 backup snapshot 都不存在，不能返回 `ready_for_authorization`，没有申请或执行
+  production publisher install/enable；transport 仍没有第二份明确授权。远端 cron、timer、订单、live 和真实通知继续关闭。
+
+- **2026-07-20 Phase B/C账户事实、系统健康、仓位/决策追踪和新Dashboard前端已闭合，静态站已部署。**
+  `RuntimeLedgerSnapshot`升级为schema v3：SQLite schema v2新增不可变`account_observations`，同一读事务读取完整NAV历史和
+  最新账户观测，权威提供wallet/available balance、actual gross、margin，并从连续NAV派生peak equity、current/peak drawdown。
+  账户观测与NAV必须同batch、同时间、同quote asset且满足余额关系；时间倒退、identity冲突、source/hash篡改、NAV不连续或
+  回撤重算不一致均失败关闭。`SystemHealthSnapshot`固定要求`clock/disk/service/backup`四项强类型观测，backup age绑定观测时点，
+  component/snapshot hash可复核；system使用独立freshness，不能把陈旧ledger洗新。
+  Dashboard现有`overview/positions/orders/strategies/decisions/risk/readiness/system/alerts/reports`十份模型和十条路由；
+  `positions`链接到`#/decisions?trace=<id>`，证据链覆盖batch、snapshot、strategy decision、portfolio、risk、order plan、ledger和
+  reconciliation。原子release精确包含十份模型加`publication.json`共11个JSON，静态Draft 2020-12 schema共13份；完整fixture的
+  12个实际实例已通过`jsonschema 4.25.1`验证。完整health + DailyBrief组合曾暴露tuple/list最终readback不等价，现已把公开
+  `as_dict()`规范成JSON-native list并加入原子发布回归。
+  新前端默认并规范化到`#/live`，只读`data/v1`，显示账户事实、四项健康和可点击trace；缺release时固定显示
+  `PRODUCTION STOPPED`，不回退legacy JSON。Playwright 1.60 + Chromium 1223完成桌面`1440x1000`和移动`390x844`的
+  Live/Positions/Decisions/System/offline及菜单检查，无控制台异常、页面级横向溢出、重叠或裁切。该批边界聚焦`71 OK`、当前全仓
+  `1468 OK`；Dashboard与DailyBrief golden SHA-256更新为`f2840c99a4403c1a50e39c497e4b6bd571dcc4442d4e77e635e53c5453b66c32`
+  和`6ea5d7f0ca239382e672fe0b4ad9115d631f1e81548d2bda386d7f533a58e6f9`。
+  当前界面已完成中文显示优化：导航、状态、账户事实、健康观测、告警、日报和证据链固定节点均使用中文展示，审计术语和
+  reason code保留原值；CJK字体栈优先使用`PingFang SC/Hiragino Sans GB/Microsoft YaHei/Noto Sans CJK SC`，正文`14px`、
+  导航`13px`、面板标题`15px`、移动标题`20px`、关键指标`18-21px`，移动菜单等待动画稳定后侧栏位于`x=0`，文档宽度与视口一致。
+  `https://qount.alyaloale.com/#/live`已替换为新静态前端；served root只保留`index.html/app.js/style.css`，旧`data/*.json`
+  已删除并备份到`/root/qount-dashboard-backup-20260719T183341Z`。Caddy仍active，未认证返回401并保留Basic Auth、`no-store`、
+  `nosniff`、`DENY`和`no-referrer`；qount cron保持停用。production v1 publisher尚未接入，因此认证后应失败关闭，本地fixture未部署。
+
+- **2026-07-20 本地 production-shaped publisher、OS健康探针、备份恢复和release保留已闭合。** 新增独立
+  `operations/health_probes.py`、`operations/backups.py` 和 `operations/dashboard_publisher.py`：clock使用
+  `timedatectl show/show-timesync`的同步状态与微秒偏差，disk使用`shutil.disk_usage`，service只读固定allowlist的
+  `systemctl show`，backup只接受严格权限、canonical marker/manifest和逐文件SHA-256。观测失败不会填充假值，clock/disk
+  以`unavailable + null`进入四项健康合同；前端对应显示“观测不可用”。
+  `run_dashboard_publisher()`通过非阻塞`flock`单写者串联完整`read_vps_authority_bundle()`、真实健康、Dashboard builder、同盘
+  原子`v1`发布、逐文件备份、临时恢复演练和仅清理已验证且未被当前指针引用的旧release（当前+最近N个保留）。备份/恢复会
+  校验文件集合、字节数、内容hash和读模型hash；发布或锁失败保留旧指针。新增未启用的
+  `deploy/systemd/qount-dashboard-publisher.service/.timer`模板，清空代理/live环境、限制网络为Unix、`ProtectSystem=strict`、
+  精确`ReadWritePaths`和`UMask=0077`。本地聚焦`34 OK`、全仓`1468 OK`，唯一warning仍为既有`cta_data.py` UTC deprecation；
+  13份schema及含unavailable health的11个release实例通过`jsonschema` registry校验，Node语法、架构扫描、`git diff --check`和
+  Chromium fallback桌面`1440x1000`/移动`390x844`均通过。Browser in-app Node REPL在本会话未暴露，因此未冒充Browser技能验收；
+  本批没有部署/enable systemd、访问VPS、读取生产文件、发送真实通知、调用私有API、交易所或订单接口。
+
+- **2026-07-20 production publisher前置输入边界已在本地补齐。** 新增
+  `reporting/artifact_importer.py` 的只读 `read_vps_authority_bundle()`：只接受严格目录中的完整
+  `VerifiedDecisionBatch`、`StrategyRegistry`、`RuntimeLedgerSnapshot`、`NotificationSnapshot`、
+  `SystemHealthSnapshot` 和 `DailyBrief`，检查 `0700/0600` 权限、symlink、canonical JSON、重复 key、每个对象的
+  内容/hash，并交叉验证 batch/manifest/plan、日报 source hashes 和 Dashboard builder 全链。额外文件（包括 legacy
+  state）或任一篡改均失败关闭；importer 不查询网络、交易所、SQLite 或环境变量，也不写 release。
+  `notifications/collector.py` 新增四项健康观测的显式组装适配器，要求 `clock/disk/service/backup` 恰好齐全且每项带
+  source identity/hash，具体OS/systemd/backup探针随后由独立operations单写者注入。该前置批新增4项 importer/collector 测试，历史
+  聚焦回归为`54 OK`；production publisher、systemd timer、真实 transport、cron、订单与通知开关仍未启用。
+
+- **2026-07-20 Phase C只读alert producer adapters已在本地闭合。** 新增`notifications/producers.py`，提供
+  `alerts_from_verified_decision_batch()`、`alerts_from_runtime_ledger_snapshot()`和`alerts_from_system_health()`三条纯映射；
+  输入分别是重放完整lineage/artifact reference的`VerifiedDecisionBatch`、自验证冻结`RuntimeLedgerSnapshot`及新冻结
+  `SystemHealthObservation`，不读取SQLite、交易所、网络、环境变量或时钟。健康source返回空事件；data quality/risk/plan blocker、
+  recoverable/UNKNOWN订单、三方对账、NAV residual及显式system degraded/unavailable才生成稳定`AlertEvent`。严重度固定为：
+  recoverable order和reconciliation HALT=`HALT`，非HALT reconciliation/NAV/risk/system unavailable=`CRITICAL`，allocation/plan/
+  system degraded=`WARNING`。同一账本状态晚抓一次不会制造新incident：order recovery绑定提交全部状态的`audit_last_hash`，而不是包含
+  capture时间的snapshot hash。producer事件已穿过`NotificationStore -> NotificationSnapshot -> alerts read model -> DailyBrief/
+  reports`端到端验证，重复enqueue保持同一delivery identity；本地QA `http://127.0.0.1:8769/#/alerts`显示producer生成的
+  `order_recovery/HALT`，日报为`halt_required`并给出两个确定性owner actions。本批新增11项测试，Phase B/C架构聚焦`101 OK`、
+  全仓`1446 OK`；producer golden SHA-256为
+  `76a708e8fdcd0e3d85234b8f78c24cbeb036b171b536a6fc7d184fa97ae9d580`，唯一warning仍为既有`cta_data.py` UTC
+  deprecation。本批没有接scheduler、自动resolve旧incident、真实transport或production publisher，没有访问VPS、生产文件、
+  私有API、交易所/订单接口，也没有修改凭据、systemd/cron/live开关；仍是`research_sandbox`本地架构证据。
+
+- **2026-07-20 Phase B/C确定性DailyBrief与Dashboard reports垂直切片已在本地闭合。** 新增
+  `reporting/daily_brief.py`，只接受完整`VerifiedDecisionBatch`、治理`StrategyRegistry`、冻结
+  `RuntimeLedgerSnapshot`和`NotificationSnapshot`，重放所有source校验后生成稳定`brief_id/brief_hash`及四份精确source hash。
+  日报直接映射ledger equity/NAV PnL bridge、实际/预期仓位、策略decision/reason codes、当前计划与可恢复订单、三方对账、
+  通知投递、未解决告警和确定性owner actions；recoverable/UNKNOWN订单、HALT对账或HALT告警进入`halt_required`，其余失败、
+  WARNING/CRITICAL或dead-letter进入`attention_required`。当前账本尚不能证明的balance、actual gross、margin、peak drawdown、
+  当日fill/rejection/partial-fill、保护单runtime状态和slippage均显式不可用；LLM固定
+  `not_requested_deterministic_only`，所有策略`live_orders_allowed=false`。Dashboard新增第五份`reports` read model和`#/reports`，
+  使用独立DailyBrief source/freshness；原子release精确包含6个JSON，静态合同增至8份Draft 2020-12 schema，读回会重建
+  DailyBrief并拒绝自报hash、内容、文件集合或publication篡改。桌面`1440x1000`和移动`390x844`真实Chromium检查无裁切、重叠或
+  空白，本地QA为`http://127.0.0.1:8768/#/reports`。新增6项DailyBrief测试；本批三模块聚焦`23 OK`、Phase B/C架构聚焦
+  `90 OK`、全仓`1435 OK`。DailyBrief golden SHA-256为
+  `4743a80e3408bf4590cf0ea04deff8cf1da13b3c909790d553828ba13c265d9c`，Dashboard ledger golden当前SHA-256为
+  `62a1a6e69da0c7d0a37837ca586d25ae91768d1ccd916e655a47fb3735923d4b`。唯一warning仍为既有`cta_data.py` UTC
+  deprecation。本批没有访问VPS、生产文件、私有API、交易所/订单接口或真实webhook，没有修改凭据、systemd/cron/live开关；
+  fixture日报和QA release只是`research_sandbox`本地证据，不能称为production日报、账户状态或下单授权。
+
+- **2026-07-20 Phase C首批通知告警垂直切片已在本地闭合。** 新增`notifications/contracts.py`的冻结
+  `AlertEvent`，以source type/ID和dedupe key生成稳定identity、以完整内容生成event hash，固定
+  `INFO/WARNING/CRITICAL/HALT`分级。`notifications/store.py`在私有目录使用SQLite WAL、foreign keys、FULL
+  synchronous和busy timeout，把alert、OPEN/RESOLVED状态、delivery job、每次attempt及canonical hash audit chain在同一
+  数据库事务中持久化；exact replay幂等，同identity不同内容拒绝。投递transport只允许注入，使用固定delivery idempotency
+  key、指数退避、`PENDING/RETRY_WAIT/DELIVERED/DEAD_LETTER`状态和错误类型审计；“外部成功、DB marker未写”恢复会复用同一
+  STARTED逻辑attempt和delivery key，不增加未知重复计数。本批没有调用真实webhook。
+  `NotificationSnapshot`验证全部业务row hash与audit chain后，成为Dashboard第四份`alerts`权威read model；其source/freshness
+  与batch/registry/ledger三模型独立，新的告警不能把旧账本洗新。原子release现在精确包含
+  `overview/strategies/readiness/alerts/publication`五个JSON，静态合同增至6份Draft 2020-12 schema。前端新增告警页，显示
+  severity、OPEN/RESOLVED、source/trace、delivery状态、attempt与next retry；仍不查询SQLite/交易所或重算PnL。
+  桌面`1440x1000`和移动`390x844`真实Chromium截图检查无裁切/重叠，本地QA为`http://127.0.0.1:8767/#/alerts`。
+  架构聚焦`92 OK`、全仓`1429 OK`，唯一warning仍为既有`cta_data.py` UTC deprecation。
+  owner授权的旧展示清理已删除CTA-R SwiftBar/Übersicht源和旧`cta.json`前端推送脚本，卸载本机
+  `com.qount.dashboard` LaunchAgent并把本地残留移到废纸篓；CTA-R每日研究任务保留。本批未访问VPS、私有API、交易所、
+  订单接口、真实webhook或生产publisher，未修改systemd/cron/live开关；这只是`research_sandbox`本地架构证据。
+
+- **2026-07-20 Phase B legacy dry dispatcher迁移回放已在本地闭合。** 新增
+  `ledger/legacy_replay.py`，把同一份已链接的Base projection与legacy dry plan依次转换为标准
+  `MarketSnapshot -> StrategyIntent -> PortfolioTarget -> RiskDecision -> OrderPlan -> DecisionBatchManifest`，再由
+  `RuntimeLedger.record_verified_batch()`唯一入口登记batch与planned orders。入口同时核对projection artifact hash、完整
+  decision、contract、legacy 14字段plan hash和新旧经济动作；任一错链、blocker或parity差异都在写账本前失败关闭。
+  replay只接受空账本或同一batch的精确幂等重启，任何order transition、fill、cash event、position、NAV、reconciliation或
+  recovery状态都不能被重新解释为dry证据。冻结报告明确`planned_only_not_executed`、`orders_authorized=false`、六笔订单
+  全部`PLANNED`、风险增加仍为false，并保存legacy/standard action hash、expected positions/tolerance及audit tail。
+  `tests/fixtures/legacy_dispatch_replay_golden.json`的SHA-256为
+  `f52af0a63d22044affee5c1a398341f266d0ffc57407b9f9c5ec57725429529a`；新增7项测试覆盖完整batch、幂等重启、两种outbox
+  崩溃窗口、source/report/journal篡改和执行状态隔离。最新架构聚焦`75 OK`、MiniTrend/dispatcher`37 OK`、全仓
+  `1420 OK`，唯一warning仍为既有`cta_data.py` UTC deprecation。本批只使用测试夹具与临时SQLite/JSONL，没有读取生产
+  artifact、接`mini_trend/pilot_dispatcher.py`、访问VPS/私有API/订单接口或修改凭据、systemd/cron/live开关；这是
+  `research_sandbox`本地迁移证据，不是成交、对账、paper/live或部署证据。
+
+- **2026-07-19 Phase B ledger到Dashboard v1的只读权威桥已在本地完成。** 新增
+  `ledger/read_model.py`的冻结`RuntimeLedgerSnapshot`：输入只允许`RuntimeLedger + VerifiedDecisionBatch`，先补刷并验证
+  SQLite/outbox/chain JSONL，再在同一SQLite读事务中绑定最新batch/manifest/plan、positions、recoverable orders、最新NAV和
+  同批最新三方对账；缺NAV/对账、batch错链、对账后又发生状态变化或审计篡改均拒绝生成。`UNKNOWN`等未解决状态不会让
+  监控面消失，而是进入快照并把readiness明确置为`blocked_runtime_state`。Dashboard publisher现在可选接收该快照：有快照
+  时`overview`展示实际仓位和权威equity/PnL bridge，strategy NAV明确标记`portfolio` scope，ledger/recovery/reconciliation
+  gates读取快照事实；无快照仍保持`unavailable_until_phase_b_ledger`。`live_orders_allowed`在所有分支固定false。
+  freshness使用审计链最后一次source update，不使用capture/publish时刻，因此无状态变化的重新抓取和发布不能洗新。
+  5份Draft 2020-12 schema已覆盖严格available/unavailable union，前端只格式化后端值，不访问交易所或重算PnL。新增8项
+  snapshot/atomic publish/stale/tamper/UNKNOWN/golden replay测试；Phase C加入alerts/reports模型后，同一golden文件的当前
+  canonical SHA-256为`62a1a6e6...923d4b`。当批架构聚焦`68 OK`、MiniTrend/dispatcher`37 OK`、全仓`1413 OK`，唯一warning仍为既有
+  `cta_data.py` UTC deprecation。本批只创建测试临时DB/read model和本地QA发布物，未接legacy dispatcher、交易所adapter或
+  VPS，未生成生产DB/read model、未调用私有API/订单接口，也未修改凭据、systemd/cron/live开关；这只是本地架构证据，
+  不构成production PnL、部署或下单授权。
+
+- **2026-07-19架构Phase B首批统一运行账本、订单恢复和三方对账基础已在本地完成。** 新增
+  `ledger/store.py`：运行目录拒绝symlink和宽权限，SQLite固定WAL、`foreign_keys=ON`、`synchronous=FULL`，事务内
+  同时写业务行与`audit_outbox`，提交后刷`0600` canonical chain JSONL。DB已提交但JSONL未写、JSONL已写但publish
+  marker未提交两种中断窗口都可按sequence/event/hash重放且不重复追加；DB/journal任一篡改均失败关闭。账本覆盖完整
+  `VerifiedDecisionBatch`和计划订单、订单事件、fills、fees/funding/transfers、long-only平均成本仓位、三类NAV字段、
+  equity residual、order recovery和reconciliation。网络发送前必须先持久化`SUBMITTING`；不确定结果进入`UNKNOWN`，
+  只能由注入的只读resolver按确定性`client_order_id`查询，未找到/异常继续UNKNOWN并要求HALT，代码没有替代下单接口。
+  持久化三方对账必须逐项匹配batch冻结target/tolerance、当前ledger positions/open orders和最新NAV residual；封账后的
+  晚到fill/cash event不能静默改写历史恒等式。该首批新增9项故障/重启/会计测试；当时Phase A/B联合`60 OK`，后续最新
+  回归与Dashboard桥状态以上方条目为准；唯一warning仍为既有`cta_data.py`
+  UTC deprecation。本批未接入legacy dispatcher，未生成生产SQLite/JSONL，
+  未访问或部署VPS、私有API和订单接口，也未修改凭据、systemd/cron/live开关；当前真实执行和恢复仍由legacy
+  `mini_trend/pilot_dispatcher.py`拥有，不能把本地账本称为live/order authority。
+
+- **2026-07-19架构Phase A第七批Dashboard v1权威read models已在本地完成，Phase A本地范围闭合。** 新增
+  `reporting/read_models.py`的`overview/strategies/readiness`三份模型，只接受完整`VerifiedDecisionBatch`和治理
+  `StrategyRegistry`，重新验证batch lineage、manifest artifact references、registry/策略版本与风险预算后才生成。
+  该批当时尚无Phase B账本输入，因此实际仓位、权益和PnL明确显示`unavailable_until_phase_b_ledger`；现在上方只读桥允许
+  可验证冻结快照成为第三个权威source。浏览器始终不发Binance请求、不做uPnL/equity重算。freshness从source时间计算，过期
+  统一显示STALE。发布采用`releases/<publication_id>/`不可变目录和`v1`相对symlink原子切换，半写失败保留旧指针，
+  读取复核canonical JSON、权限、精确文件集合、symlink目标及所有hash。`web/schemas/`新增5份Draft 2020-12静态schema，
+  前端改为只读三页监控台。Phase A聚焦验证已纳入上方`60 OK`联合回归。本批未发布真实read model、未部署VPS；该批当时
+  只做HTTP/JS烟测，Phase C新增告警页后已补桌面和移动端真实Chromium截图检查。
+
+- **2026-07-19架构Phase A第六批完整决策批次manifest与中断恢复已在本地完成。** 新增
+  `contracts/batch.py`中的`ArtifactReference`、`DecisionBatchManifest`和完整lineage校验，把同一批次的
+  `MarketSnapshot -> StrategyIntent(s) -> PortfolioTarget -> RiskDecision -> OrderPlan`绑定为第九类可验证artifact。
+  交叉断言覆盖snapshot/time/decision/sleeve、Portfolio到Risk目标、Risk到Plan批准目标、batch ID以及increase/reduce
+  权限；`orders_authorized`继续固定为false。新增`persistence/batch_store.py`，批次目录固定`0700`、成员固定`0600`，
+  所有成员先不可覆盖落盘，`manifest.json`最后写入才算complete；缺/多成员、替换、篡改、路径/权限异常均失败关闭。
+  manifest缺失的中断目录可显式resume，但已有成员必须逐个与预期envelope完全一致，绝不覆盖；冲突保留供审计。
+  新增12项批次golden/failure/recovery测试，聚焦`59 OK`、MiniTrend`234 OK`、全仓`1387 OK`。本批仅在测试临时目录
+  生成fixture，没有部署或访问VPS、账户和订单接口，也未修改凭据、systemd/cron/live开关；批次complete只表示
+  pre-trade证据闭合，不表示已发送订单、策略晋级或获得实盘权限。
+
+- **2026-07-19架构Phase A第五批不可变标准artifact持久化已在本地完成。** 新增
+  `persistence/codec.py`和`immutable_json.py`，显式支持`MarketSnapshot`、traced `StrategyIntent`、
+  `PortfolioTarget`、`RiskDecision`、含订单/撤单的`OrderPlan`、`StrategyRegistration`、`StrategyRegistry`和
+  `DeploymentManifest`八类对象。artifact envelope固定schema/type/object ID/payload及双SHA-256；读取时先校验
+  canonical payload/artifact hash，再通过权威`create()`重建并复核对象自身ID/hash，未知schema/type、重复JSON key、
+  篡改和字段漂移全部失败关闭。文件边界使用同目录`0600`临时文件、flush/fsync、不可覆盖hard-link发布和发布后逐字节
+  回读，`.tmp/.partial`不作为完成artifact。新增11项artifact测试和1项架构依赖测试，聚焦`47 OK`、MiniTrend
+  `234 OK`、全仓`1375 OK`。本批只生成测试临时目录中的shadow fixture，没有写真实registry/manifest、没有部署或访问
+  VPS、私有账户和订单接口，也未修改凭据、systemd/cron/live开关；artifact仍不等于promotion、owner arm或下单授权。
+
+- **2026-07-19架构Phase A第四批strategy registry与deployment manifest合同已在本地完成。** 新增
+  `governance/registry.py`：`StrategyRegistration`不可变绑定strategy/version/kind、contract/code/config hash、
+  promotion状态、artifact/owner授权hash和gross/stress风险上限；`StrategyRegistry`保存每个逻辑策略唯一当前版本及
+  registry hash。状态机只允许逐级推进或halt，同版本禁止偷换代码/配置，新版本必须退回research；风险预算增加必须有
+  owner authorization，halt恢复必须绑定reconciliation evidence且不能高于原状态。标准`StrategyIntent`进入组合前可
+  校验精确版本、环境资格和冻结风险预算。`DeploymentManifest`绑定git commit、dirty状态、code tree、dependency lock、
+  runtime config、registry、promotion/owner bundles和rollback target；dirty production、未晋级策略或缺回滚目标全部
+  拒绝，且manifest固定`orders_authorized=false`。Base adapter可生成绑定现有live contract hash的registration。
+  聚焦`58 OK`、MiniTrend`234 OK`、全仓`1363 OK`。本批没有写registry/manifest artifact、没有改变allocator黄金行为，
+  也未访问或部署VPS、读取私有账户、调用订单接口、修改账户/凭据/systemd/cron/live开关；真实生产仍由legacy
+  dispatcher掌握。
+
+- **2026-07-19架构Phase A第三批dry dispatcher标准适配层已在本地完成。** `risk/validation.py`按现有
+  `pilot_dispatcher._finalize_plan()`的14个字段重算legacy plan hash，并强制dry mode、projection decision ID和
+  `PortfolioTarget`目标一致；`risk/legacy_dispatch.py`把通过验证的artifact转换为标准`RiskDecision`，legacy blocker、
+  hash篡改或trace错链全部归零批准目标并禁止增加风险，10%回撤清仓则只允许减仓。`execution/legacy_dispatch.py`生成
+  新的确定性client ID并保留原数量、方向、reduce-only、保护止损、撤单、retained stop、预期仓位和对账容差；
+  `PlannedCancellation`使撤单成为一等trace动作，`OrderPlan`固定reduce -> increase -> cancel protection -> submit
+  protection全局顺序。黄金对照忽略迁移期client ID变化后，3笔market和3笔STOP_MARKET经济行为零差异。聚焦
+  `47 OK`、MiniTrend`234 OK`、全仓`1350 OK`。这只是内存dry-plan兼容桥；当前VPS真实行为仍完全由legacy
+  `mini_trend/pilot_dispatcher.py`拥有，本轮未访问或部署VPS，未调用私有API/订单接口，也未改账户、凭据、
+  systemd/cron或live开关。
+
+- **2026-07-19架构Phase A第二批标准trace合同已在本地完成。** 新增确定性trace ID及`MarketSnapshot ->
+  StrategyIntent -> PortfolioTarget -> RiskDecision -> OrderPlan`纯对象链；所有对象都有来源ID和内容hash，blocker目标
+  必须归零、Risk违规不能允许加仓、每个PlannedOrder绑定source decision IDs且OrderPlan强制先减后加。
+  Base adapter现在输出schema v1、strategy version、projection decision ID、snapshot ID、reason codes和
+  `intent_hash`；旧schema 0仍兼容但不能生成标准PortfolioTarget。
+  Base当前snapshot只是绑定data/rules/evidence的过渡reference，明确没有嵌入funding值或账户snapshot，不能作为实盘
+  放行证据。该批次当时为聚焦`53 OK`、MiniTrend`234 OK`、全仓`1340 OK`。现有VPS dispatcher、账户、订单、
+  systemd/cron和live状态均未改变；后续进度以紧邻上方的第四批状态为准。
+
+- **2026-07-19架构Phase A首批代码迁移完成，行为保持不变。** 原先混在
+  `portfolio_governance.py`的职责已拆到`contracts`、`governance`和`portfolio`，Base projection适配器进入
+  `strategies/base.py`；两个旧路径都保留为显式兼容导出。核心包不依赖ccxt、settings、executor或交易所适配器，
+  allocator迁移前后的黄金hash一致。该批次当时为聚焦`46 OK`、MiniTrend`234 OK`、全仓`1333 OK`；后续标准
+  trace schema进度以紧邻上方的第二批状态为准。此首批仅为Mac本地源码重构，没有部署VPS、修改账户、调用订单
+  接口或改变live状态。
+
+- **2026-07-19 owner要求把现有代码、生产边界和`qount.alyaloale.com`统一为可扩展个人量化系统。**
+  新的[系统架构设计](system-architecture-design.md)固定模块化单体、标准trace IDs、SQLite WAL运行账本+
+  chain JSONL审计、确定性Risk/Execution、UNKNOWN订单恢复、三方对账、静态Dashboard read model、分级通知、
+  deterministic日报和LLM只读分析旁路。当时前端仍消费legacy X4/CxD/CTA JSON并在浏览器重算实时PnL；现已由上方
+  Phase A第七批在仓库内替换为只读v1模型，随后已接本地冻结Phase B ledger快照；两者都尚未部署VPS或接legacy生产运行链。
+  多策略allocator仍未部署。
+
+- **2026-07-18 owner重设跨主机拓扑：Mac研究、Windows外置盘存储、WSL计算、VPS运行。** 权威大数据和
+  最终artifact迁往`E:\qount_data\qount`（WSL为`/mnt/e/qount_data/qount`）；WSL的7945HX 32线程与RTX
+  4060 8GB承担大型CPU/GPU任务，ext4只留代码、venv和任务后清理的scratch。Mac不再长期保存全量`state/`，
+  VPS只保留`x4/cxd/rv/log/audit`等最小runtime state。外置盘是ExFAT，经WSL表现为drvfs/9p，因此SQLite、
+  venv和高频小文件计算不得直接在盘上运行。Mac/WSL历史state已通过SHA-256 manifest和回读验证迁移并删除
+  源大副本；VPS非runtime研究数据已清理，源state约16MiB。WSL的PyTorch CUDA、tabular/HMM依赖和4060
+  矩阵smoke均已通过。迁移结果、目录合同和删除门见[storage-topology.md](storage-topology.md)。A10产物已
+  回收并可释放，后续默认使用本地4060；WSL代码只在计算接口或依赖变化时按需更新。
 
 ## 当前结论
 
@@ -22,12 +281,49 @@ ETH-only research-only
 bottom_line + future + ETH/USDT + 1 position
 hourly model off
 setup model phase6 on
-live disabled
+legacy line A live disabled; crypto X4/C×D production on VPS
 §7 profit-pursuit halted (2026-06-06, owner-confirmed)
 L3 restart (stablecoin/chain-TVL + AI) falsified (2026-06-06): L3a + L3b both fail breadth-adjusted IC
 L1 restart (cross-asset trend, attacks BR): S1 breadth PASSED (eff-breadth 2.97); S2 trend REAL+robust but retail-ETF magnitude ~0.4 net Sharpe < 0.5 gate (single + ensemble); FROZEN as partial success (2026-06-06, owner-confirmed) — first real positive edge, paused per §7, no broker on sub-gate evidence
 L4 restart (cross-exchange funding arb, changes the game): S1 falsified (2026-06-06): gross cross-venue spread REAL +7.4%/yr but break-even 2.7bps/leg, pair churns every ~12h, net deeply negative at taker cost, required_maker_fill ~0.93 (single-venue CARRY maker wall, cross-venue)
 GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart lines (L3/L1/L4) exhausted; stop pursuing timing profit; durable research assets frozen. Next restart needs owner-authorized NEW infra (futures broker=L1-S5 / options venue=L5 / multi-venue accounts=L4-S2), none pursued now.
+2026-07-16 owner priority reset: freeze A-share ETF work and resume crypto research priority; restart is research-only from a new structural information source and ex-ante protocol, while all failed contracts, paper/live, and production cron remain closed.
+2026-07-17 options-DVOL new-source discovery failed 0/3: median rank IC -0.048945, mean net BTC-beta residual -42.014016%; 2025 replication and forward OOS remain unconsumed, A10/paper/live stay closed.
+2026-07-17 follow-on source audits blocked at G0: Deribit public history cannot reconstruct a point-in-time option surface; Tardis validates liquidation/replayable-L2 semantics but anonymous history and the 32 GiB L2 cache budget do not support a historical experiment. No preregistration was created.
+2026-07-17 owner selected low-frequency existing-data path: frozen MiniTrend TOP3 spot long/cash daily forward is active on Mac; first 16/16 completed bars are all cash with gate shut, verdict collect_forward, paper/live remain closed.
+2026-07-17 owner directed that new capital architecture must use the USD-M futures wallet only, with carry removed; this is research-only and does not authorize VPS or live changes.
+2026-07-17 retired X4 live audit completed: pre-withdrawal strategy return was -2.166870% (474.07 vs 484.57); June-end gain +3.052191% was followed by a 25.29 USDT July rebound giveback. The audit found 37 post-inception placed orders, 5 exact duplicate orders, 8 same-bar direction-flip groups, and 66 unknown-capital fail-closed runs.
+2026-07-17 UM futures recovery overlay was preregistered and rejected on consumed historical diagnostics: incremental net return was -8.418465pp, -2.103736pp, and +0.170316pp across 2021-2022, 2023-2024, and 2025-2026; only 1/3 segments were positive and the first segment materially worsened drawdown. No rescue tuning, paper, live, carry, or shorting.
+2026-07-17 retired X4 headline attribution found the old daily backtest only matched funding at bar-open timestamps and omitted the 08:00/16:00 settlements. Correct all-settlement returns are S3 +84.93% (not +115.18%) and S4 +70.77% (not +98.39%); the remaining return comes mainly from daily long-only bull-regime exposure, not a 2x leverage edge or stable alpha.
+2026-07-17 UM base-trend forward contract was superseded before consuming any result by v0.2 (`20260717T121646Z-mini-trend-um-base-forward-preregistration`), which explicitly binds the implemented 3xATR daily chandelier. No result has been consumed and no paper/live transition is allowed.
+2026-07-17 UM base v0.2 freshness check found latest common cached completed bar `2026-06-18`, zero bars on or after the `2026-07-17` forward start, verdict `await_forward_data`; no forward return was evaluated.
+2026-07-17 existing UM history benchmark decomposition classified the base trend as a low-beta risk wrapper, not stable positive alpha: it outperformed BTC 1x and TOP3 equal-weight in 2/3 discovery segments, but had positive absolute return in only 1/3 and lagged both sharply in 2023-2024.
+2026-07-17 UM 2.0% risk-tier was preregistered and rejected: full-window return improved from +66.51% to +103.29% with Sharpe 0.974 and maxDD 21.21%, but 2025-2026 worsened from -2.02%/8.04% DD to -5.31%/13.78% DD, breaching both preregistered weak-regime gates. The selected strategy remains UM base v0.2 at vol_target 1.5%; no midpoint rescue tuning.
+2026-07-17 UM bull/range/bear overlay was preregistered and rejected: selective 2.0% risk in strong-bull bars lifted full-window return from +66.51% to +85.94%, but Sharpe slipped by 0.001 and 2025-2026 worsened to -5.13% with 12.45% DD. Regime thresholds are not retuned; base v0.2 remains selected.
+2026-07-17 UM stop-latched regime boost was preregistered and rejected by one gate: full return/Sharpe improved to +88.41%/0.945 and 2025-2026 improved to -1.83%, but full maxDD worsened 1.418pp versus the preregistered 1pp limit. It is the strongest consumed-history mechanism, not an OOS or deployment candidate; base v0.2 remains selected.
+2026-07-17 lagged-funding cost veto passed all preregistered historical gates: 17 unlatched strong-bull bars above 50% annualized completed-day median funding were reduced from 2.0% to 1.5%, producing +88.95%/Sharpe 0.965/maxDD 18.11%. Verdict retain_historical_funding_veto_candidate means preferred consumed-history candidate only; events cover 2021/2023-2024 but not 2025-2026, and paper/live remain closed.
+2026-07-18 preregistered paired 20-day circular block bootstrap retained the historical funding-veto candidate conditionally: across 5,000 paired paths, probabilities of higher terminal return, higher Sharpe, and lower maxDD versus Stop-Latch were 58.90%, 86.82%, and 75.72%. This is realized-path sensitivity evidence, not signal-path resimulation or OOS; base v0.2 remains selected and paper/live remain closed.
+2026-07-18 exact six-group Shapley attribution supported the historical cost-veto mechanism: funding savings contributed +0.443pp of the +0.536pp terminal uplift, price exposure +0.097pp, and trading cost -0.004pp. However, +1.842pp on the 17 veto dates was offset by -1.306pp downstream across 696 divergent non-event bars, so full state-path replay is mandatory for any future validation.
+2026-07-18 execution-state decay audit found 696 divergent state bars in 18 spells: all divergence involved target weights, while trail highs, cooldowns, and latch state never split. Every veto first resynchronized after 14-56 days (median 46), but only the final event achieved stable resynchronization before the next boundary, after 324 days; equity/deadband can re-diverge after an apparent sync.
+2026-07-18 future-only dual-state shadow monitoring v0.2 was preregistered before any eligible result: Stop-Latch and Funding Veto both start from 400 USDT cash on 2026-07-19 after 200 signal-only warmup bars, with separate equity/state hashes and an append chain. Only the contiguous prefix with complete prices and at least three TOP3 funding settlements per decision/holding day may be evaluated; missing funding is never zero-filled. The WSL/external refresh advanced the common UM cache through 2026-07-17, but that is still before the frozen start, so evaluation bars remain 0 and verdict is await_shadow_forward_data. Current-month public funding REST is unreachable directly from WSL (0/3 symbols); no zero fill or Sophie home proxy was used.
+2026-07-18 owner superseded the one-month pilot contract with exact 300 USDT capital, no account-level daily loss stop, and a 10% cumulative pilot drawdown halt. TOP3 UM long/cash, 1x isolated, one-way, gross<=1, 3xATR symbol stops, three completed-bar cooldown and 35% deadband remain fixed. Base v0.2 remains the live control; the 2.0% global risk tier is now the primary profit shadow and Funding Veto the secondary shadow.
+2026-07-18 the 300 USDT consumed-history comparison found Base/Risk2/Stop-Latch/Funding-Veto returns of +63.19%/+92.68%/+73.43%/+75.71%. Risk2 led return with nearly unchanged Sharpe versus Base, but had 21.89% full-window maxDD, lost 2.87% in 2025-2026, and breached the 10% line in 1/59 non-overlapping 30-day pilots. It is a forward priority, not live permission.
+2026-07-18 VPS public routing and current TOP3 filters passed after the exchange session stopped inheriting the broken environment proxy. The stored key still returns Binance -2015, so permissions, balance, positions, one-way, open orders and 1x isolated state remain unknown. The legacy live guard was disarmed; independent read-only preflight and pure dry-plan artifacts fail closed with zero order intents. No order endpoint was called and cron remains disabled.
+2026-07-19 direct VPS diagnosis superseded the ambiguous proxy/key reading: with every proxy variable unset, the repo-external production egress (PH) reaches Binance UM public APIs. The invalid old credential was removed without backups; a replacement test credential was then installed by no-echo input only on the VPS, with Mac remaining credential-free and both `.env` files mode 0600. Binance now accepts the key and confirms reading/Futures/IP restriction enabled and withdrawals disabled, but Spot/Margin remains enabled, available pilot capital is below 300 USDT, and BTC/ETH/BNB are isolated 2x rather than 1x. The credential was transmitted in conversation and is not final-live eligible; rotate it directly on the VPS after correcting permissions and account configuration.
+2026-07-19 fixed-capital periodic allocation discovery found that line-based weekly DCA/DCR did not beat buy-and-hold on BTC, TOP3, or SPY. Six Logistic/HGB action-label models all lost to constant class priors; the apparent TOP3 HGB +216.99% path is rejected because every Brier fold lost and performance was concentrated in 2025.
+2026-07-19 tokenized-equity inventory found 11 active Binance TRADIFI_PERPETUAL contracts plus mapped *B spot tokens, while Bybit exposes xStocks spot and equity linear contracts. These are distinct claim/derivative structures, not interchangeable cryptocurrencies.
+2026-07-19 Binance TradFi weekend convergence is weak discovery evidence only: 126 symbol observations collapse to 18 independent next-cash-session dates; equal-weight date-clustered return is +3.7516%, maxDD 4.0029%, and bootstrap P(mean>0) 71.16% after 24 bps round-trip cost and funding. The earlier +29.69% sequential cross-sectional compounding was capital double-counting and is explicitly void.
+2026-07-19 owner planned 1000 USDT for a multi-strategy virtual-sleeve architecture: Base remains the control; Equity Mapping, LiquidTrend, Funding Event and LLM information features remain research/shadow until separately promoted. This plan does not supersede the 300 USDT pilot or authorize funding, orders, private API, or cron.
+2026-07-19 LiquidTrend10 G0 blocked the raw ten-coin cross-sectional hypothesis before any return backtest: common daily coverage is 99.7186%, funding and liquidity pass, but mean absolute pairwise correlation is 0.661578 and effective breadth only 1.437979; available runtime UM rules cover 4/10. No momentum score or strategy PnL was evaluated.
+2026-07-19 Equity Mapping G0 v0.3 now enforces synchronized pre-decision mapped/cash/USDTUSD quotes, bid/ask gap bounds, point-in-time corporate-action normalization, sourced stress scenarios, stable economic-event IDs and revision hashes. The only current G0 run is a two-row synthetic plumbing fixture with one independent cash date; it is not market evidence and cannot enter shadow, paper or live.
+2026-07-19 Equity Mapping G0 v0.4 adds an immutable raw-collection gate: real point-in-time inputs must link every mapping/quote/calendar/corporate-action/context/stress source hash to a same-cash-date sealed manifest whose raw response bodies pass readback SHA-256. The first readiness artifact targets 2026-07-20 09:24:30-09:25:00 New York (13:24:30-13:25:00 UTC) and currently says await_collection_window; it contains no market observation, PnL, strategy trial or execution authority.
+2026-07-19 Equity Mapping public source-capacity v0.1 tested ten bounded no-proxy probes without creating a market event. Only Nasdaq market-info passed the cash-calendar role; Binance mapping/bookTicker and four USDT/USD venues were transport-unavailable from the current Mac route, while Nasdaq cash quote was delayed with no executable bid/ask or quote-event timestamp, and its split/earnings responses could not bind target-date absence. Seven of eight roles remain blocked, including an unassigned stress source; trial count stays 143.
+2026-07-19 VPS order-free MiniTrend forward/paper timer is active. Latest run refreshed public inputs, then preflight v0.3 proved valid credentials, one-way mode, a flat account and zero open orders without mutation. It remains blocked on Spot/Margin permission, capital below 300 USDT and TOP3 isolated 2x instead of 1x; readiness v0.4 blocks 10 gates and live_orders_allowed is false. Forward/paper counts remain zero because the frozen start bar is not completed; no order endpoint, dry dispatcher or legacy cron was enabled.
+2026-07-19 the owner superseded the fixed 300 USDT and credential-rotation requirements: pre-arm capital is now the audited USD-M available balance within 100-1000 USDT, currently 488.89481071 USDT, and is frozen only by a later manual arm. The current VPS-only credential is accepted for production; Reading/Futures/IP restriction are enabled, Withdrawals disabled, and owner-accepted Spot/Margin permission no longer blocks. TOP3 are now isolated 1x, one-way, flat, with zero open orders. No credential bytes or exact production IP are stored in the repository.
+2026-07-19 the MiniTrend-specific dispatcher is deployed order-disabled. It binds current preflight/projection/rules/readiness/source hashes, verifies deterministic decision and execution-state hashes, reads regular and conditional order books, rejects unmanaged positions/orders, creates deterministic client IDs, plans Binance STOP_MARKET closePosition protection, records append-only row/chain hashes, reconciles resulting positions/stops, and implements 10% peak-equity flatten-then-halt. Live additionally requires ready_for_manual_final_arm, an exact readiness-bound 0600 arm file, a separate token, the independent MiniTrend live switch and matching arm confirmation; none exists or is enabled.
+2026-07-19 latest VPS run `/root/qount/state/mini_trend/forward/runs/20260719T091232Z` completed successfully with capital 488.89481071 USDT. Its independent systemd runtime proof passed with all live switches false. The account snapshot passed; dry dispatch returned await_dispatch_decision with zero market/stop intents, zero journal rows, exchange_mutation_attempted=false and live_orders_allowed=false. Readiness now has exactly five blockers, all requiring future completed bars: minimum_forward_pairs, minimum_forward_active_bars, minimum_paper_days, minimum_dry_run_days, and complete_funding_journal.
+2026-07-19 the multi-sleeve portfolio boundary now has a standard order-free StrategyIntent, a causal Base projection adapter, deterministic stress-budget scaling and fail-closed allocation. Gross, per-symbol cap, correlation-cluster, allowlist and minimum-notional checks run before any order plan; minimum notional is checked per standalone sleeve before netting so Base cannot subsidize an unexecutable alpha sleeve. The current VPS dispatcher still accepts Base only and was not changed or redeployed.
+2026-07-19 formal trial 144 tested a distinct long-only Capitulation Rebound event sleeve after preregistration: Base gate off, all TOP3 negative, median 5-day return <=-8%, volatility score <=-1.5, next-open entry, three-day hold, 3xATR stop and 24bps round trip. On 2021-01-01..2026-07-17 consumed UM daily history it produced 18 independent episodes, 44.44% winners, median net event return -1.8747%, compound price+cost return -36.4990%, maxDD 39.5163% and median BTC-beta residual -0.5374%. Five of seven gates failed; verdict reject_historical_capitulation_rebound. No threshold/holding rescue, funding replay, shadow, paper or live. Total formal strategy trial count is now 144.
 ```
 
 - **2026-06-06 项目级决策(所有者确认):执行 §7 诚实止盈,停止追盈利。** 根因是架构级广度
@@ -38,12 +334,730 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
   反过拟合 harness)作为成果,停止在择时盈利上继续投入。**这是停止投入,不放宽任何纪律**:
   live 仍关闭、不 forward paper、不放宽 broad gate、`validation_v1` once-only 资格继续保留。
   对账见 [profit-engineering-plan.md](profit-engineering-plan.md) §11.8。
-- 生产真相仍是 WSL：`/home/alyaloale/Code/qount`。
-- Mac 工作区是编辑和 git 表面：`/Users/alyaloale/Code/qount`。
-- live 继续关闭：`QOUNT_LIVE_ENABLE=false`；`live-guard-status` 当前 `ok=false`，
-  `reason=live_disabled`。
-- `qount-runner.timer` / `qount-runner.service` 当前不应自动跑；最近读回为 inactive。
-- 当前没有 promotion 证据，不能 forward paper，也不能 live。
+- **2026-07-07 owner 决策:所有实盘部署到 VPS。** 当前 live / paper forward /
+  dashboard 的生产真相是 `qount-vps:/root/qount`（仓库外SSH inventory），站点
+  `qount.alyaloale.com`。Mac 工作区 `/Users/alyaloale/Code/qount` 只作为编辑和 git
+  表面；部署通过 `scripts/sync-to-vps.sh` / `scripts/run-vps-tests.sh`。
+- **2026-07-17 旧 X4 高收益已完成逐机制归因，并发现日线 funding 漏计。** 离线 artifact
+  `20260717T121616Z-mini-trend-high-return-attribution` 逐阶段复现 2021-01..2026-05：1h→1d 为
+  S3/S4 增加 `+61.46/+57.94pp`，去掉空头再增加 `+59.42/+63.40pp`，SMA200 闸增加
+  `+48.56/+58.28pp`；波动率定仓和 S4 吊灯进一步改善风险形态。旧日线回测只按
+  `funding_ts == daily bar open` 匹配，每天只计 00:00、漏 08:00/16:00。完整三次结算后，S3
+  `+115.18% -> +84.93%`、Sharpe `0.665 -> 0.559`、maxDD `29.43% -> 31.50%`；S4
+  `+98.39% -> +70.77%`、Sharpe `0.698 -> 0.570`。2x 上限相对 1x 对 S3/S4 仅
+  `-1.17/+2.54pp`，且两者 Sharpe 都未改善，不能把旧高收益解释成杠杆 edge。同期正确 funding 的
+  BTC 1x/TOP3 EW 为 `+37.72%/+355.40%`、maxDD `78.93%/73.59%`，说明旧趋势是低 beta 牛市择时，
+  不是稳定超额。当前 UM base 全窗 discovery 为 `+66.51%/Sharpe 0.903/maxDD 17.28%`，平均有效 gross
+  `0.182`；只作为选择 no-carry long/cash 控制线的历史依据，不能替代 future OOS。
+- **2026-07-17 UM `vol_target=2.0%` 收益风险档已预登记、回测并拒绝。** v0.1
+  `20260717T123954Z-mini-trend-um-risk-tier-preregistration` 在首次真实运行中暴露 deadband 后组合 gross
+  超过 1.0，风险引擎 fail-closed；失败 artifact `20260717T124305Z-mini-trend-um-risk-tier-historical`
+  为 `reject_execution_contract_incomplete`。v0.2 在读收益前只补“组合 cap 优先，active targets 按运行时
+  floors 归一化到 gross=1”规则，预登记 `20260717T124409Z-mini-trend-um-risk-tier-preregistration`；最终
+  artifact `20260717T124433Z-mini-trend-um-risk-tier-historical`。全窗 control/candidate 为
+  `+66.505396%/+103.292645%`，Sharpe `0.902770/0.973606`，maxDD `17.284508%/21.211666%`，平均 gross
+  `0.182424/0.239709`，这些门通过；但 2025-2026 收益 `-2.018860% -> -5.313845%`，candidate maxDD
+  `13.782484%`，相对 control 恶化 `5.739864pp`，同时触发最差分段收益 `>=-5%` 与回撤恶化 `<=5pp`
+  两条杀线。verdict=`reject_historical_risk_tier`。不试 1.75%/1.8% 或改门救援；选择仍是 UM base v0.2
+  `vol_target=1.5%`，risk-tier 不进入 forward/paper/live。
+- **2026-07-17 牛市/震荡过渡/熊市三阶段 overlay 已预登记、回测并拒绝。** 在读取候选结果前生成
+  `20260717T132304Z-mini-trend-um-regime-overlay-preregistration`，只用完成日线做因果分类：strong bull 要求
+  `BTC>SMA200 + BTC SMA20>SMA60 + TOP3 breadth>=2/3` 并使用已被全局拒绝的 2.0% 风险档；base 总闸已开但
+  不满足强牛时为 transition/range，保持 1.5%；总闸关闭时 bear/cash。所有 funding、10bps+2bps、filters、
+  3xATR stop、3-bar cooldown、gross<=1、no carry/short/leverage boost 不变。最终报告 artifact
+  `20260717T132757Z-mini-trend-um-regime-overlay-historical` 只读已有缓存：全窗 control/candidate 收益
+  `+66.505396%/+85.937218%`、Sharpe `0.902770/0.901776`、maxDD `17.284508%/19.297611%`、平均 gross
+  `0.182424/0.227027`。2023-2024 增收 `+15.488647pp`，但 2025-2026 从 `-2.018860%/8.042619% DD`
+  恶化为 `-5.128630%/12.445085% DD`；强牛阶段本身由 `-1.454390%/5.996161% DD` 恶化到
+  `-3.910642%/9.033857% DD`，最差日 2025-10-10 从 `-3.644761%` 放大到 `-4.878515%`。Sharpe、分段
+  回撤恶化和弱段收益三门失败，verdict=`reject_historical_regime_overlay`。不增加确认天数、不改 breadth/
+  均线、不试中间风险档；选择仍是 base v0.2 1.5%，overlay 仅留研究证据。
+- **2026-07-17 strong-bull 风险增益 stop latch 修复了弱段，但仍按预登记回撤门拒绝。** 新候选不改
+  strong-bull/transition/bear 分类、不加数值阈值：每个连续 strong-bull 初始仍用 2.0%，一旦任一币触发既有
+  3xATR stop，从下一根完成日线起只撤销增益、退回 base 1.5%；只有先出现非 strong-bull bar，后续重新进入
+  strong-bull 才解锁。预登记 `20260717T134653Z-mini-trend-um-regime-stop-latch-preregistration`，contract/
+  protocol hash `8198c38e...3759a` / `18b62218...2c8df`，固定全窗增收 `>=10pp`、Sharpe 不降、全窗 DD
+  相对 base 恶化 `<=1pp`、任一段 DD 恶化 `<=2pp`、弱段收益最多落后 `1pp`、平均 gross `<=0.23`。
+  最终 artifact `20260717T135551Z-mini-trend-um-regime-stop-latch-historical`：全窗 control/candidate
+  `+66.505396%/+88.414042%`、Sharpe `0.902770/0.945436`、maxDD `17.284508%/18.702705%`、平均 gross
+  `0.182424/0.218771`；22 个 strong-bull stop、11 次真实 latch entry、535 boosted/149 latched bars，
+  filters=1.0、0 duplicate、0 same-bar reentry。2025-2026 从未加锁 overlay 的 `-5.128630%/12.445085% DD`
+  修复到 `-1.833021%/9.855771% DD`，也略优于 base `-2.018860%`；但全窗 DD 相对 base 恶化
+  `1.418197pp`，超过预登记 `1pp`，回撤区间为 `2024-03-13..2024-10-25`。其余门全部通过，仍不得改门；
+  verdict=`reject_historical_regime_stop_latch`。这是当前最强 consumed-history 机制证据，但不是 OOS、paper
+  或 live 资格，选择仍为 base v0.2。
+- **2026-07-17 owner 外部建议经证据分流后，lagged-funding 成本 veto 成为首个全门通过的 UM 历史候选。**
+  没有整包采用链上/宏观/ADX/ML/动态止损建议：ADX 已被本项目 walk-forward 否决；动态 ATR、梯度 deadband、
+  超1x gross 和 carry 会引入新参数或违反约束；链上/宏观/情绪需先过 point-in-time/授权/发布时点 G0；ML、
+  Markov 和叙事选币推迟到简单确定性因子有独立验证之后。唯一立即实验是已有缓存可因果验证的 funding：沿用
+  stop-latch，只在未锁定 strong-bull 中读取上一完整持有日已结算 funding；TOP3 日 funding 中位数简单年化
+  `>50%` 时，本 bar 只撤销2.0% boost、退回1.5%，缺失 funding 同样 fail-closed 到1.5%。该阈值来自owner
+  提供的外部假设且在读取结果前固定，不做网格；funding 是成本过滤，不是 carry alpha。
+- 预登记 `20260717T144609Z-mini-trend-um-funding-veto-preregistration`，contract/protocol hash
+  `f56bafc2...75ed5` / `a777ac71...c31c7`，明确 mechanism-family trial=2、future funding=false、历史通过
+  不能 promotion。最终 artifact `20260717T145148Z-mini-trend-um-funding-veto-historical` 只读本地缓存：
+  base/stop-latch/funding-veto 全窗收益 `+66.505396%/+88.414042%/+88.950393%`，Sharpe
+  `0.902770/0.945436/0.965235`，maxDD `17.284508%/18.702705%/18.105121%`；相对 base DD 只恶化
+  `0.820613pp <=1pp`，所有预登记门通过。候选平均/max gross `0.216925/0.903255`、funding coverage=1.0、
+  17 veto bars、0 missing、11 latch entries、0 duplicate/reentry，verdict=`retain_historical_funding_veto_candidate`。
+- 事件审计没有单点垄断：17次中10次次日直接改善、7次变差，中位直接增量 `+0.055483pp`，最大正事件占
+  全部正贡献 `26.58%`。但分布只有2021六次、2023-2024十一次、2025-2026零次；后者 `-1.833021%`
+  完全来自stop-latch而非funding veto。故新路线把它冻结为“首选历史候选/未来独立验证对象”，不是稳定跨周期
+  funding alpha，更不进入paper/live；正式选择仍为base v0.2。
+- **2026-07-18 Funding Veto 条件路径稳健性审计通过预登记门，但收益优势仍弱。** 在读取 Bootstrap 结果前生成
+  `20260717T151224Z-mini-trend-um-funding-veto-robustness-preregistration`，绑定 Funding Veto 预登记、历史报告
+  SHA、全窗数据 hash 和 UM rules hash；方法固定为 paired circular moving-block bootstrap，block=20完成日、
+  samples=5000、seed=`20260717`，要求候选终值收益/Sharpe/更低maxDD胜率都 `>=55%`，且三项增量中位数
+  分别严格 `>0/>0/<0`。最终 artifact
+  `20260717T151318Z-mini-trend-um-funding-veto-robustness-historical` 对1776个同日净收益观测重放，原报告
+  reference/candidate 三项指标差均为0；胜率为 `58.90%/86.82%/75.72%`，增量中位数为
+  `+0.462935pp/+0.019102/-0.226270pp`，7门全过，verdict=
+  `retain_historical_candidate_after_conditional_bootstrap`。但收益增量5%-95%区间为
+  `-4.187260..+4.443793pp`，maxDD增量也到 `p95=+0.295595pp`；这说明风险调整质量比终值收益更可信，
+  不能宣称稳定收益alpha。Bootstrap只重采样原始已实现日收益，不在合成市场路径重算regime/latch/deadband，
+  仍是`discovery_pool`条件审计，不是OOS/forward/paper/live资格；base v0.2仍是正式选择。
+- **2026-07-18 Funding Veto 精确收益归因支持成本过滤机制，同时暴露强路径反噬。** 在读取归因前生成
+  `20260717T153223Z-mini-trend-um-funding-veto-attribution-preregistration`，绑定原历史与Bootstrap artifact、
+  17个事件日期、全窗数据和UM rules；固定把事件日/其余路径各拆为价格、funding、交易成本六组，对终值复利
+  穷举64个coalition做精确Shapley，不允许调整组或顺序。最终报告
+  `20260717T153320Z-mini-trend-um-funding-veto-attribution-historical` 重放1776日，reference/candidate历史指标
+  差均为0，逐日净收益恒等式误差 `6.94e-18`、分组闭合误差 `5.20e-18`、Shapley闭合误差0，17/17事件匹配，
+  7个机制门全过，verdict=`historical_cost_veto_mechanism_supported`。
+- 六组结果揭示两层机制。按经济组件，`+0.536350pp` 终值增益由 funding节省 `+0.443474pp`（82.68%）、
+  价格暴露 `+0.096965pp`（18.08%）和额外交易成本 `-0.004089pp`（-0.76%）构成，支持“成本过滤”而不是
+  carry alpha。按时间，17个veto事件日本身贡献 `+1.842439pp`，其中价格避损 `+1.590752pp`、funding
+  `+0.357244pp`、成本 `-0.105557pp`；但其后路径贡献 `-1.306088pp`，主要是价格暴露 `-1.493787pp`，
+  被后续funding/成本 `+0.086231/+0.101468pp` 部分修复。17个事件最终造成713个差异日，其中696个为非事件
+  日，说明deadband、权益和仓位状态会长期传播一次veto。未来OOS必须从相同初始状态完整重放两策略，不能用
+  “17个次日收益”近似；本归因仍是已消费历史会计，不改变base v0.2正式选择或paper/live关闭状态。
+- **2026-07-18 Funding Veto 状态衰减审计显示“首次同步”远弱于“稳定同步”。** 结果读取前生成
+  `20260717T155209Z-mini-trend-um-funding-veto-state-decay-preregistration`，绑定历史与归因artifact、17个事件、
+  713/696收益差异计数和UM rules；固定比较决策阶段、实际vol target、目标权重、吊灯高点、剩余冷却和latch
+  内部状态，数值容差 `1e-12`。权益不纳入执行状态同步，否则已实现盈亏会让同步永久不可能；净收益差异另行
+  严格核对。最终报告 `20260717T155312Z-mini-trend-um-funding-veto-state-decay-historical` 精确重放旧指标，
+  state coverage=1.0、返回差异713/下游696与归因完全一致，7门全过，verdict=
+  `historical_execution_state_decay_resolved`。
+- 1776日中执行状态差异696日（39.19%）、收益差异713日（40.15%）。状态差异形成18个spell，长度
+  `1..100`日、中位27.5日；收益差异16个spell，长度 `4..101`日、中位31.5日。17个事件实际聚在5个含事件
+  spell，另有13个没有新veto的再发散spell。每个事件都曾在14-56日后首次同步，中位46日，但12/17在首次同步
+  前已有下一次veto；除最后事件外，没有事件能在下一次veto边界前保持稳定同步。最后一次2024-12-05事件虽
+  35日首次同步，却要到2025-10-25、即324日后才达到窗口内稳定同步。
+- 差异facet进一步定位：risk stage和vol target各只差17日，目标权重差696日；吊灯高点、冷却和latch内部状态
+  均为0差异。因此传播不是止损状态错误，而是事件改变目标权重后，deadband与不同权益路径让权重长期保留并
+  在表面同步后再发散。未来shadow forward必须同时持久化两套权益、目标权重和完整决策状态；“当前权重一样”
+  不能判定路径已结束。本审计仍只描述已消费历史，不提升Funding Veto层级。
+- **2026-07-18 Funding Veto双状态shadow-forward v0.2已在新结果前冻结，当前严格等待完整数据。** 初版v0.1
+  在0根eligible、未评估收益时发现月内funding缺失会被回测器按0计入收益，故保留旧artifact但在首根结果前
+  supersede。当前预登记`20260717T162621Z-mini-trend-um-funding-veto-shadow-forward-preregistration`绑定base v0.2、
+  状态衰减artifact和UM rules；contract/protocol hash `3c6fe31f...82ea69` / `e0f525a9...52fad4`。起始日固定为
+  `2026-07-19`：此前200根完成日线只用于SMA/ATR信号warmup，不携带任何历史交易、权益、吊灯、冷却或latch
+  状态；Stop-Latch reference与Funding Veto candidate均以400 USDT、全现金同时启动。每根eligible日线保存
+  两套权益、价格/funding/成本净收益、完整执行状态、各自state hash、row hash和append chain hash，首次同步后
+  也不得停止。
+- v0.2只评估从起始日开始价格连续、且每个决策日和持有结果日TOP3各至少3次funding结算的完整前缀；月内
+  funding缓存未齐时保持`strategy_results_evaluated=false`或停在上一个完整前缀，绝不按0成本补齐。CLI结束月份
+  随UTC当前月滚动，但offline fetch仍拒绝网络。证据复核门固定为至少60个完整decision-outcome pair、两路径
+  各10根active、至少1次真实funding veto、candidate funding coverage=1.0、maxDD `<=15%`、数据无gap、
+  filters/重复决策/同bar重入/状态journal全干净；不设候选必须跑赢门。即使全门通过也只允许
+  `review_shadow_forward_evidence`，永不自动进入paper/live。原始freshness artifact
+  `20260717T162632Z-mini-trend-um-funding-veto-shadow-forward`当时只读本地2025-12..2026-07缓存：
+  TOP3共同最新日为`2026-06-18`，起始日后0根输入、0个结果pair，`strategy_results_evaluated=false`，没有
+  evaluation或journal，verdict=`await_shadow_forward_data`；后续WSL刷新结果见下一条。这不是候选失败，
+  也没有消费future OOS。
+- **2026-07-18 WSL公开UM输入刷新层已补齐并完成首次外置盘刷新。** 新模块把网络获取与冻结shadow回放拆开：
+  下载只在WSL进行，回放仍用offline fetch；Binance Vision月包/日包和公开funding快照分别落在外置盘
+  `datasets/binance_um_shadow/v1/{cache,funding_snapshots}`，标准HTTP(S)代理只能通过仓库外环境变量显式传入，
+  artifact不保存代理URL/token。本次从已迁移缓存按字节复用2025-12..2026-05，直连补齐2026-06月包与
+  2026-07-01..17 TOP3 UM日包，共`93 files/80,144 bytes`，dataset manifest content hash
+  `8dcce911...13746`，输入data hash `abdd8736...8c207`。当月funding官方REST在WSL直连全部超时，故
+  refresh verdict=`await_complete_shadow_input_transport`、完整symbol `0/3`；没有空列表通过、没有把缺失
+  funding写成0、没有使用Mac/VPS或苏菲家宽代理。
+- 新离线shadow artifact `20260718T080849Z-um-funding-veto-shadow-forward`读取canonical缓存后，TOP3共同最新
+  完成日推进到`2026-07-17`。由于冻结起点为`2026-07-19`，仍是0个forward pair、
+  `strategy_results_evaluated=false`、无evaluation/journal和`await_shadow_forward_data`；本轮不增加策略
+  trial，累计仍为143。环境锁`20260718T081243Z-qount-compute.json`的manifest/code bundle hash为
+  `03be436e...7823`/`ff78f5e8...bbc6`。
+- **2026-07-18 owner把一个月小资金实盘合同更新为300 USDT、无账户单日止损、10%累计回撤熔断。** 新合同
+  不复用旧X4/C×D：真钱仍只允许Base v0.2，TOP3 USD-M long/cash、日线、1x逐仓、one-way、effective
+  gross `<=1`、35% deadband、3xATR逐币吊灯和3根完成日线冷却。每日最多一个决策批次；只有试点累计回撤
+  达10%时执行flatten+halt，账户单日亏损本身不触发halt。未知余额/仓位、意外short/非TOP3仓位、错误模式、
+  缺价格/funding日志、重复决策仍立即fail closed。
+- VPS只读审计确认旧生产cron自`2026-07-11`仍停用、无qount交易进程；旧C×D状态残留shorting/2x，绝不能
+  恢复旧cron。`2026-07-19`在清空全部代理变量且设置`QOUNT_EXCHANGE_BYPASS_PROXY=true`后复核：直接出口
+  仓库外production egress的地理结果是PH，Binance UM公共API正常，因此不是美国代理问题。旧credential曾由
+  `apiRestrictions`返回`-2008 Invalid Api-Key ID`、spot/UM账户接口返回`-2015`；owner随后要求轮换，Mac/VPS
+  `.env`中的API key与secret变量均已无备份删除，两个文件仍为`0600`。VPS绕过代理的两个独立IPv4身份来源与SSH
+  公网入口一致，三个强制IPv6探针均不可达；精确IPv4只保存在仓库外production inventory。轮换后的测试credential
+  只通过无回显stdin原子写入VPS `.env`并保持`0600`，Mac继续无凭证。Binance认证、读取/Futures/IP限制、提现关闭、
+  one-way、全平与全账户0挂单均通过；但Spot/Margin仍开启、可用资金低于300 USDT，TOP3只读symbol config均为
+  isolated 2x。由于credential经对话明文传输，最终实盘前必须在交易所再次轮换并直接写VPS。代码的
+  `QOUNT_EXCHANGE_BYPASS_PROXY`默认false，不改变既有路径；诊断未调用下单、撤单、转账、杠杆或保证金写接口。
+- readiness v0.3又补齐API Futures/IP限制、余额、全平账户和open-orders硬门。最终artifact
+  `20260718T100615Z-um-live-pilot-readiness-v04`为`blocked_live_pilot_readiness`，20项blocker、
+  `live_orders_allowed=false`，readiness hash `2b072733...a8b1e`，manifest content hash
+  `7d4de1b8...f5594`。300 USDT精确本金、公共路由、旧guard关闭和rollback已通过；开始日、forward/paper/dry、
+  私有账户与独立live runtime仍阻断。同时冻结的append-only每日journal：
+  每行保存权益/钱包、目标与实际权重、订单意图/结果、funding/费用、执行状态和risk flags，并绑定row/chain
+  hash；重复日期或历史篡改直接拒绝。本轮未同步VPS代码、未改`.env`、未触碰订单。owner方向已记录，但
+  开始日和最终arm仍须在全部安全门通过后单独确认。
+- **独立MiniTrend UM order-free forward/paper生产周期曾在VPS启用，现已按安全要求停止。** paper固定Base v0.2、300 USDT
+  全现金、200根signal-only warmup、TOP3日线、完整价格与每币每日3次funding，只有10%累计回撤halt，无账户
+  单日止损；v0.3同时完整记录Risk 2.0%与Funding Veto shadow且二者不控制订单。`qount-mini-trend-forward.timer`
+  曾按每日`03:20 UTC`后随机延迟最多10分钟运行，已于2026-07-20执行`disable --now`并复核为`disabled/inactive`；其历史运行合同显式关闭所有legacy live开关、清空环境代理、`flock`防重入、`umask
+  077`并尊重`HALT`。最近完整run为VPS
+  `/root/qount/state/mini_trend/forward/runs/20260719T081828Z`：TOP3规则`3/3`，公共日线到`2026-07-18`，funding
+  `3/3`完整；冻结起点`2026-07-19`尚无完成bar，因此仍为0 pair/0 paper day/0 journal。preflight v0.3只剩
+  `spot_margin_disabled/pilot_capital_available/isolated_one_x_verified`三项账户blocker；readiness v0.4阻断10项，
+  artifact全部`0600`且`live_orders_allowed=false`。
+- 最新完成bar projector已独立实现：只追加一个明确不计收益的flat synthetic outcome以复用Base状态机并投影最后决策；
+  测试证明同一决策在真实任意outcome到来后与paper replay的target和execution-state hash一致。当前因起点bar未完成返回
+  `paper_start_bar_not_available/decision=None`。它不等于订单dispatcher；exchange-native stop同步、幂等live执行和7日
+  dry仍未实现/未通过，因此`independent_runtime_verified=false`。rollback已同时覆盖forward timer；旧crontab有效行仍为0。
+- **固定本金的定投/定减与买卖标签已完成首轮历史discovery。** BTC UM按周25%阶梯、TOP3 UM按周50%阶梯
+  （300 USDT下25%会违反BTC最小名义价值）、SPY复权历史按周25%阶梯；均不追加外部资金、不做空、gross不
+  超过1，并比较buy-and-hold、经典DCA、均线DCA/DCR和均线全仓/现金。BTC的经典DCA/均线DCA-DCR/持有收益为
+  `+47.96%/+51.52%/+87.40%`，TOP3为`+82.34%/+46.81%/+104.91%`，SPY为
+  `+79.40%/+62.19%/+82.47%`；均线DCA/DCR均未战胜持有，策略本身不晋级。
+- 同一实验用未来20根、波动率归一化triple barrier生成`buy/hold/sell`目标；特征只读决策日已完成数据，
+  Logistic/HGB采用按年扩展Walk-Forward且以`label_end_date` purge。六个模型的平均Brier和log-loss uplift都为
+  负。TOP3 HGB虽显示`+216.99%`，但4/4 Brier折均输常数先验、2025单年贡献`+92.66%`且2026为
+  `-21.11%`，判定为路径/时点运气，不连接仓位。最终artifact
+  `/mnt/e/qount_data/qount/artifacts/experiments/20260718T155058Z-periodic-allocation-v02/mini_trend_periodic_allocation.json`
+  SHA-256 `0bd6d491...fc`，manifest content hash `aefb001a...49`。
+- **美股映射加密资产成为新的低频结构研究线，但产品结构严格分层。** Binance USD-M当前有TSLA/MSTR/AMZN/
+  COIN/META/NVDA/GOOGL/QQQ/SPY/AAPL/MSFT共11个`TRADIFI_PERPETUAL`，最早TSLA也只从`2026-01-28`
+  开始；Binance spot另有`NVDAB/TSLAB/SPYB`等`*B`映射token。Bybit有AAPLX/AMZNX/COINX/GOOGLX/
+  METAX/NVDAX/TSLAX等xStocks现货和对应equity linear合约。映射现货涉及发行/托管/赎回与交易所风险，
+  永续只提供合成价格敞口并有funding、标记价格和清算风险，不能混为同一资产或共享回测成本模型。
+- 首个冻结假设检验“周末/美股休市期间永续折价，下一美股现金时段部分收敛”：用纽约DST与SPY真实现金
+  日历，从前一现金收盘到下一开盘前代理价；只在周末收益为负时做多，下一现金收盘退出，同日标的等权且
+  总gross=1，扣24bps往返成本与实际funding。11个标的仅有126个symbol-event、18个独立cash date；周末/
+  现金时段相关`-0.188459`、反号率`56.35%`、71个做多信号。按日期聚类后的组合收益`+3.7516%`、maxDD
+  `4.0029%`、日期cluster bootstrap正均值概率`71.16%`，证据偏弱，不进paper/live。早期按126个横截面事件
+  顺序复利的`+29.69%`重复使用了同一笔资本，已经作废。最终artifact
+  `/mnt/e/qount_data/qount/artifacts/experiments/20260718T155058Z-tradifi-weekend-v02/binance_tradifi_weekend.json`
+  SHA-256 `d857361f...02c`，manifest content hash `821ad7d2...08`。
+- **2026-07-19 owner把下一资金规模设为计划1000 USDT，并要求建设Base+结构Alpha+横截面+LLM信息的组合系统。**
+  新文档[crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)定义Data/Research/Strategy/Portfolio/
+  Execution五层、虚拟sleeve独立NAV、组合gross<=1和确定性晋级门。当前Base仍是控制组，Equity Mapping、
+  LiquidTrend和Funding Event真钱风险预算均为0；1000计划不自动替代300 pilot，也不授权充值、私有API、cron或
+  下单。未来若多个sleeve晋级，风险预算才从Base 100%逐步过渡到Base 50%-60%和低相关Alpha组合。
+- **LiquidTrend10 v0.1在收益回测前完成G0并被容量/广度阻断。** 固定BTC/ETH/BNB/SOL/XRP/DOGE/ADA/LINK/
+  AVAX/LTC，复用外置盘2021-2026 UM日线/funding：1777个BTC参考日中共同1772日，覆盖`99.7186%`；十币
+  Funding规范化亚秒结算时间后全部通过，最低日quote-volume中位数约`225.47m USDT`。Binance历史结算时点
+  存在1-46ms抖动，原实现把相邻日误分为2/4次，已修复且未填0。
+- 全窗平均绝对相关`0.661578`、有效广度`1.437979`；2021-22/2023-24/2025-26分别为
+  `1.384389/1.627722/1.276677`，均低于2.0。现有runtime UM exchangeInfo只含BTC/ETH/BNB/SOL 4/10；WSL
+  直连及IPv4 `fapi.binance.com`超时，Vision替代路径404，未使用VPS中转或未知代理。最终5/9门通过，verdict
+  `block_liquid_trend_g0_data_or_execution`；预留的20/60/120日score从未执行，trial=0、无PnL、无paper/live。
+  最终artifact
+  `/mnt/e/qount_data/qount/artifacts/experiments/20260718T164231Z-liquidtrend10-g0-v02/liquid_trend10_capacity.json`
+  SHA-256 `743f83c1...2728`，manifest content hash `93206835...101c`。
+- **LLM信息层已接入relay-station ChatGPT客户端，但仍未接策略。** `InformationEvent`强制HTTPS允许域、source hash、
+  `published_at<=available_at<=observed_at`、实体/事件类型、数值有限性、重复审计和越权交易语言扫描；只有无错误
+  事件可生成确定性event flags/numeric fields，LLM摘要和confidence不自动成为数值特征。所有batch显式
+  `orders_allowed=false/paper_or_live_allowed=false`。当前默认`https://llm.alyaloale.com/v1` / `gpt-5.6-terra`，
+  并发1、SDK重试0、严格五字段JSON、输入输出限长；凭据只从仓库外`~/.qount/alpha-agent.env`读取。6个离线fixture
+  已覆盖五类有效事件和一次未来时点拒绝。禁用所有环境代理后的OpenAI SDK只读`GET /v1/models`返回200、16个
+  模型且包含`gpt-5.6-terra`；本轮遵守relay-station配额保护规则，没有发送throwaway推理请求。模型不会自行
+  获得可信联网事实：新增`official_sources.py`，强制HTTPS官方域、初始/重定向URL双校验、无环境代理、512 KB
+  上限、原文SHA-256/observed time和12,000字符上下文；GitHub共享域还必须匹配显式owner/repository allowlist，
+  当前只允许`binance/binance-public-data`。LLM只读取已验证正文。公共OpenAI模型指引未列出该私有
+  relay slug，因此“最新”只按当前relay目录实测表述，不冒充OpenAI公共API官方推荐。
+- **首个真实terra官方源审阅已完成，但只产生数据治理结论。** 无代理抓取Binance官方GitHub API README，原文
+  `5144 bytes`、source hash `085ab913...f7c6`、context hash `f5072a3b...4255`；terra正确区分Spot/UM/CM的
+  `aggTrades/klines/trades`、daily/monthly发布时间、`.CHECKSUM`和2025 Spot微秒时点，并把retention/rate limit
+  标成来源未陈述。代码复核确认微秒归一化已有测试，但官方sidecar校验缺失；`grid/data.py`现新增
+  `verified_archive_fetch`、checksum格式/filename绑定和SHA-256拒绝逻辑。现有缓存没有sidecar证据，不能追溯性
+  宣称已验证。artifact为`state/research_runs/20260718T173443Z-alpha-official-source-review/`
+  （SHA-256 `018195cb...4695`），明确research-only、0订单、无paper/live资格。
+- **1000 USDT组合治理已从文档约定落成确定性代码。** 账户低于3000时最多一个连续live候选和一个事件最小试单；
+  Signal/Standalone Executable/Portfolio Realized三类NAV分账，晋级只看Standalone；风险预算统一为压力损失贡献；
+  每假设族最多3个正式trial；查看前向结果后改规则会把该时间段降为consumed。Base 60日只作运行证据，Equity按
+  独立美股交易日、Funding按episode计数。LiquidTrend首个PnL前已冻结robust rank、8币下限、121日warm-up、
+  可执行bid/ask时点，并加入特征值有效维度、PC1、BTC beta、下跌条件相关和相关簇稳定性；旧G0结果仍保持阻断。
+- **Equity Mapping G0 v0.3已完成合同管道，但没有新增真实市场样本。** `mini_trend/equity_mapping.py`和离线CLI
+  固定纽约`09:25`决策、`09:24:30-09:25:00`三腿同步可见报价、5秒skew、USDTUSD为USD/USDT、显式venue/
+  base/quote/multiplier语义、bid/ask gap上下界、split/reverse-split point-in-time归一化和带来源/时点/成本成分的
+  stress scenario。只有`GapUpper<0`才是long研究候选；中点为负不够。经济事件ID与证据修订hash分离，报告重算ID
+  并拒绝伪造、重复、合同hash漂移；G0永远不提供minimal-live资格，后决策`09:25:00-09:25:30`成交证据属于
+  后续shadow层。
+- terra红队共完成两轮有效审阅和一次最终复审，逐项与代码核验后修复中点不可成交、公司行动因子未使用、重复
+  asset-event、压力比例无血缘、外部event ID受信和venue未绑定等确定性问题；未把模型对真实USDTUSD/公司行动/
+  日历语义的假设当事实。最终合成fixture为2个asset-event、1个独立cash date，verdict
+  `collect_equity_mapping_independent_dates`，artifact
+  `state/research_runs/20260718T180643Z-equity-mapping-g0/equity_mapping_g0.json`，SHA-256
+  `fd93d83a...2266`、contract hash`dcbef759...1e46`。它不计入旧18个市场日期，不计算PnL，不授权paper/live/order。
+- **Equity Mapping公开source-capacity已实现，但真实现金腿仍是绑定阻断。**
+  `equity_mapping_sources.py`提供bounded no-proxy fetch、Binance instrument/bookTicker、Bitstamp USDTUSD和
+  Nasdaq calendar/quote/split/earnings的fail-closed parser/audit；它不替代provider-neutral raw sealing，也不在
+  窗口外拼接异步报价。`20260719T065611Z-equity-mapping-source-capacity`只让cash calendar通过；其余7/8角色阻断。
+  Nasdaq quote为`isRealTime=false`且bid/ask=`N/A`，只有last-trade时间而无quote-event时间；split响应混入目标日外
+  rows，earnings rows不绑定事件日期。Binance及Coinbase/Kraken/Bitstamp/Gemini在当前Mac无代理路径统一记录为
+  `transport_unavailable`，不能读成provider不存在或语义被否证。artifact SHA-256 `ee0799d7...09d58`，raw manifest
+  content hash `aa91e8d1...466d7`；该审计为`trial_count=0/market_event_created=false/orders_allowed=false`。
+- **2026-07-18 owner将研究治理切换为个人实验`research_sandbox`，已有历史可继续做标签、参数和模型探索。**
+  仓库外`qount-doc-autopilot`已改为`research_sandbox / promotion_review / paper_live`三层：历史复用、动态
+  ATR/deadband、HGB/LightGBM/XGBoost、HMM/Markov和小型神经网络不再被旧失败结论一概阻断，但必须记录
+  trial、时间切分、泄漏检查并把已看窗口称为discovery。首轮已完成：1765行数据覆盖
+  `2021-07-20..2026-05-19`，30日/1.0σ triple-barrier标签为bear/bull/range=`401/526/838`，28个特征只用
+  当日已完成日线与funding，四个年度扩展折均按label-end purge。contract/data hash为
+  `45d21773...79c`/`0fd5bba6...09de9`。
+- 表格trial 1中Logistic/HGB/LightGBM/XGBoost平均Brier uplift分别为
+  `-0.207976/-0.511406/-0.417971/-0.316735`；因果前向HMM为唯一正值`+0.013493`，log-loss uplift
+  `+0.020354`，两者均3/4折为正。但HMM硬分类balanced accuracy仅`0.358605`，2024全退化为range且
+  2025-2026不预测bear，不能直接成为风险档或仓位。trial 2固定测试unweighted Logistic、HMM 50%先验收缩、三个HMM状态
+  后验增广和HMM+Logistic 50/50融合；平均Brier uplift为`-0.177369/+0.009683/-0.183699/-0.027013`，均未
+  超过原HMM。结论是只保留原HMM为弱概率特征，不连接执行，也不扫融合权重。
+- 独立A10节点的固定60日、32 hidden、单层GRU四折平均balanced accuracy/macro-F1为
+  `0.379848/0.303852`，Brier/log-loss uplift为`-0.029635/-0.040234`且仅2/4折改善。第二次CUDA复跑除
+  wall time外完全一致，四折model-state hash、best epoch和validation loss逐项相同，证明失败可复现。
+  环境manifest `20260718T020000Z-research-gpu-environment`绑定A10、Torch `2.12.1+cu130`、数据与代码hash。
+  当前不继续LSTM/TCN/Transformer扫参；下一步先审计标签的经济可行动性和HMM概率分箱是否对应未来收益/
+  base v0.2风险，再决定是否改变目标或增加新point-in-time信息。全部仍属已消费历史discovery，本决定不恢复
+  paper/live或订单权限。
+- **2026-07-18 regime经济目标审计完成，价格/funding/DVOL分类与回归家族已关闭。** 原30日HMM概率虽有
+  校准优势，但风险分数与未来TOP3收益的Spearman为`-0.175822`、高低组差`-3.3042pp`；10/20/30/60日×
+  0.75/1.0/1.25σ共12个HMM目标为`0/12`保留。return/drawdown直接经济回归的Ridge/HGB/RF/LightGBM/
+  XGBoost共40格为`0/40`，加入完整2021-04..2026-06 BTC/ETH DVOL后仍为`0/40`。这些模型有概率或局部年度
+  拟合，不产生稳定经济方向；不再换分类头、神经网络或阈值包装旧信息。
+- 24格滚动适应矩阵只留下`h60_train365_base_random_forest`：固定10,000次复跑和30/60/90日区块敏感性
+  为`7/7`，pooled rank IC `0.167001`、高低组差`+7.629963pp`、正差概率
+  `84.66%/80.15%/78.63%`；但2023折为负、三个p05均为负。随后3个只降风险规则全部失败：最佳规则将
+  maxDD改善`0.878pp`，却少赚`12.216pp`并降低Sharpe。结论是预测排序不能直接逐日接仓位，该价格模型只留
+  研究证据，不进入forward/paper/live。
+- **Coin Metrics算力是本轮唯一保留的新低频信息，但仍没有形成可采用策略。** WSL直连官方社区API并直接写
+  外置盘，BTC MVRV/活跃地址/交易数/算力/交易所流入流出共`2373`个日频latest-vintage行，覆盖
+  `2020-01-01..2026-06-30`、coverage `1.0`、data hash `f1631c7b...75f6`。所有特征滞后1日；因API不提供
+  历史vintage，只能作`consumed_historical_discovery_pool`。首版审计错误计入2021-2022，已由严格只用
+  2023-2026合同折的v0.2废止；v0.2的7个固定方向因子仅`hashrate_z90`通过5/5：rank IC `0.159730`、
+  60日差`+9.959073pp`、bootstrap正差`98.95%`且p05 `+2.009506pp`。
+- 只新增算力的固定60日/365日滚动RF通过比较门`9/9`：rank IC `0.179447`、高低组差`+9.252003pp`、
+  bootstrap `85.40%`，相对原RF分别改善`+0.012446/+1.622041pp/+5.40pp`。但复用同一3个降风险规则时仍
+  `0/3`通过；最佳`z<=-0.5 -> vol_target 1.0%`把Sharpe从`1.1934`提高到`1.2552`、maxDD改善`0.862pp`，
+  总收益却少`4.795pp`，超过预定最多`3pp`代价，故`8/9`拒绝且不放宽门。累计相关研究trial为`131`；
+  base v0.2仍是正式选择，Funding Veto仍只是首选历史候选，算力模型只允许等待真正新vintage/forward研究。
+- **H.4.1宏观流动性产生了当前最强排序信号，但策略兑现仍未通过。** 官方历史release archive的
+  `2021-01-07..2026-07-16`共`289/289`条已由WSL直落外置盘，覆盖旧TXT、linked HTML和inline HTML三种
+  布局；276个周特征统一使用`official release date + 1 day`，0重复、0未来join。两次全缓存重建data hash
+  均为`8af65a47...cb02`，raw manifest为`406 files/252,249,757 bytes`、content hash
+  `d0f939db...4592`。因此这条宏观历史是point-in-time discovery，不依赖最终修订FRED历史。
+- 固定3个宏观trial中，4周资产变化将60日/365日RF的rank IC/高低组差/bootstrap从
+  `0.167001/7.629963pp/79.55%`提高到`0.202639/12.899478pp/95.17%`，8/8通过；4周加速度也8/8，13周
+  变化因IC低于控制而拒绝。4周宏观+算力的唯一融合trial为5/8，未超过宏观单源。最终3个冻结风险规则仍
+  `0/3`：最佳Sharpe提高`0.0838`、maxDD改善`0.863pp`，但收益少`3.323pp > 3pp`，8/9拒绝且不放宽门。
+  累计相关trial为`138`；宏观预测只留future-only研究，Base v0.2 1.5%与生产关闭状态不变。
+- **H.4.1事件驱动确认没有解决信号与兑现机制错配。** 在消费策略结果前预登记3个不扫参trial，固定
+  `release_date + 1d`可见时点和经济零阈值，只测试“收缩阻止新开仓”“扩张延迟SMA200总闸退出”及二者
+  合并；Base的1.5%风险目标、35% deadband、3xATR吊灯、3日冷却、gross<=1及no-carry均未改。控制为
+  `+66.5054%/Sharpe 0.8982/maxDD 17.2845%`。收缩闸门在633根日线上介入、阻止1,358个symbol entry，
+  把收益压到`+1.7223%`；双确认同样只剩`+0.3408%`。扩张退出确认只介入2根日线/4个symbol exit，虽将
+  收益代价控制在`-2.4167pp`，但Sharpe降至`0.8642`且maxDD仅改善`0.0461pp`。3个trial均拒绝，累计
+  trial为`141`。结论不是“事件频率还不够低”，而是H.4.1符号状态太持久，不适合作为二元交易许可；
+  它仍只保留为60日排序特征，不再扫描分位数、窗口、持有期或冷却期救援。
+- **H.4.1只管理strong-bull边际风险的假设也被拒绝。** 先确认现有RF目标是TOP3等权指数未来60日收益的
+  时间序列排序，不能用于BTC/ETH/BNB横截面轮动；随后在读取结果前只预登记1个新trial：保留Funding Veto
+  和Stop-Latch，仅当年度fold OOS标准分数`<=0`时把原本允许的strong-bull `2.0%`增益退回Base `1.5%`，
+  从不把风险降到Base以下。1205个决策日覆盖`2023-01-01..2026-04-19`，其中449个Funding/Stop之后仍可
+  boost的强牛日被宏观否决303个。Base、Funding Veto参考、候选分别为
+  `+68.2697%/Sharpe 1.1934/maxDD 17.2756%`、`+90.3621%/1.2602/18.1016%`、
+  `+65.0724%/1.0950/19.2637%`。候选相对参考少赚`25.2897pp`、Sharpe低`0.1651`且maxDD恶化
+  `1.1621pp`；相对Base也少赚`3.1973pp`且回撤恶化`1.9881pp`。配对20日块Bootstrap的终值/Sharpe/
+  更低回撤胜率仅`1.54%/6.90%/63.40%`，`8/14`门通过，累计trial `142`。结论是宏观排序在全市场时间轴
+  有信息，但在技术面已筛出的强牛子样本中不能决定边际风险；不做分位、分数阈值或持有期救援。
+- **Base v0.2的利润来自长趋势和吊灯退出，主要损耗来自短持仓反复进出。** 在结果前冻结`trial_count=0`
+  的episode合同，按逐币连续正权重重建77段持仓，并按每日当时权益精确分摊价格、funding和双边交易成本；
+  归因净利润`266.02158324 USDT`与组合`266.02158322 USDT`只差`0.00000002 USDT`。31个吊灯退出episode
+  合计`+403.6133 USDT`、胜率70.97%、中位持有43日、中位MFE `24.63%`，且2021/2023/2024/2025四年
+  均为正，因此3xATR不是当前应收紧的损耗源。38个单币趋势/配置退出合计`-56.6102 USDT`、胜率28.95%、
+  中位持有4日；8个SMA200总闸退出全部亏损、合计`-80.9815 USDT`，但未过10个episode样本门。按持有期看，
+  1-7日/8-30日分别亏`-101.6869/-77.9728 USDT`，31-90日/>90日分别赚
+  `+251.2261/+194.4551 USDT`。这验证了策略的低胜率、长右尾本质，不支持时间止损或收紧吊灯。
+- **信号退出后复用既有3日冷却略有改善，但统计强度不足，仍拒绝。** 38个趋势/配置退出中，36个之后还有
+  同币新episode；12次在3日内重入，后续只有2次盈利、合计`-22.0242 USDT`。据此只预登记1个无新数值
+  参数trial：总闸仍开且单币趋势退出时，复用止损的3根完成日线冷却。候选触发34次、阻止20个symbol-bar
+  重入，把episode从77降到72、订单从261降到252、成本从`28.3381`降到`27.2536 USDT`；收益
+  `+66.5054%→+66.8046%`、Sharpe `0.90277→0.90788`、maxDD `17.2845%→17.2774%`。但配对20日块
+  Bootstrap的收益/Sharpe/更低回撤胜率仅`58.96%/64.42%/55.88%`，三条稳健门均失败，`13/16`通过，
+  累计trial `143`。不扫2/4/5日冷却，也不改20/60/200日均线救援。
+- Coin Metrics future vintage链已启动：首个不可变快照绑定`2026-07-17`源日与
+  `2026-07-18T04:12:05Z`检索时间，snapshot hash `f83b288f...d6dfb`。provider publication timestamp不可得，
+  不能把本地检索时间伪装成历史发布时间；后续只追加，不回填、不覆盖。
+- **2026-07-10 VPS 资源耗尽事故已在 2026-07-11 修复。** 根因不是 Caddy/new-api 网关，
+  而是 root crontab 中 C×D live `*/2`、C×D publisher `*/5`、X4 paper daily 三个入口都没有
+  `flock`/总 `timeout`；Binance DNS 抖动时，CCXT `load_markets()` 还会额外访问私有
+  `/sapi/v1/capital/config/getall`，旧进程不退、新 cron 继续叠加，最终让 1.6G VPS 的 fork/内存
+  资源耗尽。修复已部署：三个 cron 入口共用 `scripts/desktop/cron_guard.sh`，脚本内层 non-blocking
+  `flock` + process-group timeout；crontab 外层再做同类防线；live 改为每 5 分钟、publisher 错峰
+  到第 2 分钟，并由 `deploy/cron/qount-production.crontab` 固化；C×D 删除重复的私有余额读取；
+  `build_exchange()` 禁用不需要的
+  `fetchCurrencies`；交易腿失败不再刷新网页时间戳伪装成成功。策略权重、2x 上限、short gate、
+  exchange-native STOP_MARKET 和 carry paused 均未改变。理由：当前信号是日线，交易所止损已覆盖
+  轮询间隙，2 分钟改 5 分钟减少 60% 调度/API 压力，不改变已验证 alpha 语义。
+- **VPS 容量余量仍偏薄，但当前不是 qount 残留。** 2026-07-11 00:26 CST 两轮新 live cron
+  成功后，qount 相关进程为 0、swap 为 0；主要常驻 RSS 是 `new-api≈433M`、`sub2api≈380M`，
+  整机 `MemAvailable≈322M`。因此本次复发链已由 lock/timeout 切断，但“网关 + 多容器 + 实盘”
+  共用 1.6G 仍有容量风险。长期仍应给 VPS 加内存或把 qount/网关拆机；没有应用级证据前，
+  本轮不擅自给 new-api/sub2api 加可能导致服务抖动的硬 memory cap。
+- **2026-07-07 项目治理规则已固定。** 新增
+  [project-rules.md](project-rules.md)，作为文档分类、研究线隔离、执行记录、反过拟合规范、
+  代码架构和弃用清理的项目级规则。后续每批有意义更改必须更新本线 changelog 或
+  [update-log.md](update-log.md)；影响当前事实、生产真相或全局规则时同步更新本文件。
+- **2026-07-16 owner 决策:先放弃 A股 ETF，研究优先级转回加密。** A股 ETF 20 日线停止
+  Tushare parity、日频复跑、自动提醒、券商/QMT 接入和任何 paper/live 推进；代码、测试和 discovery
+  artifact 只作为历史研究资产保留。加密方向恢复为当前唯一主动研究优先级，但这只授权 Mac 上的
+  public-data / deterministic research，不授权访问私有账户、恢复 VPS collector/crontab、forward paper
+  或 live。下一步必须先为一个**新的结构性信息源**写 G0/source-capacity/preregistration；现有 price、
+  kline taker、OI/taker ratio、aggTrades-only、premium、aggregate bookDepth 和冻结 Logistic 合同继续关闭。
+- **2026-07-17 新结构信息源第一轮已完成，但 options-DVOL discovery 为 0/3，路线停止。** 新增
+  `source_capacity.py`/`historical_dvol.py`/`options_dvol.py` 与三个薄 CLI。source-capacity artifact
+  `20260716T141329Z-alpha-agent-source-capacity` 用官方小探针确认：Binance historical `forceOrder` 与
+  replayable `depth` 均 404，aggregate `bookDepth` 可用但不是 L2；Hyperliquid 四币 funding/premium
+  历史可用但与旧 funding/cross-venue 失败线重叠；Deribit BTC/ETH DVOL 的 2021/2025 边界均为完整
+  25 根小时 OHLC，因此只选择它进入 G0。结果读取前最终 v0.3 preregistration
+  `20260716T145022Z-alpha-agent-options-dvol-preregistration` 冻结 `ETH DVOL - BTC DVOL`、720h
+  normalization/beta、`|z|>=2` reversion、24h hold/cooldown、ETH/BNB/SOL 固定分母、7bps/position
+  change、funding、400 USDT filters 和 2/3 kill line；contract/protocol hash 为
+  `195a9160...3b95` / `c87b0d96...86fa9`。v0.1/v0.2 在收益读取前因补齐 beta/entry/coverage 显式门而被
+  v0.3 取代，不作为结果合同。
+- **DVOL 数据门通过，但冻结策略本身失败。** dataset
+  `20260716T142116Z-alpha-agent-historical-dvol` 从 90 个官方按月响应构建 BTC/ETH 各 32,904 小时，
+  coverage `1.0`、0 gap/duplicate、缓存复跑 data hash `d07122f7...09c86`。Binance SOL 月档内缺少
+  2022-02-26..28 和 2022-04-01..02 共 120 小时，runner 只用对应官方 daily ZIP + `.CHECKSUM`
+  确定性补齐；最终四币 price、DVOL feature、filter coverage 均 `1.0`，三币各 188 entries、24h
+  turnover `2.0`。最终 ETH IC/residual `-0.048945/-55.322693%`，BNB
+  `-0.078558/-77.010159%`，SOL `+0.004773/+6.290805%`；SOL 因 IC 远低于 `0.02` 仍 block。
+  final report `20260716T151115Z-alpha-agent-options-dvol=block_discovery`：passing/positive IC/positive
+  residual `0/3,1/3,1/3`，median IC `-0.048945`，mean residual `-42.014016%`。不反转 polarity、
+  不调 z/lookback/holding，不消费 2025 replication 或 2026-07-17 起 forward OOS，不进 A10/paper/live。
+- **Historical option-surface 审计在 G0 阻断。** 新增 `option_surface_capacity.py`、薄 CLI 和离线测试；
+  artifact `20260716T155503Z-alpha-agent-option-surface-capacity`、data hash `e8ab2da2...bb6868`。
+  五个 2021/2024/2025 已过期 BTC/ETH instrument metadata 与 price chart 均可读，但 chart 只有
+  OHLC/volume/cost/ticks，没有 IV/index/mark；2024 历史 trade probe 为 0 rows，`expired=true` inventory
+  只暴露一个近期 expiry，无法枚举历史 point-in-time chain。当前 surface 有 BTC/ETH `874/720` 条
+  mark-IV，但不能倒推历史 surface；price-only inversion 会引入未预注册的定价模型与 strike search。
+  verdict `block_g0`，未读取策略收益、未生成 skew preregistration。
+- **外部 liquidation/replayable-L2 审计在访问与容量 G0 阻断。** 新增
+  `external_microstructure_capacity.py`、薄 CLI、测试和 Tardis source reference；最终 artifact
+  `20260716T160716Z-alpha-agent-external-microstructure-capacity`、data hash `cc591bb7...5bf4f`。
+  metadata 确认 BTC/ETH/BNB/SOL 均有 `liquidations` 与 `incremental_book_L2`；BTC depth 一分钟
+  `1,982,255` bytes/`1,086` updates/0 invalid/0 sequence break，raw hash `69060a8d...a7e81`；四币
+  forceOrder 一分钟为 1 条 SOL/243 bytes，hash `57f28cac...175c`。匿名整日请求仍只返回同一 1 分钟
+  (`x-slice-size=1`)；BTC raw L2 外推 `2,854,447,200 bytes/day`、`256,900,248,000 bytes/90d`，超过
+  32 GiB cache gate。verdict `block_g0_access_capacity`，liquidation 仅在授权且可复现完整历史后优先；
+  本轮未购买、未读收益、未写 preregistration。
+- **2026-07-17 owner 选择不用高频，低频趋势回到冻结 TOP3 forward。** 新增
+  `mini_trend/forward.py`、薄 CLI 和测试，不改原 signal/risk/execution。结果读取前 preregistration
+  `20260717T030622Z-mini-trend-top3-forward-preregistration` 绑定旧 TOP3 2025-07-20..2026-06-30 anchor
+  config/summary/equity SHA，冻结 `BTCUSDT/ETHUSDT/BNBUSDT`、spot long/cash、1d、400 USDT、
+  SMA20/60/200、breadth 0.5、vol target 1.5%、rebalance band 35%、10bps fee + 2bps slippage、trial 1，
+  禁止 universe/参数搜索、高频、short、杠杆和自动 paper/live；contract/protocol hash 为
+  `37302065...68b2` / `029835ae...773c`。公开 spot `exchangeInfo` 主域在当前 Mac 返回 451，改用 Binance
+  官方只读 `data-api.binance.vision`；rules artifact `20260717T030547Z-alpha-agent-exchange-rules` 确认 TOP3
+  均 `TRADING`、min-notional 5 USDT。
+- **首个低频 forward 片段数据完整，但只有防守状态，不构成通过。** 最终 artifact
+  `20260717T031824Z-mini-trend-top3-forward`、data hash `494f01da...cf98`；旧 research-filter anchor equity
+  `401.85455267` 精确复现，当前 runtime rules 只造成 `+0.019512 USDT` 历史执行精度漂移。2026-07-01..16
+  为 16/16 根完成日线、0 gap；BTC close/SMA200 `63,830.20/73,438.14`、breadth `0.0`，总闸关闭、TOP3
+  targets 全 0、16 天全现金、0 单/0 blocked。策略 `+0.002866%`，同期 BTC B&H `+8.879345%`、TOP3 EW
+  `+10.747795%`；它没有追到反弹，但 maxDD 近 0。verdict `collect_forward`，blockers 仅为不足 60 根
+  forward 和不足 10 根 active；不调闸、不追涨、不进 paper/live。
+- **2026-07-17 实盘记录复盘与合约资金架构冻结。** 只读复制 VPS 的订单、快照、guarded daily equity、
+  stops 和日志安全统计，生成 `state/research_runs/20260717T033716Z-mini-trend-live-lessons/mini_trend_live_lessons.json`。
+  `415.00` 是撤资/重置后的账户余额，不可作为策略 PnL；可比策略净值是 `474.07/484.57-1=-2.166870%`。
+  37 个 inception 之后已发单里有 5 个完全重复单、7 个同日同向重复单、8 组同日方向反转和 2 个止损事件；
+  另有 66 次未知本金 fail-closed、21 次旧 fallback 余额读取。下一协议必须 `UM wallet + no carry + 1d +
+  long/cash + effective gross<=1.0 + no leverage boost + runtime filters + unknown-capital fail-closed +
+  stop latch/cooldown`。
+- **2026-07-17 UM recovery 候选被历史诊断拒绝。** preregistration
+  `20260717T034500Z-mini-trend-um-recovery-preregistration` 固定 TOP3、UM 1d、funding、25% recovery gross、
+  3 根 20 日线确认、真实 UM filters、10bps+2bps 成本、3 根 stop cooldown、trial=1；诊断 artifact
+  `20260717T035442Z-mini-trend-um-recovery-historical` 只读已有缓存且 `network_download_used=false`。
+  控制线和 recovery 线均不构成 paper 资格；recovery 直接停止，不调参救援。
+- **UM base v0.2 forward 当前尚未开始。** v0.1 在尚未读任何结果时因未显式绑定实际 `3xATR` 日线 stop
+  被 v0.2 preregistration `20260717T121646Z-mini-trend-um-base-forward-preregistration` 替代。freshness
+  artifact `state/research_runs/20260717T121715Z-mini-trend-um-base-forward/mini_trend_um_base_forward.json` 只读
+  `state/grid_b/klines` 缓存，三币最新共同完成日线为 `2026-06-18`，forward start `2026-07-17` 后为
+  `0` 根，verdict `await_forward_data`。这不是零收益，也不是策略失败；需要新的完整 UM 日线后才允许
+  计算 forward return。
+- **历史已有数据可以继续用，但只能作为 discovery。** benchmark artifact
+  `state/research_runs/20260717T115728Z-mini-trend-um-historical-benchmark/mini_trend_um_historical_benchmark.json`
+  在同一 UM 日线、funding、10bps+2bps 口径下比较 control 与 BTC 1x/TOP3 EW：2021-2022 control
+  `-0.973818%` 对 BTC `-50.543561%`，2023-2024 control `+41.489075%` 对 BTC `+167.711082%`，
+  2025-2026 control `-2.018860%` 对 BTC `-39.041151%`。control 在 2/3 段相对基准更好，但绝对收益仅
+  1/3 段为正，verdict `discovery_only`、promotion=false；不调参、不把历史段当 future OOS。
+- **数据下载边界补充。** 大批量public data只在Windows/WSL侧下载并直接写外置盘，不使用Mac/VPS中转或
+  苏菲家宽代理；Windows/WSL直连和owner-approved Liangxin Cloud proxy均可，凭据仅存仓库外本地环境。
+  当前UM离线诊断仍完全复用现有缓存，缺月即失败，不因路由放宽而静默联网。
+- **2026-07-16 A股 ETF 20 日战术研究线已接入，但 evidence gate 阻断。** 新增
+  [ashare-etf-month-plan.md](ashare-etf-month-plan.md)、`src/qount/ashare_etf_month.py` 和薄 CLI，
+  标准库直连 Tushare `fund_daily + fund_adj`，token 只读 `TUSHARE_TOKEN`；本轮 token 未注入，最终
+  artifact `state/research_runs/20260716T094924Z-ashare-etf-month/ashare_etf_month.json` 使用腾讯前复权
+  日线。7 月 16 日状态为 `hardware_pullback_application_rotation`：硬件距 MA20 平均 `-12.50%`，
+  但 AI 核心距 MA120 `+11.72%`、60 日相对沪深300 `+15.36%`，所以不是全 AI 逻辑结束。四套固定
+  组合 59 个不重叠 20 日样本中位数和胜率全部不过；严格同状态只有 1 个独立负样本，轮动杠铃
+  `-1.24%`、最大回撤 `-4.62%`，gate `block`。75% 目标被缩至 37.5% 上限/62.5% 现金；当前只有
+  只有红利首笔 6.25% 满足条件，即初始暴露最多 6.25%；消费必须等 `0.648-0.655` 回踩或收盘
+  `0.670` 放量突破。该读数只保留为历史 discovery；同日后续 owner 决策已冻结本线，不再执行上述
+  条件、不接 paper/live，也不改变 L6 或加密生产状态。
+- **2026-07-08 Alpha Agents research-only 骨架已接入。** Owner 授权先搭建多 agent 架构用于
+  搜集资料、优化设计并后续接入量化训练。新增 [alpha-agent-plan.md](alpha-agent-plan.md) 和
+  `src/qount/alpha_agents/`：内置 market-data / exchange-rules / quant-librarian /
+  feature / experiment / red-team / ops-audit 等 LLM research 角色，以及 `model_trainer`、
+  `backtest_auditor`、`risk_architect` 三个 deterministic/quant 角色；支持从 JSON 替换角色和任务。
+  默认不调用 LLM，显式 `--with-llm` + `QOUNT_ALPHA_AGENT_API_KEY` 才接
+  `https://llm.alyaloale.com/v1` / `glm-5.2`。硬边界：agent 只写 research artifact，不输出订单、
+  目标权重、live 配置或风控 override；promotion 仍必须靠 deterministic scorecard。
+- **2026-07-08 Alpha Agents deterministic scorecard 已接入。** 新增
+  `src/qount/alpha_agents/promotion.py` 和 `scripts/research/alpha_agent_scorecard.py`，把
+  proposal/data/baseline/cost/anti-overfit/breadth/paper/live/LLM-boundary 做成 G0-G7/GX gate。
+  该 CLI 只读 metrics JSON 并写 research artifact，不调用 LLM、不访问私有交易所、不写生产 state；
+  真实策略必须由 dataset / label / backtest / A10 trainer 产出 metrics，不能用 LLM 报告或手填值
+  通过 promotion。
+- **2026-07-08 Alpha Agents beta-residual metrics builder 已接入。** 新增
+  `src/qount/alpha_agents/metrics.py` 和 `scripts/research/alpha_agent_beta_metrics.py`，从对齐 period
+  returns 计算 BTC beta、beta-residual return、相对 BTC / TOP3 equal-weight / current live baseline
+  的超额，并生成 promotion metrics。高阶验证字段(DSR/PBO/purged-CV/paper/capacity)默认是
+  blocking value，必须由真实 quant artifact 补齐；示例 fixture 正 residual 仍会被 scorecard 的
+  G4/G5/G6 block。
+- **2026-07-08 Alpha Agents source scoring 与 Binance public returns 已接入。** 新增
+  `src/qount/alpha_agents/knowledge.py` / `scripts/research/alpha_agent_sources.py` 对官方文档、论文、
+  书籍、教程和安全资料做 trust scoring；教程只能作为 learning material，不能满足 promotion。
+  新增 `src/qount/alpha_agents/binance_returns.py` /
+  `scripts/research/alpha_agent_binance_returns.py`，复用 Binance public dump 生成对齐 returns。
+  2024Q1 UM ETH SMA smoke 已跑通并生成 beta metrics，但 scorecard 正确 block：未用 runtime
+  exchangeInfo/filter validator，跑输 BTC/TOP3，BTC beta 过高，未计 funding/min-notional，也没有
+  DSR/PBO/paper 证据。
+- **2026-07-08 Alpha Agents Binance runtime rules 与 funding 层已接入。** 新增
+  `src/qount/alpha_agents/exchange_rules.py` 和
+  `scripts/research/alpha_agent_exchange_rules.py`：只拉 Binance 公共 `exchangeInfo`，解析
+  `PRICE_FILTER`、`LOT_SIZE`、`MARKET_LOT_SIZE`、`MIN_NOTIONAL`，并对 400 USDT 小盘目标名义做
+  min-notional/step-size coverage；不读取私钥、不访问账户、不下单。`binance_returns.py` 现可通过
+  `--exchange-rules-path` / `--fetch-exchange-info` 接 runtime rules，并通过 `--include-funding`
+  从 Binance public dump 计 USD-M funding cashflow。2024Q1 ETH SMA 复跑：
+  `min_notional_coverage=1.0`、`funding_included=true`，但 `net_residual_return_pct=-1.165668`、
+  `beta_to_btc=0.552037`，scorecard 仍 `verdict=block`。读法：Binance 规则/成本 plumbing 已补，
+  但样例 SMA 明确不是 alpha；下一步应做真正 feature/label/model runner。
+- **2026-07-08 Alpha Agents feature experiment runner 已接入。** 新增
+  `src/qount/alpha_agents/feature_experiment.py` 和
+  `scripts/research/alpha_agent_feature_experiment.py`：从 Binance public dump 读取 klines/funding，
+  在 train split 上选 feature grid，再输出 OOS 月度 returns 给 beta metrics/scorecard。当前内置
+  `momentum/reversal/relative_momentum/vol_adjusted_momentum` 与
+  `long_short/long_cash/short_cash`，仅作为 A10 前的 deterministic baseline contract。2024Q1 ETH
+  1h smoke 选中 `relative_momentum_lb12_thr0_long_short`，OOS `strategy_total=-30.103078%`、
+  BTC B&H `+39.471843%`、TOP3 EW `+54.382491%`、`beta_to_btc=7.494191`、
+  `net_residual_return_pct=-302.677680`，scorecard `verdict=block`。读法：第一批简单价量 feature
+  被 OOS 打穿；已打通模型实验接口，但没有可交易 edge。下一步应补 walk-forward/DSR/PBO 与更强
+  microstructure/OI/bookTicker 特征，而不是继续调这个候选。
+- **2026-07-08 本地 GLM-5.2 Alpha Agents 已跑通并产出 Strategy V0（历史快照，运行配置已由7月19日合同取代）。** Owner授权把gateway key
+  放入本机用户级环境；已写入 `~/.qount/alpha-agent.env`，权限 `600`，由本地 runner 自动读取，
+  不进入仓库、artifact 或 `.env`。`alpha_agent_plan.py --with-llm` 现支持 `max_concurrency=3`、
+  `max_tokens=4000`、`max_retries=1`，单个 LLM 输出失败会重试或降级为 blocked report，不再打断整批。
+  全量 agent artifact：
+  `state/research_runs/20260708T044141Z-alpha-agent-plan/alpha_agent_plan.json`。基于结果在
+  [alpha-agent-plan.md](alpha-agent-plan.md) 增补 `Strategy V0: Microstructure Residual Alpha`：
+  第一刀是 USD-M 1m/5m residual alpha，先做 `kline_taker_flow_v0` 和 `derivative_state_v0` kill-test，
+  bookTicker/aggTrade/diff-depth/forceOrder 先走 live collector gap/replay，不直接 promotion。
+- **2026-07-08 Alpha Agents derivatives-state 数据层已接入。** 新增
+  `src/qount/alpha_agents/derivatives_state.py` 和
+  `scripts/research/alpha_agent_derivatives_state.py`，只用 Binance public REST 拉
+  `/futures/data/openInterestHist`、`/futures/data/takerlongshortRatio` 和 `/fapi/v1/openInterest`，
+  写 research artifact，不读私钥、不访问账户、不下单。该接口按官方 recent-data 限制只作为近 30 天
+  research/forward 输入，不能伪装成 2021-2026 长历史。真实 1 天 5m smoke artifact：
+  `state/research_runs/20260708T045352Z-alpha-agent-derivatives-state/alpha_agent_derivatives_state.json`；
+  BTC/ETH/BNB/SOL 的 OI 与 taker ratio 各 288 rows、0 gaps、coverage ≈ `0.9965`，
+  `open_interest_hist_count=1152`、`taker_long_short_count=1152`、`current_open_interest_count=4`、
+  `error_count=0`。
+- **2026-07-08 derivative-state feature runner 已接入并完成第一刀 smoke。**
+  `alpha_agent_feature_experiment.py` 现支持 `--kline-source public_dump|rest`、
+  `--derivatives-state-path`、`--min-feature-coverage`，并新增 `oi_delta`、`oi_value_delta`、
+  `taker_ratio`、`taker_imbalance`。当前 Mac 到 `fapi.binance.com` REST kline 直连超时/SSL EOF；
+  public dump fallback 因 ETH/SOL 2026-07-07 5m daily dump 尚未发布，完整 BTC/ETH/BNB/SOL smoke
+  被 coverage gate 正确拦截。可运行的 BTC/BNB 两币 BNB smoke：
+  `state/research_runs/20260708T093014Z-alpha-agent-feature-experiment/alpha_agent_feature_experiment.json`，
+  OOS `strategy_total_return_pct=-7.056039%`、BTC `+1.403648%`、equal-weight `+1.135040%`、
+  `net_residual_return_pct=-7.301083`；metrics
+  `state/research_runs/20260708T093052Z-alpha-agent-beta-metrics/alpha_agent_beta_metrics.json`；
+  scorecard `state/research_runs/20260708T093102Z-alpha-agent-scorecard/alpha_agent_scorecard.json`
+  为 `verdict=block`。读法：OI/taker ratio 接入链路可用，但这一刀没有 alpha；不能 forward paper
+  或 live，下一步应补 taker-flow/walk-forward/DSR/PBO，并在 ETH/SOL dump 或 REST 路由恢复后复跑完整 universe。
+- **2026-07-10 `kline_taker_flow_v0` 已完成并按当前执行合同停止。** `Bar` 现保留 Binance kline
+  原生 quote volume、trade count、taker-buy base/quote volume；feature runner v0.2 新增
+  `kline_taker_imbalance`、`kline_taker_pressure_change`、`kline_quote_volume_z`、
+  `kline_realized_vol_change`、显式 `polarity=+1/-1`，以及 rolling as-of BTC beta 的 forward residual
+  rank-IC 选择。真实 BTC/ETH/BNB/SOL、5m、2024-01..08、train 6 月/OOS 2 月、40 trials/horizon：
+  h3 选中 `kline_taker_imbalance_lb3_inv`，train/OOS rank IC `0.01993/0.03481`，但 OOS
+  `net_residual=-166.019%`；h6/h12 均选中已知 price momentum inverse，OOS rank IC
+  `0.02344/0.01326`，net residual `-91.363%/-58.191%`。三份 scorecard 均 `verdict=block`。
+  读法：h3 taker imbalance 有弱信息，但训练 IC 未过 `0.02` 且 taker 换手成本把 gross edge 完全吃掉；
+  h6/h12 没有产生新 taker-flow 候选。不能在已看 Jul-Aug 上继续调 threshold 后把它当 validation，
+  不进 A10/paper/live；本轮随后已补 walk-forward/DSR/PBO，结果继续 block，下一步转 collector 数据层。
+- **2026-07-10 research artifact 并发覆盖已修复。** 并行生成 h3/h6/h12 metrics 时发现原目录名只有
+  秒级时间戳，三个进程会写同一路径。`persistent_research_dir` 现通过原子目录创建分配
+  `base/-01/-02`，同秒并发 artifact 不再互相覆盖；三路并行 metrics/scorecard 已实测生成独立路径。
+- **2026-07-10 Alpha Agents G4 validation adapter 已接入并完成真实负向验证。** 新增
+  `src/qount/alpha_agents/validation.py` 和 `scripts/research/alpha_agent_validation.py`，按源 feature
+  artifact 的冻结 config 重放 candidate matrix，计算源选中候选 DSR、按原 `rank_ic` 选择语义的
+  CSCV/PBO、带 embargo 的 purged folds 和 expanding walk-forward；普通 feature artifact 仍保持精简。
+  `alpha_agent_beta_metrics.py --validation-path` 只接受 source feature path 完全匹配的 validation，
+  防止跨实验拼接 G4。真实 h3：selected per-period Sharpe `-2.2764`、DSR `3.19e-152`、
+  PBO `0.781746`、purged `0/5` 正、walk-forward `0/5` 正、largest-contributor-removed
+  `-99.9975%`；最终 scorecard 的 G4 同时因 DSR/PBO/purged/largest-contributor block。
+  artifact：`20260710T134718Z-alpha-agent-validation`、metrics `20260710T134758Z`、scorecard
+  `20260710T134808Z`。旧 `20260710T134252Z` 使用 Sharpe-selection PBO，已被最终 source-selection
+  CSCV artifact 取代，不作为结论。完整测试 `970 OK`，Alpha/数据/validation 聚焦测试 `57 OK`。
+- **2026-07-14 Alpha Agents S3 public microstructure collector 已完成严格 60 秒数据层 smoke。**
+  新增 `src/qount/alpha_agents/live_collector.py` 和
+  `scripts/research/alpha_agent_live_collector.py`，research-only 采集 Binance USD-M public
+  `bookTicker`、`aggTrade`、diff-depth、`forceOrder`，并用 public WS-API/REST depth snapshot
+  做 update-id gap、事件时间和订单簿重放审计；不读取账户、不下单、不写 paper/live state。
+  snapshot 获取现使用有限重试并保留 retry 诊断，只有重试耗尽才计最终错误，默认错误率门槛仍为 1%；
+  默认交易流已对齐 S3 合同为 `aggTrade`。最终 BTC/ETH/BNB/SOL 60 秒 artifact
+  `state/research_runs/20260714T093402Z-alpha-agent-live-collector/alpha_agent_live_collector.json`
+  共 23,339 条市场事件、16/16 snapshots、aggTrade gap `0`、depth sequence break `0`，实际重放
+  1,919 个 depth update 后非法档位/空簿/crossed book 均为 `0`，四币全部锚定，event stale/future
+  均为 `0`，`verdict=pass_data_smoke`。一次 public 流首次建连 `SSLEOFError` 后重连成功，发生在
+  `connection_open` 前，未形成数据 gap。读法：S3 gap/replay 实现和短时公网 smoke 已通过，但计划要求的
+  7 天 forward data gate 尚未完成；这不是 alpha、scorecard 或 promotion 证据，不能训练 A10、forward
+  paper 或 live。
+- **2026-07-16 S3 改为历史优先；VPS 7 天会话已中断并永久标为失败证据。** 正式 session
+  `/root/qount-alpha/state/research_runs/20260714T135630Z-alpha-agent-live-collector-session-7d-vps/`
+  只完成约 21 小时：22 个闭段中 19 pass、3 block，最后闭段出现约 38 分钟 market-event 空窗并触发
+  `depth_replay_unanchored/trade_gap/stale_event` blocker，另留一个 orphan partial。Owner 确认随后 VPS 因
+  内存不足多次重启；service 因 `Restart=no`/boot-disabled 保持 inactive，Mac offloader 也因第 0 段 blocker
+  fail closed。该 session `continuous_gate_eligible=false`，不得 resume、拼接、训练或 promotion；共享 1.6G VPS
+  不再承载新的长跑 collector。旧 7 天 verifier 仍保留为 collector 工程验收工具，但不再是历史研究的前置门。
+- **2026-07-16 历史微观结构覆盖与 daily metrics dataset 已接入。** 新增
+  `historical_microstructure.py`/`alpha_agent_historical_microstructure.py`，只探测官方 `.CHECKSUM`：四币
+  `2024-01-01/2026-07-10` 日样本 + `2024-01` 月样本共 40 probes，36 available、4 missing、0 error；
+  `aggTrades=12/12`、`bookTicker=8/12`、`bookDepth=8/8`、`metrics=8/8`。语义审计确认 public
+  `bookDepth` 是 `timestamp/percentage/depth/notional` 百分比聚合深度，不是带 `U/u/pu` 的可重放 diff-depth；
+  `forceOrder`、receive latency 和 replayable diff-depth 仍需外部历史源或短实时采集。artifact：
+  `state/research_runs/20260716T032055Z-alpha-agent-historical-microstructure/alpha_agent_historical_microstructure.json`。
+  新增 checksum-verified daily metrics loader，2024Q1 四币 364/364 archive、104,332 rows、每币覆盖
+  `0.995230`；唯一共同缺口为 `2024-02-16` 的约 10.5 小时，现写 `segment_id`，feature/label/beta/PnL
+  禁止跨段。dataset：
+  `state/research_runs/20260716T033710Z-alpha-agent-historical-derivatives/alpha_agent_historical_derivatives.json`。
+- **2026-07-16 历史 metrics 第一版 kill-test 失败。** 2024Q1、四币 USD-M 5m、72 candidates，Jan-Feb
+  train/Mar OOS，训练按 rank IC 冻结 `oi_delta_lb1_thr0_long_short`；train/OOS rank IC 为
+  `0.022246/0.029326`，但 4,223 turnover × 7bps 与 funding 后 OOS beta-residual `-56.833338%`，
+  BTC beta `-0.028737`，scorecard `block`。正弱 IC 不等于可交易 edge；不进 A10/paper/live，不在同一
+  Q1 discovery 上继续挑 threshold。最终 feature/metrics/scorecard artifact 分别为
+  `20260716T035639Z-alpha-agent-feature-experiment`、`20260716T035652Z-alpha-agent-beta-metrics`、
+  `20260716T035706Z-alpha-agent-scorecard`；较早的 `034337Z/034357Z/034406Z` 数值相同，但在 rolling
+  beta 完全按 gap 重置前生成，只保留为中间证据。
+- **2026-07-16 checksum-verified `aggTrades/bookTicker` loader 与 5m 聚合已接入。** 新增
+  `historical_tradeflow.py`/CLI/tests，按官方 SHA-256 sidecar 校验 ZIP，流式解析真实 CSV，不落解压后的
+  事件文件。BTC `2024-01-01` 双源真实审计：`aggTrades=761,222` 行、`bookTicker=11,986,235` 行，均覆盖
+  288/288 个 5m 桶；aggregate-trade ID 无断号，book update/event/transaction time 无回退，crossed book/
+  非法数量均为 0。`bookTicker.update_id` 只检查单调，不把合法跳号冒充丢包。artifact：
+  `20260716T042522Z-alpha-agent-historical-tradeflow`。Q1 ETH `aggTrades` 3/3 月包 checksum 通过，原始
+  113,092,010 行聚合为 26,208 个完整 5m 桶，覆盖 100%、单 segment、月内/跨月 ID gap 均为 0；dataset：
+  `20260716T043347Z-alpha-agent-historical-tradeflow`。
+- **2026-07-16 首个冻结低换手 trade-flow 候选过历史 Q1 discovery 和一次性 4 月 OOS，但 promotion 仍
+  `block`。** `tradeflow_experiment.py` 在读取新窗口前固定唯一合同
+  `agg_trade_imbalance_z168_entry2_hold6_cooldown18_momentum_v1`，contract hash
+  `2b61627c...c9094`：完成小时的 aggressive-flow imbalance 用过去 168h 标准化，`|z|>=2` 顺向入场，固定
+  持有 6h、退出后 cash 18h、禁止直翻，24h turnover budget `2.0`，trial count `1`。Q1 discovery rank IC
+  `0.024647`、41 entries、成本/funding 后 beta residual `+7.163938%`；冻结后才读取 2024-04，3/24-3/31
+  只做无标签 warmup、4/1 强制空仓，OOS rank IC `0.039999`、16 entries、beta residual `+6.196189%`、
+  去掉最大单小时贡献仍 `+2.427747%`。最终 discovery/OOS artifact：
+  `20260716T044439Z-alpha-agent-tradeflow-experiment` / 同秒 `-01`。专用 validation 用 Q1 冻结 beta 得到
+  4 月 residual `+7.663555%`、purged time-fold pass，但 DSR `0.915342 < 0.95`；单一预注册候选无法识别 PBO，
+  保守写 `1.0` 而不是伪造 pass。validation/metrics/scorecard 为 `20260716T044644Z` / `044704Z` /
+  `044724Z`，scorecard `G0-G3/GX pass`，`G4/G5/G6 block`。因此这是第一份值得保留的历史微观结构正证据，
+  但不进 A10/paper/live，不在 Q1/4 月改参数，也不因它恢复 VPS 7 天采集。
+- **2026-07-16 frozen trade-flow v1 跨 BTC/BNB/SOL 预注册复制全败，G5 从“未验证”变为明确
+  `block`。** 在读取复制数据前先写 preregistration `20260716T083420Z-alpha-agent-tradeflow-replication`，
+  protocol hash `d2c9ca4e...d03da1`，固定同一 ETH contract/cost/window，禁止符号筛选和调参；每个复制符号
+  只有 Q1 discovery 过门才允许读 April。BTC/BNB/SOL Q1 9/9 月包 checksum 通过，原始
+  295,897,363 trades -> 78,624 个 5m 桶，各币覆盖 100%、单 segment、月内/跨月 ID gap 0；dataset
+  `20260716T085640Z-alpha-agent-historical-tradeflow`。同合同 discovery 结果全部 `block_discovery`：BTC
+  rank IC/residual `0.007095/-4.150084%`，BNB `-0.016277/-8.680766%`，SOL
+  `-0.028842/-5.175364%`；filters 100%、entries 45/46/46、24h turnover 均 `2.0`，所以失败不是数据、
+  最小名义或换手超标。按预注册规则三币 April OOS 均未消费。最终 replication report
+  `20260716T090929Z` 为 `block_correlation_stress`；重算 metrics/scorecard `20260716T090941Z`/
+  `20260716T090958Z` 仍为 `G0-G3/GX pass`、`G4/G5/G6 block`，其中 G5 现明确为
+  `missing_effective_breadth/correlation_stress_not_passed/capacity_not_checked`。读法：ETH 历史正证据保留，
+  但不能外推为 majors 稳健规律；frozen v1 停止晋级，不下载复制 April、不调参数救结果、不做 runtime parity。
+- **2026-07-16 flow/price absorption 新机制预注册 discovery 也被三币一致否定。** 新增
+  `flow_absorption.py`、薄 CLI 和测试；在读取策略结果前先写 preregistration
+  `20260716T100011Z-alpha-agent-flow-absorption`，合同 hash `8f30e701...f5bf124`、protocol hash
+  `0c6f277c...a82d816`。唯一候选把完成小时的 aggressive-flow z-score 与同小时 BTC beta-residual
+  价格反应交叉：极端 flow 与价格反向/不动视为被动吸收，随后反向持有 6h、cash 18h，继续按 taker fee
+  `5bps` + slippage `2bps`/position change、funding、400 USDT filters 计分；只有 ETH/BNB/SOL 至少 2/3
+  过门才允许另写 April OOS 预注册。Q1 结果全部 `block_discovery`：ETH rank IC/residual
+  `-0.024471/-8.056549%`，BNB `0.018082/-15.461342%`，SOL `-0.018355/-9.206446%`；entries
+  `11/19/15`，filter coverage 均 `1.0`、24h turnover 均 `2.0`。最终 report
+  `20260716T100057Z-alpha-agent-flow-absorption` 为 `passing_symbol_count=0`、median IC `-0.018355`、mean
+  residual `-10.908112%`，April `reserved_oos_consumed=false`。这否定了“单靠 aggTrades 流量与当小时价格
+  背离做反转”的机制。后续只读 source audit `20260716T100514Z-alpha-agent-historical-microstructure` 确认
+  2024Q1 四币 `bookTicker` 月包 `12/12 available`，但 official HTTP metadata 显示压缩包合计
+  `58,608,259,115 bytes`（`54.58 GiB`）；本机仅约 `87 GiB` 可用，不能把“可下载”误写成“可低成本使用”，
+  本轮未下载。下一刀必须加入独立状态变量并重新预注册，优先转体量更小的 mark/index premium；
+  `bookTicker` 只保留为带磁盘预算的预注册抽样/流式方案，不得在已看 Q1 上改 absorption 阈值/方向/持有期。
+- **2026-07-16 checksum-verified premium/mark/index 数据链通过，但预注册 premium mean-reversion
+  discovery 为 0/3，机制停止。** 新增 `historical_premium.py`、`premium_dislocation.py`、两个薄 CLI 和
+  5 个测试。最终 strict-schema dataset `20260716T102324Z-alpha-agent-historical-premium` 校验
+  `premiumIndexKlines/markPriceKlines/indexPriceKlines` 36/36 个官方 Q1 5m 月包，压缩总量
+  `7,613,751 bytes`，四币各 26,208 个完整桶、coverage `1.0`、单 segment、data hash
+  `784a816a...89d7381`；fail-closed 12 列 parser 加固前后的 data hash/结果完全一致。策略结果读取前先写
+  preregistration `20260716T102055Z-alpha-agent-premium-dislocation`：contract hash
+  `f07d0702...fa05d55`、protocol hash `6d842c44...4315c2f`，每小时 12 个 completed 5m premium close
+  取均值、过去 168h z-score、`polarity=-1`、`|z|>=2`、hold 6h/cash 18h，继续计 7bps position-change
+  成本、funding 和 400 USDT filters；至少 2/3 才允许 April。最终 Q1：ETH IC/residual
+  `-0.046471/-0.863166%`、BNB `-0.001891/-8.707943%`、SOL `+0.045684/-1.153916%`，entries
+  `37/34/33`；filters 均 `1.0`，SOL 还因窗口末强制平仓使 24h turnover `3.0 > 2.0`。final report
+  `20260716T102358Z-alpha-agent-premium-dislocation=block_discovery`：passing `0/3`、positive IC `1/3`、
+  positive residual `0/3`、median IC `-0.001891`、mean residual `-3.575008%`、April 未消费。不能在 Q1
+  上改 premium 阈值/方向/持有期。下一独立源只允许转 historical `bookDepth` 百分比累计深度：只读 audit
+  `20260716T102632Z-alpha-agent-historical-microstructure` 已确认 2024-01/02/03 月首日四币 12/12 available；
+  CSV 是约 30 秒一组 `timestamp,percentage,depth,notional` 的 `±1%..±5%` 聚合，不是 diff-depth/L2 replay。
+- **2026-07-16 已完成可重放的趋势概率模型基线，但 March OOS 三币 0/3，不能启动 A10/LightGBM/
+  Transformer 追分。** 新增 `historical_depth.py`：严格要求每个 snapshot 恰有 `-5..-1,+1..+5` 十档，
+  校验 daily ZIP checksum 后流式聚合 5m 的 1%/5% notional imbalance、1% 波动和近端深度占比；明确
+  `replayable_l2=false`。最终 dataset `20260716T104132Z-alpha-agent-historical-depth` 为 364/364 包、
+  `165,500,458 bytes`、1,047,015 个原始 snapshots 聚合为 104,768 个 5m rows；每币 26,192/26,208、
+  coverage `0.999389`、8 segments，16 个共同缺桶分布在 7 个短区间，模型不跨缺失小时拼 feature。
+  在任何模型结果读取前写 preregistration `20260716T104401Z-alpha-agent-residual-trend-model`：contract
+  hash `a729ea39...20d979`、protocol hash `be9f2123...477646`，固定 10 特征（depth、premium、已完成
+  1h/6h return、24h vol、BTC 6h return）、L2 Logistic `C=1`、Jan-Feb train、6h purge、March OOS、
+  `p>=0.55` long/`p<=0.45` short、hold 6h/cash 18h，无 grid/feature selection/refit。最终 March：ETH
+  AUC/IC/residual `0.484692/-0.004346/-17.444056%`，BNB
+  `0.500214/-0.019693/-8.485764%`，SOL `0.514279/+0.051771/-7.127153%`；三币 Brier improvement 全负，
+  entries `29/30/30`，filters 均 `1.0`，BNB/SOL max 24h turnover `3.0`。report
+  `20260716T104522Z-alpha-agent-residual-trend-model=block_discovery`：passing/positive residual `0/3`、mean
+  residual `-11.018991%`、DSR `0.095/0.243/0.299`、PBO fail-closed `1.0`、April 未消费、
+  `a10_sequence_enabled=false`。工程上现在能产出概率、校准、walk-forward、模型系数和成本回测；证据上
+  尚不能预测可交易趋势。不能在已看 Q1 上换 HGB/LightGBM/Transformer、调阈值或选特征后再称 OOS。
+- **2026-07-16 冻结 residual-trend 模型的 2025Q1 跨时间复验再次 0/3，固定模型路线关闭。** 在读取
+  2025Q1 概率/收益前写 preregistration
+  `20260716T125427Z-alpha-agent-residual-trend-replay`，protocol hash
+  `2f15b7af...cfcbfe`；逐币绑定原 ETH/BNB/SOL model artifact SHA-256，禁止 refit、recalibration、feature
+  selection、threshold/model-family search，继续使用原 scaler/coefficients/intercept、train positive-rate
+  Brier baseline、`0.55/0.45` 概率门和 7bps position-change cost。官方 metadata `396/396` 包可用；最终
+  2025Q1 depth `20260716T130420Z` 为 360/360、`162,843,538 bytes`、coverage `0.999421`，premium
+  `20260716T130534Z` 为 36/36、`7,443,575 bytes`、coverage `1.0`，四币小时 K 线覆盖 `1.0`。结果为 ETH
+  AUC/IC/Brier-improvement/residual `0.502287/+0.012601/-0.010654/-42.209377%`，BNB
+  `0.462687/-0.066387/-0.011183/-13.971742%`，SOL
+  `0.515403/+0.005188/-0.006259/-41.020445%`；三币 feature/filter coverage `0.997674/1.0`，entries
+  `87/81/87`，max 24h turnover 均 `3.0`，DSR `0.007971/0.130511/0.066449`。final report
+  `20260716T131339Z-alpha-agent-residual-trend-replay=temporal_replay_complete_no_promotion`：supportive/positive
+  residual `0/3`、mean residual `-32.400521%`、PBO `1.0`、promotion/A10 均 false。不能再以“换年份”继续
+  搜索这组固定特征；下一次模型研究必须先有真正独立的信息源或不同预测目标，并重新计入累计 trial。
+- WSL 已退出 live / paper / dashboard 生产角色。不要用 WSL `.env`、
+  `qount-runner.timer`、`preflight-live`、`scripts/sync-to-wsl.sh` 或
+  `scripts/run-wsl-tests.sh` 判断当前实盘状态；历史 WSL artifact 路径只作为研究证据链保留。
+- 旧 line A `qount.main` live 继续关闭：`QOUNT_LIVE_ENABLE=false` 仍是默认安全边界。
+  加密 X4 / C×D 实盘使用独立开关 `QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE` 和
+  `QOUNT_CXD_CARRY_ENABLE`，不能用 `QOUNT_LIVE_ENABLE` 推断 X4/C×D 是否 armed。
+- 加密 live 的最近生产设计由 VPS C×D orchestrator 负责，carry 默认暂停
+  (`QOUNT_CXD_CARRY_ENABLE=0`)；但资金撤出后 root crontab 已于 2026-07-11 停用，当前没有继续产生日志或订单。
+- 2026-07-07 已部署 X4 live 执行修复到 VPS：交易所原生 STOP_MARKET 在两分钟 cron
+  间隔内打平后，会根据上一轮 holdings + 当前交易所仓位同步写入本地 Chandelier
+  `latched`，防止同一日线 short 目标下立即重开；`cxd_live_cron.sh` 同步加入 5MB
+  默认日志轮转，只归档 `/root/cxd_live.log` 到 qount 自身 `state/logs/archive/`。
+- 旧 line A / ETH-only 研究线当前没有 promotion 证据，不能 forward paper，也不能 live。
 - 旧 13-window 结果现在只能作为 discovery 证据；promotion 只看
   `holdout_role=validation_v1` 的 once-only 新窗口。
 - 2026-06-04 第一次 `validation_v1` once-only 端到端验证失败；盈利导向补的
@@ -380,7 +1394,8 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
   顶层还输出 `directional_deflated_sharpe`(Deflated Sharpe Ratio)和 `directional_pbo`
   (PBO/CSCV,按频段分组的过拟合概率)，量化"搜了 N 个 cell 后最佳 Sharpe 还剩多少可信 +
   IS 赢家在 OOS 是否仍靠前"的两类多重检验惩罚，diagnostic only。
-- Mac 到 WSL 同步与测试脚本：`scripts/sync-to-wsl.sh`、`scripts/run-wsl-tests.sh`。
+- Mac 到 VPS 同步与测试脚本：`scripts/sync-to-vps.sh`、`scripts/run-vps-tests.sh`。
+  旧 WSL 脚本默认拒绝执行，只有显式 `QOUNT_ALLOW_LEGACY_WSL=1` 才可用于历史环境。
 - L3 信息源数据接入层（S0.1）：`src/qount/l3_information_edge.py` + research-only 命令
   `l3-stablecoin-fetch`，拉 DefiLlama 聚合稳定币总供给、`state/` 缓存离线复跑、归一化成
   排序去重日度序列、严格 as-of(无前视)join 到周线锚点;只用 stdlib `urllib`、不引入新依赖、
@@ -1453,6 +2468,7 @@ public API / symbols / credentials / one-way / balance guard 均通过。live gu
 
 ## 代码结构
 
+- `docs/project-rules.md`：项目规则、文档分类、研究线隔离、代码治理和弃用清理纪律。
 - `src/qount/settings.py`：运行配置与研究开关。
 - `src/qount/research_profile.py`：`eth-only` / `multi-symbol` profile 覆盖。
 - `src/qount/main.py`：CLI 入口。
@@ -1467,6 +2483,11 @@ public API / symbols / credentials / one-way / balance guard 均通过。live gu
 - `src/qount/orchestrator.py`、`src/qount/ai_client.py`：AI 决策、研究缓存、确定性 override。
 - `src/qount/review.py`、`src/qount/research_slice_scan.py`：复盘和离线 readiness。
 - `src/qount/artifacts.py`：研究 artifact 持久化。
+- `src/qount/grid/`、`src/qount/rv/`、`src/qount/x4/`：线 B / 线 C / 线 D 独立模块。
+- `src/qount/l1_cross_asset.py`、`src/qount/l3_information_edge.py`、
+  `src/qount/l4_cross_exchange.py`、`src/qount/l6_microstructure.py`：已固化/证伪重启线的
+  research-only 模块。
+- `src/qount/mac_monitor.py`：旧 WSL / line A 面板入口，已加 legacy guard；默认不再执行。
 - `tests/test_strategy_optimization.py`：策略、研究工具、artifact、walk-forward 主测试面。
 - `tests/test_exchange_throttling.py`：交易所/候选执行边界测试。
 
@@ -1476,26 +2497,80 @@ public API / symbols / credentials / one-way / balance guard 均通过。live gu
 
 ```text
 local unittest: PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
-WSL unittest:   ./scripts/run-wsl-tests.sh
+VPS unittest:   ./scripts/run-vps-tests.sh
 ```
 
-最近一次完整结果：本地 237 OK，WSL 237 OK。若本文件被后续提交更新，以提交前实际输出为准。
+最近一次本地完整结果：2026-07-20 Phase B/C账户事实、健康合同、仓位/决策追踪、publisher运维层和前端替换完成后，
+`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为`1468 OK`；本批 operations/health/publisher 聚焦为`34 OK`，唯一warning仍为既有
+`src/qount/cta_data.py` UTC deprecation。此前paper v0.3聚焦在Mac/WSL均为`5 OK`，paper/shadow/readiness聚焦在WSL为`16 OK`，
+exchange route聚焦另为`9 OK`，此前episode/信号退出冷却/
+回测变换聚焦在Mac与WSL均为`14 OK`，相关 X4 funding/账本/波动率/吊灯最近一次为`37 OK`；Mac全量及
+WSL聚焦`compileall`、两端CLI help、Bash语法、凭据扫描与`git diff --check`均通过；本批Node语法、13份schema解析、
+含unavailable health的11个release JSON、Chromium fallback桌面/移动QA和Playwright桌面/移动QA也通过。Mac全量测试生成的六个
+临时artifact目录已在每次复跑后定点删除，marker保护的WSL scratch已清空，Mac `state/`
+恢复约12KiB。完整回归只有既存
+`src/qount/cta_data.py` UTC deprecation warning。VPS `/root/qount` 上一次已知聚焦
+cron/exchange/X4/RV 回归为 `141 OK`、
+全量为 `865 OK`；本轮没有同步 Alpha 代码、没有恢复服务或 crontab，也没有跑远端测试。
+`QOUNT_ALLOW_LEGACY_WSL=1` 规则不变；交易生产变更仍必须用 VPS unittest 验证。
 
 ## 下一步
 
-按 ROI 排序：
+按最新 owner 决策排序：
 
-1. S1' prediction candidate：`4h xs_mom lookback=24 holding=6` 是当前最强 discovery cell；
-   all-overlap、stride、限仓 portfolio replay 和 simple triple-barrier 都已跑；simple
-   triple-barrier 120 天全负，不能 paper。下一刀只做 purged-CV / exit 设计 / 新 OOS。
-2. S-CARRY：WLD/SOL post-only 与 basis-entry filter 均未过 6/1-6/5 after-tail；继续只能
-   等新的完整独立日期，或重做 hedge timing / basis 风险模型，不进入 paper promotion。
-3. 1d TS-MOM：top12 扩币 120 天和 2/3/4 月均为负；不能进入 S1.1/S1.2。
-4. 对 5m 预测族只保留 cost-stress 证据：zero-cost 有 edge、maker-ish 成本后大幅转负；
-   除非执行成本模型有实测突破，否则不继续 5m GBDT。
-5. 若 CARRY 在真实双腿/阈值模型里稳定转正，再走 `profit-engineering-plan.md §10.5`
-   专线；先 paper，不进入 live。
-6. 旧 `val-jun03` repeated `range_noise` short 只能作为 discovery 诊断材料，不再作为主线第一优先级。
+1. 本批production-shaped publisher、真实OS/systemd/backup探针、单写者、同盘原子release、备份/保留和恢复演练已在本地完成，
+   但仍未部署或enable systemd，不能把本地结果称为production发布。下一步进入真实notification transport的注入式合同实现：
+   只允许`NotificationStore`提供delivery key和最小payload，校验provider响应、限流/超时、0600凭据和无密钥审计；不发送真实消息，
+   不接legacy `Notifier`/shell ServerChan，完成本地故障测试后再单独请求transport发送授权。VPS publisher也仍需独立owner授权；
+   它只能读取完整batch/registry/ledger/notification/health/brief，不能查询交易所、读取legacy state JSON或复制fixture。
+2. 当前主动路线保留三条隔离的 research-only 记录：spot TOP3 forward 继续只追加完成的 spot 1d bars；
+   UM base-trend v0.2 已完成完整 forward preregistration，等待新的完整 UM 日线后再收集；Equity Mapping
+   只在纽约`09:24:30-09:25:00`冻结窗口追加有raw readback hash的同步三腿/日历/公司行动/压力证据。
+   两条线都不改参数、不进 paper/live；spot forward 至少累计 60 根且 10 根 active 前保持 `collect_forward`。
+   已拒绝的 UM 2.0% 全局档、三阶段 overlay 和stop-latch都不进入forward；funding-veto虽通过历史门和
+   条件Bootstrap稳健门，也只冻结为首选 consumed-history 候选，不调50%阈值、不自动获得paper/live资格。
+   双状态shadow-forward已从`2026-07-19`预登记；VPS canonical UM日线已到`2026-07-18`，但冻结起点尚无完成bar，
+   当前仍为0根和`await_shadow_forward_data`。order-free timer现由VPS直连刷新公开REST/日包；只在价格与每日三次funding
+   同时完整后追加两套权益、仓位/deadband/latch
+   状态，首次权重同步不能作为停止跟踪条件。禁止使用苏菲家宽代理，缺失funding禁止填0。
+   Equity Mapping首个目标现金日是`2026-07-20`，当前`await_collection_window`；窗口前不得生成伪样本，窗口
+   错过后不得用异步历史报价补写。只有同现金日sealed manifest逐项覆盖8类source hash，G0 v0.4才允许声称
+   point-in-time market evidence；当前source-capacity只有cash calendar通过，必须先取得带source event timestamp的
+   可执行cash premarket bid/ask，并补齐mapping、mapped quote、USDTUSD、公司行动、事件上下文和stress来源。
+   Nasdaq当前delayed quote不能代替现金腿，也不得用HTTP接收时点冒充市场quote时点。仍需累计30个独立现金交易日，
+   且不因此进入shadow/paper/live。
+3. 一个月小资金实盘作为`paper_live`目标，当前严格停在readiness：本金在manual arm前动态读取已审计USD-M余额，
+   当前为`488.89481071 USDT`，不设账户单日止损。owner接受当前VPS-only key和Spot/Margin权限；Reading/Futures/
+   IP限制、提现关闭、空仓/one-way/1x逐仓/0挂单均已通过。独立systemd runtime、exchange-native stop、幂等
+   dispatcher、哈希journal和回读对账已经验证；只剩Funding完整记录、60/10 forward、30天paper和7个唯一dry
+   决策日，随后仍须单独生成manual final arm。不得恢复旧X4/C×D cron。全局2.0%风险档和Funding Veto只能做
+   shadow，不能控制真钱订单。
+4. Owner外部建议按 `docs/mini-trend-agent/review.md` 矩阵执行：Coin Metrics latest-vintage链上G0与经济
+   审计已完成，算力预测成立但策略门失败；H.4.1 release-calendar/point-in-time G0、固定宏观特征和策略
+   消融也已完成，4周变化预测保留但三档风险、事件闸门和边际boost否决均失败。Base episode归因进一步
+   证明长趋势/吊灯是利润来源，唯一3日信号退出冷却trial只有边际改善且稳健门失败。累计trial已到143，不再用
+   分位、窗口、冷却、分数阈值或投票参数救援。Coin Metrics future vintage只追加不回填；下一轮优先等待真正新
+   vintage/双状态shadow forward，或研究不改变Base仓位/入场许可的只读预测校准。ADX、超1x、carry继续
+   关闭，ML/Markov/叙事不得绕过策略经济门。
+5. options-DVOL、historical option surface 与外部 liquidation/L2 均冻结在各自 block；不购买/下载 raw L2，
+   不用 price-only IV inversion，也不消费 options 2025 replication 救旧结果。
+6. Hyperliquid cross-venue state 虽有公开历史容量，但与旧 funding/cross-venue 失败机制重叠，不能直接作为
+   第二候选；必须先写清不同于 carry/spread 的独立 predictor、400 USDT 单 Binance 执行语义和新的 G0
+   protocol，且仍不得假设多交易所账户或 maker fill。
+7. 任何新候选仍从 G0/G1 开始，先过 point-in-time、coverage、schema/checksum、400 USDT filter 和最坏
+   成本；latest-vintage历史即使预测通过也不能获得promotion资格。discovery至少满足策略层raw return、
+   BTC/TOP3 beta-residual和成本门，才允许设计独立forward。4060 sequence model继续位于tabular经济门、
+   DSR/PBO、purged-CV和breadth/correlation gate之后；不再为本轮失败目标租A10。
+8. 现有 Alpha S3 与 options-DVOL 失败证据全部冻结：不得在已看窗口调
+   `z/holding/cooldown/polarity`，不得用
+   HGB/LightGBM/Transformer rescue 固定 Logistic，也不得把 aggregate `bookDepth` 冒充 replayable L2。
+9. 旧 `4h xs_mom`、S-CARRY、1d TS-MOM、5m GBDT、`range_noise` 和 Kronos 路径继续按既有诚实退出结论
+   关闭；本次“推进加密”不代表复活这些已证伪路线。
+10. A股 ETF 20 日线冻结：不补 Tushare parity、不做自动提醒或券商/QMT 接入、不执行历史条件；只有新的
+   owner 明确决策才可重开。
+11. 研究设计和文档留Mac，CPU/GPU计算及新增public data下载在WSL；共享1.6G VPS不恢复7天collector，生产
+   crontab、private API、paper/live均保持关闭。新增大批量数据只在Windows/WSL侧直落外置盘，可直连或使用
+   仓库外配置的Liangxin Cloud proxy；不使用苏菲家宽代理，也不把proxy URL/token写入代码或artifact。
 
 硬边界：
 
@@ -1506,3 +2581,4 @@ WSL unittest:   ./scripts/run-wsl-tests.sh
 - 不把 `offline_future_edge_readiness` 当 promotion 证据。
 - 不把 Kronos 接入 candidate / risk / live。
 - 不把 LightGBM 当默认研究依赖；当前默认 GBDT 路线用 sklearn `HistGradientBoosting`。
+- 不把“恢复加密研究优先级”解释为恢复 VPS collector、private API、paper 或 live。

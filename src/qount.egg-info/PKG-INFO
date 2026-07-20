@@ -13,6 +13,8 @@ Provides-Extra: research-lightgbm
 Requires-Dist: numpy>=2.4.0; extra == "research-lightgbm"
 Requires-Dist: scikit-learn>=1.9.0; extra == "research-lightgbm"
 Requires-Dist: lightgbm>=4.6.0; extra == "research-lightgbm"
+Provides-Extra: collector
+Requires-Dist: websockets<17,>=15.0; extra == "collector"
 
 # qount
 
@@ -21,13 +23,15 @@ Requires-Dist: lightgbm>=4.6.0; extra == "research-lightgbm"
 ## 主机职责
 
 - `Mac`
-  - 开发、回测、看日志、手动运维
+  - 开发、git、文档、只读看日志和手动运维入口
   - 不跑实盘执行器
-- `Windows`
-  - 提供 `Clash Verge`、`CLIProxyAPI`、WSL bridge
-- `WSL Linux`
-  - 唯一生产节点
-  - 跑 `snapshot -> AI -> validate -> risk -> execute -> journal`
+- `VPS`
+  - 唯一实盘 / 模拟盘生产节点：`qount-vps:/root/qount`
+  - 跑加密 X4 / C×D live、paper forward、dashboard 发布
+  - 站点：`qount.alyaloale.com`
+- `Windows / WSL`
+  - 旧研究和历史 artifact 环境
+  - 不再作为 live / paper / dashboard 生产真相
 
 ## 当前工程范围
 
@@ -43,7 +47,7 @@ Requires-Dist: lightgbm>=4.6.0; extra == "research-lightgbm"
 - `live` 现货 / USDT 合约执行骨架
 - SQLite 审计链
 - 成本感知 `signal-review`
-- WSL 运行脚本与 `systemd` 示例
+- VPS 运行脚本、同步脚本和 dashboard 发布入口
 
 ## 初始化
 
@@ -83,26 +87,37 @@ python -m qount.main candidate-walk-forward --research-profile eth-only --holdou
 `--research-profile eth-only` 会把 setup-model 训练默认值对齐当前 phase6 口径：`horizon_bars=6`、`split_higher_phase=true`。显式传 `--horizon-bars` 或 `--split-higher-phase` 时，以命令行参数为准。
 `backtest` / `walk-forward` 支持 `--holdout-role discovery|validation_v1|unknown` 和研究专用 `--ai-decision-cache`；live / run-once 不使用该缓存。
 
-如果你在 `Mac` 上不想盯 CLI，可以直接开本机浏览器面板：
+当前加密生产状态从 VPS 读取：
 
 ```bash
-./scripts/mac-monitor.sh --open
+ssh qount-vps 'cd /root/qount && tail -n 120 ~/cxd_live.log'
+ssh qount-vps 'cd /root/qount && python3 -m json.tool state/x4/live/latest.json'
+ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json 2>/dev/null || true'
+ssh qount-vps 'crontab -l'
 ```
 
-默认会在：
+生产调度不是隐含基础设施。2026-07-11 起，VPS `root` crontab 明确运行：
 
-```text
-http://127.0.0.1:8787
+- C×D/X4 live：每 5 分钟对账；当前 carry 暂停，实际为 trend-only。
+- C×D dashboard publisher：每 5 分钟、相对 live 错峰 2 分钟。
+- X4 paper forward：每日 10:00。
+
+三个入口都有两层防护：crontab 外层和脚本内层均使用 non-blocking `flock`，并设置总运行
+`timeout`；live 内层上限 110 秒。不要恢复无锁的 `*/2` 调度。Binance futures client 还会关闭
+CCXT 不需要的 private `fetchCurrencies`，避免 `load_markets()` 额外访问
+`/sapi/v1/capital/config/getall`。完整运维读法见
+[docs/quick-handoff.md](docs/quick-handoff.md)，可审计的生产 crontab 模板见
+[deploy/cron/qount-production.crontab](deploy/cron/qount-production.crontab)。
+
+发布 / 验证入口：
+
+```bash
+./scripts/sync-to-vps.sh --install
+./scripts/run-vps-tests.sh
 ```
 
-这个面板会通过 `ssh home -> WSL` 聚合：
-
-- `healthcheck`
-- `paper-status`
-- `paper-replay`
-- `signal-review`
-- `live-guard-status`
-- `systemd` timer 状态
+旧 `scripts/mac-monitor.sh` 是 WSL + `qount.main` 时代的 line A 面板，默认已弃用；不要把它当
+当前加密实盘状态入口。
 
 ## 运行模式
 
@@ -141,11 +156,11 @@ QOUNT_SYMBOLS=BTC/USDT,ETH/USDT
 仓库示例配置默认仍然保留 `binance`。
 如果你的运行环境对 `api.binance.com` 有区域限制，不要机械地直接切成 `binanceus`；先确认你实际使用的是哪类账户和 API。
 
-当前这套 Windows/WSL live 文档里，已经验证通过的路径仍然是：
+当前 VPS 生产路径里，已经验证通过的路径是：
 
 - `QOUNT_EXCHANGE_ID=binance`
 - Binance futures 私有接口
-- 独立 `7907` 代理出口
+- VPS 直连 Binance，不依赖 Windows/WSL 的 `7907` 代理出口
 
 只有当你**确实**在 Binance US 账户 / API 上运行时，才把：
 
@@ -161,20 +176,16 @@ QOUNT_EXCHANGE_ID=binanceus
 - 账户仓位模式是 `one-way`
 - 账户可用保证金乘以 `QOUNT_CONTRACT_LEVERAGE` 后，能覆盖交易对最小名义价值
 
-如果同时要让 WSL 内的 Python 访问本地 relay 和外网交易所，`.env` 里还要保留：
-
-```bash
-HTTP_PROXY=http://192.168.128.1:7907
-HTTPS_PROXY=http://192.168.128.1:7907
-NO_PROXY=127.0.0.1,localhost,192.168.128.1
-```
-
-当前这套 live 验证通过的链路里，`7907` 是给 `qount` 单独隔离出来的 Binance 专线，
-避免和 Mac 浏览器或 Windows 其他代理客户端共用 `7897/7898` 的出口配额。
+WSL 的 `HTTP_PROXY=http://192.168.128.1:7907` 等配置只属于历史研究 / 旧 line A 验证链路，
+不能作为当前实盘连通性依据。
 
 ## Live 切换保护
 
 `live` 模式不会因为你改了 `QOUNT_MODE=live` 就直接开单。
+
+注意：本节是旧 `qount.main` line A 的通用保护。当前加密 X4 / C×D 实盘在 VPS 上运行，
+使用独立开关 `QOUNT_X4_LIVE_ENABLE` / `QOUNT_RV_LIVE_ENABLE` /
+`QOUNT_CXD_CARRY_ENABLE`；不要用 `QOUNT_LIVE_ENABLE` 推断 X4/C×D 是否 armed。
 
 还必须满足：
 
@@ -249,41 +260,44 @@ python -m qount.main clear-halt
 - 已执行 paper 订单口径：用 `paper-replay`
 - 纯历史 full backtest：用 `backtest`
 
-当前已验证过的 WSL smoke-run 示例：
+当前 VPS 加密生产 smoke-check 示例：
 
 ```bash
-ssh home "wsl.exe bash -lc 'cd /home/alyaloale/Code/qount && set -a && source .env && set +a && PYTHONPATH=src ./.venv/bin/python -m qount.main backtest --start 2026-05-14T22:00:00+08:00 --end 2026-05-14T23:30:00+08:00 --max-bars 8 --review-horizon-bars 3 --review-threshold-pct 0.003'"
+ssh qount-vps 'cd /root/qount && QOUNT_CXD_CARRY_ENABLE=0 bash scripts/desktop/cxd_live_cron.sh dry'
+ssh qount-vps 'cd /root/qount && python3 -m json.tool state/x4/live/latest.json'
+ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json 2>/dev/null || true'
 ```
 
-这次验证结果里：
-
-- `runs_completed=8`
-- `paper_filled=1`
-- `final_equity_quote=200.57048367093842`
-- `total_return_pct=0.28524183546920767`
-
-如果当前 `Mac` 本机的 `7907` 公有接口代理不通，优先在 WSL 节点上跑这条命令，不要先怀疑回测逻辑本身。
+读法：dry 只读账户 / 算目标 / 写日志，不应发真实订单；carry 默认暂停
+(`QOUNT_CXD_CARRY_ENABLE=0`)，趋势腿仍由 VPS 上的 C×D orchestrator 驱动。
 
 ## 当前文档入口
 
-- [docs/current.md](docs/current.md)：当前事实、能力边界、运行状态和下一步。
-- [docs/holdout.md](docs/holdout.md)：`discovery_pool` / `validation_pool_v1` 与
-  `G_paper` / `G_live`。
-- [docs/quick-handoff.md](docs/quick-handoff.md)：接手命令、WSL/PowerShell 坑点、
-  sync/test 脚本和 artifact 规则。
-- [docs/update-log.md](docs/update-log.md)：近期 artifact、验证结果和读法。
-- [docs/optimization-plan.md](docs/optimization-plan.md)：2026-05-31 架构评审与
-  T-A..T-J 路线。
-- [docs/profit-research-plan.md](docs/profit-research-plan.md)：盈利研究历史路线；
-  旧 promotion gate 已被 `holdout.md` 取代。
-- [docs/profit-engineering-plan.md](docs/profit-engineering-plan.md)：架构天花板诊断
-  （主动管理基本定律）与现代量化 ML 升级路线（triple-barrier / meta-labeling / GBDT /
-  横截面多币 / Kelly sizing / LLM 重定位）。
+- 当前事实：[docs/current.md](docs/current.md)。
+- 项目规则、文档分类、研究线隔离和代码清理纪律：
+  [docs/project-rules.md](docs/project-rules.md)。
+- 接手命令、VPS 运维入口、sync/test 脚本和 artifact 规则：
+  [docs/quick-handoff.md](docs/quick-handoff.md)。
+- 验证边界：[docs/holdout.md](docs/holdout.md)，定义
+  `discovery_pool` / `validation_pool_v1` 与 `G_paper` / `G_live`。
+- 执行记录：[docs/update-log.md](docs/update-log.md)，记录近期 artifact、验证结果和读法。
+- 多智能体研究层：[docs/alpha-agent-plan.md](docs/alpha-agent-plan.md)，定义 Alpha Agents
+  research-only 角色、任务、source book、GLM-5.2 接入和后续量化接入边界。
+- 线 A legacy / 盈利工程历史：[docs/optimization-plan.md](docs/optimization-plan.md)、
+  [docs/profit-research-plan.md](docs/profit-research-plan.md)、
+  [docs/profit-engineering-plan.md](docs/profit-engineering-plan.md)。
+- 独立研究线：`docs/grid-binance-*.md`(线 B)、[docs/rv-c-plan.md](docs/rv-c-plan.md)(线 C)、
+  [docs/crypto-x4-plan.md](docs/crypto-x4-plan.md)(线 D)、`docs/l*-plan.md`(L1/L3/L4/L6)。
 
-当前基线：`ETH-only research-only`，live 和 forward paper 都关闭。生产真相在
-WSL `/home/alyaloale/Code/qount`，Mac `/Users/alyaloale/Code/qount` 是编辑和 git
-工作区。研究命令必须显式使用 `--research-profile eth-only` 或
-`--research-profile multi-symbol`，不要直接继承 WSL `.env` 的旧 4-symbol live 形状。
+当前基线：旧 line A `qount.main` 仍 research-only / live disabled；加密 X4 / C×D 的
+live、paper forward 和 dashboard 生产真相在 VPS `/root/qount`。Mac
+`/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
+`--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL
+`.env` 的旧 4-symbol live 形状。
+
+每批有意义的代码、运行或规则更改完成后，必须按
+[docs/project-rules.md](docs/project-rules.md) 更新对应记录文档：本线 changelog、
+[docs/update-log.md](docs/update-log.md)，以及必要时的 [docs/current.md](docs/current.md)。
 
 ## 当前流程
 
@@ -300,10 +314,10 @@ closed 5m bar -> snapshot -> candidate_filter -> AI -> validate -> risk -> execu
 app logic: src/qount/
 docs: docs/
 prompts: prompts/
-runtime state: state/
+runtime state: state/ (VPS production runtime state)
 research artifacts: state/research_runs/
 run scripts: scripts/
-systemd examples: deploy/systemd/
+vps scripts: scripts/desktop/*_cron.sh, scripts/sync-to-vps.sh
 ```
 
 ## 当前判断

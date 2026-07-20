@@ -27,16 +27,31 @@ def _resolved(path: Path) -> Path:
     return path.expanduser().resolve(strict=False)
 
 
+def _state_root(settings: Settings) -> Path:
+    return Path(getattr(settings, "state_dir", settings.project_root / "state"))
+
+
 def persistent_research_dir(settings: Settings, kind: str, label: str | None = None) -> Path:
     stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
     parts = [_sanitize_artifact_label(kind)]
     if label:
         parts.append(_sanitize_artifact_label(label))
-    return settings.project_root / "state" / "research_runs" / f"{stamp}-{'-'.join(parts)}"
+    root = _state_root(settings) / "research_runs"
+    root.mkdir(parents=True, exist_ok=True)
+    stem = f"{stamp}-{'-'.join(parts)}"
+    for collision_index in range(1000):
+        suffix = "" if collision_index == 0 else f"-{collision_index:02d}"
+        candidate = root / f"{stem}{suffix}"
+        try:
+            candidate.mkdir(exist_ok=False)
+        except FileExistsError:
+            continue
+        return candidate
+    raise RuntimeError(f"unable to allocate unique research artifact directory for {stem}")
 
 
 def should_mirror_to_research_runs(settings: Settings, path: Path) -> bool:
-    state_root = _resolved(settings.project_root / "state")
+    state_root = _resolved(_state_root(settings))
     return not _is_relative_to(_resolved(path), state_root)
 
 

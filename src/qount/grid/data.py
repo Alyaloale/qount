@@ -2,9 +2,9 @@
 
 S1 needs multi-year BTC OHLCV across regimes (2021 bull / 2022 bear / 2023-24 chop /
 2025-26 recent). We use the public dump at ``data.binance.vision`` rather than the ccxt
-REST API: it needs no key, no ccxt, no proxy from this host, and -- crucially for a
-kill-test -- it is *reproducible* (immutable monthly zips), so a backtest run can be
-replayed byte-for-byte later.
+REST API: it needs no key or ccxt. Binance can revise archived files after discovered
+issues, so reproducibility comes from retaining the exact ZIP plus its verified official
+``.CHECKSUM`` and project manifest, not from assuming the remote archive is immutable.
 
 Pure parsing (``parse_kline_csv``) is split from IO (``download_month`` / ``load_klines``)
 so the parser is unit-tested offline and the IO layer takes an injectable fetcher (tests
@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import calendar as _cal
 import datetime as _dt
+import hashlib
 import io
 import os
+import re
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -27,6 +30,7 @@ from typing import Iterator
 
 DEFAULT_CACHE_DIR = os.path.join("state", "grid_b", "klines")
 _BASE = "https://data.binance.vision/data"
+_SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def _normalize_ts(ts: int) -> int:
@@ -36,6 +40,65 @@ def _normalize_ts(ts: int) -> int:
     """
 
     return ts // 1000 if ts >= 1_000_000_000_000_000 else ts
+
+
+def checksum_url(archive_url: str) -> str:
+    """Return Binance Public Data's colocated SHA-256 sidecar URL."""
+
+    if not archive_url.endswith(".zip"):
+        raise ValueError("Binance archive URL must end with .zip")
+    return f"{archive_url}.CHECKSUM"
+
+
+def parse_checksum_sidecar(sidecar: bytes, expected_filename: str) -> str:
+    """Parse ``<sha256>  <filename>`` and bind it to the requested archive."""
+
+    if len(sidecar) > 4096:
+        raise ValueError("Binance checksum sidecar is unexpectedly large")
+    try:
+        text = sidecar.decode("ascii").strip()
+    except UnicodeDecodeError as exc:
+        raise ValueError("Binance checksum sidecar is not ASCII") from exc
+    parts = text.split()
+    if len(parts) < 2 or not _SHA256_PATTERN.fullmatch(parts[0]):
+        raise ValueError("Binance checksum sidecar format is invalid")
+    sidecar_filename = parts[-1].lstrip("*")
+    if os.path.basename(sidecar_filename) != expected_filename:
+        raise ValueError("Binance checksum filename does not match archive URL")
+    return parts[0].lower()
+
+
+def validate_archive_checksum(
+    archive: bytes,
+    sidecar: bytes,
+    *,
+    expected_filename: str,
+) -> str:
+    """Validate archive bytes against the official sidecar and return the hash."""
+
+    expected = parse_checksum_sidecar(sidecar, expected_filename)
+    actual = hashlib.sha256(archive).hexdigest()
+    if actual != expected:
+        raise ValueError("Binance archive SHA-256 mismatch")
+    return actual
+
+
+def verified_archive_fetch(
+    archive_url: str,
+    *,
+    fetch: Callable[[str], bytes],
+) -> bytes:
+    """Fetch one archive and sidecar, rejecting unverified or renamed bytes.
+
+    Pass this as the injectable ``fetch`` used by ``load_klines``/``load_funding``
+    for new strict ingestion. Existing caches are not silently relabeled as verified.
+    """
+
+    archive = fetch(archive_url)
+    sidecar = fetch(checksum_url(archive_url))
+    filename = os.path.basename(urllib.parse.urlparse(archive_url).path)
+    validate_archive_checksum(archive, sidecar, expected_filename=filename)
+    return archive
 
 
 def _market_path(market: str) -> str:
@@ -50,7 +113,7 @@ def _market_path(market: str) -> str:
 
 @dataclass(frozen=True)
 class Bar:
-    """One OHLCV bar. ``ts_ms`` is the open time in epoch milliseconds (UTC)."""
+    """One Binance kline bar. ``ts_ms`` is the open time in epoch milliseconds (UTC)."""
 
     ts_ms: int
     open: float
@@ -58,6 +121,10 @@ class Bar:
     low: float
     close: float
     volume: float
+    quote_volume: float | None = None
+    trade_count: int | None = None
+    taker_buy_base_volume: float | None = None
+    taker_buy_quote_volume: float | None = None
 
     @property
     def date(self) -> str:
@@ -77,10 +144,25 @@ class Funding:
 # --------------------------------------------------------------------------------------
 
 
+def _optional_float(cols: list[str], index: int) -> float | None:
+    try:
+        return float(cols[index])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+def _optional_int(cols: list[str], index: int) -> int | None:
+    try:
+        return int(cols[index])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
 def parse_kline_csv(text: str) -> list[Bar]:
     """Parse a Binance-vision kline CSV into bars.
 
-    Column layout: open_time_ms, open, high, low, close, volume, close_time, ... . Older
+    Column layout: open_time_ms, open, high, low, close, volume, close_time, quote_volume,
+    trade_count, taker_buy_base_volume, taker_buy_quote_volume, ignore. Older
     dumps have no header; newer ones (2025+) sometimes prepend a header row -- a non-numeric
     first field is treated as a header and skipped.
     """
@@ -110,6 +192,10 @@ def parse_kline_csv(text: str) -> list[Bar]:
                     low=float(cols[3]),
                     close=float(cols[4]),
                     volume=float(cols[5]),
+                    quote_volume=_optional_float(cols, 7),
+                    trade_count=_optional_int(cols, 8),
+                    taker_buy_base_volume=_optional_float(cols, 9),
+                    taker_buy_quote_volume=_optional_float(cols, 10),
                 )
             )
         except (ValueError, IndexError):
@@ -245,7 +331,7 @@ def download_day(
     """Return the per-day kline zip bytes, caching to ``cache_dir`` (reuses if present).
 
     Used to fill the in-progress current month, whose monthly dump only publishes after the
-    month ends. A past day's dump is immutable, so caching it is reproducible.
+    month ends. Retain and hash the exact bytes because Binance may revise archived files.
     """
 
     prefix = "" if market == "spot" else f"{market}-"

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-reports.schema.json",
+  "title": "qount Dashboard v1 reports",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "reports" },
+        "payload": {
+          "oneOf": [
+            { "$ref": "#/$defs/unavailable_payload" },
+            { "$ref": "#/$defs/available_payload" }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "summary_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "brief_id", "brief_hash", "report_date", "brief_status"],
+      "properties": {
+        "status": {},
+        "brief_id": {},
+        "brief_hash": {},
+        "report_date": {},
+        "brief_status": {}
+      }
+    },
+    "unavailable_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "brief"],
+      "properties": {
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reports"],
+          "properties": { "reports": { "const": "unavailable_until_phase_c_daily_brief" } }
+        },
+        "summary": {
+          "allOf": [
+            { "$ref": "#/$defs/summary_base" },
+            {
+              "properties": {
+                "status": { "const": "unavailable_until_phase_c_daily_brief" },
+                "brief_id": { "type": "null" },
+                "brief_hash": { "type": "null" },
+                "report_date": { "type": "null" },
+                "brief_status": { "type": "null" }
+              }
+            }
+          ]
+        },
+        "brief": { "type": "null" }
+      }
+    },
+    "available_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "brief"],
+      "properties": {
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reports"],
+          "properties": { "reports": { "const": "deterministic_daily_brief" } }
+        },
+        "summary": {
+          "allOf": [
+            { "$ref": "#/$defs/summary_base" },
+            {
+              "properties": {
+                "status": { "const": "available" },
+                "brief_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "brief_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "report_date": { "type": "string", "format": "date" },
+                "brief_status": { "enum": ["clear", "attention_required", "halt_required"] }
+              }
+            }
+          ]
+        },
+        "brief": { "$ref": "daily-brief-v1.schema.json" }
+      }
+    }
+  },
+  "unevaluatedProperties": false
+}

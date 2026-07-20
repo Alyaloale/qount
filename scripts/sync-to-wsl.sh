@@ -5,14 +5,20 @@ REMOTE_HOST="${QOUNT_WSL_HOST:-home}"
 REMOTE_DIR="${QOUNT_WSL_DIR:-/home/alyaloale/Code/qount}"
 
 usage() {
-  printf '%s\n' "Usage: scripts/sync-to-wsl.sh [--install]"
+  printf '%s\n' "Usage: scripts/sync-to-wsl.sh [--install] [--clean-code]"
+  printf '%s\n' "Explicitly update the independent WSL compute workspace."
 }
 
 install=false
+clean_code=false
 while (($#)); do
   case "$1" in
     --install)
       install=true
+      shift
+      ;;
+    --clean-code)
+      clean_code=true
       shift
       ;;
     -h|--help)
@@ -28,13 +34,24 @@ done
 
 cd "$(dirname "$0")/.."
 
-tar \
+if [[ "$clean_code" == true ]]; then
+  ssh -o ClearAllForwardings=yes "$REMOTE_HOST" 'wsl.exe bash -s' -- "$REMOTE_DIR" <<'EOF'
+set -euo pipefail
+REMOTE_DIR="$1"
+cd "$REMOTE_DIR"
+rm -rf deploy docs prompts scripts src tests
+EOF
+fi
+
+COPYFILE_DISABLE=1 tar \
+  --no-xattrs \
   --exclude='__pycache__' \
   --exclude='*.pyc' \
   --exclude='.DS_Store' \
   -cf - \
   README.md \
   pyproject.toml \
+  deploy \
   docs \
   prompts \
   scripts \
@@ -47,3 +64,4 @@ if [[ "$install" == true ]]; then
 fi
 
 printf '%s\n' "synced to ${REMOTE_HOST}:${REMOTE_DIR}"
+printf '%s\n' "WSL is an independent compute workspace; sync only when its compute code changes."

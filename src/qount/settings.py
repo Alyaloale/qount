@@ -165,7 +165,10 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         project_root = Path(_env("QOUNT_PROJECT_ROOT", str(PROJECT_ROOT)) or str(PROJECT_ROOT)).expanduser()
-        state_dir = project_root / "state"
+        state_dir = Path(
+            _env("QOUNT_STATE_DIR", str(project_root / "state"))
+            or str(project_root / "state")
+        ).expanduser()
         return cls(
             project_root=project_root,
             state_dir=state_dir,

@@ -4,7 +4,7 @@
 # the L6 close_auction × ETF T+0 execution line needs to split the next-day
 # reversal into overnight (T close -> T+1 open) vs intraday (T+1 open -> close).
 #
-# Reads /mnt/d/qount_l2_archive/l6_etf_l2_<date>.tar.{xz,zst}; writes
+# Reads $QOUNT_L2_ARCHIVE/l6_etf_l2_<date>.tar.{xz,zst}; writes
 # state/research_runs_etfopen/l6_daily_<date>/l6_daily_<date>.json (a SEPARATE
 # root so the all-symbol D0 panels are left untouched). Idempotent: a date whose
 # panel already exists is skipped. .tar.zst is skipped if zstd is unavailable.
@@ -13,8 +13,8 @@
 # Run on WSL:  nohup bash scripts/research/l6_etf_reetl.sh > /tmp/l6_reetl.log 2>&1 &
 set -uo pipefail
 REPO=/home/alyaloale/Code/qount
-ARCHIVE=/mnt/d/qount_l2_archive
-WORK="$HOME/l2work/reetl"
+ARCHIVE="${QOUNT_L2_ARCHIVE:-/mnt/e/qount_data/qount/datasets/l6_l2_archive}"
+WORK="${QOUNT_L2_WORK_DIR:-$HOME/l2work}/reetl"
 OUT="$REPO/state/research_runs_etfopen"
 PY="$REPO/.venv/bin/python"
 WORKERS=32

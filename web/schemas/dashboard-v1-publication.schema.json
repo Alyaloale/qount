@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-publication.schema.json",
+  "title": "qount Dashboard v1 atomic publication manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "publication_id", "generated_at", "data_cutoff", "source_hashes", "read_models", "publication_hash"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "publication_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+    "generated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+    "data_cutoff": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+    "source_hashes": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/source_hashes" },
+    "read_models": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overview", "positions", "orders", "strategies", "decisions", "risk", "readiness", "system", "alerts", "reports"],
+      "properties": {
+        "overview": { "$ref": "#/$defs/model" },
+        "positions": { "$ref": "#/$defs/model" },
+        "orders": { "$ref": "#/$defs/model" },
+        "strategies": { "$ref": "#/$defs/model" },
+        "decisions": { "$ref": "#/$defs/model" },
+        "risk": { "$ref": "#/$defs/model" },
+        "readiness": { "$ref": "#/$defs/model" },
+        "system": { "$ref": "#/$defs/model" },
+        "alerts": { "$ref": "#/$defs/model" },
+        "reports": { "$ref": "#/$defs/model" }
+      }
+    },
+    "publication_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_name", "read_model_id", "read_model_hash"],
+      "properties": {
+        "file_name": { "enum": ["overview.json", "positions.json", "orders.json", "strategies.json", "decisions.json", "risk.json", "readiness.json", "system.json", "alerts.json", "reports.json"] },
+        "read_model_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "read_model_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    }
+  }
+}

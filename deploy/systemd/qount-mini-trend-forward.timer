@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Qount MiniTrend order-free forward cycle daily
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+AccuracySec=1m
+Unit=qount-mini-trend-forward.service
+
+[Install]
+WantedBy=timers.target

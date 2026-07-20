@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-decisions.schema.json",
+  "title": "qount Dashboard v1 decision trace",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "decisions" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "batch", "strategies", "portfolio", "risk", "order_plan", "trace"],
+          "properties": {
+            "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
+            "batch": { "$ref": "#/$defs/batch" },
+            "strategies": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/strategy" } },
+            "portfolio": { "$ref": "#/$defs/portfolio" },
+            "risk": { "$ref": "#/$defs/risk" },
+            "order_plan": { "$ref": "#/$defs/order_plan" },
+            "trace": { "$ref": "#/$defs/trace" }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+    "timestamp": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+    "href": { "type": "string", "pattern": "^#/decisions\\?trace=[0-9a-f]{64}$" },
+    "string_list": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "hash_list": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/hash" } },
+    "batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["batch_id", "manifest_id", "manifest_hash", "snapshot_id", "created_at", "orders_authorized", "href"],
+      "properties": {
+        "batch_id": { "$ref": "#/$defs/hash" },
+        "manifest_id": { "$ref": "#/$defs/hash" },
+        "manifest_hash": { "$ref": "#/$defs/hash" },
+        "snapshot_id": { "$ref": "#/$defs/hash" },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "orders_authorized": { "const": false },
+        "href": { "$ref": "#/$defs/href" }
+      }
+    },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy_id", "strategy_version", "decision_id", "intent_hash", "decision_time", "reason_codes", "target_weights", "target_stress_loss_fraction", "href"],
+      "properties": {
+        "strategy_id": { "type": "string", "minLength": 1 },
+        "strategy_version": { "type": "string", "minLength": 1 },
+        "decision_id": { "$ref": "#/$defs/hash" },
+        "intent_hash": { "$ref": "#/$defs/hash" },
+        "decision_time": { "$ref": "#/$defs/timestamp" },
+        "reason_codes": { "$ref": "#/$defs/string_list" },
+        "target_weights": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/weights" },
+        "target_stress_loss_fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+        "href": { "$ref": "#/$defs/href" }
+      }
+    },
+    "portfolio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["portfolio_target_id", "target_hash", "decision_ids", "target_weights", "approved_target", "sleeve_contributions", "href"],
+      "properties": {
+        "portfolio_target_id": { "$ref": "#/$defs/hash" },
+        "target_hash": { "$ref": "#/$defs/hash" },
+        "decision_ids": { "$ref": "#/$defs/hash_list" },
+        "target_weights": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/weights" },
+        "approved_target": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/weights" },
+        "sleeve_contributions": { "type": "object", "additionalProperties": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/weights" } },
+        "href": { "$ref": "#/$defs/href" }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_decision_id", "decision_hash", "portfolio_target_id", "approved", "increase_risk_allowed", "reduce_risk_allowed", "adjustments", "violations", "href"],
+      "properties": {
+        "risk_decision_id": { "$ref": "#/$defs/hash" },
+        "decision_hash": { "$ref": "#/$defs/hash" },
+        "portfolio_target_id": { "$ref": "#/$defs/hash" },
+        "approved": { "type": "boolean" },
+        "increase_risk_allowed": { "type": "boolean" },
+        "reduce_risk_allowed": { "type": "boolean" },
+        "adjustments": { "$ref": "#/$defs/string_list" },
+        "violations": { "$ref": "#/$defs/string_list" },
+        "href": { "$ref": "#/$defs/href" }
+      }
+    },
+    "order_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order_plan_id", "plan_hash", "risk_decision_id", "executable", "blockers", "order_ids", "cancellation_ids", "href"],
+      "properties": {
+        "order_plan_id": { "$ref": "#/$defs/hash" },
+        "plan_hash": { "$ref": "#/$defs/hash" },
+        "risk_decision_id": { "$ref": "#/$defs/hash" },
+        "executable": { "type": "boolean" },
+        "blockers": { "$ref": "#/$defs/string_list" },
+        "order_ids": { "$ref": "#/$defs/string_list" },
+        "cancellation_ids": { "$ref": "#/$defs/hash_list" },
+        "href": { "$ref": "#/$defs/href" }
+      }
+    },
+    "trace_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "label", "integrity_hash", "href"],
+      "properties": {
+        "id": { "$ref": "#/$defs/hash" },
+        "type": { "enum": ["decision_batch", "market_snapshot", "strategy_decision", "portfolio_target", "risk_decision", "order_plan", "runtime_ledger", "reconciliation"] },
+        "label": { "type": "string", "minLength": 1 },
+        "integrity_hash": { "$ref": "#/$defs/hash" },
+        "href": { "$ref": "#/$defs/href" }
+      }
+    },
+    "trace_edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "relation"],
+      "properties": {
+        "from": { "$ref": "#/$defs/hash" },
+        "to": { "$ref": "#/$defs/hash" },
+        "relation": { "enum": ["contains", "informs", "contributes_to", "evaluated_by", "authorizes", "recorded_in", "verified_by"] }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": { "type": "array", "minItems": 6, "items": { "$ref": "#/$defs/trace_node" } },
+        "edges": { "type": "array", "minItems": 5, "items": { "$ref": "#/$defs/trace_edge" } }
+      }
+    }
+  }
+}

@@ -28,6 +28,7 @@ from qount.x4.live import (  # noqa: E402
     plan_stop_orders,
     portfolio_gate_open,
     prepare_swap,
+    sync_external_stop_latches,
     sync_stop_orders,
     target_weights,
     to_ccxt_symbol,
@@ -716,6 +717,60 @@ class TestChandelierStops(unittest.TestCase):
                                             self._bars(), {"ETHUSDT": {"trail_low": 100.0}},
                                             self._cfg(short_chandelier_mult=3.0))
         self.assertEqual(st["ETHUSDT"]["trail_low"], 90.0)
+
+    def test_external_stop_flat_short_sets_latch_and_blocks_reentry(self):
+        st, synced = sync_external_stop_latches(
+            [TargetWeight("ETHUSDT", -0.5)],
+            {"ETHUSDT": 0.0},
+            {"ETHUSDT": 104.0},
+            {"ETHUSDT": {"trail_low": 100.0}},
+            [{"symbol": "ETHUSDT", "side": "short", "value": -50.0}],
+            self._cfg(market_type="swap", short_chandelier_mult=3.0),
+        )
+        self.assertEqual(synced, ["ETHUSDT"])
+        self.assertTrue(st["ETHUSDT"]["latched"])
+
+        out, st2, trig = apply_chandelier_stops([TargetWeight("ETHUSDT", -0.5)], {"ETHUSDT": 104.0},
+                                                self._bars(), st, self._cfg(short_chandelier_mult=3.0))
+        self.assertEqual(out[0].weight, 0.0)
+        self.assertEqual(trig, [])
+        self.assertTrue(st2["ETHUSDT"]["latched"])
+
+    def test_external_stop_uses_compact_previous_holding_shape(self):
+        st, synced = sync_external_stop_latches(
+            [TargetWeight("ETHUSDT", -0.5)],
+            {"ETHUSDT": 0.0},
+            {"ETHUSDT": 104.0},
+            {"ETHUSDT": {"trail_low": 100.0}},
+            [{"s": "ETHUSDT", "side": "short", "value": -50.0}],
+            self._cfg(market_type="swap", short_chandelier_mult=3.0),
+        )
+        self.assertEqual(synced, ["ETHUSDT"])
+        self.assertTrue(st["ETHUSDT"]["latched"])
+
+    def test_external_stop_does_not_latch_never_held_target(self):
+        st, synced = sync_external_stop_latches(
+            [TargetWeight("ETHUSDT", -0.5)],
+            {"ETHUSDT": 0.0},
+            {"ETHUSDT": 104.0},
+            {"ETHUSDT": {"trail_low": 100.0}},
+            [],
+            self._cfg(market_type="swap", short_chandelier_mult=3.0),
+        )
+        self.assertEqual(synced, [])
+        self.assertEqual(st["ETHUSDT"]["trail_low"], 100.0)
+
+    def test_external_stop_does_not_latch_when_still_held_same_side(self):
+        st, synced = sync_external_stop_latches(
+            [TargetWeight("ETHUSDT", -0.5)],
+            {"ETHUSDT": -0.5},
+            {"ETHUSDT": 104.0},
+            {"ETHUSDT": {"trail_low": 100.0}},
+            [{"symbol": "ETHUSDT", "side": "short", "value": -50.0}],
+            self._cfg(market_type="swap", short_chandelier_mult=3.0),
+        )
+        self.assertEqual(synced, [])
+        self.assertEqual(st["ETHUSDT"]["trail_low"], 100.0)
 
 
 class TestUnreachableCoins(unittest.TestCase):

@@ -44,7 +44,7 @@ def apply_research_profile(settings: Settings, raw_profile: str | None) -> Setti
             max_open_positions=1,
             hourly_model_enable=False,
             setup_model_enable=True,
-            setup_model_path=settings.project_root / "state" / "models" / ETH_ONLY_SETUP_MODEL,
+            setup_model_path=settings.state_dir / "models" / ETH_ONLY_SETUP_MODEL,
             trailing_profit_arm_pct=ETH_ONLY_TRAILING_PROFIT_ARM_PCT,
             trailing_profit_retrace_pct=ETH_ONLY_TRAILING_PROFIT_RETRACE_PCT,
             ai_temperature=0.0,
@@ -59,7 +59,7 @@ def apply_research_profile(settings: Settings, raw_profile: str | None) -> Setti
             max_open_positions=MULTI_SYMBOL_MAX_OPEN_POSITIONS,
             hourly_model_enable=False,
             setup_model_enable=True,
-            setup_model_path=settings.project_root / "state" / "models" / MULTI_SYMBOL_SETUP_MODEL,
+            setup_model_path=settings.state_dir / "models" / MULTI_SYMBOL_SETUP_MODEL,
             ai_temperature=0.0,
         )
     raise ValueError(f"unsupported_research_profile:{raw_profile}")

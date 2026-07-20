@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "point_in_time": true,
+    "as_of_join": true,
+    "replayable": true,
+    "trial_count": 1,
+    "exchange_rules_source": "runtime_exchange_info",
+    "filter_validator_reused": true,
+    "costs_included": true,
+    "funding_included": true,
+    "min_notional_coverage": 1.0,
+    "worst_case_cost_buffer_pct": 0.1,
+    "effective_breadth": 1.0
+  },
+  "periods": [
+    {
+      "ts": "2026-01",
+      "strategy_return_pct": 2.0,
+      "btc_return_pct": 1.0,
+      "top3_equal_weight_return_pct": 0.5,
+      "current_live_baseline_return_pct": 0.2
+    },
+    {
+      "ts": "2026-02",
+      "strategy_return_pct": 1.0,
+      "btc_return_pct": -1.0,
+      "top3_equal_weight_return_pct": -0.2,
+      "current_live_baseline_return_pct": 0.1
+    },
+    {
+      "ts": "2026-03",
+      "strategy_return_pct": 1.0,
+      "btc_return_pct": 0.0,
+      "top3_equal_weight_return_pct": 0.1,
+      "current_live_baseline_return_pct": 0.0
+    }
+  ]
+}

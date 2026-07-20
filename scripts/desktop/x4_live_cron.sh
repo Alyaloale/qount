@@ -51,9 +51,3 @@ if [ $rc -ne 0 ] || ! printf '%s' "$out" | grep -qF "[X4-LIVE live]"; then
   echo "[ALERT] x4 live FAILED rc=$rc :: $last" >> "$LOG"
   notify "X4实盘告警·运行失败" "$(date '+%F %T') rc=$rc%0A$last"
 fi
-
-# Publish the live snapshot to the dashboard web dir (站点 qount.alyaloale.com, web/site).
-# Caddy serves /var/www/qount/data/x4_live.json; harmless no-op if the web dir doesn't exist.
-WEB_DATA="/var/www/qount/data"
-[ -d "$WEB_DATA" ] && cp -f "$REPO/state/x4/live/latest.json" "$WEB_DATA/x4_live.json" 2>/dev/null \
-  && echo "[web] published x4_live.json" >> "$LOG"

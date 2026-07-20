@@ -67,8 +67,6 @@ cxd={
 }
 out=REPO/"state/cxd/live"; out.mkdir(parents=True,exist_ok=True)
 (out/"latest.json").write_text(json.dumps(cxd,indent=2,default=float))
-# NOTE: this writes ONLY the reconciled carry truth to state/. It does NOT write the web file —
-# cxd_live_cron.sh's bundle is the SINGLE writer of /var/www/qount/data/cxd_live.json, and it reads
-# this state file for the carry leg. (Before 2026-06-19 both wrote the web file with incompatible
-# schemas -> the dashboard flickered between $62/+Δ2 and $148/−Δ23 every few minutes.)
+# NOTE: this writes only the reconciled carry truth to state/. Dashboard v1 must consume a verified
+# ledger snapshot through its dedicated publisher; legacy web JSON writers are intentionally removed.
 print(json.dumps({"carry":cxd["carry"],"total":cxd["total_capital"],"weights":cxd["weights"]},default=float))

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Qount verified Dashboard v1 publisher every two minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/2:00
+Persistent=true
+RandomizedDelaySec=5s
+AccuracySec=1s
+Unit=qount-dashboard-publisher.service
+
+[Install]
+WantedBy=timers.target

@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 if "ccxt" not in sys.modules:
@@ -17,6 +18,7 @@ if "ccxt" not in sys.modules:
     )
 
 from qount.exchange_utils import ExchangePool
+from qount.exchange_utils import build_exchange
 from qount.journal import Journal
 from qount.analytics import LiveAnalyticsService
 from qount.exchange_utils import call_with_time_sync_retry
@@ -479,6 +481,44 @@ class ExchangeThrottlingTests(unittest.TestCase):
             settings = make_settings(root)
             pool = ExchangePool(settings)
             self.assertIs(pool.public(), pool.public())
+
+    def test_build_exchange_disables_private_currency_metadata_call_and_bounds_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp), market_type="future")
+            with mock.patch.dict("os.environ", {"QOUNT_CCXT_TIMEOUT_MS": "7000"}):
+                exchange = build_exchange(settings, private=True)
+
+            raw_options = exchange.options
+            exchange_options = raw_options if "fetchCurrencies" in raw_options else raw_options["options"]
+            timeout_ms = getattr(exchange, "timeout", raw_options.get("timeout"))
+            self.assertFalse(exchange_options["fetchCurrencies"])
+            self.assertEqual(exchange_options["fetchMarkets"]["types"], ["linear"])
+            self.assertEqual(timeout_ms, 7000)
+
+    def test_build_exchange_clamps_invalid_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            with mock.patch.dict("os.environ", {"QOUNT_CCXT_TIMEOUT_MS": "invalid"}):
+                exchange = build_exchange(settings)
+            self.assertEqual(getattr(exchange, "timeout", exchange.options.get("timeout")), 10000)
+
+    def test_build_exchange_can_explicitly_bypass_a_broken_global_proxy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(
+                Path(tmp),
+                http_proxy="http://127.0.0.1:7890",
+                https_proxy="http://127.0.0.1:7890",
+            )
+            with mock.patch.dict(
+                "os.environ", {"QOUNT_EXCHANGE_BYPASS_PROXY": "true"}
+            ):
+                exchange = build_exchange(settings)
+            raw_options = exchange.options
+            self.assertNotIn("httpsProxy", raw_options)
+            self.assertNotIn("httpProxy", raw_options)
+            session = getattr(exchange, "session", None)
+            if session is not None and hasattr(session, "trust_env"):
+                self.assertFalse(session.trust_env)
 
     def test_live_analytics_retries_timestamp_ahead_error_and_returns_realized_pnl(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

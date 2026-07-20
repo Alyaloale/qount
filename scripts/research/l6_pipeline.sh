@@ -3,12 +3,10 @@
 #
 # Producer (downloader, ~10MB/s network-bound) and consumer (extract -> parallel
 # ETL -> xz archive -> delete) run CONCURRENTLY so the slow download overlaps with
-# CPU processing — no stage blocks the other. Two space guards keep D: from filling:
-#   * downloader pauses when D: free < MIN_FREE_GB OR pending .7z >= MAX_PENDING
+# CPU processing — no stage blocks the other. Two space guards keep the external drive from filling:
+#   * downloader pauses when external free < MIN_FREE_GB OR pending .7z >= MAX_PENDING
 #   * processor is single-day-serial (ext4/VHDX peak = one day), deletes .7z + the
-#     unpacked dir right after the xz archive verifies, freeing D: immediately.
-# IMPORTANT: the WSL ext4 VHDX lives on D: and does NOT shrink when files are
-# deleted, so space is judged on `df /mnt/d` (real), never `df /home` (virtual).
+#     unpacked dir right after the xz archive verifies, freeing external space immediately.
 #
 # Idempotent: a date whose archive already exists (or whose .7z is gone) is skipped,
 # so killing/restarting just resumes. research-only; no live, no orders.
@@ -24,7 +22,7 @@ set -uo pipefail
 # 下载模式:
 #   "cli"      = 脚本调用 BaiduPCS-Go 等命令行工具自动下载(全自动,需登录)
 #   "external" = 你用网盘 GUI / 其他方式自己下到 $SRCDIR,脚本只做处理(消费者);
-#                下完后在 WSL 执行  touch /mnt/d/BaiduNetdiskDownload/.l6_download_done  让脚本收尾
+#                下完后在 WSL 执行  touch "$SRCDIR/.l6_download_done"  让脚本收尾
 DOWNLOAD_MODE="external"
 REMOTE_DIR="/your/baidu/netdisk/path"      # <-- (cli 模式)网盘里 .7z 所在目录
 DATES="20250303 20250304 20250305"          # <-- (cli 模式)要下的交易日;external 模式可留空
@@ -32,15 +30,15 @@ DL_PARALLEL=16                               # 下载线程(网速 ~10MB/s 是�
 
 # ---- paths / knobs (usually no need to change) ----
 REPO=/home/alyaloale/Code/qount
-SRCDIR=/mnt/d/BaiduNetdiskDownload           # .7z 落地(D 盘 NTFS)
+SRCDIR="${QOUNT_L2_SOURCE_DIR:-/mnt/e/qount_data/qount/scratch/l6-incoming}"
 BAD="$SRCDIR/_bad"                           # 处理失败的坏 .7z 隔离区(移出 glob,processor 不再重试)
-ARCHIVE=/mnt/d/qount_l2_archive              # ETF 压缩归档(D 盘 NTFS)
-WORK="$HOME/l2work"                          # 解压工作区(ext4,VHDX 在 D 盘)
+ARCHIVE="${QOUNT_L2_ARCHIVE:-/mnt/e/qount_data/qount/datasets/l6_l2_archive}"
+WORK="${QOUNT_L2_WORK_DIR:-$HOME/l2work}"    # 解压工作区(WSL ext4 scratch)
 PY="$REPO/.venv/bin/python"
 WORKERS=32                                   # ETL 并行核数
-MIN_FREE_GB=70                               # D 盘可用低于此,暂停下载(留单天解压 + 余量)
+MIN_FREE_GB=70                               # 外置盘可用低于此,暂停下载(留单天解压 + 余量)
 MAX_PENDING=3                                # 未处理 .7z 缓冲上限(3×~5G=15G)
-PROC_MIN_FREE_GB=55                          # 解压前要求的 D 盘可用(单天 VHDX 增长 ~40-50G)
+PROC_MIN_FREE_GB=55                          # 解压前要求的外置盘可用余量
 ETF_RE='^(159|51[0-8]|56[0-3]|588)[0-9]'
 # 已知合法的低标的交易日(源数据本身 <6000,非半包下载)——空格分隔;跳过 scored<6000 守卫。
 LOW_OK_DATES="20260210"

@@ -30,6 +30,7 @@ sys.path.insert(0, str(REPO / "src"))
 from qount.grid.data import load_funding, load_klines  # noqa: E402
 from qount.rv.stats import returns_from_curve  # noqa: E402
 from qount.x4.backtest import run_directional, run_grid, run_pair  # noqa: E402
+from qount.x4.funding import holding_period_funding  # noqa: E402
 from qount.x4.strategies import (  # noqa: E402
     GridStrategy,
     MomentumBreakout,
@@ -65,9 +66,9 @@ def _pearson(a: list[float], b: list[float]) -> float:
     return cov / (va ** 0.5 * vb ** 0.5)
 
 
-def _funding_map(symbol, start, end):
+def _funding_map(symbol, start, end, bars, interval):
     rows = load_funding(symbol, start=start, end=end, skip_missing=True)
-    return {f.ts_ms: f.rate for f in rows}
+    return holding_period_funding(rows, bars, interval)
 
 
 def _per_year(curve: list[float], bars: list, bars_per_year: float) -> dict[str, float]:
@@ -110,7 +111,7 @@ def main(argv: list[str]) -> int:
     eth_a = [eth_by_ts[b.ts_ms] for b in btc_a]
     print(f"  aligned bars: {len(btc_a)} ({btc_a[0].date}..{btc_a[-1].date})")
 
-    fmap = _funding_map(btc_sym, (sy, sm), (ey, em))
+    fmap = _funding_map(btc_sym, (sy, sm), (ey, em), btc_a, interval)
     funding = lambda bar: fmap.get(bar.ts_ms, 0.0)  # noqa: E731
 
     # B3-optimized config (root cause of the B1-b losses: 1h whipsaw + shorting an uptrending
@@ -195,6 +196,7 @@ def main(argv: list[str]) -> int:
     out.write_text(json.dumps({
         "window": [start, end], "interval": interval, "n_bars": len(btc_a),
         "capital": CAPITAL, "taker_fee": TAKER_FEE, "slippage": SLIPPAGE,
+        "funding_alignment": "all_settlements_in_next_completed_bar_holding_period",
         "metrics": rows, "correlation": corr, "per_year": attr,
     }, indent=2))
     print(f"\n  artifact -> {out.relative_to(REPO)}")

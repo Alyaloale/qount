@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-alerts.schema.json",
+  "title": "qount Dashboard v1 alerts",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "alerts" },
+        "payload": {
+          "oneOf": [
+            { "$ref": "#/$defs/unavailable_payload" },
+            { "$ref": "#/$defs/available_payload" }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "unavailable_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "alerts"],
+      "properties": {
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["notifications"],
+          "properties": {
+            "notifications": { "const": "unavailable_until_phase_c_notification_store" }
+          }
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "open_alert_count", "severity_counts", "delivery_state_counts", "audit_last_hash", "audit_row_count"],
+          "properties": {
+            "status": { "const": "unavailable_until_phase_c_notification_store" },
+            "open_alert_count": { "type": "null" },
+            "severity_counts": { "type": "null" },
+            "delivery_state_counts": { "type": "null" },
+            "audit_last_hash": { "type": "null" },
+            "audit_row_count": { "type": "null" }
+          }
+        },
+        "alerts": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "available_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "alerts"],
+      "properties": {
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["notifications"],
+          "properties": { "notifications": { "const": "notification_store" } }
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "open_alert_count", "severity_counts", "delivery_state_counts", "audit_last_hash", "audit_row_count"],
+          "properties": {
+            "status": { "const": "available" },
+            "open_alert_count": { "type": "integer", "minimum": 0 },
+            "severity_counts": { "$ref": "#/$defs/severity_counts" },
+            "delivery_state_counts": { "$ref": "#/$defs/delivery_counts" },
+            "audit_last_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+            "audit_row_count": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "alerts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/alert" }
+        }
+      }
+    },
+    "severity_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["INFO", "WARNING", "CRITICAL", "HALT"],
+      "properties": {
+        "INFO": { "type": "integer", "minimum": 0 },
+        "WARNING": { "type": "integer", "minimum": 0 },
+        "CRITICAL": { "type": "integer", "minimum": 0 },
+        "HALT": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "delivery_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["PENDING", "RETRY_WAIT", "DELIVERED", "DEAD_LETTER"],
+      "properties": {
+        "PENDING": { "type": "integer", "minimum": 0 },
+        "RETRY_WAIT": { "type": "integer", "minimum": 0 },
+        "DELIVERED": { "type": "integer", "minimum": 0 },
+        "DEAD_LETTER": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "alert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "alert_id", "severity", "category", "title", "summary", "occurred_at", "source_type", "source_id", "source_hash", "dedupe_key", "trace_id", "event_hash", "status", "resolved_at", "state_hash", "deliveries"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "alert_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "severity": { "enum": ["INFO", "WARNING", "CRITICAL", "HALT"] },
+        "category": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "occurred_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "source_type": { "enum": ["decision_batch", "runtime_ledger", "reconciliation", "system"] },
+        "source_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "dedupe_key": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "trace_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+          ]
+        },
+        "event_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "status": { "enum": ["OPEN", "RESOLVED"] },
+        "resolved_at": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }
+          ]
+        },
+        "state_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "deliveries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/delivery" }
+        }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "channel", "delivery_key", "status", "attempt_count", "max_attempts", "next_attempt_at", "last_attempt_at", "delivered_at", "last_error", "job_hash"],
+      "properties": {
+        "job_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "channel": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$" },
+        "delivery_key": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "status": { "enum": ["PENDING", "RETRY_WAIT", "DELIVERED", "DEAD_LETTER"] },
+        "attempt_count": { "type": "integer", "minimum": 0 },
+        "max_attempts": { "type": "integer", "minimum": 1 },
+        "next_attempt_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+        "last_attempt_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+        "delivered_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+        "last_error": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }] },
+        "job_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    }
+  },
+  "unevaluatedProperties": false
+}

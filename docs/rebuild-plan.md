@@ -530,6 +530,10 @@ artifacts:`state/research_runs/manual-cta-tqsdk-commodity-{trend,carry}.json`(WS
 
 ## 12. 跨主机角色与运维(CTA-R 专用)
 
+> 2026-07-18起，本节旧的“WSL内`state/`为canonical”拓扑已被
+> [storage-topology.md](storage-topology.md)取代。当前是Mac研究、Windows外置盘存储、WSL计算、VPS运行；
+> 以下内容只保留CTA-R历史操作背景。
+
 > `docs/quick-handoff.md` 是 §7 止盈的旧加密线的运维手册;CTA-R 的跨主机现实记在这里。
 
 ### 12.1 角色定位

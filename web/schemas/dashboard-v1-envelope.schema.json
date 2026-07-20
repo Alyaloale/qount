@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-envelope.schema.json",
+  "title": "qount Dashboard v1 read model envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "read_model_type",
+    "read_model_id",
+    "generated_at",
+    "data_cutoff",
+    "source_hashes",
+    "stale_after_seconds",
+    "freshness",
+    "payload",
+    "read_model_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "read_model_type": { "enum": ["overview", "positions", "orders", "strategies", "decisions", "risk", "readiness", "system", "alerts", "reports"] },
+    "read_model_id": { "$ref": "#/$defs/hash" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "data_cutoff": { "$ref": "#/$defs/timestamp" },
+    "source_hashes": { "$ref": "#/$defs/source_hashes" },
+    "stale_after_seconds": { "type": "integer", "minimum": 1 },
+    "freshness": { "$ref": "#/$defs/freshness" },
+    "payload": { "type": "object" },
+    "read_model_hash": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "source_hashes": { "required": ["runtime_ledger"] }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "authority": {
+                "properties": {
+                  "account_and_pnl": { "const": "runtime_ledger" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "authority": {
+                "properties": {
+                  "account_and_pnl": { "const": "unavailable_until_phase_b_ledger" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_hashes": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decision_batch_manifest", "strategy_registry"],
+          "properties": {
+            "decision_batch_manifest": { "$ref": "#/$defs/hash" },
+            "strategy_registry": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decision_batch_manifest", "strategy_registry", "runtime_ledger"],
+          "properties": {
+            "decision_batch_manifest": { "$ref": "#/$defs/hash" },
+            "strategy_registry": { "$ref": "#/$defs/hash" },
+            "runtime_ledger": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["notification_store"],
+          "properties": {
+            "notification_store": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["daily_brief"],
+          "properties": {
+            "daily_brief": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decision_batch_manifest", "strategy_registry", "system_health"],
+          "properties": {
+            "decision_batch_manifest": { "$ref": "#/$defs/hash" },
+            "strategy_registry": { "$ref": "#/$defs/hash" },
+            "system_health": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decision_batch_manifest", "strategy_registry", "runtime_ledger", "system_health"],
+          "properties": {
+            "decision_batch_manifest": { "$ref": "#/$defs/hash" },
+            "strategy_registry": { "$ref": "#/$defs/hash" },
+            "runtime_ledger": { "$ref": "#/$defs/hash" },
+            "system_health": { "$ref": "#/$defs/hash" }
+          }
+        }
+      ]
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source_updated_at", "evaluated_at", "stale_at"],
+      "properties": {
+        "status": { "enum": ["fresh", "stale"] },
+        "source_updated_at": { "$ref": "#/$defs/timestamp" },
+        "evaluated_at": { "$ref": "#/$defs/timestamp" },
+        "stale_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "governance", "account_and_pnl"],
+      "properties": {
+        "decision": { "const": "verified_decision_batch" },
+        "governance": { "const": "strategy_registry" },
+        "account_and_pnl": { "enum": ["unavailable_until_phase_b_ledger", "runtime_ledger"] }
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "propertyNames": { "minLength": 1 }
+    },
+    "ledger_unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source", "values"],
+      "properties": {
+        "status": { "const": "unavailable_until_phase_b_ledger" },
+        "source": { "const": "runtime_ledger" },
+        "values": { "type": "null" }
+      }
+    },
+    "ledger_available": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source", "values"],
+      "properties": {
+        "status": { "const": "available" },
+        "source": { "const": "runtime_ledger" },
+        "values": { "type": "object" }
+      }
+    }
+  }
+}

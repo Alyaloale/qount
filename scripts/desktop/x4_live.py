@@ -44,6 +44,7 @@ from qount.x4.live import (  # noqa: E402
     carry_flow_adjusted_pnl,
     prepare_swap,
     sync_stop_orders,
+    sync_external_stop_latches,
     target_weights,
     to_ccxt_symbol,
     unreachable_coins,
@@ -185,7 +186,18 @@ def main(argv: list[str]) -> int:
         stop_state = json.loads(stops_path.read_text())
     except Exception:
         stop_state = {}
+    try:
+        prev_latest = json.loads((STATE_DIR / "latest.json").read_text())
+    except Exception:
+        prev_latest = {}
+    stop_state, stop_synced = sync_external_stop_latches(
+        tw, balances, prices, stop_state, prev_latest.get("holdings") or [], cfg
+    )
+    if stop_synced:
+        print(f"  [STOP-SYNC] 交易所止损/外部平仓已同步 latch: {', '.join(stop_synced)}")
     tw, stop_state, stopped = apply_chandelier_stops(tw, prices, aligned, stop_state, cfg)
+    if stop_synced:
+        stopped = list(dict.fromkeys(list(stop_synced) + list(stopped)))
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     stops_path.write_text(json.dumps(stop_state, indent=2, default=float))
     if stopped:

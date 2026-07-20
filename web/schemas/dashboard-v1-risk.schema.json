@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-risk.schema.json",
+  "title": "qount Dashboard v1 risk and reconciliation",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "risk" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "decision", "runtime"],
+          "properties": {
+            "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
+            "decision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["risk_decision_id", "approved", "increase_risk_allowed", "reduce_risk_allowed", "adjustments", "violations", "blockers"],
+              "properties": {
+                "risk_decision_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "approved": { "type": "boolean" },
+                "increase_risk_allowed": { "type": "boolean" },
+                "reduce_risk_allowed": { "type": "boolean" },
+                "adjustments": { "$ref": "#/$defs/string_list" },
+                "violations": { "$ref": "#/$defs/string_list" },
+                "blockers": { "$ref": "#/$defs/string_list" }
+              }
+            },
+            "runtime": {
+              "oneOf": [
+                { "$ref": "dashboard-v1-envelope.schema.json#/$defs/ledger_unavailable" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "values"],
+                  "properties": {
+                    "status": { "const": "available" },
+                    "source": { "const": "runtime_ledger" },
+                    "values": { "$ref": "#/$defs/runtime" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "string_list": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "count_map": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "propertyNames": { "minLength": 1 } },
+    "number_map": { "type": "object", "additionalProperties": { "type": "number" }, "propertyNames": { "minLength": 1 } },
+    "position_difference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_ledger_difference", "ledger_exchange_difference", "tolerance", "target_ledger_mismatch", "ledger_exchange_mismatch"],
+      "properties": {
+        "target_ledger_difference": { "type": "number" },
+        "ledger_exchange_difference": { "type": "number" },
+        "tolerance": { "type": "number", "minimum": 0 },
+        "target_ledger_mismatch": { "type": "boolean" },
+        "ledger_exchange_mismatch": { "type": "boolean" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate_status", "reason_codes", "reconciliation", "accounting", "protective_order_status_counts", "cash_event_counts", "cash_event_amounts"],
+      "properties": {
+        "gate_status": { "enum": ["pass", "block"] },
+        "reason_codes": { "$ref": "#/$defs/string_list" },
+        "reconciliation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reconciliation_id", "passed", "risk_increase_allowed", "halt_required", "blockers", "position_differences", "equity_residual", "equity_residual_tolerance"],
+          "properties": {
+            "reconciliation_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+            "passed": { "type": "boolean" },
+            "risk_increase_allowed": { "type": "boolean" },
+            "halt_required": { "type": "boolean" },
+            "blockers": { "$ref": "#/$defs/string_list" },
+            "position_differences": { "type": "object", "additionalProperties": { "$ref": "#/$defs/position_difference" }, "propertyNames": { "minLength": 1 } },
+            "equity_residual": { "type": "number" },
+            "equity_residual_tolerance": { "type": "number", "minimum": 0 }
+          }
+        },
+        "accounting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["nav_mark_id", "mark_hash", "passed", "residual", "residual_tolerance", "funding", "fees", "transfers"],
+          "properties": {
+            "nav_mark_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+            "mark_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+            "passed": { "type": "boolean" },
+            "residual": { "type": "number" },
+            "residual_tolerance": { "type": "number", "minimum": 0 },
+            "funding": { "type": "number" },
+            "fees": { "type": "number", "minimum": 0 },
+            "transfers": { "type": "number" }
+          }
+        },
+        "protective_order_status_counts": { "$ref": "#/$defs/count_map" },
+        "cash_event_counts": { "$ref": "#/$defs/count_map" },
+        "cash_event_amounts": { "$ref": "#/$defs/number_map" }
+      }
+    }
+  }
+}

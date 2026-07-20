@@ -1,0 +1,209 @@
+{
+  "schema_version": "equity_mapping_g0_input_v0.2",
+  "dataset_role": "synthetic_fixture",
+  "config": {},
+  "events": [
+    {
+      "instrument": {
+        "venue": "fixture-venue",
+        "venue_symbol": "NVDAUSDT",
+        "venue_base_currency": "NVDA",
+        "cash_quote_venue": "fixture-cash",
+        "stablecoin_quote_venue": "fixture-fx",
+        "cash_symbol": "NVDA",
+        "product_kind": "equity_perpetual",
+        "claim_kind": "synthetic_derivative",
+        "quote_currency": "USDT",
+        "price_multiplier": 1.0,
+        "price_multiplier_scope": "mapped_quote_to_one_cash_share",
+        "mapping_available_at": "2026-07-19T12:00:00+00:00",
+        "mapping_source_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "mapped_quote": {
+        "venue": "fixture-venue",
+        "symbol": "NVDAUSDT",
+        "product_kind": "equity_perpetual",
+        "base_currency": "NVDA",
+        "bid": 94.9,
+        "ask": 95.1,
+        "quote_currency": "USDT",
+        "quote_at": "2026-07-20T13:24:55+00:00",
+        "available_at": "2026-07-20T13:24:55+00:00",
+        "source_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "session": "continuous"
+      },
+      "cash_premarket_quote": {
+        "venue": "fixture-cash",
+        "symbol": "NVDA",
+        "product_kind": "cash_equity",
+        "base_currency": "NVDA",
+        "bid": 99.9,
+        "ask": 100.1,
+        "quote_currency": "USD",
+        "quote_at": "2026-07-20T13:24:56+00:00",
+        "available_at": "2026-07-20T13:24:56+00:00",
+        "source_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "session": "premarket"
+      },
+      "usdt_usd_quote": {
+        "venue": "fixture-fx",
+        "symbol": "USDTUSD",
+        "product_kind": "fx_spot",
+        "base_currency": "USDT",
+        "bid": 0.999,
+        "ask": 1.001,
+        "quote_currency": "USD",
+        "quote_at": "2026-07-20T13:24:57+00:00",
+        "available_at": "2026-07-20T13:24:57+00:00",
+        "source_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "session": "continuous"
+      },
+      "cash_session": {
+        "cash_trading_date": "2026-07-20",
+        "is_trading_day": true,
+        "session_type": "regular",
+        "suspended": false,
+        "regular_open_time_local": "09:30:00",
+        "regular_close_time_local": "16:00:00",
+        "calendar_available_at": "2026-07-19T12:00:00+00:00",
+        "calendar_source_hash": "5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "corporate_action": {
+        "cash_symbol": "NVDA",
+        "cash_trading_date": "2026-07-20",
+        "status": "none",
+        "action_kind": "none",
+        "adjustment_factor": null,
+        "adjustment_scope": "none",
+        "effective_at": null,
+        "available_at": "2026-07-19T12:00:00+00:00",
+        "source_hash": "6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "event_context": {
+        "closure_kind": "ordinary_weekend",
+        "is_earnings": false,
+        "available_at": "2026-07-19T12:00:00+00:00",
+        "source_hash": "7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "stress_scenario": {
+        "scenario_id": "synthetic-gap-spread-stress-v1",
+        "stress_loss_fraction": 0.1,
+        "method": "historical_gap_spread_haircut",
+        "included_components": [
+          "mapped_spread",
+          "stablecoin_conversion_spread",
+          "fees",
+          "slippage",
+          "gap_tail",
+          "market_impact"
+        ],
+        "observation_end_at": "2026-07-18T00:00:00+00:00",
+        "available_at": "2026-07-19T12:00:00+00:00",
+        "source_hash": "8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      "account_equity_usdt": 1000.0,
+      "minimum_notional_usdt": 5.0
+    },
+    {
+      "instrument": {
+        "venue": "fixture-venue",
+        "venue_symbol": "TSLAUSDT",
+        "venue_base_currency": "TSLA",
+        "cash_quote_venue": "fixture-cash",
+        "stablecoin_quote_venue": "fixture-fx",
+        "cash_symbol": "TSLA",
+        "product_kind": "equity_perpetual",
+        "claim_kind": "synthetic_derivative",
+        "quote_currency": "USDT",
+        "price_multiplier": 1.0,
+        "price_multiplier_scope": "mapped_quote_to_one_cash_share",
+        "mapping_available_at": "2026-07-19T12:00:00+00:00",
+        "mapping_source_hash": "9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "mapped_quote": {
+        "venue": "fixture-venue",
+        "symbol": "TSLAUSDT",
+        "product_kind": "equity_perpetual",
+        "base_currency": "TSLA",
+        "bid": 299.4,
+        "ask": 299.6,
+        "quote_currency": "USDT",
+        "quote_at": "2026-07-20T13:24:55+00:00",
+        "available_at": "2026-07-20T13:24:55+00:00",
+        "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "session": "continuous"
+      },
+      "cash_premarket_quote": {
+        "venue": "fixture-cash",
+        "symbol": "TSLA",
+        "product_kind": "cash_equity",
+        "base_currency": "TSLA",
+        "bid": 304.9,
+        "ask": 305.1,
+        "quote_currency": "USD",
+        "quote_at": "2026-07-20T13:24:56+00:00",
+        "available_at": "2026-07-20T13:24:56+00:00",
+        "source_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "session": "premarket"
+      },
+      "usdt_usd_quote": {
+        "venue": "fixture-fx",
+        "symbol": "USDTUSD",
+        "product_kind": "fx_spot",
+        "base_currency": "USDT",
+        "bid": 0.999,
+        "ask": 1.001,
+        "quote_currency": "USD",
+        "quote_at": "2026-07-20T13:24:57+00:00",
+        "available_at": "2026-07-20T13:24:57+00:00",
+        "source_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "session": "continuous"
+      },
+      "cash_session": {
+        "cash_trading_date": "2026-07-20",
+        "is_trading_day": true,
+        "session_type": "regular",
+        "suspended": false,
+        "regular_open_time_local": "09:30:00",
+        "regular_close_time_local": "16:00:00",
+        "calendar_available_at": "2026-07-19T12:00:00+00:00",
+        "calendar_source_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "corporate_action": {
+        "cash_symbol": "TSLA",
+        "cash_trading_date": "2026-07-20",
+        "status": "none",
+        "action_kind": "none",
+        "adjustment_factor": null,
+        "adjustment_scope": "none",
+        "effective_at": null,
+        "available_at": "2026-07-19T12:00:00+00:00",
+        "source_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "event_context": {
+        "closure_kind": "ordinary_weekend",
+        "is_earnings": false,
+        "available_at": "2026-07-19T12:00:00+00:00",
+        "source_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "stress_scenario": {
+        "scenario_id": "synthetic-gap-spread-stress-v1",
+        "stress_loss_fraction": 0.1,
+        "method": "historical_gap_spread_haircut",
+        "included_components": [
+          "mapped_spread",
+          "stablecoin_conversion_spread",
+          "fees",
+          "slippage",
+          "gap_tail",
+          "market_impact"
+        ],
+        "observation_end_at": "2026-07-18T00:00:00+00:00",
+        "available_at": "2026-07-19T12:00:00+00:00",
+        "source_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "account_equity_usdt": 1000.0,
+      "minimum_notional_usdt": 5.0
+    }
+  ]
+}

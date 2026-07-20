@@ -1,0 +1,33 @@
+[Unit]
+Description=Qount Alpha Agents public market-data collector
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/root/qount-alpha/scripts/research/alpha_agent_live_collector.py
+
+[Service]
+Type=simple
+WorkingDirectory=/root/qount-alpha
+Environment=PYTHONPATH=/root/qount-alpha/src
+EnvironmentFile=/etc/qount-alpha-collector.env
+ExecStart=/root/qount-alpha/.venv/bin/python /root/qount-alpha/scripts/research/alpha_agent_live_collector.py --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT --streams bookTicker,aggTrade,depth,forceOrder --snapshot-interval-seconds 30 --session-duration-seconds 604800 --segment-duration-seconds 3600 --output-dir ${QOUNT_ALPHA_SESSION_DIR} --min-free-disk-gb 8 --disk-check-interval-seconds 30 --no-proxy-env
+Restart=no
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=80%
+MemoryHigh=450M
+MemoryMax=600M
+TasksMax=64
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -1081,6 +1082,17 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     args = build_parser().parse_args()
+    if os.environ.get("QOUNT_ALLOW_LEGACY_WSL") != "1":
+        sys.stderr.write(
+            "qount-monitor is deprecated.\n\n"
+            "Current crypto live state is on the VPS dashboard and VPS state files:\n"
+            "  https://qount.alyaloale.com\n"
+            "  ssh qount-vps 'cd /root/qount && tail -n 120 ~/cxd_live.log'\n"
+            "  ssh qount-vps 'cd /root/qount && python3 -m json.tool state/x4/live/latest.json'\n\n"
+            "To run the old WSL monitor for historical line A only, set:\n"
+            "  QOUNT_ALLOW_LEGACY_WSL=1\n"
+        )
+        raise SystemExit(1)
     remote = RemoteQount(args.ssh_host, args.wsl_distro, args.wsl_user, args.remote_project_dir)
     if args.once:
         json.dump(remote.dashboard(), sys.stdout, ensure_ascii=False, indent=2)

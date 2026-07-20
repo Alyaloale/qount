@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-system.schema.json",
+  "title": "qount Dashboard v1 data and system health",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "system" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "summary", "ledger", "health"],
+          "properties": {
+            "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
+            "summary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "reason_codes", "unavailable_fields"],
+              "properties": {
+                "status": { "enum": ["unavailable_until_phase_b_ledger", "healthy", "attention_required", "halt_required"] },
+                "reason_codes": { "$ref": "#/$defs/string_list" },
+                "unavailable_fields": { "$ref": "#/$defs/string_list" }
+              }
+            },
+            "ledger": {
+              "oneOf": [
+                { "$ref": "dashboard-v1-envelope.schema.json#/$defs/ledger_unavailable" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "values"],
+                  "properties": {
+                    "status": { "const": "available" },
+                    "source": { "const": "runtime_ledger" },
+                    "values": { "$ref": "#/$defs/ledger" }
+                  }
+                }
+              ]
+            },
+            "health": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "values"],
+                  "properties": {
+                    "status": { "const": "unavailable_until_health_observation" },
+                    "source": { "const": "system_health" },
+                    "values": { "type": "null" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "values"],
+                  "properties": {
+                    "status": { "const": "available" },
+                    "source": { "const": "system_health" },
+                    "values": { "$ref": "#/$defs/health_snapshot" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "string_list": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "snapshot_hash", "captured_at", "source_updated_at", "integrity_status", "audit_chain_status", "audit_last_hash", "audit_row_count", "reconciliation_id", "reconciliation_passed", "halt_required", "recoverable_order_count", "recovery_report_count", "latest_recovery_status", "nav_accounting_passed"],
+      "properties": {
+        "schema_version": { "const": 3 },
+        "snapshot_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "captured_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "source_updated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "integrity_status": { "const": "verified" },
+        "audit_chain_status": { "const": "verified" },
+        "audit_last_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "audit_row_count": { "type": "integer", "minimum": 1 },
+        "reconciliation_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "reconciliation_passed": { "type": "boolean" },
+        "halt_required": { "type": "boolean" },
+        "recoverable_order_count": { "type": "integer", "minimum": 0 },
+        "recovery_report_count": { "type": "integer", "minimum": 0 },
+        "latest_recovery_status": { "enum": ["none", "passed", "blocked"] },
+        "nav_accounting_passed": { "type": "boolean" }
+      }
+    },
+    "health_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "snapshot_id", "captured_at", "source_updated_at", "status", "observations", "snapshot_hash"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "snapshot_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "captured_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "source_updated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "status": { "enum": ["healthy", "degraded", "unavailable"] },
+        "observations": {
+          "type": "array",
+          "prefixItems": [
+            { "$ref": "#/$defs/clock_observation" },
+            { "$ref": "#/$defs/disk_observation" },
+            { "$ref": "#/$defs/service_observation" },
+            { "$ref": "#/$defs/backup_observation" }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "snapshot_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "observation_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "observation_id", "component", "status", "observed_at", "detail_codes", "metrics", "source_id", "source_hash", "observation_hash"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "observation_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "component": { "enum": ["clock", "disk", "service", "backup"] },
+        "status": { "enum": ["healthy", "degraded", "unavailable"] },
+        "observed_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "detail_codes": { "$ref": "#/$defs/string_list" },
+        "metrics": { "type": "object" },
+        "source_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "observation_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "clock_observation": {
+      "allOf": [
+        { "$ref": "#/$defs/observation_base" },
+        { "properties": { "component": { "const": "clock" }, "metrics": { "type": "object", "additionalProperties": false, "required": ["drift_seconds"], "properties": { "drift_seconds": { "oneOf": [{ "type": "number" }, { "type": "null" }] } } } } }
+      ]
+    },
+    "disk_observation": {
+      "allOf": [
+        { "$ref": "#/$defs/observation_base" },
+        { "properties": { "component": { "const": "disk" }, "metrics": { "type": "object", "additionalProperties": false, "required": ["free_bytes", "total_bytes"], "properties": { "free_bytes": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] }, "total_bytes": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] } } } } }
+      ]
+    },
+    "service_observation": {
+      "allOf": [
+        { "$ref": "#/$defs/observation_base" },
+        { "properties": { "component": { "const": "service" }, "metrics": { "type": "object", "additionalProperties": false, "required": ["service_name", "active_state"], "properties": { "service_name": { "type": "string", "minLength": 1 }, "active_state": { "enum": ["active", "inactive", "failed", "unknown"] } } } } }
+      ]
+    },
+    "backup_observation": {
+      "allOf": [
+        { "$ref": "#/$defs/observation_base" },
+        { "properties": { "component": { "const": "backup" }, "metrics": { "type": "object", "additionalProperties": false, "required": ["last_success_at", "age_seconds"], "properties": { "last_success_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] }, "age_seconds": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] } } } } }
+      ]
+    }
+  }
+}
