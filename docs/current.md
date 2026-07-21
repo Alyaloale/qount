@@ -34,6 +34,14 @@
 - **Daily Intelligence报告`f4d90e84...dd63a94`不改变策略或订单。** 它只确认观测时点TOP3同步上涨、正funding、
   Binance公告存在和内部账本对账通过；正文、精确事件时点、目标资产事件窗与外部成交证据不足。market/execution为`ok`，
   event/strategy/red-team/editor为`needs_research`，因此不得把公告、同步上涨或正funding转换为Base信号、仓位或风控豁免。
+- **2026-07-22 0.2.1 VPS order-free refresh已完成，但100 USDT canary未下单，因为冻结Base信号为全现金。**
+  deploy commit为`9144e362...1c27b`，release provenance/source tree验证为`0.2.1`/`70ee1078...60020`；VPS生产回归
+  `307 OK`。新run为`20260721T174354Z`：完整funding、独立runtime、私有只读preflight、one-way/isolated 1x、
+  TOP3全平、普通单/条件单均0、标准authority/RuntimeLedger/pre-dispatch reconciliation及全部blocking gates均通过，
+  readiness为`ready_for_manual_final_arm`、hash=`8087c1d8...43fba`。但决策日`2026-07-20`的Base权重为
+  `BTC/ETH/BNB=0/0/0`，dry dispatcher为`0` market、`0` stop、`exchange_mutation_attempted=false`；没有为制造
+  成交而偏离策略，故manual arm=0、registry仍为`research`、timer仍`disabled/inactive`、无HALT/UNKNOWN且无真实订单。
+  因而真实fee/slippage/STOP触发/UNKNOWN恢复证据仍为未采集，扩容继续禁止。
 
 - **2026-07-22 只读 Daily Intelligence 已完成搜索、六角色、归档、Dashboard和个人微信真实投递闭环。**
   `src/qount/intelligence/`生产默认使用免费`OfficialFeedSearchProvider`读取Binance公告API、Federal Reserve RSS和SEC press release RSS，

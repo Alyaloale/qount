@@ -66,6 +66,13 @@ ssh -o ClearAllForwardings=yes qount-vps \
   `70184860...575fb`、reconciliation `9971ca5f...22d96` passed。观察值为`0/0/0/1`且funding完整。
   当前未创建arm、registry仍为`research`、未开启live switch/timer、未发真实订单。Mac全仓`1497 OK`；VPS
   production/B-C-D/post-fix为`303/59/21 OK`。
+- 2026-07-22的当前VPS run取代上述旧run作为arm判断来源：`/root/qount/state/mini_trend/forward/runs/20260721T174354Z`。
+  0.2.1 release provenance已验证（commit=`9144e362...1c27b`、source tree=`70ee1078...60020`），VPS生产回归`307 OK`；
+  readiness=`ready_for_manual_final_arm`、hash=`8087c1d8...43fba`，authority batch=`98bd95b6...3d094`，ledger snapshot=
+  `dc5b979c...b096f`，pre-dispatch reconciliation=`03303187...1e74c`且passed。账户可用余额为`486.15970914 USDT`、
+  TOP3/普通单/条件单均0，完整funding；观察值forward/active/paper/dry=`1/0/1/1`。Base当前决策权重为`0/0/0`，
+  所以dry为0 market/0 stop且未创建arm或发订单；不得为获得成交证据强制下单。MiniTrend timer仍`disabled/inactive`，
+  HALT不存在，registry仍`research`。真实fee/slippage/STOP/UNKNOWN恢复数据尚不存在，不能扩容。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。

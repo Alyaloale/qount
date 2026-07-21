@@ -26,6 +26,19 @@
   对账通过不能建立事件因果或策略结论；`needs_research`结果不得进入Base信号、订单、live参数或风险豁免。
 - 本条记录写入时仍未部署0.2.1、未生成manual arm、未发送真实订单。发布、order-free refresh和100 USDT canary结果必须在
   后续同日条目中按真实artifact/hash/订单/fee/slippage/保护单/HALT状态追加，不能预写成功。
+- `9144e362...1c27b`已部署到VPS，release provenance验证为version=`0.2.1`、source tree=`70ee1078...60020`；首次验证发现
+  旧rsync遗留5个已删除的CTA-R Dashboard文件，精确移至可恢复目录`/root/qount-stale-release.vRctSs`后manifest通过。
+  目标forward unit已安装、daemon-reload和`systemd-analyze verify`通过（仅有无关cloudmonitor历史warning）；交易timer继续
+  `disabled/inactive`、active cron为0。VPS production回归为`307 OK`。
+- 明确授权的单次order-free `systemctl start --wait qount-mini-trend-forward.service`生成run
+  `20260721T174354Z`。release/runtime/funding/preflight/account/authority/ledger/reconciliation硬门全部通过，最终readiness
+  `ready_for_manual_final_arm`，hash=`8087c1d81fa5a58c7df40283ccb39a3520c0617e832e5c81f9b6feffe3e43fba`，authority batch=
+  `98bd95b6...3d094`，ledger snapshot=`dc5b979c...b096f`，reconciliation=`03303187...1e74c` passed；账户可用余额
+  `486.15970914 USDT`、TOP3全平、普通/条件挂单0，forward/active/paper/dry观察为`1/0/1/1`且funding完整。
+- 该完成日线的冻结Base决策为TOP3权重`0/0/0`，投影和dry dispatcher均为0 market/0 STOP、
+  `exchange_mutation_attempted=false`。因此不创建manual arm、不把registry提升为minimal_live，也不强制买入以伪造
+  100 USDT实盘；timer、live switch、arm和HALT保持关闭。没有真实成交，所以fee、adverse slippage、原生STOP触发以及
+  UNKNOWN/HALT恢复数据均仍未采集，扩容结论维持禁止。
 
 ### Dynamic OpenClaw context-token cutover and audited production verification
 
