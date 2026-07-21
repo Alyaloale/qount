@@ -114,8 +114,8 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
   - UM shadow输入刷新层已落地：研究canonical仍由WSL直写外置盘`datasets/binance_um_shadow/v1`；VPS另只保留
     TOP3 production-minimum cache，每日直连刷新公开rules/bar/funding并离线回放，不作为批量研究中转。
     策略trial累计仍为143
-  - 一个月小资金实盘现按账户动态本金运行：manual arm前每天从已审计USD-M可用余额读取，允许`100-1000 USDT`，
-    当前生产基线为`488.89481071 USDT`；manual arm后冻结该次本金。无账户单日止损，权益峰值回撤10%时
+  - 一个月小资金实盘已由owner改为严格固定`100 USDT` canary；manual arm前只验证已审计USD-M可用余额不少于100，
+    manual arm后冻结该次本金。无账户单日止损，权益峰值回撤10%时
     flatten+halt。Base v0.2仍是真钱控制；历史收益leader全局2.0%风险档弱市为负且59个独立30天窗有1次触发
     10%线，只做首选shadow，Funding Veto为次级shadow
   - paper runtime v0.3已把全局2.0%风险档和Funding Veto完整状态并入Base的append-only shadow日志；两者
@@ -129,8 +129,16 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
     决策ID幂等、client order ID、append-only row/chain hash、`STOP_MARKET closePosition`、成交后仓位/保护单回读、
     10%回撤flatten+halt和独立manual arm。最新run
     `/root/qount/state/mini_trend/forward/runs/20260719T091232Z`通过独立systemd runtime证明；dispatcher因尚无首个完成bar
-    返回`await_dispatch_decision`，0单、0 dry day、`exchange_mutation_attempted=false`。readiness只剩5个新数据累积门，
+    返回`await_dispatch_decision`，0单、0 dry day、`exchange_mutation_attempted=false`。当时readiness显示5个新数据累积缺口，
     `live_orders_allowed=false`
+  - 2026-07-21 owner要求直接推进Phase B/C/D，60 forward pairs、10 active bars、30 paper days、7 dry days均降为
+    非阻断观察指标。标准batch/RuntimeLedger/三方对账已接入dispatcher；market fill必须有exchange order和逐笔trade/fee证据，
+    超时进入UNKNOWN+HALT且不重发。观察项也纳入readiness hash防篡改，但不进入blocker。Binance短窗口cash ledger
+    只接受原始有符号`income`和明确的funding/commission/transfer白名单，未知账变直接HALT。当前arm/timer/live switch仍关闭，0真实订单
+  - 同日B/C/D已同步VPS并完成一次systemd order-free闭环：run `20260721T063854Z`最终readiness为
+    `ready_for_manual_final_arm`、blocker 0，但`live_orders_allowed=false`；账户全平、普通/条件挂单0、dispatcher 0 market/stop intent且
+    `exchange_mutation_attempted=false`。forward/active/paper/dry观察为`0/0/0/1`，funding完整；registry仍为`research`，manual arm为0，
+    timer继续`disabled/inactive`。首单前仍须owner确认最终readiness、authority、RuntimeLedger和reconciliation四类hash
   - 多策略组合层已新增标准`StrategyIntent`、Base projection adapter和fail-closed allocator；最小名义按独立sleeve
     先于组合净额检查，避免Base掩盖不可成交alpha。第144个正式trial测试Base关闭时的TOP3极端下跌反弹，18个
     独立episode的中位净收益`-1.87%`、复合price+cost`-36.50%`、maxDD`39.52%`，已严格拒绝且不接shadow/live
@@ -140,8 +148,8 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
   - 固定300 USDT、无外部注资的周频定投/定减实验显示，均线DCA/DCR在BTC/TOP3/SPY都未超过buy-and-hold；
     buy/hold/sell因果标签的Logistic/HGB六个模型全部输常数先验。模型不会接入Base或实盘
   - 2026-07-19 owner计划最终扩到1000 USDT并采用多策略虚拟sleeve架构；统一合同见
-    `docs/crypto-portfolio-system-plan.md`。当前动态pilot上限已允许1000 USDT，但除Base外的sleeve仍是research/shadow，
-    不获得真钱订单权
+    `docs/crypto-portfolio-system-plan.md`。`1000 USDT`只保留为历史/order-free研究兼容上界；本次真钱canary在readiness、arm、
+    live dispatcher和live journal四层都强制精确`100 USDT`。除Base外的sleeve仍是research/shadow，不获得真钱订单权
   - LiquidTrend10首个G0容量审计已完成：10币共同日线覆盖`99.72%`、Funding和流动性通过，但平均绝对相关
     `0.6616`、有效广度仅`1.438`，且现有UM runtime规则只覆盖4/10。原始十币score trial被阻断，不回测收益
   - LLM非K线信息层已落地第一道确定性边界：官方来源、published/available/observed时点、实体、数值、原文hash、
@@ -430,9 +438,13 @@ live和paper forward生产真相仍只能从 VPS `/root/qount` 读取，但当�
 served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
 publisher timer现为`enabled/active`，只读完整batch/registry/ledger/notification/health/brief，每两分钟刷新系统健康、release、
 备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单，
-但authority已按15分钟规则标记stale，不能当当前实时账户。notification transport仍只有注入式合同和本地fake provider，不含真实消息adapter。
-authority writer保持`static/inactive`，MiniTrend forward timer、production cron、真实通知、订单和live开关均关闭；publisher不查询交易所，
-`live_orders_allowed=false`。
+但authority已按15分钟规则标记stale，不能当当前实时账户。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
+在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持
+`static/inactive`，MiniTrend forward timer、production cron、订单和live开关均关闭；publisher不查询交易所，
+`live_orders_allowed=false`。只读日报生产默认使用Binance公告API、Federal Reserve RSS和SEC RSS，不需要Brave；六角色中文Responses经
+内网normalizer完成真实E2E并保存3份feed、8份详情和2份行情，个人微信投递为`DELIVERED/SUCCEEDED`。Dashboard
+`intelligence`现发布真实报告且source hash为`f4d90e84...63a94`；日报timer为`enabled/active`，每日`04:30 UTC`运行。报告外层
+`incomplete`来自证据不足的`needs_research`，不是基础设施失败。交易timer、production cron、订单和live开关仍关闭。
 Mac
 `/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
 `--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL

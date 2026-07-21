@@ -106,6 +106,19 @@ class OfficialSourceTests(unittest.TestCase):
                 maximum_source_bytes=10,
             )
 
+    def test_excerpt_truncation_strips_separator_at_boundary(self) -> None:
+        document = build_official_source_document(
+            source_url="https://www.binance.com/en/support/announcement/example",
+            final_url="https://www.binance.com/en/support/announcement/example",
+            body=b"<html><body>alpha beta gamma</body></html>",
+            content_type_header="text/html",
+            observed_at="2026-07-19T10:00:00+00:00",
+            maximum_excerpt_chars=6,
+        )
+
+        self.assertEqual(document.text_excerpt, "alpha")
+        self.assertEqual(document.source_hash, hashlib.sha256(document.body).hexdigest())
+
     def test_github_raw_api_media_type_is_accepted_as_text(self) -> None:
         document = build_official_source_document(
             source_url="https://api.github.com/repos/binance/binance-public-data/readme",

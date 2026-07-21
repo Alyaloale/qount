@@ -8,7 +8,19 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from jsonschema import Draft202012Validator
+from jsonschema import FormatChecker
+from referencing import Registry
+from referencing import Resource
+
+from qount.alpha_agents.models import AgentReport
 from qount.contracts import canonical_hash
+from qount.intelligence import DAILY_INTELLIGENCE_ROLES
+from qount.intelligence import DailyIntelligenceReport
+from qount.intelligence import SearchEvidence
+from qount.intelligence import SourceEvidence
+from qount.intelligence import build_market_pulse
+from qount.intelligence import summarize_trading_history
 from qount.notifications import AlertEvent
 from qount.notifications import NotificationStore
 from qount.notifications import build_notification_snapshot
@@ -83,6 +95,85 @@ def _notification_snapshot(root: Path):
     )
 
 
+def _daily_intelligence() -> DailyIntelligenceReport:
+    pulse = build_market_pulse(
+        ticker_payload=[
+            {
+                "symbol": symbol,
+                "lastPrice": "100.5",
+                "priceChangePercent": "1.25",
+                "quoteVolume": "1000000",
+            }
+            for symbol in ("BTCUSDT", "ETHUSDT", "BNBUSDT")
+        ],
+        premium_payload=[
+            {
+                "symbol": symbol,
+                "lastFundingRate": "0.0001",
+                "nextFundingTime": "1784649600000",
+            }
+            for symbol in ("BTCUSDT", "ETHUSDT", "BNBUSDT")
+        ],
+        observed_at="2026-07-20T00:06:25+00:00",
+        source_hashes={"ticker_24h": "a" * 64, "premium_index": "b" * 64},
+    )
+    history = summarize_trading_history(None)
+    search = SearchEvidence(
+        query="fixture search",
+        provider="static_source_plan",
+        searched_at="2026-07-20T00:06:25+00:00",
+        result_count=1,
+        response_hash="c" * 64,
+        urls=("https://www.binance.com/en/support/announcement/example",),
+    )
+    source = SourceEvidence(
+        title="Binance notice",
+        source_url="https://www.binance.com/en/support/announcement/example",
+        final_url="https://www.binance.com/en/support/announcement/example",
+        observed_at="2026-07-20T00:06:25+00:00",
+        content_type="text/html",
+        byte_count=12,
+        source_hash="d" * 64,
+        text_excerpt="Official notice",
+    )
+    reports = tuple(
+        AgentReport(
+            role_id=role_id,
+            task_id=f"daily_intelligence_{role_id}_v1",
+            status="needs_research",
+            summary=f"{role_id} offline review.",
+            findings=("Only supplied evidence was reviewed.",),
+            risks=("Deterministic validation remains required.",),
+        )
+        for role_id in DAILY_INTELLIGENCE_ROLES
+    )
+    return DailyIntelligenceReport.create(
+        report_date="2026-07-20",
+        created_at="2026-07-20T00:06:25+00:00",
+        status="incomplete",
+        market_pulse=pulse,
+        trading_history=history,
+        searches=(search,),
+        sources=(source,),
+        agent_reports=reports,
+        executive_summary="Daily intelligence is incomplete without a runtime ledger.",
+        observed_impacts=("Market pulse is available.",),
+        research_proposals=("Retest the evidence after a complete ledger snapshot.",),
+        risk_notes=("No trading authority is granted.",),
+        source_hashes={
+            "market_pulse": pulse.pulse_hash,
+            "trading_history": history["summary_hash"],
+            "search_00": search.response_hash,
+            "source_00": source.source_hash,
+        },
+        llm={
+            "enabled": False,
+            "model": "gpt-5.6-terra",
+            "provider_profile": "relay_station_chatgpt",
+        },
+    )
+
+
 class DashboardReadModelTest(unittest.TestCase):
     def test_builds_authoritative_overview_strategy_readiness_and_alert_models(self) -> None:
         models = _models()
@@ -100,6 +191,7 @@ class DashboardReadModelTest(unittest.TestCase):
                 "system",
                 "alerts",
                 "reports",
+                "intelligence",
             ),
         )
         self.assertEqual(models.overview.payload["portfolio"]["approved_target_gross"], 0.6)
@@ -133,6 +225,10 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertEqual(
             models.reports.payload["summary"]["status"],
             "unavailable_until_phase_c_daily_brief",
+        )
+        self.assertEqual(
+            models.intelligence.payload["summary"]["status"],
+            "unavailable_until_daily_intelligence",
         )
         self.assertEqual(
             models.orders.payload["summary"]["status"],
@@ -211,6 +307,7 @@ class DashboardReadModelTest(unittest.TestCase):
                     "system.json",
                     "alerts.json",
                     "reports.json",
+                    "intelligence.json",
                     "publication.json",
                 },
             )
@@ -256,6 +353,27 @@ class DashboardReadModelTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(DashboardReadModelError, "mismatch"):
                 read_dashboard_v1(root)
+
+    def test_intelligence_model_has_independent_source_and_freshness(self) -> None:
+        batch, registry = _sources()
+        report = _daily_intelligence()
+        models = build_dashboard_v1(
+            batch,
+            registry,
+            generated_at=GENERATED_AT,
+            evaluated_at=GENERATED_AT,
+            stale_after_seconds=300,
+            intelligence_stale_after_seconds=2,
+            daily_intelligence=report,
+        )
+
+        self.assertEqual(models.overview.freshness["status"], "fresh")
+        self.assertEqual(models.intelligence.freshness["status"], "stale")
+        self.assertEqual(
+            models.intelligence.source_hashes,
+            {"daily_intelligence": report.report_hash},
+        )
+        self.assertEqual(models.intelligence.payload["report"], report.as_dict())
 
     def test_failed_release_write_keeps_previous_atomic_pointer(self) -> None:
         first = _models()
@@ -340,6 +458,8 @@ class DashboardReadModelTest(unittest.TestCase):
             "dashboard-v1-alerts.schema.json",
             "daily-brief-v1.schema.json",
             "dashboard-v1-reports.schema.json",
+            "daily-intelligence-v1.schema.json",
+            "dashboard-v1-intelligence.schema.json",
             "dashboard-v1-publication.schema.json",
         )
         for name in names:
@@ -370,14 +490,16 @@ class DashboardReadModelTest(unittest.TestCase):
                 "system",
                 "alerts",
                 "reports",
+                "intelligence",
             ],
         )
-        self.assertEqual(len(source_variants), 6)
+        self.assertEqual(len(source_variants), 7)
         self.assertIn("runtime_ledger", source_variants[1]["required"])
         self.assertEqual(source_variants[2]["required"], ["notification_store"])
         self.assertEqual(source_variants[3]["required"], ["daily_brief"])
-        self.assertIn("system_health", source_variants[4]["required"])
-        self.assertIn("runtime_ledger", source_variants[5]["required"])
+        self.assertEqual(source_variants[4]["required"], ["daily_intelligence"])
+        self.assertIn("system_health", source_variants[5]["required"])
+        self.assertIn("runtime_ledger", source_variants[6]["required"])
         self.assertEqual(
             set(
                 envelope["$defs"]["authority"]["properties"][
@@ -421,8 +543,51 @@ class DashboardReadModelTest(unittest.TestCase):
                 "system",
                 "alerts",
                 "reports",
+                "intelligence",
             },
         )
+
+    def test_jsonschema_validates_all_models_publication_and_intelligence(self) -> None:
+        schema_root = Path(__file__).resolve().parents[1] / "web" / "schemas"
+        schemas = {
+            path.name: json.loads(path.read_text(encoding="ascii"))
+            for path in schema_root.glob("*.schema.json")
+        }
+        registry = Registry().with_resources(
+            [
+                (schema["$id"], Resource.from_contents(schema))
+                for schema in schemas.values()
+            ]
+        )
+        batch, strategy_registry = _sources()
+        report = _daily_intelligence()
+        models = build_dashboard_v1(
+            batch,
+            strategy_registry,
+            generated_at=GENERATED_AT,
+            evaluated_at=GENERATED_AT,
+            daily_intelligence=report,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            publication = publish_dashboard_v1(Path(temporary), models)
+
+        for model in models.models():
+            schema = schemas[f"dashboard-v1-{model.read_model_type}.schema.json"]
+            Draft202012Validator(
+                schema,
+                registry=registry,
+                format_checker=FormatChecker(),
+            ).validate(model.as_dict())
+        Draft202012Validator(
+            schemas["dashboard-v1-publication.schema.json"],
+            registry=registry,
+            format_checker=FormatChecker(),
+        ).validate(publication.as_dict())
+        Draft202012Validator(
+            schemas["daily-intelligence-v1.schema.json"],
+            registry=registry,
+            format_checker=FormatChecker(),
+        ).validate(report.as_dict())
 
     def test_browser_uses_only_v1_models_and_contains_no_authoritative_pnl_math(self) -> None:
         app = (
@@ -437,6 +602,7 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("data/v1/system.json", app)
         self.assertIn("data/v1/alerts.json", app)
         self.assertIn("data/v1/reports.json", app)
+        self.assertIn("data/v1/intelligence.json", app)
         self.assertNotIn("api.binance.com", app)
         self.assertNotIn("fapi.binance.com", app)
         self.assertNotIn("unrealized_pnl", app)

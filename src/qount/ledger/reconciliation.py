@@ -17,6 +17,7 @@ class ThreeWayReconciliation:
     reconciliation_id: str
     batch_id: str
     reconciled_at: str
+    phase: str
     target_positions: Mapping[str, float]
     ledger_positions: Mapping[str, float]
     exchange_positions: Mapping[str, float]
@@ -38,6 +39,7 @@ class ThreeWayReconciliation:
         return {
             "batch_id": self.batch_id,
             "reconciled_at": self.reconciled_at,
+            "phase": self.phase,
             "target_positions": dict(self.target_positions),
             "ledger_positions": dict(self.ledger_positions),
             "exchange_positions": dict(self.exchange_positions),
@@ -65,6 +67,8 @@ class ThreeWayReconciliation:
             aware_datetime(self.reconciled_at)
         except (AttributeError, TypeError, ValueError) as exc:
             raise ValueError("reconciliation_time_invalid") from exc
+        if self.phase not in {"pre_dispatch", "post_dispatch"}:
+            raise ValueError("reconciliation_phase_invalid")
         if len(self.blockers) != len(set(self.blockers)):
             raise ValueError("reconciliation_blockers_duplicate")
         expected_passed = not self.blockers
@@ -125,7 +129,10 @@ def reconcile_three_way(
     exchange_open_order_ids: Sequence[str],
     equity_residual: float,
     equity_residual_tolerance: float,
+    phase: str = "post_dispatch",
 ) -> ThreeWayReconciliation:
+    if phase not in {"pre_dispatch", "post_dispatch"}:
+        raise ValueError("reconciliation_phase_invalid")
     target = _finite_map(target_positions, name="target_positions")
     ledger = _finite_map(ledger_positions, name="ledger_positions")
     exchange = _finite_map(exchange_positions, name="exchange_positions")
@@ -182,6 +189,7 @@ def reconcile_three_way(
     core = {
         "batch_id": batch_id,
         "reconciled_at": reconciled_at,
+        "phase": phase,
         "target_positions": target,
         "ledger_positions": ledger,
         "exchange_positions": exchange,

@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/daily-intelligence-v1.schema.json",
+  "title": "qount read-only DailyIntelligenceReport v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "report_id", "report_date", "created_at", "status", "market_pulse", "trading_history", "searches", "sources", "agent_reports", "executive_summary", "observed_impacts", "research_proposals", "risk_notes", "source_hashes", "llm", "orders_allowed", "live_changes_allowed", "report_hash"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+    "report_date": { "type": "string", "format": "date" },
+    "created_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+    "status": { "enum": ["clear", "attention_required", "incomplete"] },
+    "market_pulse": { "$ref": "#/$defs/market_pulse" },
+    "trading_history": {
+      "oneOf": [
+        { "$ref": "#/$defs/trading_history_unavailable" },
+        { "$ref": "#/$defs/trading_history_available" }
+      ]
+    },
+    "searches": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/search" }
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "agent_reports": {
+      "type": "array",
+      "prefixItems": [
+        { "$ref": "#/$defs/market_agent" },
+        { "$ref": "#/$defs/event_agent" },
+        { "$ref": "#/$defs/execution_agent" },
+        { "$ref": "#/$defs/strategy_agent" },
+        { "$ref": "#/$defs/red_team_agent" },
+        { "$ref": "#/$defs/editor_agent" }
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "executive_summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "observed_impacts": { "$ref": "#/$defs/report_string_list" },
+    "research_proposals": { "$ref": "#/$defs/report_string_list" },
+    "risk_notes": { "$ref": "#/$defs/report_string_list" },
+    "source_hashes": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(market_pulse|trading_history|search_[0-9]{2}|source_[0-9]{2})$": {
+          "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash"
+        }
+      },
+      "required": ["market_pulse", "trading_history"]
+    },
+    "llm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "model", "provider_profile"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "provider_profile": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "orders_allowed": { "const": false },
+    "live_changes_allowed": { "const": false },
+    "report_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "market_pulse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed_at", "venue", "symbols", "source_hashes", "pulse_hash"],
+      "properties": {
+        "observed_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "venue": { "const": "binance_usd_m" },
+        "symbols": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/market_symbol" }
+        },
+        "source_hashes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ticker_24h", "premium_index"],
+          "properties": {
+            "ticker_24h": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+            "premium_index": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+          }
+        },
+        "pulse_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "market_symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "last_price", "change_24h_pct", "quote_volume_24h", "funding_rate", "next_funding_time"],
+      "properties": {
+        "symbol": { "type": "string", "pattern": "^[A-Z0-9]{2,32}$" },
+        "last_price": { "type": "number", "exclusiveMinimum": 0 },
+        "change_24h_pct": { "type": "number" },
+        "quote_volume_24h": { "type": "number", "minimum": 0 },
+        "funding_rate": { "type": "number" },
+        "next_funding_time": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }
+      }
+    },
+    "history_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source", "batch_id", "source_updated_at", "position_count", "order_count", "fill_count", "cash_event_count", "recoverable_order_count", "unresolved_order_count", "wallet_balance", "available_balance", "current_equity", "current_drawdown_fraction", "peak_drawdown_fraction", "trading_pnl", "trading_pnl_cumulative", "funding", "funding_cumulative", "fees", "fees_cumulative", "transfers", "transfers_cumulative", "residual", "reconciliation_passed", "halt_required", "recent_orders", "recent_fills", "summary_hash"],
+      "properties": {
+        "status": {},
+        "source": { "const": "runtime_ledger" },
+        "batch_id": {},
+        "source_updated_at": {},
+        "position_count": {},
+        "order_count": {},
+        "fill_count": {},
+        "cash_event_count": {},
+        "recoverable_order_count": {},
+        "unresolved_order_count": {},
+        "wallet_balance": {},
+        "available_balance": {},
+        "current_equity": {},
+        "current_drawdown_fraction": {},
+        "peak_drawdown_fraction": {},
+        "trading_pnl": {},
+        "trading_pnl_cumulative": {},
+        "funding": {},
+        "funding_cumulative": {},
+        "fees": {},
+        "fees_cumulative": {},
+        "transfers": {},
+        "transfers_cumulative": {},
+        "residual": {},
+        "reconciliation_passed": {},
+        "halt_required": {},
+        "recent_orders": {},
+        "recent_fills": {},
+        "summary_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "trading_history_unavailable": {
+      "allOf": [
+        { "$ref": "#/$defs/history_fields" },
+        {
+          "properties": {
+            "status": { "const": "unavailable" },
+            "batch_id": { "type": "null" },
+            "source_updated_at": { "type": "null" },
+            "position_count": { "type": "null" },
+            "order_count": { "type": "null" },
+            "fill_count": { "type": "null" },
+            "cash_event_count": { "type": "null" },
+            "recoverable_order_count": { "type": "null" },
+            "unresolved_order_count": { "type": "null" },
+            "wallet_balance": { "type": "null" },
+            "available_balance": { "type": "null" },
+            "current_equity": { "type": "null" },
+            "current_drawdown_fraction": { "type": "null" },
+            "peak_drawdown_fraction": { "type": "null" },
+            "trading_pnl": { "type": "null" },
+            "trading_pnl_cumulative": { "type": "null" },
+            "funding": { "type": "null" },
+            "funding_cumulative": { "type": "null" },
+            "fees": { "type": "null" },
+            "fees_cumulative": { "type": "null" },
+            "transfers": { "type": "null" },
+            "transfers_cumulative": { "type": "null" },
+            "residual": { "type": "null" },
+            "reconciliation_passed": { "type": "null" },
+            "halt_required": { "type": "null" },
+            "recent_orders": { "type": "array", "maxItems": 0 },
+            "recent_fills": { "type": "array", "maxItems": 0 }
+          }
+        }
+      ]
+    },
+    "trading_history_available": {
+      "allOf": [
+        { "$ref": "#/$defs/history_fields" },
+        {
+          "properties": {
+            "status": { "const": "available" },
+            "batch_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+            "source_updated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+            "position_count": { "$ref": "#/$defs/count" },
+            "order_count": { "$ref": "#/$defs/count" },
+            "fill_count": { "$ref": "#/$defs/count" },
+            "cash_event_count": { "$ref": "#/$defs/count" },
+            "recoverable_order_count": { "$ref": "#/$defs/count" },
+            "unresolved_order_count": { "$ref": "#/$defs/count" },
+            "wallet_balance": { "$ref": "#/$defs/nonnegative_number" },
+            "available_balance": { "$ref": "#/$defs/nonnegative_number" },
+            "current_equity": { "$ref": "#/$defs/nonnegative_number" },
+            "current_drawdown_fraction": { "$ref": "#/$defs/nonnegative_number" },
+            "peak_drawdown_fraction": { "$ref": "#/$defs/nonnegative_number" },
+            "trading_pnl": { "type": "number" },
+            "trading_pnl_cumulative": { "type": "number" },
+            "funding": { "type": "number" },
+            "funding_cumulative": { "type": "number" },
+            "fees": { "$ref": "#/$defs/nonnegative_number" },
+            "fees_cumulative": { "$ref": "#/$defs/nonnegative_number" },
+            "transfers": { "type": "number" },
+            "transfers_cumulative": { "type": "number" },
+            "residual": { "type": "number" },
+            "reconciliation_passed": { "type": "boolean" },
+            "halt_required": { "type": "boolean" },
+            "recent_orders": {
+              "type": "array",
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/recent_order" }
+            },
+            "recent_fills": {
+              "type": "array",
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/recent_fill" }
+            }
+          }
+        }
+      ]
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "nonnegative_number": { "type": "number", "minimum": 0 },
+    "recent_order": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["client_order_id", "symbol", "side", "order_type", "status", "executed_quantity"],
+      "properties": {
+        "client_order_id": { "type": "string", "minLength": 1 },
+        "symbol": { "type": "string", "minLength": 1 },
+        "side": { "enum": ["buy", "sell"] },
+        "order_type": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["PLANNED", "SUBMITTING", "ACKNOWLEDGED", "PARTIALLY_FILLED", "FILLED", "REJECTED", "CANCELED", "EXPIRED", "UNKNOWN"] },
+        "executed_quantity": { "$ref": "#/$defs/nonnegative_number" }
+      }
+    },
+    "recent_fill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["client_order_id", "exchange_trade_id", "quantity", "price", "fee", "fee_asset", "occurred_at"],
+      "properties": {
+        "client_order_id": { "type": "string", "minLength": 1 },
+        "exchange_trade_id": { "type": "string", "minLength": 1 },
+        "quantity": { "type": "number", "exclusiveMinimum": 0 },
+        "price": { "type": "number", "exclusiveMinimum": 0 },
+        "fee": { "$ref": "#/$defs/nonnegative_number" },
+        "fee_asset": { "type": "string", "minLength": 1 },
+        "occurred_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }
+      }
+    },
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "provider", "searched_at", "result_count", "response_hash", "urls"],
+      "properties": {
+        "query": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "provider": { "enum": ["brave_web_search", "static_source_plan"] },
+        "searched_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "result_count": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "response_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "urls": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uri", "pattern": "^https://" }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "source_url", "final_url", "observed_at", "content_type", "byte_count", "source_hash", "text_excerpt"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "source_url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "final_url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "observed_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "content_type": { "enum": ["application/json", "application/vnd.github.raw+json", "application/xml", "text/html", "text/plain", "text/xml"] },
+        "byte_count": { "type": "integer", "minimum": 1 },
+        "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "text_excerpt": { "type": "string", "minLength": 1, "maxLength": 12000 }
+      }
+    },
+    "agent_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "url", "source_type", "notes"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "source_type": { "const": "verified_primary_source" },
+        "notes": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "agent_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role_id", "task_id", "status", "summary", "findings", "proposals", "risks", "sources", "raw_response"],
+      "properties": {
+        "role_id": {},
+        "task_id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "status": { "enum": ["ok", "blocked", "needs_research"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "findings": { "$ref": "#/$defs/agent_string_list" },
+        "proposals": { "$ref": "#/$defs/agent_string_list" },
+        "risks": { "$ref": "#/$defs/agent_string_list" },
+        "sources": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/agent_source" } },
+        "raw_response": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "maxLength": 20000 }
+          ]
+        }
+      }
+    },
+    "market_agent": { "allOf": [{ "$ref": "#/$defs/agent_report" }, { "properties": { "role_id": { "const": "market_analyst" } } }] },
+    "event_agent": { "allOf": [{ "$ref": "#/$defs/agent_report" }, { "properties": { "role_id": { "const": "event_analyst" } } }] },
+    "execution_agent": { "allOf": [{ "$ref": "#/$defs/agent_report" }, { "properties": { "role_id": { "const": "execution_reviewer" } } }] },
+    "strategy_agent": { "allOf": [{ "$ref": "#/$defs/agent_report" }, { "properties": { "role_id": { "const": "strategy_reviewer" } } }] },
+    "red_team_agent": { "allOf": [{ "$ref": "#/$defs/agent_report" }, { "properties": { "role_id": { "const": "red_team" } } }] },
+    "editor_agent": { "allOf": [{ "$ref": "#/$defs/agent_report" }, { "properties": { "role_id": { "const": "editor" } } }] },
+    "agent_string_list": {
+      "type": "array",
+      "maxItems": 6,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    },
+    "report_string_list": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    }
+  }
+}

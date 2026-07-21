@@ -26,6 +26,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dashboard-root", type=Path, required=True)
     parser.add_argument("--lock-path", type=Path, required=True)
     parser.add_argument("--target-stress-loss-fraction", type=float, default=0.01)
+    parser.add_argument("--result-path", type=Path)
     return parser
 
 
@@ -59,7 +60,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 1
-    print(json.dumps(result.as_dict(), ensure_ascii=True, sort_keys=True))
+    result_json = json.dumps(result.as_dict(), ensure_ascii=True, sort_keys=True)
+    if args.result_path is not None:
+        args.result_path.parent.mkdir(parents=True, exist_ok=True)
+        args.result_path.write_text(result_json + "\n", encoding="ascii")
+        args.result_path.chmod(0o600)
+    print(result_json)
     return 0 if result.status == "written" else 75
 
 

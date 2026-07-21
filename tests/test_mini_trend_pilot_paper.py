@@ -142,7 +142,7 @@ class MiniTrendPilotPaperTest(unittest.TestCase):
         self.assertEqual(verified["row_count"], 2)
         self.assertIn('"shadow_paths"', persisted)
 
-    def test_pilot_drawdown_breach_halts_without_a_daily_loss_gate(self) -> None:
+    def test_large_daily_loss_triggers_daily_and_drawdown_halts(self) -> None:
         replay = build_pilot_paper_replay(
             _bars(203, crash_outcome=True),
             _funding(203),
@@ -150,7 +150,7 @@ class MiniTrendPilotPaperTest(unittest.TestCase):
         )
         self.assertEqual(replay.report["diagnostics"]["verdict"], "paper_risk_halted")
         self.assertTrue(replay.report["evaluation"]["halted"])
-        self.assertNotIn("daily_loss_halt", replay.report["evaluation"]["risk_flags"])
+        self.assertIn("daily_loss_halt", replay.report["evaluation"]["risk_flags"])
         self.assertIn("pilot_drawdown_halt", replay.report["evaluation"]["risk_flags"])
         self.assertEqual(len(replay.journal_rows), 1)
 

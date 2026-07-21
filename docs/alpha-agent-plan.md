@@ -1,7 +1,8 @@
 # Alpha Agents 多智能体研究架构
 
-状态：v0.1 research-only scaffold。Owner 于 2026-07-08 授权先搭建多 agent 架构，用于搜集资料、
-优化方案和后续接入量化训练；当前不改变 VPS 生产配置、不写 paper/live state、不 arm live。
+状态：active research-only + 只读日报生产闭环。Owner 于 2026-07-08 授权先搭建多 agent 架构，用于搜集资料、优化方案和后续接入
+量化训练；2026-07-22已完成免费官方feed发现、详情复抓、TOP3行情、六角色中文LLM、不可覆盖归档、Dashboard和个人微信真实投递，
+并启用每日timer。手机入站/通道回发、context刷新和Qount正整数`message_id`均已验证；当前仍不写paper/live state、不arm live，LLM报告不提供策略promotion或订单权限。
 
 更准确的定位：这是 `deterministic quant harness + LLM 研究/审计外壳`，不是“多 agent 本身产生
 alpha”。relay-station ChatGPT、历史GLM和计算节点都只是研究吞吐工具，不是 alpha 来源。
@@ -24,9 +25,16 @@ alpha。Alpha Agents 的目标不是继续调 long/cash trend，而是把研究�
 - `src/qount/alpha_agents/roles.py`：默认角色 registry，并支持从 JSON 加载自定义角色。
 - `src/qount/alpha_agents/tasks.py`：默认 seed tasks，并支持从 JSON 加载自定义任务。
 - `src/qount/alpha_agents/sources.py`：官方数据源、验证方法和本项目证据源清单。
-- `src/qount/alpha_agents/llm.py`：relay-station ChatGPT adapter；默认关闭网络调用、并发1、重试0、严格JSON。
+- `src/qount/alpha_agents/llm.py`：relay-station ChatGPT adapter；默认关闭网络调用、并发1、SDK重试0、应用层最多1次有界退避、严格JSON。
 - `src/qount/alpha_agents/information_events.py`：point-in-time事件schema、allowlist、hash和越权validator。
 - `src/qount/alpha_agents/official_sources.py`：官方网页无代理抓取、双URL allowlist、大小上限、原文hash和LLM摘要上下文。
+- `src/qount/intelligence/search.py`：生产默认从Binance公告API、Fed RSS和SEC RSS免费发现官方URL并保存原始字节hash；Brave adapter只保留兼容。
+- `src/qount/intelligence/market.py`：Binance USD-M TOP3公开24小时行情、funding与下一结算时间；两份原始响应字节hash/归档。
+- `src/qount/intelligence/history.py`：从冻结RuntimeLedger v3提取订单、逐笔成交、费用、funding、NAV、回撤和对账摘要。
+- `src/qount/intelligence/daily.py`：固定六角色日报链，red-team/editor接收前序报告，所有输出保持research-only。
+- `src/qount/intelligence/archive.py`：日报、market/search/source原文、manifest和latest指针的不可覆盖`0700/0600`归档与重放。
+- `src/qount/intelligence/notifications.py`：把日报映射为`AlertEvent`，不赋予通知或订单权限。
+- `scripts/operations/run_daily_intelligence.py`：串联authority、公开行情、官方feed、LLM、归档、NotificationStore和可选个人微信/WeCom投递。
 - `src/qount/portfolio_governance.py`：三NAV、压力风险预算、trial budget、前向污染和独立样本合同。
 - `src/qount/alpha_agents/validators.py`：report 状态、必需字段和越界输出扫描。
 - `src/qount/alpha_agents/orchestrator.py`：research-only orchestrator 和 artifact writer。
@@ -111,12 +119,72 @@ export QOUNT_ALPHA_AGENT_LLM_ENABLE=true
 export QOUNT_ALPHA_AGENT_BASE_URL=https://llm.alyaloale.com/v1
 export QOUNT_ALPHA_AGENT_MODEL=gpt-5.6-terra
 export QOUNT_ALPHA_AGENT_MAX_CONCURRENCY=1
-export QOUNT_ALPHA_AGENT_MAX_RETRIES=0
+export QOUNT_ALPHA_AGENT_MAX_RETRIES=1
+export QOUNT_ALPHA_AGENT_RETRY_BASE_SECONDS=10
+export QOUNT_ALPHA_AGENT_MAX_RETRY_DELAY_SECONDS=60
 PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_plan.py --with-llm
 ```
 
 不要把token写入仓库、artifact、prompt或文档。第一阶段只运行固定fixture和有真实研究任务的单次调用；禁止
 throwaway连通性探测。LLM调用结果仍然只是research artifact，不能提供promotion证据。
+
+## 每日情报与复盘合同
+
+当前固定链路为：
+
+```text
+Binance announcement API + Federal Reserve RSS + SEC RSS discovery
+-> allowlisted official-source refetch + raw bytes/hash
+-> Binance public market pulse + raw bytes/hash
+-> frozen RuntimeLedgerSnapshot v3 summary
+-> market/event/execution/strategy/red-team/editor
+-> append-only local archive
+-> Dashboard intelligence read model
+-> NotificationStore -> Tencent personal Weixin iLink
+```
+
+搜索只发现URL。任何写进“已观测事实”的内容必须来自再次抓取的官方allowlist原文，并保存`observed_at/content_type/byte_count/
+source_hash`；模型记忆、模型自称搜索或搜索摘要都不能替代。行情hash是原始HTTP字节SHA-256，不是解析后JSON的canonical hash。
+交易复盘只读冻结账本，不用目标仓位或公共价格补算成交、费用、PnL或回撤。
+
+日报角色固定为`market_analyst -> event_analyst -> execution_reviewer -> strategy_reviewer -> red_team -> editor`。LLM可输出解释、
+反例和带baseline/kill-test的研究建议；不得输出订单、目标权重、live配置、杠杆/风险override。日报本身固定
+`orders_allowed=false/live_changes_allowed=false`，必须经确定性dataset/backtest/scorecard和独立promotion流程后才可能影响策略。
+
+个人微信provider复用腾讯官方OpenClaw插件账号和recipient，固定官方host/path/header，并以NotificationStore delivery key派生稳定client ID。
+生产凭据只保存`account_id/base_url/recipient/token`；每次发送前从OpenClaw accounts目录按account和recipient读取最新context token，避免手机
+入站刷新后Qount副本漂移。动态目录和文件必须满足绝对路径、无symlink、owner和`0600`等安全合同，缺失或无效时失败关闭；静态context token只允许
+手工/测试回退。只有HTTP `2xx`、合法JSON、无非零`ret`且存在正整数`message_id`才接受，`ret!=0`和无效body均失败关闭。只投递明确选择的
+`openclaw_weixin` channel。HTTP成功后本地落标前崩溃仍可能重复，因此不声称exactly-once。WeCom adapter继续保留但production unit不再要求或发送WeCom。
+
+首次生产日报完整保存3份feed、8份官方详情和2份行情，但因把每份最多12,000字符的全文同时交给六角色，在网络前被50,000字符安全
+上限阻断；该不完整报告和通知保留。当前实现按角色构造上下文：event每来源最多1,800字符，strategy/red-team/editor每来源最多600字符，
+red-team/editor只接收前序报告压缩字段；原文归档和全局上限不变。8份真实来源的六角色测试载荷最大值固定小于35,000字符。
+
+第二次生产E2E报告ID为`24defae63419d002a74ff07fd578c994b3b68f6eb200bd76b3a4fc6ca1fb6adc`，六个非流式Responses载荷约
+13.4-40.2KB并全部得到中文严格Schema结果；3份feed、8份详情、2份行情、可用交易历史、manifest、latest readback及个人微信历史
+本地`DELIVERED/SUCCEEDED`记录和12行audit chain均可验证。后续诊断证明旧`DELIVERED`只检查HTTP `2xx`：失效会话实际返回`ret=-2/prepare failed`，
+故历史记录本身不代表手机送达。已修复provider、恢复OpenClaw网关、接收手机测试消息并刷新context；真实Qount中文验证消息返回19位正整数
+`message_id`并被严格标记`ACCEPTED`；新生产NotificationStore job `9c6fca5efc6b...`为`DELIVERED`、attempt为`SUCCEEDED`，16行audit chain
+完整重放。报告状态为`incomplete`，原因是四个审阅角色对发布时间、来源正文和外部成交证据主动
+返回`needs_research`，不是基础设施或本地载荷失败。Dashboard `intelligence`现为`available`并绑定report hash
+`f4d90e84b1828345261568043623ba7b32ea5b66ede9fbe66d490f54ddd63a94`；日报timer为`enabled/active`，每日`04:30 UTC`运行并带
+0-10分钟随机延迟。随后动态会话读取已部署，日报unit增加`openclaw-gateway.service`依赖与accounts目录只读挂载，生产凭据删除静态
+`context_token`后仍由新架构验证job `6d51a764...4324`一次投递为`DELIVERED/SUCCEEDED`；store为5 event/job/attempt和20行audit chain。
+Mac扩大回归`75 OK`、VPS部署聚焦`24 OK`。
+
+真实依赖状态：relay与个人微信凭据已在VPS以独立`0600 root:root`文件接入，生产搜索不需要付费Key。通用研究客户端继续默认
+`gpt-5.6-terra`；Daily Intelligence单独显式使用`gpt-5.6-sol`，两者都走Responses API，SDK重试0。New-API已经删除，account 25也不再
+绑定proxy 6；生产请求由TokenRouter转到Docker内网`aishenji-normalizer`，再由nginx/OpenSSL以固定TLS、SNI、Host和browser User-Agent
+特征访问aishenji上游。该路径修复了TokenRouter Go HTTP/TLS特征触发的Cloudflare 403，qount-vps真实非流式与流式Responses均已返回
+`completed/OK`，account 25为`active/schedulable`，TokenRouter和normalizer均healthy且未重启TokenRouter。
+
+`2026-07-21T13:23:23.472311+00:00`按一次真实研究任务完成TOP3首角色严格Schema中文分析，耗时约`26.5s`；pulse/ticker/premium原始
+证据hash为`e991a4a3...04c` / `df89881f...787` / `30a0ddfe...eee`，五字段、中文、越权语言和source hash校验通过。它只证明单角色LLM
+链路恢复；完整六角色和个人微信随后由上述生产E2E证明。只读日志另见两次长流式Codex请求
+分别约`125.7s/126.7s`后遇到上游`524`
+并映射为502，两次随后均恢复200。应用仅对瞬时状态和显式`retryable=true`最多退避重试一次，支持错误体`retry_after`；只有
+`owner_action_required`而无可重试标记时立即失败关闭。任何失败日报仍单独归档和通知，不覆盖最后一份历史报告。
 
 `gpt-5.6-terra`是当前relay目录中实测存在的私有模型名，不在本地公共OpenAI模型指引中。它不自动代表已联网：
 任何当前网页事实必须先由`official_sources.py`获取原文字节并记录hash/observed time，再作为有界context提交。

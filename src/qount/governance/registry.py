@@ -449,7 +449,7 @@ def validate_registry_transition(
 
 
 _DEPLOYMENT_STATUS = {
-    "research": set(PROMOTION_STATUSES[:-1]),
+    "research": set(PROMOTION_STATUSES),
     "shadow": {"shadow", "paper", "minimal_live", "scaled_live"},
     "paper": {"paper", "minimal_live", "scaled_live"},
     "production": _LIVE_STATUSES,
@@ -492,6 +492,8 @@ def validate_registered_intents(
             errors.append(
                 f"intent:{index}:strategy_status_not_allowed:{entry.promotion_status}"
             )
+        if entry.promotion_status == "halted":
+            continue
         gross = sum(_number(weight) for weight in intent.target_weights.values())
         if gross > entry.maximum_gross + 1e-12:
             errors.append(f"intent:{index}:registered_maximum_gross_exceeded")

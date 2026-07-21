@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-intelligence.schema.json",
+  "title": "qount Dashboard v1 daily intelligence",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "intelligence" },
+        "payload": {
+          "oneOf": [
+            { "$ref": "#/$defs/unavailable_payload" },
+            { "$ref": "#/$defs/available_payload" }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "summary_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "report_id", "report_hash", "report_date", "report_status", "source_count", "proposal_count"],
+      "properties": {
+        "status": {},
+        "report_id": {},
+        "report_hash": {},
+        "report_date": {},
+        "report_status": {},
+        "source_count": { "type": "integer", "minimum": 0 },
+        "proposal_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "unavailable_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "report"],
+      "properties": {
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["intelligence"],
+          "properties": {
+            "intelligence": { "const": "unavailable_until_daily_intelligence" }
+          }
+        },
+        "summary": {
+          "allOf": [
+            { "$ref": "#/$defs/summary_base" },
+            {
+              "properties": {
+                "status": { "const": "unavailable_until_daily_intelligence" },
+                "report_id": { "type": "null" },
+                "report_hash": { "type": "null" },
+                "report_date": { "type": "null" },
+                "report_status": { "type": "null" },
+                "source_count": { "const": 0 },
+                "proposal_count": { "const": 0 }
+              }
+            }
+          ]
+        },
+        "report": { "type": "null" }
+      }
+    },
+    "available_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "report"],
+      "properties": {
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["intelligence"],
+          "properties": { "intelligence": { "const": "daily_intelligence" } }
+        },
+        "summary": {
+          "allOf": [
+            { "$ref": "#/$defs/summary_base" },
+            {
+              "properties": {
+                "status": { "const": "available" },
+                "report_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "report_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "report_date": { "type": "string", "format": "date" },
+                "report_status": { "enum": ["clear", "attention_required", "incomplete"] }
+              }
+            }
+          ]
+        },
+        "report": { "$ref": "daily-intelligence-v1.schema.json" }
+      }
+    }
+  },
+  "unevaluatedProperties": false
+}

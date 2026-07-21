@@ -26,6 +26,7 @@ from typing import Any, Iterator, Mapping
 from qount.contracts import canonical_hash
 from qount.contracts.trace import aware_datetime
 from qount.governance import StrategyRegistry
+from qount.governance import StrategyRegistration
 from qount.ledger import RuntimeLedger
 from qount.ledger import build_runtime_ledger_snapshot
 from qount.ledger import build_verified_legacy_dispatch_batch
@@ -46,6 +47,9 @@ from qount.persistence import publish_decision_batch
 from qount.persistence import write_immutable_artifact
 from qount.reporting import build_daily_brief
 from qount.reporting import read_vps_authority_bundle
+from qount.mini_trend.forward import TOP3
+from qount.mini_trend.live_pilot import LIVE_PILOT_CONTRACT
+from qount.mini_trend.live_pilot import manual_arm_owner_authorization_hash
 from qount.strategies import BASE_STRATEGY_VERSION
 from qount.strategies import base_strategy_registration
 
@@ -58,7 +62,6 @@ _SOURCE_FILES = (
     "dry_dispatch.json",
     "exchange_rules.json",
     "latest_projection.json",
-    "live_readiness.json",
 )
 
 
@@ -281,6 +284,7 @@ def _readiness_hash_valid(readiness: Mapping[str, Any]) -> bool:
             "request": signed_request,
             "evidence": readiness.get("evidence") or {},
             "gates": readiness.get("gates") or {},
+            "observations": readiness.get("observations") or {},
         }
     )
 
@@ -301,7 +305,6 @@ def _validate_sources(
         "dry_dispatch.json": "dry_dispatch",
         "exchange_rules.json": "exchange_rules",
         "latest_projection.json": "projection",
-        "live_readiness.json": "final_readiness",
     }
     for name in _SOURCE_FILES:
         values[name], hashes[source_key_by_name[name]] = _read_source(
@@ -311,7 +314,6 @@ def _validate_sources(
     dispatch = values["dry_dispatch.json"]
     preflight = values["account_preflight.json"]
     readiness = values["dispatch_readiness.json"]
-    final_readiness = values["live_readiness.json"]
     snapshot = dispatch.get("account_snapshot")
     blockers: list[str] = []
     if not isinstance(snapshot, Mapping):
@@ -320,15 +322,12 @@ def _validate_sources(
         blockers.append("account_snapshot_hash_invalid")
     if not all(
         _order_free(value)
-        for value in (projection, dispatch, preflight, readiness, final_readiness)
+        for value in (projection, dispatch, preflight, readiness)
     ):
         blockers.append("order_capable_source_artifact")
     if isinstance(snapshot, Mapping) and not _order_free(snapshot):
         blockers.append("order_capable_account_snapshot")
-    for label, value in (
-        ("dispatch_readiness", readiness),
-        ("final_readiness", final_readiness),
-    ):
+    for label, value in (("dispatch_readiness", readiness),):
         if not _readiness_hash_valid(value):
             blockers.append(f"{label}_hash_invalid")
         runtime_preflight = (
@@ -362,9 +361,6 @@ def _validate_sources(
                 or ("not_passed",)
             )
         )
-    evidence = preflight.get("evidence")
-    if not isinstance(evidence, Mapping) or evidence.get("account_flat") is not True:
-        blockers.append("account_not_flat")
     if isinstance(snapshot, Mapping):
         snapshot_diag = snapshot.get("diagnostics")
         if not isinstance(snapshot_diag, Mapping) or snapshot_diag.get("verdict") != "account_snapshot_pass":
@@ -374,8 +370,26 @@ def _validate_sources(
                     (snapshot_diag or {}).get("blockers") or ("not_passed",)
                 )
             )
-        if snapshot.get("positions") or snapshot.get("regular_open_orders") or snapshot.get("conditional_open_orders"):
-            blockers.append("account_snapshot_not_flat_or_empty")
+        for position in snapshot.get("positions") or ():
+            if (
+                not isinstance(position, Mapping)
+                or position.get("data_symbol") not in {"BTCUSDT", "ETHUSDT", "BNBUSDT"}
+                or str(position.get("side") or "").lower() != "long"
+            ):
+                blockers.append("account_snapshot_unmanaged_or_short_position")
+        if snapshot.get("regular_open_orders"):
+            blockers.append("account_snapshot_regular_orders_present")
+        for order in snapshot.get("conditional_open_orders") or ():
+            if (
+                not isinstance(order, Mapping)
+                or order.get("data_symbol") not in {"BTCUSDT", "ETHUSDT", "BNBUSDT"}
+                or not str(order.get("client_order_id") or "").startswith(
+                    ("qmt-s-", "q-p-")
+                )
+                or not bool(order.get("close_position") or order.get("reduce_only"))
+                or str(order.get("side") or "").lower() != "sell"
+            ):
+                blockers.append("account_snapshot_unmanaged_conditional_order")
     source_hashes = dispatch.get("source_hashes")
     if not isinstance(source_hashes, Mapping):
         blockers.append("dispatch_source_hashes_missing")
@@ -385,13 +399,6 @@ def _validate_sources(
                 blockers.append(f"dispatch_source_hash_mismatch:{key}")
     if dispatch.get("readiness_hash") != readiness.get("readiness_hash"):
         blockers.append("dispatch_readiness_contract_mismatch")
-    try:
-        if aware_datetime(str(final_readiness["created_at"])) < aware_datetime(
-            str(dispatch["created_at"])
-        ):
-            blockers.append("final_readiness_before_dispatch")
-    except (KeyError, TypeError, ValueError):
-        blockers.append("authority_source_time_invalid")
     if blockers:
         raise AuthorityWriterBlocked(tuple(dict.fromkeys(blockers)), run_dir=run_dir)
     return run_dir, values, hashes
@@ -553,6 +560,62 @@ def _replace_authority(authority_root: Path, staged: Path) -> None:
         shutil.rmtree(previous)
 
 
+def _publish_complete_bundle(
+    config: AuthorityWriterConfig,
+    *,
+    batch: Any,
+    registry: StrategyRegistry,
+    ledger_snapshot: Any,
+    health: Any,
+    notification: Any,
+    brief: Any,
+) -> str:
+    stage = Path(
+        tempfile.mkdtemp(
+            prefix=f".{config.authority_root.name}-",
+            dir=config.authority_root.parent,
+        )
+    )
+    os.chmod(stage, 0o700)
+    try:
+        batch_path = stage / "decision_batch" / batch.manifest.batch_id
+        publish_decision_batch(
+            batch_path,
+            snapshot=batch.snapshot,
+            intents=batch.intents,
+            target=batch.target,
+            risk=batch.risk,
+            plan=batch.plan,
+            created_at=batch.manifest.created_at,
+        )
+        os.chmod(batch_path.parent, 0o700)
+        write_immutable_artifact(stage / "strategy_registry.json", registry)
+        for name, value in (
+            ("runtime_ledger_snapshot.json", ledger_snapshot.as_dict()),
+            ("notification_snapshot.json", notification.as_dict()),
+            ("system_health_snapshot.json", health.as_dict()),
+            ("daily_brief.json", brief.as_dict()),
+        ):
+            _write_json(stage / name, value)
+        bundle = read_vps_authority_bundle(stage)
+        authority_hash = canonical_hash(
+            {
+                "batch": bundle.batch.manifest.manifest_hash,
+                "registry": bundle.registry.registry_hash,
+                "ledger": bundle.ledger_snapshot.snapshot_hash,
+                "notification": bundle.notification_snapshot.snapshot_hash,
+                "health": bundle.system_health.snapshot_hash,
+                "brief": bundle.daily_brief.brief_hash,
+            }
+        )
+        _replace_authority(config.authority_root, stage)
+        stage = None  # type: ignore[assignment]
+        return authority_hash
+    finally:
+        if stage is not None and stage.exists():
+            shutil.rmtree(stage)
+
+
 def write_order_free_authority_bundle(
     config: AuthorityWriterConfig,
     *,
@@ -584,14 +647,6 @@ def write_order_free_authority_bundle(
 
     with _writer_lock(config.lock_path):
         ledger = RuntimeLedger(config.runtime_root / "runtime.sqlite3")
-        if ledger.position_quantities():
-            return AuthorityWriterResult.create(
-                status="blocked",
-                generated_at=captured_at,
-                run_dir=run_dir,
-                blockers=("runtime_ledger_nonflat",),
-                source_hashes=source_hashes,
-            )
         try:
             batch = build_verified_legacy_dispatch_batch(
                 projection,
@@ -611,20 +666,78 @@ def write_order_free_authority_bundle(
                     "maximum_gross": 1.0,
                 }
             )
+            previous_entry = None
+            if config.authority_root.is_dir() and not config.authority_root.is_symlink():
+                try:
+                    previous_bundle = read_vps_authority_bundle(config.authority_root)
+                    previous_entries = tuple(
+                        entry
+                        for entry in previous_bundle.registry.entries
+                        if entry.strategy_id == LIVE_PILOT_CONTRACT.strategy
+                    )
+                    if len(previous_entries) == 1:
+                        previous_entry = previous_entries[0]
+                except (OSError, TypeError, ValueError):
+                    previous_entry = None
+            preserve_minimal_live = bool(
+                previous_entry is not None
+                and previous_entry.promotion_status == "minimal_live"
+                and previous_entry.strategy_contract_hash == LIVE_PILOT_CONTRACT.contract_hash
+                and previous_entry.code_hash == code_hash
+                and previous_entry.config_hash == config_hash
+            )
             registry_entry = base_strategy_registration(
-                promotion_status="research",
+                promotion_status=("minimal_live" if preserve_minimal_live else "research"),
                 code_hash=code_hash,
                 config_hash=config_hash,
-                promotion_artifact_hash=None,
-                owner_authorization_hash=None,
+                promotion_artifact_hash=(
+                    previous_entry.promotion_artifact_hash
+                    if preserve_minimal_live and previous_entry is not None
+                    else None
+                ),
+                owner_authorization_hash=(
+                    previous_entry.owner_authorization_hash
+                    if preserve_minimal_live and previous_entry is not None
+                    else None
+                ),
                 maximum_stress_loss_fraction=config.target_stress_loss_fraction,
                 maximum_gross=1.0,
                 registered_at=batch.manifest.created_at,
+                supersedes_entry_id=(
+                    previous_entry.registry_entry_id
+                    if preserve_minimal_live and previous_entry is not None
+                    else None
+                ),
             )
             registry = StrategyRegistry.create(
                 (registry_entry,), created_at=batch.manifest.created_at
             )
             ledger.record_verified_batch(batch, recorded_at=batch.manifest.created_at)
+            exchange_positions = {symbol: 0.0 for symbol in TOP3}
+            average_costs = {symbol: 0.0 for symbol in TOP3}
+            for row in snapshot.get("positions") or ():
+                symbol = str(row["data_symbol"])
+                exchange_positions[symbol] += _float(
+                    row.get("contracts"), name=f"{symbol}_contracts"
+                )
+                average_costs[symbol] = _float(
+                    row.get("average_cost"), name=f"{symbol}_average_cost"
+                )
+            for symbol in TOP3:
+                quantity = exchange_positions[symbol]
+                average_cost = average_costs[symbol]
+                if quantity > 0.0 and average_cost <= 0.0:
+                    raise AuthorityWriterError(
+                        f"authority_position_average_cost_missing:{symbol}"
+                    )
+                ledger.record_position_snapshot(
+                    symbol=symbol,
+                    quantity=quantity,
+                    average_cost=average_cost if quantity > 0.0 else 0.0,
+                    realized_trading_pnl=0.0,
+                    occurred_at=str(snapshot["created_at"]),
+                    source_hash=source_hashes["dry_dispatch"],
+                )
             ledger.record_account_observation(
                 batch_id=batch.manifest.batch_id,
                 observed_at=str(snapshot["created_at"]),
@@ -636,26 +749,42 @@ def write_order_free_authority_bundle(
                 source_id=canonical_hash({"account_snapshot": snapshot["snapshot_hash"]}),
                 source_hash=source_hashes["dry_dispatch"],
             )
-            nav = ledger.record_nav_mark(
-                marked_at=str(snapshot["created_at"]),
-                opening_equity=wallet,
-                equity=_float(
-                    (snapshot.get("balance") or {}).get("margin_balance"),
-                    name="margin_balance",
-                ),
-                trading_pnl=0.0,
-                residual_tolerance=0.001,
-                source_hash=source_hashes["dry_dispatch"],
+            equity = _float(
+                (snapshot.get("balance") or {}).get("margin_balance"),
+                name="margin_balance",
             )
+            previous_nav = ledger.latest_nav_mark()
+            if previous_nav is not None and previous_nav.marked_at == str(
+                snapshot["created_at"]
+            ):
+                nav = previous_nav
+            else:
+                nav = ledger.record_nav_mark(
+                    marked_at=str(snapshot["created_at"]),
+                    opening_equity=wallet if previous_nav is None else None,
+                    equity=equity,
+                    trading_pnl=(
+                        0.0 if previous_nav is None else equity - previous_nav.equity
+                    ),
+                    residual_tolerance=0.001,
+                    source_hash=source_hashes["dry_dispatch"],
+                )
             reconciliation = reconcile_three_way(
                 batch_id=batch.manifest.batch_id,
                 reconciled_at=str(dispatch["created_at"]),
-                target_positions=dict(batch.plan.expected_positions),
+                phase="pre_dispatch",
+                target_positions=ledger.position_quantities(),
                 ledger_positions=ledger.position_quantities(),
-                exchange_positions={},
+                exchange_positions=exchange_positions,
                 position_tolerances=dict(batch.plan.reconciliation_tolerance),
                 ledger_open_order_ids=ledger.open_order_ids(),
-                exchange_open_order_ids=(),
+                exchange_open_order_ids=tuple(
+                    sorted(
+                        str(row.get("client_order_id"))
+                        for row in snapshot.get("conditional_open_orders") or ()
+                        if str(row.get("client_order_id") or "").startswith("q-p-")
+                    )
+                ),
                 equity_residual=nav.residual,
                 equity_residual_tolerance=nav.residual_tolerance,
             )
@@ -682,49 +811,15 @@ def write_order_free_authority_bundle(
                 notification,
                 generated_at=captured_at,
             )
-            stage = Path(
-                tempfile.mkdtemp(
-                    prefix=f".{config.authority_root.name}-",
-                    dir=config.authority_root.parent,
-                )
+            authority_hash = _publish_complete_bundle(
+                config,
+                batch=batch,
+                registry=registry,
+                ledger_snapshot=ledger_snapshot,
+                health=health,
+                notification=notification,
+                brief=brief,
             )
-            os.chmod(stage, 0o700)
-            try:
-                batch_path = stage / "decision_batch" / batch.manifest.batch_id
-                publish_decision_batch(
-                    batch_path,
-                    snapshot=batch.snapshot,
-                    intents=batch.intents,
-                    target=batch.target,
-                    risk=batch.risk,
-                    plan=batch.plan,
-                    created_at=batch.manifest.created_at,
-                )
-                os.chmod(batch_path.parent, 0o700)
-                write_immutable_artifact(stage / "strategy_registry.json", registry)
-                for name, value in (
-                    ("runtime_ledger_snapshot.json", ledger_snapshot.as_dict()),
-                    ("notification_snapshot.json", notification.as_dict()),
-                    ("system_health_snapshot.json", health.as_dict()),
-                    ("daily_brief.json", brief.as_dict()),
-                ):
-                    _write_json(stage / name, value)
-                bundle = read_vps_authority_bundle(stage)
-                authority_hash = canonical_hash(
-                    {
-                        "batch": bundle.batch.manifest.manifest_hash,
-                        "registry": bundle.registry.registry_hash,
-                        "ledger": bundle.ledger_snapshot.snapshot_hash,
-                        "notification": bundle.notification_snapshot.snapshot_hash,
-                        "health": bundle.system_health.snapshot_hash,
-                        "brief": bundle.daily_brief.brief_hash,
-                    }
-                )
-                _replace_authority(config.authority_root, stage)
-                stage = None  # type: ignore[assignment]
-            finally:
-                if stage is not None and stage.exists():
-                    shutil.rmtree(stage)
             return AuthorityWriterResult.create(
                 status="written",
                 generated_at=captured_at,
@@ -741,11 +836,238 @@ def write_order_free_authority_bundle(
             ) from exc
 
 
+def refresh_authority_bundle_from_runtime(
+    config: AuthorityWriterConfig,
+    *,
+    captured_at: str,
+    health_dependencies: HealthProbeDependencies | None = None,
+) -> AuthorityWriterResult:
+    """Republish a current batch after its standard runtime ledger changed."""
+
+    config.validate()
+    captured_at = aware_datetime(captured_at).isoformat()
+    run_dir = _resolve_run(config.source_root)
+    config.authority_root.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.authority_root.parent, 0o700)
+    config.runtime_root.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.runtime_root, 0o700)
+    with _writer_lock(config.lock_path):
+        current = read_vps_authority_bundle(config.authority_root)
+        ledger = RuntimeLedger(config.runtime_root / "runtime.sqlite3")
+        ledger_snapshot = build_runtime_ledger_snapshot(
+            ledger,
+            current.batch,
+            captured_at=captured_at,
+        )
+        registry = current.registry
+        reconciliation = ledger_snapshot.reconciliation
+        should_halt = bool(
+            ledger_snapshot.unresolved_order_ids
+            or reconciliation.get("halt_required")
+            or reconciliation.get("passed") is not True
+        )
+        if should_halt:
+            entries: list[StrategyRegistration] = []
+            for entry in current.registry.entries:
+                if entry.promotion_status == "halted":
+                    entries.append(entry)
+                    continue
+                entries.append(
+                    StrategyRegistration.create(
+                        strategy_id=entry.strategy_id,
+                        strategy_version=entry.strategy_version,
+                        strategy_kind=entry.strategy_kind,
+                        promotion_status="halted",
+                        strategy_contract_hash=entry.strategy_contract_hash,
+                        code_hash=entry.code_hash,
+                        config_hash=entry.config_hash,
+                        promotion_artifact_hash=entry.promotion_artifact_hash,
+                        owner_authorization_hash=entry.owner_authorization_hash,
+                        maximum_stress_loss_fraction=0.0,
+                        maximum_gross=0.0,
+                        registered_at=captured_at,
+                        supersedes_entry_id=entry.registry_entry_id,
+                        halted_from_status=entry.promotion_status,
+                    )
+                )
+            registry = StrategyRegistry.create(
+                tuple(entries), created_at=captured_at
+            )
+        health = _health(
+            config,
+            captured_at=captured_at,
+            dependencies=health_dependencies,
+        )
+        notification = _notification_snapshot(
+            current.batch,
+            ledger_snapshot,
+            health,
+            notification_path=config.runtime_root / "notifications.sqlite3",
+            captured_at=captured_at,
+        )
+        brief = build_daily_brief(
+            current.batch,
+            registry,
+            ledger_snapshot,
+            notification,
+            generated_at=captured_at,
+        )
+        authority_hash = _publish_complete_bundle(
+            config,
+            batch=current.batch,
+            registry=registry,
+            ledger_snapshot=ledger_snapshot,
+            health=health,
+            notification=notification,
+            brief=brief,
+        )
+        return AuthorityWriterResult.create(
+            status="written",
+            generated_at=captured_at,
+            run_dir=run_dir,
+            batch_id=current.batch.manifest.batch_id,
+            authority_hash=authority_hash,
+            source_hashes={
+                "runtime_ledger_snapshot": ledger_snapshot.snapshot_hash,
+                "notification_snapshot": notification.snapshot_hash,
+                "system_health_snapshot": health.snapshot_hash,
+                "daily_brief": brief.brief_hash,
+                "strategy_registry": registry.registry_hash,
+            },
+        )
+
+
+def authorize_minimal_live_authority_bundle(
+    config: AuthorityWriterConfig,
+    *,
+    arm: Mapping[str, Any],
+    arm_artifact_hash: str,
+    captured_at: str,
+    health_dependencies: HealthProbeDependencies | None = None,
+) -> AuthorityWriterResult:
+    """Atomically bind one manual arm to a minimal-live registry entry."""
+
+    config.validate()
+    captured_at = aware_datetime(captured_at).isoformat()
+    run_dir = _resolve_run(config.source_root)
+    if (
+        arm.get("status") != "armed"
+        or arm.get("capital_usdt") != LIVE_PILOT_CONTRACT.canary_capital_usdt
+    ):
+        raise AuthorityWriterError("minimal_live_arm_contract_invalid")
+    owner_hash = arm.get("owner_authorization_hash")
+    authority_batch_id = arm.get("authority_batch_id")
+    ledger_snapshot_hash = arm.get("runtime_ledger_snapshot_hash")
+    reconciliation_hash = arm.get("pre_dispatch_reconciliation_hash")
+    for value, name in (
+        (arm_artifact_hash, "arm_artifact_hash"),
+        (owner_hash, "owner_authorization_hash"),
+        (authority_batch_id, "authority_batch_id"),
+        (ledger_snapshot_hash, "runtime_ledger_snapshot_hash"),
+        (reconciliation_hash, "pre_dispatch_reconciliation_hash"),
+    ):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise AuthorityWriterError(f"minimal_live_{name}_invalid")
+    if owner_hash != manual_arm_owner_authorization_hash(arm):
+        raise AuthorityWriterError("minimal_live_owner_authorization_hash_mismatch")
+    if (
+        arm.get("contract_hash") != LIVE_PILOT_CONTRACT.contract_hash
+        or arm.get("governance_override", {}).get("scope")
+        != "owner_authorized_100_usdt_canary"
+    ):
+        raise AuthorityWriterError("minimal_live_arm_scope_invalid")
+    config.authority_root.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.authority_root.parent, 0o700)
+    config.runtime_root.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.runtime_root, 0o700)
+    with _writer_lock(config.lock_path):
+        current = read_vps_authority_bundle(config.authority_root)
+        if (
+            current.batch.manifest.batch_id != authority_batch_id
+            or current.ledger_snapshot.snapshot_hash != ledger_snapshot_hash
+            or current.ledger_snapshot.reconciliation.get("report_hash")
+            != reconciliation_hash
+            or current.ledger_snapshot.reconciliation.get("phase") != "pre_dispatch"
+            or current.ledger_snapshot.reconciliation.get("passed") is not True
+            or current.ledger_snapshot.unresolved_order_ids
+        ):
+            raise AuthorityWriterError("minimal_live_authority_drift")
+        entries = tuple(
+            entry
+            for entry in current.registry.entries
+            if entry.strategy_id == LIVE_PILOT_CONTRACT.strategy
+        )
+        if len(entries) != 1:
+            raise AuthorityWriterError("minimal_live_registry_entry_missing")
+        previous = entries[0]
+        promoted = StrategyRegistration.create(
+            strategy_id=previous.strategy_id,
+            strategy_version=previous.strategy_version,
+            strategy_kind=previous.strategy_kind,
+            promotion_status="minimal_live",
+            strategy_contract_hash=previous.strategy_contract_hash,
+            code_hash=previous.code_hash,
+            config_hash=previous.config_hash,
+            promotion_artifact_hash=arm_artifact_hash,
+            owner_authorization_hash=str(owner_hash),
+            maximum_stress_loss_fraction=previous.maximum_stress_loss_fraction,
+            maximum_gross=previous.maximum_gross,
+            registered_at=captured_at,
+            supersedes_entry_id=previous.registry_entry_id,
+        )
+        registry = StrategyRegistry.create((promoted,), created_at=captured_at)
+        # The arm binds the exact pre-dispatch snapshot hash. Registry promotion
+        # must not silently recapture the ledger and invalidate that binding.
+        ledger_snapshot = current.ledger_snapshot
+        health = _health(
+            config,
+            captured_at=captured_at,
+            dependencies=health_dependencies,
+        )
+        notification = _notification_snapshot(
+            current.batch,
+            ledger_snapshot,
+            health,
+            notification_path=config.runtime_root / "notifications.sqlite3",
+            captured_at=captured_at,
+        )
+        brief = build_daily_brief(
+            current.batch,
+            registry,
+            ledger_snapshot,
+            notification,
+            generated_at=captured_at,
+        )
+        authority_hash = _publish_complete_bundle(
+            config,
+            batch=current.batch,
+            registry=registry,
+            ledger_snapshot=ledger_snapshot,
+            health=health,
+            notification=notification,
+            brief=brief,
+        )
+        return AuthorityWriterResult.create(
+            status="written",
+            generated_at=captured_at,
+            run_dir=run_dir,
+            batch_id=current.batch.manifest.batch_id,
+            authority_hash=authority_hash,
+            source_hashes={
+                "manual_arm": arm_artifact_hash,
+                "runtime_ledger_snapshot": ledger_snapshot.snapshot_hash,
+                "strategy_registry": registry.registry_hash,
+            },
+        )
+
+
 __all__ = [
     "AUTHORITY_WRITER_SCHEMA_VERSION",
     "AuthorityWriterBlocked",
     "AuthorityWriterConfig",
     "AuthorityWriterError",
     "AuthorityWriterResult",
+    "authorize_minimal_live_authority_bundle",
+    "refresh_authority_bundle_from_runtime",
     "write_order_free_authority_bundle",
 ]

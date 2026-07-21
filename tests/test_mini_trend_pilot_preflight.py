@@ -150,7 +150,7 @@ class MiniTrendPilotPreflightTest(unittest.TestCase):
         self.assertEqual(report["diagnostics"]["verdict"], "account_preflight_pass")
         self.assertEqual(exchange.mutating_calls, [])
 
-    def test_two_x_configuration_and_open_orders_remain_blocked(self) -> None:
+    def test_two_x_configuration_blocks_while_open_orders_are_audited(self) -> None:
         exchange = _FakeExchange(
             configured_leverage=2.0,
             open_orders=[{"id": "read-only-order"}],
@@ -160,7 +160,7 @@ class MiniTrendPilotPreflightTest(unittest.TestCase):
         self.assertTrue(report["evidence"]["open_order_audit_complete"])
         self.assertEqual(report["evidence"]["open_order_count"], 1)
         self.assertIn("isolated_one_x_verified", report["diagnostics"]["blockers"])
-        self.assertIn("no_open_orders", report["diagnostics"]["blockers"])
+        self.assertNotIn("no_open_orders", report["diagnostics"]["gates"])
         self.assertEqual(
             {
                 row["leverage"]
@@ -191,7 +191,7 @@ class MiniTrendPilotPreflightTest(unittest.TestCase):
         self.assertNotIn("test-secret", error)
         self.assertEqual(error.count("[REDACTED]"), 2)
 
-    def test_existing_top3_long_is_not_a_flat_pilot_start(self) -> None:
+    def test_existing_managed_top3_long_can_continue_the_pilot(self) -> None:
         report = build_pilot_account_preflight(
             _settings(),
             exchange=_FakeExchange(
@@ -207,7 +207,8 @@ class MiniTrendPilotPreflightTest(unittest.TestCase):
             ),
         )
         self.assertFalse(report["evidence"]["account_flat"])
-        self.assertIn("account_flat", report["diagnostics"]["blockers"])
+        self.assertEqual(report["evidence"]["unmanaged_position_count"], 0)
+        self.assertEqual(report["diagnostics"]["verdict"], "account_preflight_pass")
 
 
 if __name__ == "__main__":

@@ -202,7 +202,7 @@ class DailyBriefTest(unittest.TestCase):
         self.assertEqual(raw, expected)
         self.assertEqual(
             hashlib.sha256(raw).hexdigest(),
-            "6ea5d7f0ca239382e672fe0b4ad9115d631f1e81548d2bda386d7f533a58e6f9",
+            "26c53f28b3682b3324297cc31edc84d9999703e5ce5fcca65dda5cfbb7aef382",
         )
 
     def test_reports_model_has_independent_freshness_and_atomic_tamper_checks(self) -> None:

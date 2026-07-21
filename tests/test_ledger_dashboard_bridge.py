@@ -609,7 +609,7 @@ class LedgerDashboardBridgeTest(unittest.TestCase):
         self.assertEqual(actual, expected)
         self.assertEqual(
             hashlib.sha256(actual).hexdigest(),
-            "f2840c99a4403c1a50e39c497e4b6bd571dcc4442d4e77e635e53c5453b66c32",
+            "23076111ee2d578ef7b93ccee4a9bc7af78731a7693f0d8b1ebc45215536a7f9",
         )
 
 

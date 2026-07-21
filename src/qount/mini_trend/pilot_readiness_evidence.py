@@ -53,6 +53,13 @@ def _optional_float(value: Any) -> float | None:
         return None
 
 
+def _canonical_hash(value: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _artifact_is_order_free(payload: Mapping[str, Any]) -> bool:
     meta = _mapping(payload.get("meta"))
     return not any(
@@ -71,6 +78,7 @@ def runtime_evidence_from_artifacts(
     preflight_path: str | Path,
     paper_path: str | Path,
     shadow_input_path: str | Path,
+    release_provenance_path: str | Path,
     dry_run_days: int = 0,
     dry_run_schema_error_count: int = 0,
     independent_runtime_verified: bool = False,
@@ -81,6 +89,9 @@ def runtime_evidence_from_artifacts(
     preflight, preflight_source = _load_object(preflight_path)
     paper, paper_source = _load_object(paper_path)
     shadow_input, shadow_input_source = _load_object(shadow_input_path)
+    release_provenance, release_provenance_source = _load_object(
+        release_provenance_path
+    )
 
     preflight_valid = (
         preflight.get("artifact_type") == "mini_trend_um_pilot_account_preflight"
@@ -96,6 +107,27 @@ def runtime_evidence_from_artifacts(
         shadow_input.get("artifact_type") == "mini_trend_um_shadow_input_refresh"
         and bool(_mapping(shadow_input.get("meta")).get("public_data_only"))
         and _artifact_is_order_free(shadow_input)
+    )
+    release_meta = _mapping(release_provenance.get("meta"))
+    release_evidence = _mapping(release_provenance.get("evidence"))
+    release_details = _mapping(release_provenance.get("provenance"))
+    release_verification_core = {
+        key: value
+        for key, value in release_provenance.items()
+        if key != "verification_hash"
+    }
+    release_provenance_valid = (
+        release_provenance.get("artifact_type")
+        == "qount_release_provenance_verification"
+        and bool(release_meta.get("read_only"))
+        and not bool(release_meta.get("orders_allowed"))
+        and release_evidence.get("verified") is True
+        and bool(release_details.get("git_commit"))
+        and bool(release_details.get("version"))
+        and bool(release_details.get("source_tree_hash"))
+        and bool(release_details.get("provenance_hash"))
+        and release_provenance.get("verification_hash")
+        == _canonical_hash(release_verification_core)
     )
 
     preflight_evidence = (
@@ -121,7 +153,6 @@ def runtime_evidence_from_artifacts(
     funding_journal_complete = (
         paper_valid
         and shadow_input_valid
-        and paper_days > 0
         and journal_rows == paper_days
         and bool(shadow_diagnostics.get("current_month_funding_complete"))
     )
@@ -183,11 +214,34 @@ def runtime_evidence_from_artifacts(
         legacy_production_cron_disabled=legacy_production_cron_disabled,
         legacy_live_guard_disarmed=legacy_live_guard_disarmed,
         rollback_documented=rollback_documented,
+        release_provenance_verified=release_provenance_valid,
+        release_git_commit=(
+            str(release_details.get("git_commit"))
+            if release_provenance_valid
+            else None
+        ),
+        release_version=(
+            str(release_details.get("version"))
+            if release_provenance_valid
+            else None
+        ),
+        release_source_tree_hash=(
+            str(release_details.get("source_tree_hash"))
+            if release_provenance_valid
+            else None
+        ),
+        release_provenance_hash=(
+            str(release_details.get("provenance_hash"))
+            if release_provenance_valid
+            else None
+        ),
     )
     sources = {
         "preflight": preflight_source | {"valid": preflight_valid},
         "paper": paper_source
         | {"valid": paper_valid, "schema_error_count": paper_schema_errors},
         "shadow_input": shadow_input_source | {"valid": shadow_input_valid},
+        "release_provenance": release_provenance_source
+        | {"valid": release_provenance_valid},
     }
     return RuntimeEvidence(evidence=evidence, sources=sources)

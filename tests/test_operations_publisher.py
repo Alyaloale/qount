@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -235,7 +236,7 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertEqual(models.system.payload["health"]["values"]["status"], "healthy")
         self.assertEqual(backup.publication_id, publication.publication_id)
         self.assertTrue(drill.verified)
-        self.assertEqual(drill.file_count, 11)
+        self.assertEqual(drill.file_count, 12)
         self.assertEqual(len(release_names), 3)
         self.assertEqual(release_names, set(results[-1].retained_release_ids))
         self.assertTrue(results[-1].pruned_release_ids)
@@ -243,6 +244,26 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertEqual(backup_names, set(results[-1].retained_backup_ids))
         self.assertIn(results[-1].backup_id, backup_names)
         self.assertTrue(results[-1].pruned_backup_ids)
+
+    def test_empty_intelligence_archive_publishes_explicit_unavailable_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _publish_authority_bundle(root)
+            intelligence_root = root / "intelligence"
+            intelligence_root.mkdir(mode=0o700)
+            config = replace(_config(root), intelligence_root=intelligence_root)
+            result = run_dashboard_publisher(
+                config,
+                observed_at="2026-07-20T00:09:00+00:00",
+                dependencies=_dependencies(),
+            )
+            models, publication = read_dashboard_v1(config.dashboard_root)
+
+        self.assertEqual(publication.publication_id, result.publication_id)
+        self.assertEqual(
+            models.intelligence.payload["authority"]["intelligence"],
+            "unavailable_until_daily_intelligence",
+        )
 
     def test_lock_busy_fails_without_changing_current_release(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

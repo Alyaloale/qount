@@ -22,6 +22,7 @@ from typing import Iterator, Sequence
 from qount.contracts import canonical_hash
 from qount.contracts import is_sha256
 from qount.contracts.trace import aware_datetime
+from qount.intelligence import read_latest_daily_intelligence
 from qount.operations.backups import BackupRecord
 from qount.operations.backups import BackupRetentionResult
 from qount.operations.backups import RestoreDrillResult
@@ -55,6 +56,7 @@ class PublisherConfig:
     backup_root: Path
     lock_path: Path
     disk_path: Path
+    intelligence_root: Path | None = None
     service_name: str = "qount-dashboard-publisher.timer"
     allowed_service_names: tuple[str, ...] = DEFAULT_ALLOWED_SERVICE_NAMES
     retain_previous_releases: int = 4
@@ -73,6 +75,8 @@ class PublisherConfig:
             self.disk_path,
         )
         if any(not isinstance(path, Path) or not path.is_absolute() for path in paths):
+            raise DashboardPublisherError("publisher_absolute_paths_required")
+        if self.intelligence_root is not None and not self.intelligence_root.is_absolute():
             raise DashboardPublisherError("publisher_absolute_paths_required")
         if (
             self.service_name not in self.allowed_service_names
@@ -363,6 +367,12 @@ def run_dashboard_publisher(
     with single_writer_lock(config.lock_path):
         _prepare_output_paths(config)
         bundle = read_vps_authority_bundle(config.authority_root)
+        intelligence = (
+            read_latest_daily_intelligence(config.intelligence_root)
+            if config.intelligence_root is not None
+            and (config.intelligence_root / "latest").exists()
+            else None
+        )
         health = collect_os_system_health(
             HealthProbeConfig(
                 disk_path=config.disk_path,
@@ -385,6 +395,7 @@ def run_dashboard_publisher(
             alert_stale_after_seconds=config.alert_stale_after_seconds,
             daily_brief=bundle.daily_brief,
             report_stale_after_seconds=config.report_stale_after_seconds,
+            daily_intelligence=intelligence,
             system_health=health,
             system_stale_after_seconds=config.system_stale_after_seconds,
         )
@@ -432,6 +443,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--backup-root", type=Path, required=True)
     parser.add_argument("--lock-path", type=Path, required=True)
     parser.add_argument("--disk-path", type=Path, required=True)
+    parser.add_argument("--intelligence-root", type=Path)
     parser.add_argument(
         "--service-name",
         choices=DEFAULT_ALLOWED_SERVICE_NAMES,
@@ -454,6 +466,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         backup_root=args.backup_root,
         lock_path=args.lock_path,
         disk_path=args.disk_path,
+        intelligence_root=args.intelligence_root,
         service_name=args.service_name,
         retain_previous_releases=args.retain_previous_releases,
         retain_previous_backups=args.retain_previous_backups,

@@ -234,6 +234,23 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
 .delivery-list { display: grid; gap: 6px; color: var(--text-2); font-size: 11px; }
 .delivery-list > span { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .delivery-list .status-pill { min-height: 19px; }
+.market-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.market-strip article { display: grid; gap: 7px; padding: 15px; border-right: 1px solid var(--line-soft); }
+.market-strip article:last-child { border-right: 0; }
+.market-strip span, .market-strip small { color: var(--text-3); font-size: 10px; }
+.market-strip strong { font-family: var(--font-mono); font-size: 17px; }
+.market-strip .positive { color: var(--green); }
+.market-strip .negative { color: var(--red); }
+.intelligence-summary { padding: 16px; }
+.intelligence-summary > p { margin: 0 0 16px; color: var(--text-1); font-size: 13px; line-height: 1.7; }
+.intelligence-summary h3 { margin: 0 0 8px; font-size: 11px; }
+.agent-list, .source-list { display: grid; padding: 0 15px; }
+.agent-list article, .source-list article { padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
+.agent-list article:last-child, .source-list article:last-child { border-bottom: 0; }
+.agent-list article > div { display: flex; align-items: center; gap: 8px; }
+.agent-list strong, .source-list strong { font-size: 11px; }
+.agent-list p, .source-list p { margin: 7px 0 0; overflow-wrap: anywhere; color: var(--text-2); font-size: 11px; line-height: 1.55; }
+.source-list small { display: block; margin-top: 6px; color: var(--text-3); font-size: 10px; }
 
 .offline-state { max-width: 760px; margin: 9vh auto 0; padding: 30px 0; border-top: 1px solid var(--red); border-bottom: 1px solid var(--line); }
 .offline-kicker { color: var(--red); font-size: 11px; font-weight: 800; }
@@ -267,6 +284,12 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
   .health-band article:nth-child(-n+2) { border-bottom: 1px solid var(--line-soft); }
   .incident-list article { grid-template-columns: 110px minmax(0, 1fr); }
   .delivery-list { grid-column: 2; padding-bottom: 14px; }
+}
+
+@media (max-width: 620px) {
+  .market-strip { grid-template-columns: 1fr; }
+  .market-strip article { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+  .market-strip article:last-child { border-bottom: 0; }
 }
 
 @media (max-width: 680px) {

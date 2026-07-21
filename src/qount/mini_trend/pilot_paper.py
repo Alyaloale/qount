@@ -384,7 +384,14 @@ def build_pilot_paper_replay(
         "no_duplicate_decisions": result.metrics["duplicate_decision_count"] == 0,
         "no_same_bar_stop_reentry": result.metrics["same_bar_stop_reentry_count"] == 0,
         "no_risk_halt": not risk_flags,
-        "minimum_paper_days": paper_days >= LIVE_PILOT_CONTRACT.minimum_paper_days,
+    }
+    observations = {
+        "paper_days": {
+            "actual": paper_days,
+            "target": LIVE_PILOT_CONTRACT.paper_day_observation_target,
+            "target_met": paper_days
+            >= LIVE_PILOT_CONTRACT.paper_day_observation_target,
+        }
     }
     report["evaluation"] = {
         "paper_days": paper_days,
@@ -405,6 +412,7 @@ def build_pilot_paper_replay(
         },
     }
     report["diagnostics"]["gates"] = gates
+    report["diagnostics"]["observations"] = observations
     report["diagnostics"]["blockers"] = [
         name for name, passed in gates.items() if not passed
     ]
@@ -413,7 +421,7 @@ def build_pilot_paper_replay(
         "paper_risk_halted"
         if risk_flags
         else "review_dry_run_readiness"
-        if all(gates.values())
+        if all(gates.values()) and observations["paper_days"]["target_met"]
         else "collect_paper_evidence"
     )
     return PilotPaperReplay(report=report, journal_rows=tuple(journal_rows))

@@ -859,6 +859,7 @@ class NotificationStore:
         *,
         attempted_at: str,
         transport: Transport,
+        channel: str | None = None,
         limit: int = 100,
         retry_base_seconds: int = 60,
         after_transport: AfterTransport | None = None,
@@ -866,6 +867,8 @@ class NotificationStore:
         attempted_at = _utc_time(attempted_at, name="notification_attempted_at")
         if not callable(transport):
             raise TypeError("notification_transport_required")
+        if channel is not None and not _CHANNEL_RE.fullmatch(channel):
+            raise NotificationStoreError("notification_delivery_channel_invalid")
         if (
             not isinstance(limit, int)
             or isinstance(limit, bool)
@@ -876,16 +879,18 @@ class NotificationStore:
         ):
             raise NotificationStoreError("notification_delivery_options_invalid")
         with self._connection() as connection:
-            rows = connection.execute(
-                """
+            query = """
                 SELECT job_id FROM delivery_jobs
                 WHERE status IN ('PENDING','RETRY_WAIT')
                   AND next_attempt_at <= ?
-                ORDER BY next_attempt_at, job_id
-                LIMIT ?
-                """,
-                (attempted_at, limit),
-            ).fetchall()
+            """
+            parameters: list[Any] = [attempted_at]
+            if channel is not None:
+                query += " AND channel = ?"
+                parameters.append(channel)
+            query += " ORDER BY next_attempt_at, job_id LIMIT ?"
+            parameters.append(limit)
+            rows = connection.execute(query, parameters).fetchall()
         results: list[Mapping[str, Any]] = []
         for row in rows:
             claim = self._claim_job(str(row["job_id"]), attempted_at=attempted_at)

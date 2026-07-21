@@ -2,7 +2,7 @@
 
 版本：`v1.0`
 
-更新时间：`2026-07-20`
+更新时间：`2026-07-21`
 
 状态：目标架构与渐进迁移合同。本文不构成充值、下单、策略晋级或实盘授权。
 
@@ -122,7 +122,7 @@ runtime proof
 | 内部账本 | 本地Level 2 / production Level 1 | SQLite WAL、event/cash/NAV/outbox基础已本地实现；legacy运行链尚未迁移 |
 | 恢复机制 | 本地Level 2 / production Level 1-2 | UNKNOWN/client-ID恢复合同和故障重放已本地实现；尚无真实交易所接入证据 |
 | Dashboard | 本地Level 2 / production Level 2 | v1十页已接ledger v3、四项健康和trace；VPS publisher每两分钟发布真实order-free authority，账户/决策stale与系统健康fresh独立显示 |
-| 通知与日报 | 本地Level 2 / production Level 1 | 分级事件、只读producer、WAL outbox、重试、投递审计、显式incident supersession/resolve、确定性DailyBrief及alerts/reports已本地实现；scheduler和真实transport尚未接入 |
+| 通知与日报 | 本地Level 2 / production Level 2 | 分级事件、WAL outbox、重试、审计、确定性DailyBrief和六角色DailyIntelligence已实现；个人微信真实投递与每日scheduler已接入，交易权限保持隔离 |
 | 实盘证据 | Level 0 | Base尚未manual arm，没有新系统live成交样本 |
 
 下一里程碑是把单策略系统提升到 Level 3，而不是先增加更多实盘策略。
@@ -1177,8 +1177,8 @@ Phase B后续本地批次已补上只读Dashboard桥，仍未进入生产：
 
 目标：达到Level 3最关键的执行基础。
 
-状态：**本地账本、legacy dry迁移回放、完整runtime snapshot和只读Dashboard adapter已实现，尚未接legacy dispatcher、交易所adapter或
-production publisher**。
+状态：**本地账本、legacy dry迁移回放、完整runtime snapshot和只读Dashboard adapter已实现；MiniTrend dispatcher已接入
+标准batch、RuntimeLedger和authority发布链，尚未以真钱订单验证交易所行为**。
 当前实现包括：
 
 - `ledger/legacy_replay.py`把相互hash链接的Base projection与legacy dry plan转换为完整标准batch，并只向隔离ledger登记
@@ -1196,6 +1196,11 @@ production publisher**。
   时间段拒绝晚到事件静默改写；
 - 三方reconciliation持久化前必须匹配batch冻结target/tolerance、当前ledger positions/open orders和最新NAV residual；
   unmanaged/missing order、ledger/exchange仓位差异或residual超限要求HALT。
+- live提交前先把标准订单写为`SUBMITTING`；market成交只接受`fetch_order`与逐笔
+  `fetch_order_trades/fetch_my_trades`共同确认的trade ID、数量、价格和USDT fee。create-order简略回包、查询超时、
+  fee缺失或聚合fill一律转`UNKNOWN + HALT`，不重发也不继续后续订单；保护单明确ACK后记`ACKNOWLEDGED`。
+- 成功后把position、account、短窗口cash ledger、NAV与post-dispatch reconciliation写回同一SQLite；失败也写HALT
+  reconciliation并原子刷新authority，使Dashboard显示unresolved订单和halted registry，而不是保留旧的pre-dispatch健康画面。
 - `ledger/read_model.py`只在SQLite/outbox/audit链、最新NAV和同批最新reconciliation共同闭合时生成冻结快照；Dashboard只消费
   该快照，不直接查询SQLite，也不从market snapshot/目标权重重建仓位或PnL。schema v3已包含仓位明细、完整订单/事件、fills、
   cash events、recoveries、完整NAV历史及账户观测，并继续绑定同一读事务、当前batch plan hash与audit tail。
@@ -1219,9 +1224,9 @@ residual和三方差异。它证明本地迁移/存储/恢复合同，不证明�
 
 目标：系统可看、可告警、可解释。
 
-状态：**本地通知告警、只读producer adapters、显式incident生命周期、确定性DailyBrief、十页Dashboard和production-shaped
-publisher已实现；静态前端与publisher scheduler已在VPS读取真实order-free authority运行，authority writer保持手工oneshot，
-真实notification transport仍未接入**。
+状态：**本地通知告警、只读producer adapters、显式incident生命周期、确定性DailyBrief、DailyIntelligence、十一页Dashboard和
+production-shaped publisher已实现；静态前端与publisher scheduler已在VPS读取真实order-free authority运行，authority writer保持
+手工oneshot；腾讯官方个人微信iLink、免费官方feed、完整六角色中文LLM、不可覆盖归档、Dashboard和每日timer已形成真实E2E证据**。
 
 当前实现包括：
 
@@ -1229,7 +1234,11 @@ publisher已实现；静态前端与publisher scheduler已在VPS读取真实orde
   trace和dedupe key；exact replay幂等，同identity不同内容失败关闭；
 - `notifications/store.py`在私有目录使用SQLite WAL、foreign keys和FULL synchronous，把alert状态、delivery job、attempt和
   canonical hash audit chain持久化；投递固定idempotency key，支持指数退避、dead-letter以及外部成功后DB marker中断恢复；
-- transport只能注入，本批测试没有真实网络发送。下一批接入前仍需单独评审凭据、超时、限流、provider幂等语义和运维归属；
+- transport继续由`NotificationStore`注入；`OpenClawWeixinProvider`固定腾讯官方iLink host/path/header，复用现有OpenClaw账号和
+  recipient，以delivery key派生稳定client ID。仓库外`0600`凭据只保存稳定的account/base URL/recipient/token，最新context token在每次发送前
+  从OpenClaw accounts目录按recipient读取；目录/文件owner、mode、symlink、大小和JSON映射不满足合同时失败关闭，静态token只作手工/测试回退；生产真实接入通知为
+  `DELIVERED/SUCCEEDED`且audit chain重放通过。`WeComGroupRobotProvider`保留为未启用兼容实现；外部接受后、本地成功marker前崩溃
+  仍可能重复；
 - `NotificationSnapshot`验证业务row hash和audit chain后，成为第四份`alerts` read model；notification source/freshness与
   batch/registry/ledger独立，新告警不能把旧账户数据洗新；
 - `notifications/producers.py`只接受完整`VerifiedDecisionBatch`、冻结`RuntimeLedgerSnapshot`或显式
@@ -1246,9 +1255,14 @@ publisher已实现；静态前端与publisher scheduler已在VPS读取真实orde
 - DailyBrief订单段从snapshot v3读取order status、fills、quantity/notional/fees、protective runtime和最近recovery；其中
   order latency/slippage仍显式unavailable。账户balance、actual gross、margin和peak/current drawdown直接来自账户/NAV账本事实，
   不以目标仓位、市场价或浏览器计算补齐；
+- `intelligence/`构成独立只读情报平面：生产默认从Binance公告API、Fed RSS和SEC RSS免费发现URL，官方allowlist重新抓取并保存原文；
+  Binance `24hr/premiumIndex`和feed响应均保存原始HTTP字节SHA-256。冻结RuntimeLedger v3摘要依次交给
+  market/event/execution/strategy/red-team/editor六角色，
+  生成不可覆盖`DailyIntelligenceReport`。报告固定禁止订单和live修改，只能形成解释、批评和可证伪研究建议；
 - `positions/decisions`提供可点击的仓位到批次证据链；`orders/risk/system`分别展示订单与成交、RiskDecision/runtime gate/三方差异和
-  ledger/audit/recovery及`clock/disk/service/backup`健康状态；`reports`继续使用独立DailyBrief source/freshness。原子release为
-  11个JSON，静态schema为13份；Playwright桌面/移动已检查Live、Positions、Decisions、System和fail-closed页面；
+  ledger/audit/recovery及`clock/disk/service/backup`健康状态；`reports/intelligence`分别使用独立DailyBrief/DailyIntelligence
+  source/freshness。原子release为12个JSON，静态schema为15份；情报页已用Chromium完成桌面`1440x1000`和移动`390x844`
+  首屏、完整长页及文档宽度检查，六角色与来源证据完整，无可见元素越界、重叠或裁切；
 - 旧CTA-R SwiftBar/Übersicht展示源、缓存和`cta.json`推送链已删除，本机`com.qount.dashboard`已卸载；独立
   `com.qount.ctar-daily`研究采集任务保留。
 - `operations/authority_writer.py`已把VPS order-free MiniTrend run作为唯一输入适配到上述六类标准source：它要求保留
@@ -1261,13 +1275,17 @@ publisher已实现；静态前端与publisher scheduler已在VPS读取真实orde
 - AlertEvent、outbox、重试、分级和投递审计；
 - Dashboard仓位、trace、订单、风险、账本、系统、报告页面；
 - deterministic DailyBrief；
-- Market/Ops/Strategy/Risk LLM报告旁路；
+- Market/Event/Execution/Strategy/Red-team/Editor LLM报告旁路；
 - stale、agent_unavailable和未解决事件显示。
 
 验收：不登录VPS也能从受保护Dashboard和通知判断账户、策略、系统和待办。
 
-真实transport评审结论：不得复用legacy `Notifier`或shell ServerChan发送；新adapter必须由`NotificationStore`注入，保留delivery key
-幂等、provider响应验证、限流/超时、0600凭据、最小payload和无密钥审计，并在systemd单实例worker和故障测试闭合后再申请真实发送授权。
+真实transport评审结论：不得复用legacy `Notifier`或shell ServerChan发送；个人微信adapter已由`NotificationStore`注入并具备稳定
+client ID、provider响应验证、限流/超时、0600凭据、中文最小payload、channel隔离和无密钥审计。完整生产E2E已验证3份feed、8份详情、
+2份行情、六角色中文Responses、账本摘要、不可覆盖归档、Dashboard read model和日报微信`DELIVERED/SUCCEEDED`；每日systemd timer现为
+`enabled/active`。会话单一真相已收口到OpenClaw accounts目录，日报unit依赖gateway并只读挂载该目录；删除Qount静态context token后的
+真实验证仍为`DELIVERED/SUCCEEDED`，20行NotificationStore audit chain可重放。外层`incomplete/needs_research`必须按证据状态展示，
+不能为了表面健康改写成`clear`。
 
 production publisher评审结论：本地已具备只读VPS artifact importer、四项OS/systemd/backup探针、非阻塞systemd形单写者、同盘
 原子发布、当前+4个release保留、逐文件备份、latest+60个backup保留和临时恢复演练；`qount-dashboard-publisher.timer`已在
@@ -1278,16 +1296,29 @@ authority writer另有`static/inactive` oneshot unit并与publisher共享lock；
 
 ### Phase D：Base最小实盘审查
 
-目标：只在现有门全部满足后进入manual arm审查。
+目标：以固定`100 USDT` canary完成Base最小实盘审查，不等待日历观察指标自然累积。
+
+状态：**Phase B/C/D工程链已部署并通过一次order-free闭环，真钱订单仍关闭**。Owner在2026-07-21明确授权跳过约两个月等待，
+`60 forward pairs / 10 active bars / 30 paper days / 7 dry decision days`降为非阻断观察指标。它们继续出现在
+readiness与Dashboard中，用于解释样本成熟度，并纳入readiness hash防篡改，但不再决定`ready_for_manual_final_arm`。
+VPS run `/root/qount/state/mini_trend/forward/runs/20260721T063854Z`已得到`ready_for_manual_final_arm`、blocker 0；
+readiness/batch+manifest/ledger/reconciliation hash均已冻结，但`live_orders_allowed=false`、registry为`research`、arm为0。
 
 前置：
 
-- 60个forward pair、10个active bar；
-- 30天paper、7天dry decision；
+- 本金严格等于`100 USDT`，long/cash、TOP3、isolated 1x、gross<=1；
+- `1000 USDT`字段只兼容历史research/paper和order-free证据，不能进入live arm、dispatcher或live journal；
+- 60/10 forward、30天paper、7天dry作为观察项，不是订单授权门；
 - funding journal完整；
 - 0 unmanaged/UNKNOWN/unreconciled position；
 - rollback和恢复演练通过；
-- owner为具体readiness hash签发manual arm。
+- 当前account/preflight、标准authority batch、RuntimeLedger snapshot和pre-dispatch reconciliation全部匹配；
+- owner为具体readiness hash签发manual arm；arm artifact同时成为`minimal_live` promotion evidence和owner authorization，
+  live switch、confirmation和token仍须同时匹配。首笔订单前必须重新展示这些最终hash供owner确认。
+
+操作边界：部署和order-free演练不创建arm，不打开`QOUNT_MINI_TREND_LIVE_ENABLE`，不启用MiniTrend timer，不恢复旧X4/CxD
+cron。registry在order-free阶段保持`research`；只有显式arm命令原子写入arm并把同一authority提升为`minimal_live`。任意
+UNKNOWN、对账失败或HALT会把registry风险预算归零并发布`halted`。
 
 验收：一个月试点期间每个订单、仓位、PnL和异常都可解释。盈利是观察结果，不是放宽工程门的理由。
 

@@ -266,6 +266,33 @@ class ProviderTransportPolicyTest(unittest.TestCase):
         self.assertEqual(len({call["delivery_key"] for call in provider.calls}), 1)
         self.assertEqual([row["status"] for row in rows["attempts"]], ["FAILED", "SUCCEEDED"])
 
+    def test_store_delivers_only_the_selected_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = NotificationStore(
+                Path(temporary) / "private" / "notifications.sqlite3"
+            )
+            store.enqueue(
+                _alert(),
+                recorded_at=RECORDED_AT,
+                channels=("wecom", "openclaw_weixin"),
+                max_attempts=2,
+            )
+            provider = FakeNotificationProvider(
+                clock=lambda: dt.datetime.fromisoformat(RECEIVED_AT)
+            )
+            result = store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=ProviderTransport(provider, provider_name="fake"),
+                channel="openclaw_weixin",
+            )
+            rows = store.verified_rows()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(provider.calls), 1)
+        states = {row["channel"]: row["status"] for row in rows["jobs"]}
+        self.assertEqual(states["openclaw_weixin"], "DELIVERED")
+        self.assertEqual(states["wecom"], "PENDING")
+
 
 if __name__ == "__main__":
     unittest.main()

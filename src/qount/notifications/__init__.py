@@ -48,6 +48,15 @@ from qount.notifications.transport import TransportCredentialError
 from qount.notifications.transport import TransportRateLimitError
 from qount.notifications.transport import TransportTimeoutError
 from qount.notifications.transport import load_provider_credential
+from qount.notifications.wecom import WECOM_PROVIDER_NAME
+from qount.notifications.wecom import WeComGroupRobotProvider
+from qount.notifications.wecom import WeComProviderError
+from qount.notifications.wecom import validate_wecom_webhook
+from qount.notifications.weixin import OPENCLAW_WEIXIN_PROVIDER_NAME
+from qount.notifications.weixin import OpenClawWeixinCredential
+from qount.notifications.weixin import OpenClawWeixinProvider
+from qount.notifications.weixin import OpenClawWeixinProviderError
+from qount.notifications.weixin import parse_openclaw_weixin_credential
 
 __all__ = [
     "ALERT_EVENT_SCHEMA_VERSION",
@@ -95,6 +104,15 @@ __all__ = [
     "alerts_from_system_health",
     "alerts_from_verified_decision_batch",
     "build_notification_snapshot",
+    "WECOM_PROVIDER_NAME",
+    "WeComGroupRobotProvider",
+    "WeComProviderError",
+    "validate_wecom_webhook",
+    "OPENCLAW_WEIXIN_PROVIDER_NAME",
+    "OpenClawWeixinCredential",
+    "OpenClawWeixinProvider",
+    "OpenClawWeixinProviderError",
+    "parse_openclaw_weixin_credential",
     "collect_system_health",
     "synchronize_producer_incidents",
     "load_provider_credential",

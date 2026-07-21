@@ -124,13 +124,16 @@ evidence review，不进入paper/live。
 
 ## Phase 1.7：一个月小资金UM实盘readiness
 
-2026-07-18 owner提出一个月小资金实盘方向。当前只生成readiness，不部署、不arm、不下单。真钱候选固定为
+2026-07-18 owner提出一个月小资金实盘方向；2026-07-21进一步授权不等待日历观察项自然完成，直接推进B/C/D。
+当前先部署并运行order-free readiness，不自动arm、不下单。真钱候选固定为
 Base v0.2；全局2.0%风险档是首选收益shadow，Funding Veto是次级shadow，二者都不能控制真钱订单。旧X4/C×D
 的7币、short、2x、carry和5分钟cron全部禁止复用。
 
-冻结试点合同：`capital=300 USDT`、30天、TOP3、long/cash、1x逐仓、one-way、gross<=1、日线单批。
-不设置账户级单日止损；保留逐币3xATR吊灯止损和3根完成日线冷却，试点权益从峰值累计回撤达到10%时
-flatten后halt且不得自动恢复。API key只能有USD-M交易权限、必须关闭提现并绑定VPS IP。
+冻结试点合同：`capital=100 USDT`、30天、TOP3、long/cash、1x逐仓、one-way、gross<=1、日线单批。
+账户级单日试点损失达到5%（约5 USDT）或试点权益从峰值累计回撤达到10%（约10 USDT）时，下一次日线
+dispatch执行flatten后halt且不得自动恢复；两者均按冻结的100 USDT试点本金而不是完整USD-M钱包百分比计算。
+这不是盘中watchdog，也不收紧逐币3xATR吊灯止损或3根完成日线冷却；两次dispatch之间依赖Binance原生
+`STOP_MARKET closePosition`。API key只能有USD-M交易权限、必须关闭提现并绑定VPS IP。
 未知余额/仓位、非TOP3或short仓位、错误模式、重复决策、缺价格/funding journal均直接halt。
 
 VPS审计结果：cron和qount交易进程均关闭，旧通用live guard已关闭。直连Binance公共接口可用，旧显式代理
@@ -144,9 +147,18 @@ hash不闭合或重复决策日时拒绝追加。启动顺序固定为：
 1. owner确认精确本金和30天开始日。
 2. 新API key通过私有预检，并确认无未管理仓位、one-way、TOP3 1x逐仓。
 3. 构建并验证不复用X4/C×D的独立MiniTrend UM runtime。
-4. 完成60个forward pair/10 active、30天paper、7天dry-run和完整funding journal。
-5. 写可执行rollback，关闭旧live guard，安装独立每日cron但保持新开关off。
-6. 再次只读预检后，由owner单独确认manual final arm。
+4. 继续记录60个forward pair/10 active、30天paper和7天dry-run作为非阻断观察项；funding journal、schema和
+   当前账户/订单/仓位完整性仍是阻断安全门。观察值纳入readiness hash防篡改，但不进入blocker。
+5. 本次真钱路径在readiness、manual arm、live dispatcher和live journal均强制精确`100 USDT`；历史300 USDT
+   paper和1000 USDT order-free兼容上界不构成真钱授权。
+6. 写可执行rollback，关闭旧live guard；保持MiniTrend timer和旧交易cron关闭。
+7. 再次只读预检并生成标准authority后，向owner展示readiness/batch/ledger/reconciliation hash；只有owner单独确认后才
+   生成manual arm并原子提升registry为`minimal_live`。
+
+2026-07-21当前进度：VPS systemd order-free run `20260721T063854Z`已通过上述第2/3/6项和标准authority/ledger/reconciliation，
+最终readiness为`ready_for_manual_final_arm`、blocker 0，但`live_orders_allowed=false`。观察值为forward pair/active/paper/dry
+`0/0/0/1`且funding完整；账户全平、普通/条件单0、dispatcher 0 intent且`exchange_mutation_attempted=false`。registry仍为
+`research`，manual arm为0，timer和live switch保持关闭。首笔真钱订单前必须由owner再次确认本run四类最终hash。
 
 ## Phase 2：paper forward
 
@@ -212,15 +224,17 @@ PYTHONPATH=src ./.venv/bin/python scripts/desktop/mini_trend_live.py
 
 ## Phase 4：小额 live pilot
 
-前置条件：
+当前安全门与观察项：
 
-- paper 至少 30 天。
-- dry 至少 7 天。
+- paper 30天、dry 7天、forward 60 pair/10 active保留为扩容观察目标；按2026-07-21 owner授权不阻断本次
+  精确100 USDT canary，但观测值和是否达标必须进入readiness hash。
+- 当前私有preflight、数据新鲜度、完整funding、标准authority、RuntimeLedger、三方对账、release provenance和manual arm
+  仍是阻断安全门，任何一项不通过都不得下单。
 - stop latch 已有单测和模拟触发案例。
 - API key 禁提现，初期不启用 Universal Transfer / Earn / COIN-M。
-- live pilot capital固定为300 USDT；不得自动扩容。
+- live pilot capital固定为100 USDT；不得自动扩容。
 
-当前UM live pilot默认：
+当前UM live pilot默认（2026-07-21本金已固定为100 USDT）：
 
 ```text
 market=um
@@ -232,8 +246,10 @@ short_gate=false
 carry=false
 vol_target=0.015
 rebalance_band=0.35
-max_daily_loss_pct=disabled
+max_daily_loss_pct=0.05
 max_pilot_drawdown_pct=0.10
+maximum_live_source_age_seconds=900
+maximum_adverse_slippage_bps=25
 halt_on_unmanaged_position=true
 llm_runtime_gate=false
 ```

@@ -1,6 +1,6 @@
 # qount 快速接手手册
 
-更新时间：2026-07-20
+更新时间：2026-07-22
 
 当前版本：`0.2.0`
 
@@ -34,12 +34,38 @@
 - 加密 X4 / C×D 实盘看 `QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`、
   `QOUNT_CXD_CARRY_ENABLE` 和 VPS state，不用 `QOUNT_LIVE_ENABLE` 推断。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
-- 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只有只读
-  `qount-dashboard-publisher.timer`已获授权并保持`enabled/active`；transport没有发送授权。不得恢复live/paper cron、MiniTrend forward
+- 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
+  `qount-dashboard-publisher.timer`和`qount-daily-intelligence.timer`已获授权并保持`enabled/active`；后者每日`04:30 UTC`抓免费官方feed、
+  运行六角色中文LLM、不可覆盖归档并发送个人微信。不得恢复live/paper cron、MiniTrend forward
   或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
 - 2026-07-20 `qount-mini-trend-forward.timer`已纠正并保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
-  publisher timer是唯一active qount timer，只读发布既有authority、系统健康和备份，不访问交易所、不刷新账户。不要恢复MiniTrend timer。
+  publisher只读发布既有authority、系统健康和备份，不访问交易所、不刷新账户。Daily Intelligence unit显式移除Binance私钥和全部live
+  authority，只访问官方公开源、relay和个人微信；不要把它与交易timer混淆，也不要恢复MiniTrend timer。个人微信凭据只保留
+  `account_id/base_url/recipient/token`，最新context token从`/root/.openclaw/openclaw-weixin/accounts`动态读取；unit依赖
+  `openclaw-gateway.service`并只读挂载该目录。不要重新复制静态context token到Qount凭据。
+- 2026-07-22最新日报ID为`24defae6...6adc`、report hash为`f4d90e84...63a94`，3份feed、8份详情、2份行情和六角色请求均已归档；
+  Dashboard `intelligence`为`available`，微信任务为`DELIVERED/SUCCEEDED`。外层`incomplete`来自四个角色的`needs_research`证据判断，
+  不是运行故障。检查命令：
+
+```bash
+ssh -o ClearAllForwardings=yes qount-vps \
+  'systemctl list-timers --all qount-daily-intelligence.timer --no-pager'
+ssh -o ClearAllForwardings=yes qount-vps \
+  'journalctl -u qount-daily-intelligence.service -n 40 --no-pager'
+```
+- 最新动态会话验证job为`6d51a764...4324`，状态`DELIVERED/SUCCEEDED`；生产NotificationStore为5 event/job/attempt、20行audit chain。
+  旧代码回滚目录为`/root/qount-notify-backup.rl6QL6`，其中不含凭据。不得用该代码回滚覆盖当前四字段凭据；若必须回滚provider，需同时恢复
+  相容凭据合同并重新执行真实通知验证。
+- 2026-07-21 owner授权固定`100 USDT` canary并直接推进B/C/D。readiness中的60/10 forward、30 paper days和7 dry days
+  只作观察并纳入readiness hash防篡改，不再阻断manual-arm readiness；账户/仓位/订单、funding/schema、标准batch/ledger/
+  三方对账、UNKNOWN停机和owner最终hash确认仍阻断。`1000 USDT`仅是历史/order-free兼容上界，真钱四层强制100。
+  VPS成功order-free run为`/root/qount/state/mini_trend/forward/runs/20260721T063854Z`；最终readiness为
+  `ready_for_manual_final_arm`且blocker 0，但`live_orders_allowed=false`。四项最终证据为readiness
+  `8496f70e...ad2a87`、batch/manifest `70d1b38b...6ff0a49` / `1520b6af...e2ec3`、ledger
+  `70184860...575fb`、reconciliation `9971ca5f...22d96` passed。观察值为`0/0/0/1`且funding完整。
+  当前未创建arm、registry仍为`research`、未开启live switch/timer、未发真实订单。Mac全仓`1497 OK`；VPS
+  production/B-C-D/post-fix为`303/59/21 OK`。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
@@ -216,7 +242,10 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
   tests.test_dispatch_contract_adapters
 ```
 
-当前读法：本轮operations/health/publisher/authority/system-health边界聚焦为`29 OK`，Mac全仓`1488 OK`，VPS默认production profile为
+当前读法：Phase B/C/D dispatcher现已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
+`SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。manual-arm动作会把同一hash绑定的registry
+原子提升为`minimal_live`，但当前未运行该动作。本轮operations/health/publisher/authority/system-health历史边界聚焦为`29 OK`，
+Mac全仓历史读数`1488 OK`，VPS默认production profile历史读数为
 `299 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
 `37 OK`等读数保留历史语境。更早的完整Phase A/B/C
 `101 OK`等批次读数保留在`current.md`和`update-log.md`，不覆盖其历史语境。`ledger/store.py`、legacy dry replay、冻结snapshot adapter、notification
@@ -808,10 +837,10 @@ python -m qount.main walk-forward \
 旧特征空间停止结论。S3 public archive 数据 gate 和 frozen v1 historical OOS 已完成；当前只允许补其
 预注册 anti-overfit/correlation-stress 证据，不借此恢复旧价格/频段扫描。
 
-架构支线已完成账户/回撤、四项健康和position/decision trace。注入式transport合同及fake/provider故障测试已完成，但没有真实adapter，
-也未获发送授权；legacy `Notifier`/shell ServerChan不得复用。production publisher已在VPS以唯一active qount timer运行，只读发布完整
-authority、系统健康和有界备份；authority writer保持`static/inactive`，最后一次授权账户快照已stale。不要为了刷新页面调用私有API或恢复
-forward/cron；真实transport、订单和live仍未获授权。
+架构支线已完成账户/回撤、四项健康和position/decision trace。腾讯个人微信adapter及日报发送已获只读情报范围内授权并形成真实
+`DELIVERED/SUCCEEDED`证据；legacy `Notifier`/shell ServerChan不得复用。production publisher和Daily Intelligence是当前两个active
+qount timer，均不具备订单权限；authority writer保持`static/inactive`，最后一次授权账户快照已stale。不要为了刷新页面调用私有API或恢复
+forward/cron；交易通知、订单和live仍未获授权。
 
 1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
    不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做

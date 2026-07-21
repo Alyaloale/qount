@@ -16,11 +16,13 @@ from qount.mini_trend.live_pilot import LivePilotEvidence  # noqa: E402
 from qount.mini_trend.live_pilot import LivePilotRequest  # noqa: E402
 from qount.mini_trend.live_pilot import build_live_pilot_readiness  # noqa: E402
 from qount.mini_trend.live_pilot import write_live_pilot_readiness_artifact  # noqa: E402
+from qount.contracts import canonical_hash  # noqa: E402
 from qount.mini_trend.pilot_readiness_evidence import (  # noqa: E402
     runtime_evidence_from_artifacts,
 )
 from qount.mini_trend.pilot_dispatcher import dry_dispatch_evidence  # noqa: E402
 from qount.mini_trend.pilot_runtime import validate_pilot_runtime_proof  # noqa: E402
+from qount.reporting import read_vps_authority_bundle  # noqa: E402
 from qount.settings import Settings  # noqa: E402
 
 
@@ -61,6 +63,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--preflight-path")
     parser.add_argument("--paper-path")
     parser.add_argument("--shadow-input-path")
+    parser.add_argument("--release-provenance-path")
+    parser.add_argument("--authority-root")
+    parser.add_argument("--authority-result-path")
     parser.add_argument("--output-path")
     return parser.parse_args(argv)
 
@@ -73,10 +78,16 @@ def main(argv: list[str] | None = None) -> int:
         start_date=args.start_date,
         duration_days=args.duration_days,
     )
-    runtime_paths = (args.preflight_path, args.paper_path, args.shadow_input_path)
+    runtime_paths = (
+        args.preflight_path,
+        args.paper_path,
+        args.shadow_input_path,
+        args.release_provenance_path,
+    )
     if any(runtime_paths) and not all(runtime_paths):
         raise ValueError(
-            "--preflight-path, --paper-path and --shadow-input-path are required together"
+            "--preflight-path, --paper-path, --shadow-input-path and "
+            "--release-provenance-path are required together"
         )
     runtime_sources = None
     runtime_proof = None
@@ -107,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
             preflight_path=args.preflight_path,
             paper_path=args.paper_path,
             shadow_input_path=args.shadow_input_path,
+            release_provenance_path=args.release_provenance_path,
             dry_run_days=dry_evidence["dry_run_days"],
             dry_run_schema_error_count=dry_evidence[
                 "dry_run_schema_error_count"
@@ -149,6 +161,78 @@ def main(argv: list[str] | None = None) -> int:
             legacy_live_guard_disarmed=args.legacy_live_guard_disarmed,
             rollback_documented=args.rollback_documented,
         )
+    if args.authority_root:
+        authority_root = Path(args.authority_root).expanduser().resolve()
+        bundle = read_vps_authority_bundle(authority_root)
+        reconciliation = bundle.ledger_snapshot.reconciliation
+        authority_result = None
+        authority_result_valid = False
+        if args.authority_result_path:
+            authority_result_path = Path(args.authority_result_path).expanduser()
+            authority_result = json.loads(authority_result_path.read_text(encoding="ascii"))
+            result_core = (
+                {
+                    key: value
+                    for key, value in authority_result.items()
+                    if key != "result_hash"
+                }
+                if isinstance(authority_result, dict)
+                else {}
+            )
+            authority_result_valid = bool(
+                isinstance(authority_result, dict)
+                and authority_result.get("status") == "written"
+                and authority_result.get("batch_id") == bundle.batch.manifest.batch_id
+                and authority_result.get("result_hash") == canonical_hash(result_core)
+                and Path(str(authority_result.get("run_dir") or "")).resolve()
+                == authority_result_path.resolve().parent
+            )
+        authority_ready = bool(
+            authority_result_valid
+            and
+            reconciliation.get("phase") == "pre_dispatch"
+            and reconciliation.get("passed")
+            and not reconciliation.get("halt_required")
+            and bundle.ledger_snapshot.nav.get("passed")
+            and not bundle.ledger_snapshot.unresolved_order_ids
+        )
+        evidence = LivePilotEvidence(
+            **{
+                **evidence.__dict__,
+                "standard_authority_verified": authority_ready,
+                "authority_batch_id": bundle.batch.manifest.batch_id,
+                "runtime_ledger_snapshot_hash": bundle.ledger_snapshot.snapshot_hash,
+                "pre_dispatch_reconciliation_hash": reconciliation.get("report_hash"),
+                "pre_dispatch_reconciliation_passed": authority_ready,
+                "notification_snapshot_hash": bundle.notification_snapshot.snapshot_hash,
+                "daily_brief_hash": bundle.daily_brief.brief_hash,
+                "system_health_snapshot_hash": bundle.system_health.snapshot_hash,
+                "system_health_ready": bundle.system_health.status == "healthy",
+            }
+        )
+        if runtime_sources is None:
+            runtime_sources = {}
+        runtime_sources["standard_authority"] = {
+            "path": str(authority_root),
+            "batch_id": bundle.batch.manifest.batch_id,
+            "ledger_snapshot_hash": bundle.ledger_snapshot.snapshot_hash,
+            "reconciliation_hash": reconciliation.get("report_hash"),
+            "notification_snapshot_hash": bundle.notification_snapshot.snapshot_hash,
+            "daily_brief_hash": bundle.daily_brief.brief_hash,
+            "system_health_snapshot_hash": bundle.system_health.snapshot_hash,
+            "valid": authority_ready,
+            "writer_result_valid": authority_result_valid,
+            "writer_result_hash": (
+                authority_result.get("result_hash")
+                if isinstance(authority_result, dict)
+                else None
+            ),
+            "run_dir": (
+                authority_result.get("run_dir")
+                if isinstance(authority_result, dict)
+                else None
+            ),
+        }
     payload = build_live_pilot_readiness(request, evidence)
     if runtime_sources is not None:
         payload["runtime_sources"] = runtime_sources

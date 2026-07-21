@@ -17,6 +17,7 @@ ALERT_EVENT_SCHEMA_VERSION = 1
 ALERT_SEVERITIES = ("INFO", "WARNING", "CRITICAL", "HALT")
 ALERT_SOURCE_TYPES = (
     "decision_batch",
+    "intelligence",
     "runtime_ledger",
     "reconciliation",
     "system",

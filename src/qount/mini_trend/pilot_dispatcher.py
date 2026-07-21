@@ -13,16 +13,24 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from qount.artifacts import write_research_json_artifact
+from qount.execution import compare_legacy_dispatch_plan
 from qount.exchange_utils import (
     build_exchange,
     call_with_time_sync_retry,
     extract_quote_balance,
     resolve_market_symbols,
 )
+from qount.ledger import RuntimeLedger
+from qount.ledger import RuntimeLedgerSnapshot
+from qount.ledger import build_runtime_ledger_snapshot
+from qount.ledger import reconcile_three_way
+from qount.governance import StrategyRegistry
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_recovery import canonical_hash, selected_um_rules
 from qount.mini_trend.live_pilot import LIVE_PILOT_CONTRACT
+from qount.mini_trend.live_pilot import manual_arm_owner_authorization_hash
 from qount.models import utc_now
+from qount.persistence import VerifiedDecisionBatch
 from qount.settings import Settings
 
 
@@ -32,7 +40,13 @@ PILOT_DISPATCH_JOURNAL_VERSION = "mini_trend_um_dispatch_journal_v0.1"
 PILOT_MANUAL_ARM_VERSION = "mini_trend_um_manual_arm_v0.1"
 _ZERO_HASH = "0" * 64
 _CLIENT_PREFIX = "qmt-"
+_STANDARD_PROTECTIVE_PREFIX = "q-p-"
 _CONFIGURED_SYMBOLS = tuple(f"{symbol[:-4]}/USDT" for symbol in TOP3)
+
+
+def _managed_protective_client_id(value: object) -> bool:
+    client_order_id = str(value or "")
+    return client_order_id.startswith(("qmt-s-", _STANDARD_PROTECTIVE_PREFIX))
 
 
 def _float(value: Any) -> float:
@@ -40,6 +54,28 @@ def _float(value: Any) -> float:
         return float(value or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _utc_timestamp(value: object) -> dt.datetime | None:
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def _source_age_seconds(
+    payload: Mapping[str, Any], *, observed_at: dt.datetime
+) -> float | None:
+    created_at = _utc_timestamp(payload.get("created_at"))
+    if created_at is None:
+        return None
+    age = (observed_at - created_at).total_seconds()
+    if age < -60.0:
+        return None
+    return max(age, 0.0)
 
 
 def _round_down(value: float, step: float) -> float:
@@ -54,7 +90,7 @@ def _round_down(value: float, step: float) -> float:
 def _safe_error(exc: Exception, settings: Settings) -> str:
     value = f"{type(exc).__name__}: {exc}"
     for secret in (settings.binance_api_key, settings.binance_api_secret):
-        if secret:
+        if isinstance(secret, str) and secret:
             value = value.replace(secret, "[REDACTED]")
     return value[:1000]
 
@@ -85,6 +121,16 @@ def _position_side(position: Mapping[str, Any]) -> str:
         return side
     signed = _float((position.get("info") or {}).get("positionAmt"))
     return "short" if signed < 0.0 else "long"
+
+
+def _position_average_cost(position: Mapping[str, Any]) -> float:
+    info = position.get("info") or {}
+    return _float(
+        position.get("entryPrice")
+        or position.get("average")
+        or info.get("entryPrice")
+        or info.get("breakEvenPrice")
+    )
 
 
 def _order_view(order: Mapping[str, Any], *, ccxt_symbol: str) -> dict[str, Any]:
@@ -242,6 +288,7 @@ def fetch_pilot_dispatch_snapshot(
                     "side": _position_side(position),
                     "contracts": contracts,
                     "notional_usdt": notional,
+                    "average_cost": _position_average_cost(position),
                 }
             )
     except Exception as exc:
@@ -329,6 +376,7 @@ def _readiness_hash_valid(readiness: Mapping[str, Any]) -> bool:
             "request": signed_request,
             "evidence": readiness.get("evidence") or {},
             "gates": readiness.get("gates") or {},
+            "observations": readiness.get("observations") or {},
         }
     )
     return readiness.get("readiness_hash") == expected
@@ -342,21 +390,51 @@ def _manual_arm_valid(
     arm_token: str | None,
     live_switch_enabled: bool,
     live_confirmation: str | None,
+    initial_dispatch: bool,
 ) -> bool:
     if not arm or not arm_token or not live_switch_enabled:
         return False
     token_hash = hashlib.sha256(arm_token.encode("utf-8")).hexdigest()
-    return all(
+    common_valid = all(
         (
             arm.get("schema_version") == PILOT_MANUAL_ARM_VERSION,
             arm.get("status") == "armed",
             arm.get("contract_hash") == LIVE_PILOT_CONTRACT.contract_hash,
-            arm.get("readiness_hash") == readiness.get("readiness_hash"),
-            arm.get("readiness_artifact_sha256") == source_hashes.get("readiness"),
             arm.get("arm_token_sha256") == token_hash,
+            arm.get("owner_authorization_hash")
+            == manual_arm_owner_authorization_hash(arm),
             live_confirmation == arm.get("arm_id"),
         )
     )
+    initial_binding_valid = all(
+        (
+            arm.get("readiness_hash") == readiness.get("readiness_hash"),
+            arm.get("readiness_artifact_sha256") == source_hashes.get("readiness"),
+            arm.get("authority_batch_id")
+            == (readiness.get("evidence") or {}).get("authority_batch_id"),
+            arm.get("runtime_ledger_snapshot_hash")
+            == (readiness.get("evidence") or {}).get(
+                "runtime_ledger_snapshot_hash"
+            ),
+            arm.get("pre_dispatch_reconciliation_hash")
+            == (readiness.get("evidence") or {}).get(
+                "pre_dispatch_reconciliation_hash"
+            ),
+            arm.get("release_git_commit")
+            == (readiness.get("evidence") or {}).get("release_git_commit"),
+            arm.get("release_version")
+            == (readiness.get("evidence") or {}).get("release_version"),
+            arm.get("release_source_tree_hash")
+            == (readiness.get("evidence") or {}).get(
+                "release_source_tree_hash"
+            ),
+            arm.get("release_provenance_hash")
+            == (readiness.get("evidence") or {}).get(
+                "release_provenance_hash"
+            ),
+        )
+    )
+    return common_valid and (not initial_dispatch or initial_binding_valid)
 
 
 def build_manual_arm(
@@ -378,6 +456,7 @@ def build_manual_arm(
     if len(arm_token) < 16:
         raise ValueError("manual arm token must contain at least 16 characters")
     request = readiness.get("request") or {}
+    evidence = readiness.get("evidence") or {}
     created_at = utc_now().isoformat()
     token_hash = hashlib.sha256(arm_token.encode("utf-8")).hexdigest()
     arm_id = "qmt-arm-" + canonical_hash(
@@ -387,7 +466,7 @@ def build_manual_arm(
             "created_at": created_at,
         }
     )[:20]
-    return {
+    arm = {
         "schema_version": PILOT_MANUAL_ARM_VERSION,
         "artifact_type": "mini_trend_um_manual_final_arm",
         "created_at": created_at,
@@ -402,6 +481,20 @@ def build_manual_arm(
         "contract_hash": LIVE_PILOT_CONTRACT.contract_hash,
         "readiness_hash": readiness_hash,
         "readiness_artifact_sha256": readiness_artifact_sha256,
+        "authority_batch_id": evidence.get("authority_batch_id"),
+        "runtime_ledger_snapshot_hash": evidence.get(
+            "runtime_ledger_snapshot_hash"
+        ),
+        "pre_dispatch_reconciliation_hash": evidence.get(
+            "pre_dispatch_reconciliation_hash"
+        ),
+        "release_git_commit": evidence.get("release_git_commit"),
+        "release_version": evidence.get("release_version"),
+        "release_source_tree_hash": evidence.get("release_source_tree_hash"),
+        "release_provenance_hash": evidence.get("release_provenance_hash"),
+        "initial_margin_balance_usdt": _float(
+            evidence.get("available_balance_usdt")
+        ),
         "arm_token_sha256": token_hash,
         "capital_usdt": _float(request.get("capital_usdt")),
         "start_date": request.get("start_date"),
@@ -413,7 +506,13 @@ def build_manual_arm(
             "arm_token_required": True,
             "current_reconciliation_required": True,
         },
+        "governance_override": {
+            "scope": "owner_authorized_100_usdt_canary",
+            "elapsed_observation_targets_block_orders": False,
+            "account_execution_and_reconciliation_gates_block_orders": True,
+        },
     }
+    return arm | {"owner_authorization_hash": manual_arm_owner_authorization_hash(arm)}
 
 
 def _critical_preflight_valid(preflight: Mapping[str, Any]) -> bool:
@@ -470,6 +569,149 @@ def _artifact_is_order_free(payload: Mapping[str, Any]) -> bool:
     )
 
 
+def _standard_order_key(order: Any) -> tuple[Any, ...]:
+    return (
+        str(order.symbol),
+        str(order.side),
+        str(order.phase),
+        str(order.order_type),
+        None if order.quantity is None else float(order.quantity),
+        bool(order.reduce_only),
+        bool(order.close_position),
+        None if order.stop_price is None else float(order.stop_price),
+    )
+
+
+def _legacy_order_key(order: Mapping[str, Any]) -> tuple[Any, ...]:
+    side = str(order.get("side") or "").lower()
+    order_type = str(order.get("type") or "market").lower()
+    protective = order_type == "stop_market"
+    return (
+        str(order.get("symbol") or ""),
+        side,
+        "protective" if protective else ("reduce" if side == "sell" else "increase"),
+        order_type,
+        None if protective else float(order.get("quantity")),
+        bool(order.get("reduce_only")),
+        bool(order.get("close_position")),
+        float(order.get("stop_price")) if protective else None,
+    )
+
+
+def _bind_standard_authority(
+    report: dict[str, Any],
+    readiness: Mapping[str, Any],
+    batch: VerifiedDecisionBatch | None,
+    ledger_snapshot: RuntimeLedgerSnapshot | None,
+    registry: StrategyRegistry | None,
+    arm: Mapping[str, Any] | None,
+) -> None:
+    blockers: list[str] = report["diagnostics"]["blockers"]
+    if batch is None or ledger_snapshot is None or registry is None:
+        blockers.append("standard_live_execution_authority_missing")
+        return
+    if arm is None:
+        blockers.append("standard_live_execution_manual_arm_missing")
+        return
+    evidence = readiness.get("evidence") or {}
+    source = report.get("standard_authority") or {}
+    reconciliation = ledger_snapshot.reconciliation
+    checks = {
+        "standard_authority_batch_mismatch": (
+            batch.manifest.batch_id == evidence.get("authority_batch_id")
+            == source.get("batch_id")
+            == ledger_snapshot.batch_id
+        ),
+        "standard_authority_ledger_snapshot_mismatch": (
+            ledger_snapshot.snapshot_hash
+            == evidence.get("runtime_ledger_snapshot_hash")
+            == source.get("ledger_snapshot_hash")
+        ),
+        "standard_authority_reconciliation_mismatch": (
+            reconciliation.get("report_hash")
+            == evidence.get("pre_dispatch_reconciliation_hash")
+            == source.get("reconciliation_hash")
+        ),
+        "standard_authority_plan_mismatch": (
+            ledger_snapshot.order_plan_id == batch.plan.order_plan_id
+            and ledger_snapshot.plan_hash == batch.plan.plan_hash
+        ),
+        "standard_authority_pre_dispatch_not_ready": (
+            reconciliation.get("phase") == "pre_dispatch"
+            and reconciliation.get("passed") is True
+            and reconciliation.get("halt_required") is False
+            and not ledger_snapshot.unresolved_order_ids
+            and ledger_snapshot.nav.get("passed") is True
+        ),
+    }
+    blockers.extend(name for name, passed in checks.items() if not passed)
+    matching_entries = tuple(
+        entry
+        for entry in registry.entries
+        if entry.strategy_id == LIVE_PILOT_CONTRACT.strategy
+    )
+    registry_entry = matching_entries[0] if len(matching_entries) == 1 else None
+    expected_owner_hash = manual_arm_owner_authorization_hash(arm)
+    registry_checks = {
+        "standard_live_execution_registry_entry_missing": registry_entry is not None,
+        "standard_live_execution_registry_not_minimal_live": bool(
+            registry_entry is not None
+            and registry_entry.promotion_status == "minimal_live"
+        ),
+        "standard_live_execution_registry_owner_authorization_mismatch": bool(
+            registry_entry is not None
+            and expected_owner_hash is not None
+            and registry_entry.owner_authorization_hash == expected_owner_hash
+        ),
+    }
+    blockers.extend(
+        name for name, passed in registry_checks.items() if not passed
+    )
+    parity = compare_legacy_dispatch_plan(report, batch.plan)
+    report["standard_execution"] = {
+        "batch_id": batch.manifest.batch_id,
+        "manifest_hash": batch.manifest.manifest_hash,
+        "order_plan_id": batch.plan.order_plan_id,
+        "plan_hash": batch.plan.plan_hash,
+        "pre_dispatch_ledger_snapshot_hash": ledger_snapshot.snapshot_hash,
+        "pre_dispatch_reconciliation_hash": reconciliation.get("report_hash"),
+        "registry_hash": registry.registry_hash,
+        "registry_entry_id": (
+            registry_entry.registry_entry_id if registry_entry is not None else None
+        ),
+        "registry_promotion_status": (
+            registry_entry.promotion_status if registry_entry is not None else None
+        ),
+        "registry_owner_authorization_hash": (
+            registry_entry.owner_authorization_hash if registry_entry is not None else None
+        ),
+        "parity_matches": parity["matches"],
+        "parity_differences": list(parity["differences"]),
+    }
+    if not parity["matches"]:
+        blockers.extend(
+            f"standard_live_execution_parity_mismatch:{name}"
+            for name in parity["differences"]
+        )
+        return
+
+    standard_by_key: dict[tuple[Any, ...], list[Any]] = {}
+    for order in sorted(batch.plan.orders, key=lambda value: value.sequence):
+        standard_by_key.setdefault(_standard_order_key(order), []).append(order)
+    for legacy in [
+        *list(report.get("market_orders") or ()),
+        *list(report.get("stop_orders") or ()),
+    ]:
+        matches = standard_by_key.get(_legacy_order_key(legacy)) or []
+        if not matches:
+            blockers.append("standard_live_execution_order_identity_missing")
+            continue
+        standard = matches.pop(0)
+        legacy["legacy_client_order_id"] = legacy.get("client_order_id")
+        legacy["client_order_id"] = standard.client_order_id
+        legacy["standard_sequence"] = standard.sequence
+
+
 def build_pilot_dispatch_plan(
     preflight: Mapping[str, Any],
     projection: Mapping[str, Any],
@@ -484,6 +726,9 @@ def build_pilot_dispatch_plan(
     live_switch_enabled: bool = False,
     live_confirmation: str | None = None,
     journal_summary: Mapping[str, Any] | None = None,
+    standard_batch: VerifiedDecisionBatch | None = None,
+    standard_ledger_snapshot: RuntimeLedgerSnapshot | None = None,
+    standard_registry: StrategyRegistry | None = None,
 ) -> dict[str, Any]:
     """Validate current sources and build deterministic market/stop intents."""
 
@@ -505,16 +750,21 @@ def build_pilot_dispatch_plan(
         "contract_hash": LIVE_PILOT_CONTRACT.contract_hash,
         "readiness_hash": readiness.get("readiness_hash"),
         "source_hashes": sources,
+        "standard_authority": dict(
+            (readiness.get("runtime_sources") or {}).get("standard_authority") or {}
+        ),
         "snapshot_hash": snapshot.get("snapshot_hash"),
         "decision": None,
         "capital_usdt": None,
         "desired_weights": {symbol: 0.0 for symbol in TOP3},
         "actual_weights": {symbol: 0.0 for symbol in TOP3},
+        "execution_reference_prices": {},
         "market_orders": [],
         "stop_cancels": [],
         "stop_orders": [],
         "retained_stops": [],
         "risk_flags": [],
+        "source_freshness": {},
         "diagnostics": {
             "blockers": [],
             "verdict": "blocked_dispatch",
@@ -543,6 +793,31 @@ def build_pilot_dispatch_plan(
         for payload in (preflight, projection, readiness, snapshot)
     ):
         blockers.append("order_capable_source_artifact")
+    if mode == "live":
+        freshness_observed_at = utc_now().astimezone(dt.timezone.utc)
+        source_artifacts = {
+            "preflight": preflight,
+            "projection": projection,
+            "readiness": readiness,
+            "exchange_rules": rules_artifact,
+            "account_snapshot": snapshot,
+        }
+        source_ages = {
+            name: _source_age_seconds(payload, observed_at=freshness_observed_at)
+            for name, payload in source_artifacts.items()
+        }
+        report["source_freshness"] = {
+            "observed_at": freshness_observed_at.isoformat(),
+            "maximum_age_seconds": (
+                LIVE_PILOT_CONTRACT.maximum_live_source_age_seconds
+            ),
+            "ages_seconds": source_ages,
+        }
+        for name, age in source_ages.items():
+            if age is None:
+                blockers.append(f"live_source_timestamp_invalid:{name}")
+            elif age > LIVE_PILOT_CONTRACT.maximum_live_source_age_seconds:
+                blockers.append(f"live_source_stale:{name}")
     contract_hashes = {
         preflight.get("contract_hash"),
         (projection.get("contract") or {}).get("live_pilot_contract_hash"),
@@ -607,11 +882,7 @@ def build_pilot_dispatch_plan(
     capital = _float(request.get("capital_usdt"))
     if mode == "live" and arm:
         capital = _float(arm.get("capital_usdt"))
-    if not (
-        LIVE_PILOT_CONTRACT.minimum_capital_usdt
-        <= capital
-        <= LIVE_PILOT_CONTRACT.maximum_capital_usdt
-    ):
+    if abs(capital - LIVE_PILOT_CONTRACT.canary_capital_usdt) > 1e-12:
         blockers.append("invalid_dispatch_capital")
     report["capital_usdt"] = capital
     if abs(_float((projection.get("contract") or {}).get("capital_usdt")) - capital) > 1e-6:
@@ -626,7 +897,7 @@ def build_pilot_dispatch_plan(
         symbol = order.get("data_symbol")
         managed = (
             symbol in TOP3
-            and str(order.get("client_order_id") or "").startswith("qmt-s-")
+            and _managed_protective_client_id(order.get("client_order_id"))
             and bool(order.get("close_position") or order.get("reduce_only"))
             and str(order.get("side") or "").lower() == "sell"
         )
@@ -647,20 +918,57 @@ def build_pilot_dispatch_plan(
     if set(prices) != set(TOP3) or any(_float(prices.get(s)) <= 0.0 for s in TOP3):
         blockers.append("current_prices_invalid")
         return _finalize_plan(report)
+    report["execution_reference_prices"] = {
+        symbol: _float(prices[symbol]) for symbol in TOP3
+    }
     margin_balance = _float((snapshot.get("balance") or {}).get("margin_balance"))
-    peak = max(_float(summary.get("peak_margin_balance_usdt")), capital)
-    drawdown = 0.0 if peak <= 0.0 else max(0.0, 1.0 - margin_balance / peak)
+    arm_baseline = _float((arm or {}).get("initial_margin_balance_usdt"))
+    if mode == "live" and arm_baseline <= 0.0:
+        blockers.append("pilot_equity_baseline_missing")
+    current_date = utc_now().astimezone(dt.timezone.utc).date().isoformat()
+    daily_opening = summary.get("daily_opening_margin_balance_usdt") or {}
+    daily_start = _float(daily_opening.get(current_date))
+    if daily_start <= 0.0:
+        daily_start = _float(summary.get("latest_margin_balance_usdt"))
+    if daily_start <= 0.0:
+        daily_start = arm_baseline if mode == "live" else margin_balance
+    peak = max(
+        _float(summary.get("peak_margin_balance_usdt")),
+        arm_baseline,
+        margin_balance,
+    )
+    drawdown_loss_usdt = max(0.0, peak - margin_balance)
+    drawdown = drawdown_loss_usdt / max(capital, 1e-12)
+    daily_loss_usdt = max(0.0, daily_start - margin_balance)
+    daily_loss = daily_loss_usdt / max(capital, 1e-12)
     report["account_equity"] = {
         "margin_balance_usdt": margin_balance,
+        "pilot_capital_usdt": capital,
         "peak_margin_balance_usdt": peak,
+        "drawdown_loss_usdt": drawdown_loss_usdt,
         "drawdown_pct": drawdown * 100.0,
+        "daily_start_margin_balance_usdt": daily_start,
+        "daily_loss_usdt": daily_loss_usdt,
+        "daily_loss_pct": daily_loss * 100.0,
     }
-    halt_after_dispatch = drawdown >= (
+    peak_drawdown_halt = drawdown >= (
         LIVE_PILOT_CONTRACT.maximum_pilot_drawdown_pct / 100.0
     )
-    if halt_after_dispatch:
+    daily_loss_halt = daily_loss >= (
+        LIVE_PILOT_CONTRACT.maximum_daily_loss_pct / 100.0
+    )
+    halt_after_dispatch = peak_drawdown_halt or daily_loss_halt
+    report["halt_reason"] = (
+        "pilot_drawdown_halt"
+        if peak_drawdown_halt
+        else ("pilot_daily_loss_halt" if daily_loss_halt else None)
+    )
+    if peak_drawdown_halt:
         desired = {symbol: 0.0 for symbol in TOP3}
         report["risk_flags"].append("pilot_drawdown_flatten_then_halt")
+    if daily_loss_halt:
+        desired = {symbol: 0.0 for symbol in TOP3}
+        report["risk_flags"].append("pilot_daily_loss_flatten_then_halt")
     report["halt_after_dispatch"] = halt_after_dispatch
 
     protective = decision.get("protective_stop_prices") or {}
@@ -761,6 +1069,14 @@ def build_pilot_dispatch_plan(
 
     live_authorized = False
     if mode == "live":
+        _bind_standard_authority(
+            report,
+            readiness,
+            standard_batch,
+            standard_ledger_snapshot,
+            standard_registry,
+            arm,
+        )
         if readiness.get("diagnostics", {}).get("verdict") != "ready_for_manual_final_arm":
             blockers.append("readiness_not_ready_for_manual_arm")
         live_authorized = _manual_arm_valid(
@@ -770,6 +1086,7 @@ def build_pilot_dispatch_plan(
             arm_token=arm_token,
             live_switch_enabled=live_switch_enabled,
             live_confirmation=live_confirmation,
+            initial_dispatch=not bool(summary.get("executed_decision_ids")),
         )
         if not live_authorized:
             blockers.append("manual_arm_or_live_switch_invalid")
@@ -800,15 +1117,20 @@ def _finalize_plan(report: dict[str, Any]) -> dict[str, Any]:
         "contract_hash": report.get("contract_hash"),
         "readiness_hash": report.get("readiness_hash"),
         "source_hashes": report.get("source_hashes"),
+        "standard_authority": report.get("standard_authority"),
+        "standard_execution": report.get("standard_execution"),
         "snapshot_hash": report.get("snapshot_hash"),
         "decision": report.get("decision"),
         "capital_usdt": report.get("capital_usdt"),
         "desired_weights": report.get("desired_weights"),
+        "execution_reference_prices": report.get("execution_reference_prices"),
         "market_orders": report.get("market_orders"),
         "stop_cancels": report.get("stop_cancels"),
         "stop_orders": report.get("stop_orders"),
         "risk_flags": report.get("risk_flags"),
+        "source_freshness": report.get("source_freshness"),
         "halt_after_dispatch": report.get("halt_after_dispatch"),
+        "halt_reason": report.get("halt_reason"),
         "expected_positions_base": report.get("expected_positions_base"),
         "reconciliation_tolerance_base": report.get(
             "reconciliation_tolerance_base"
@@ -885,6 +1207,8 @@ def verify_dispatch_journal(path: str | os.PathLike[str]) -> dict[str, Any]:
             "executed_decision_ids": [],
             "locked_live_decision_ids": [],
             "peak_margin_balance_usdt": 0.0,
+            "latest_margin_balance_usdt": 0.0,
+            "daily_opening_margin_balance_usdt": {},
         }
     previous = _ZERO_HASH
     event_ids: list[str] = []
@@ -892,6 +1216,8 @@ def verify_dispatch_journal(path: str | os.PathLike[str]) -> dict[str, Any]:
     executed: set[str] = set()
     locked: set[str] = set()
     peak = 0.0
+    latest_margin_balance = 0.0
+    daily_opening: dict[str, float] = {}
     count = 0
     with target.open(encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
@@ -921,10 +1247,20 @@ def verify_dispatch_journal(path: str | os.PathLike[str]) -> dict[str, Any]:
             if event_type == "live_completed":
                 executed.add(decision_id)
                 locked.discard(decision_id)
-            balance = _float(
-                (core.get("reconciliation") or {}).get("margin_balance_usdt")
-            )
-            peak = max(peak, balance)
+            if core.get("mode") == "live":
+                balance = _float(
+                    (core.get("reconciliation") or {}).get("margin_balance_usdt")
+                )
+                if balance > 0.0:
+                    recorded_at = _utc_timestamp(core.get("recorded_at"))
+                    if recorded_at is None:
+                        raise ValueError(
+                            f"dispatch journal recorded_at invalid at row {line_number}"
+                        )
+                    day = recorded_at.date().isoformat()
+                    daily_opening.setdefault(day, balance)
+                    latest_margin_balance = balance
+                    peak = max(peak, balance)
             previous = chain_hash
             count += 1
     return {
@@ -936,6 +1272,8 @@ def verify_dispatch_journal(path: str | os.PathLike[str]) -> dict[str, Any]:
         "executed_decision_ids": sorted(executed),
         "locked_live_decision_ids": sorted(locked),
         "peak_margin_balance_usdt": peak,
+        "latest_margin_balance_usdt": latest_margin_balance,
+        "daily_opening_margin_balance_usdt": daily_opening,
     }
 
 
@@ -1061,6 +1399,419 @@ def _exchange_response_view(response: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _market_response_observation(
+    response: Mapping[str, Any],
+    order: Mapping[str, Any],
+) -> dict[str, Any]:
+    view = _exchange_response_view(response)
+    view["client_order_id"] = str(order["client_order_id"])
+    planned = _float(order.get("quantity"))
+    filled = _float(view.get("filled"))
+    average = _float(view.get("average"))
+    exchange_order_id = str(view.get("id") or "")
+    status = str(view.get("status") or "").lower()
+    complete = (
+        exchange_order_id
+        and planned > 0.0
+        and abs(filled - planned) <= 1e-12
+        and average > 0.0
+        and status in {"closed", "filled"}
+    )
+    view["ledger_status"] = "FILLED" if complete else "UNKNOWN"
+    view["ledger_reason"] = (
+        "exchange_market_fill_complete"
+        if complete
+        else "exchange_market_result_not_definitive"
+    )
+    return view
+
+
+def _trade_value(trade: Mapping[str, Any], *names: str) -> Any:
+    info = trade.get("info") or {}
+    for name in names:
+        value = trade.get(name)
+        if value not in (None, ""):
+            return value
+        value = info.get(name)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _trade_time(trade: Mapping[str, Any]) -> str:
+    value = _trade_value(trade, "datetime")
+    if isinstance(value, str) and value:
+        try:
+            return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
+                dt.timezone.utc
+            ).isoformat()
+        except ValueError:
+            pass
+    timestamp = _trade_value(trade, "timestamp", "time")
+    try:
+        milliseconds = float(timestamp)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("market_trade_time_missing") from exc
+    if not math.isfinite(milliseconds) or milliseconds <= 0.0:
+        raise ValueError("market_trade_time_missing")
+    return dt.datetime.fromtimestamp(
+        milliseconds / 1_000.0, tz=dt.timezone.utc
+    ).isoformat()
+
+
+def _trade_fee(trade: Mapping[str, Any]) -> tuple[float, str]:
+    fee = trade.get("fee")
+    if not isinstance(fee, Mapping):
+        info = trade.get("info") or {}
+        commission = info.get("commission")
+        asset = info.get("commissionAsset")
+        if commission in (None, "") or asset in (None, ""):
+            raise ValueError("market_trade_fee_evidence_missing")
+        fee = {"cost": commission, "currency": asset}
+    currency = str(fee.get("currency") or "")
+    cost = _float(fee.get("cost"))
+    if not currency or cost < 0.0:
+        raise ValueError("market_trade_fee_evidence_invalid")
+    return cost, currency
+
+
+def _trade_fill_evidence(
+    trade: Mapping[str, Any],
+    *,
+    exchange_order_id: str,
+    client_order_id: str,
+) -> dict[str, Any]:
+    info = trade.get("info") or {}
+    observed_order_id = str(
+        _trade_value(trade, "order", "orderId") or info.get("orderId") or ""
+    )
+    observed_client_id = str(
+        _trade_value(trade, "clientOrderId", "client_order_id")
+        or info.get("clientOrderId")
+        or ""
+    )
+    trade_id = str(_trade_value(trade, "id", "tradeId") or info.get("id") or "")
+    quantity = _float(_trade_value(trade, "amount", "qty", "quantity"))
+    price = _float(_trade_value(trade, "price"))
+    fee, fee_asset = _trade_fee(trade)
+    if (
+        observed_order_id != exchange_order_id
+        or (observed_client_id and observed_client_id != client_order_id)
+        or not trade_id
+        or quantity <= 0.0
+        or price <= 0.0
+    ):
+        raise ValueError("market_trade_identity_or_value_invalid")
+    return {
+        "exchange_trade_id": trade_id,
+        "quantity": quantity,
+        "price": price,
+        "fee": fee,
+        "fee_asset": fee_asset,
+        "occurred_at": _trade_time(trade),
+    }
+
+
+def _fetch_market_fill_evidence(
+    exchange: Any,
+    response: Mapping[str, Any],
+    order: Mapping[str, Any],
+) -> tuple[dict[str, Any], tuple[dict[str, Any], ...]]:
+    """Confirm a market fill from exchange order and trade records before ledgering it."""
+
+    initial = _exchange_response_view(response)
+    exchange_order_id = str(initial.get("id") or "")
+    client_order_id = str(order["client_order_id"])
+    symbol = str(order["ccxt_symbol"])
+    fetch_order = getattr(exchange, "fetch_order", None)
+    if not exchange_order_id or not callable(fetch_order):
+        raise RuntimeError("market_order_confirmation_query_unavailable")
+    confirmed_order = call_with_time_sync_retry(
+        exchange,
+        fetch_order,
+        exchange_order_id,
+        symbol,
+        retry_attempts=2,
+    )
+    if not isinstance(confirmed_order, Mapping):
+        raise ValueError("market_order_confirmation_invalid")
+    confirmed_view = _exchange_response_view(confirmed_order)
+    if str(confirmed_view.get("id") or "") != exchange_order_id:
+        raise ValueError("market_order_confirmation_identity_invalid")
+    confirmed_client_id = str(confirmed_view.get("client_order_id") or "")
+    if confirmed_client_id and confirmed_client_id != client_order_id:
+        raise ValueError("market_order_confirmation_client_id_invalid")
+
+    fetch_order_trades = getattr(exchange, "fetch_order_trades", None)
+    if callable(fetch_order_trades):
+        trade_rows = call_with_time_sync_retry(
+            exchange,
+            fetch_order_trades,
+            exchange_order_id,
+            symbol,
+            retry_attempts=2,
+        )
+    else:
+        fetch_my_trades = getattr(exchange, "fetch_my_trades", None)
+        if not callable(fetch_my_trades):
+            raise RuntimeError("market_trade_evidence_query_unavailable")
+        trade_rows = call_with_time_sync_retry(
+            exchange,
+            fetch_my_trades,
+            symbol,
+            None,
+            1_000,
+            {"orderId": exchange_order_id},
+            retry_attempts=2,
+        )
+    if not isinstance(trade_rows, (list, tuple)):
+        raise ValueError("market_trade_evidence_invalid")
+    fills = tuple(
+        _trade_fill_evidence(
+            trade,
+            exchange_order_id=exchange_order_id,
+            client_order_id=client_order_id,
+        )
+        for trade in trade_rows
+        if isinstance(trade, Mapping)
+    )
+    if not fills or len(fills) != len(trade_rows):
+        raise ValueError("market_trade_evidence_incomplete")
+    if len({str(row["exchange_trade_id"]) for row in fills}) != len(fills):
+        raise ValueError("market_trade_identity_duplicate")
+    planned = _float(order.get("quantity"))
+    filled = sum(_float(row["quantity"]) for row in fills)
+    average = sum(
+        _float(row["quantity"]) * _float(row["price"]) for row in fills
+    ) / max(filled, 1e-12)
+    currencies = {str(row["fee_asset"]) for row in fills}
+    if currencies != {"USDT"}:
+        raise ValueError("market_trade_fee_asset_not_usdt")
+    confirmed_view["filled"] = filled
+    confirmed_view["average"] = average
+    observed = _market_response_observation(confirmed_view, order)
+    if observed["ledger_status"] != "FILLED" or abs(filled - planned) > 1e-12:
+        raise ValueError("market_trade_evidence_not_complete")
+    observed["fill_count"] = len(fills)
+    observed["fee_usdt"] = sum(_float(row["fee"]) for row in fills)
+    return observed, fills
+
+
+def _adverse_slippage_bps(
+    *, side: str, reference_price: float, average_fill_price: float
+) -> float:
+    if reference_price <= 0.0 or average_fill_price <= 0.0:
+        raise ValueError("market_slippage_reference_invalid")
+    if side == "buy":
+        return (average_fill_price / reference_price - 1.0) * 10_000.0
+    if side == "sell":
+        return (1.0 - average_fill_price / reference_price) * 10_000.0
+    raise ValueError("market_slippage_side_invalid")
+
+
+def _snapshot_positions(snapshot: Mapping[str, Any]) -> dict[str, float]:
+    result = {symbol: 0.0 for symbol in TOP3}
+    for row in snapshot.get("positions") or ():
+        symbol = row.get("data_symbol")
+        if symbol in result and str(row.get("side") or "").lower() == "long":
+            result[str(symbol)] += _float(row.get("contracts"))
+    return result
+
+
+def _snapshot_managed_open_order_ids(snapshot: Mapping[str, Any]) -> tuple[str, ...]:
+    result: list[str] = []
+    for row in snapshot.get("conditional_open_orders") or ():
+        if not _managed_protective_client_id(row.get("client_order_id")):
+            continue
+        client_order_id = str(row.get("client_order_id") or "")
+        if client_order_id:
+            result.append(client_order_id)
+    return tuple(sorted(result))
+
+
+def _halt(path: str | os.PathLike[str] | None, reason: str) -> None:
+    if path is None:
+        return
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(reason + "\n", encoding="ascii")
+    os.chmod(target, 0o600)
+
+
+def _utc_now_not_before(value: str) -> str:
+    floor = dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
+        dt.timezone.utc
+    )
+    now = utc_now().astimezone(dt.timezone.utc)
+    return max(now, floor).isoformat()
+
+
+def _record_execution_halt_reconciliation(
+    runtime_ledger: RuntimeLedger,
+    batch: VerifiedDecisionBatch,
+    *,
+    reason: str,
+) -> RuntimeLedgerSnapshot:
+    """Publish an explicit failed post-dispatch state when exchange certainty is lost."""
+
+    latest_nav = runtime_ledger.latest_nav_mark()
+    if latest_nav is None:
+        raise ValueError("standard_execution_pre_dispatch_nav_missing")
+    reconciled_at = _utc_now_not_before(latest_nav.marked_at)
+    reconciliation = reconcile_three_way(
+        batch_id=batch.manifest.batch_id,
+        reconciled_at=reconciled_at,
+        phase="post_dispatch",
+        target_positions=dict(batch.plan.expected_positions),
+        ledger_positions=runtime_ledger.position_quantities(),
+        exchange_positions={symbol: 0.0 for symbol in TOP3},
+        position_tolerances=dict(batch.plan.reconciliation_tolerance),
+        ledger_open_order_ids=runtime_ledger.open_order_ids(),
+        exchange_open_order_ids=(),
+        equity_residual=latest_nav.residual,
+        equity_residual_tolerance=latest_nav.residual_tolerance,
+    )
+    if reconciliation.passed or not reconciliation.halt_required:
+        raise ValueError(f"execution_halt_reconciliation_not_failed:{reason}")
+    runtime_ledger.record_reconciliation(reconciliation)
+    return build_runtime_ledger_snapshot(
+        runtime_ledger,
+        batch,
+        captured_at=reconciled_at,
+    )
+
+
+def _cash_event_amount(row: Mapping[str, Any]) -> float:
+    info = row.get("info") or {}
+    # CCXT normalizes ledger amounts to absolute values and moves the sign to
+    # ``direction``. Binance's raw ``income`` remains the authoritative signed
+    # value for USD-M accounting and prevents an outflow becoming an inflow.
+    raw = info.get("income")
+    if raw in (None, ""):
+        raw = info.get("amount")
+    if raw in (None, ""):
+        normalized = row.get("amount")
+        direction = str(row.get("direction") or "").lower()
+        if normalized in (None, "") or direction not in {"in", "out"}:
+            raise ValueError("account_ledger_signed_amount_missing")
+        try:
+            absolute = abs(float(normalized))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("account_ledger_amount_missing") from exc
+        raw = absolute if direction == "in" else -absolute
+    try:
+        amount = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("account_ledger_amount_missing") from exc
+    if not math.isfinite(amount):
+        raise ValueError("account_ledger_amount_invalid")
+    return amount
+
+
+def _record_dispatch_cash_events(
+    exchange: Any,
+    runtime_ledger: RuntimeLedger,
+    *,
+    after: str,
+    through: str,
+    fill_fees_usdt: float,
+) -> dict[str, Any]:
+    """Persist the short execution-window cash evidence without relabeling it as PnL."""
+
+    fetch_ledger = getattr(exchange, "fetch_ledger", None)
+    if not callable(fetch_ledger):
+        raise RuntimeError("account_ledger_query_unavailable")
+    after_time = dt.datetime.fromisoformat(after.replace("Z", "+00:00")).astimezone(
+        dt.timezone.utc
+    )
+    through_time = dt.datetime.fromisoformat(
+        through.replace("Z", "+00:00")
+    ).astimezone(dt.timezone.utc)
+    rows = call_with_time_sync_retry(
+        exchange,
+        fetch_ledger,
+        "USDT",
+        int(after_time.timestamp() * 1_000),
+        1_000,
+        retry_attempts=2,
+    )
+    if not isinstance(rows, (list, tuple)):
+        raise ValueError("account_ledger_response_invalid")
+    source_rows = [row for row in rows if isinstance(row, Mapping)]
+    if len(source_rows) != len(rows):
+        raise ValueError("account_ledger_response_invalid")
+    source_hash = canonical_hash(
+        {
+            "event": "post_dispatch_account_ledger",
+            "after": after_time.isoformat(),
+            "through": through_time.isoformat(),
+            "rows": source_rows,
+        }
+    )
+    funding = 0.0
+    transfers = 0.0
+    commissions = 0.0
+    recorded_ids: set[str] = set()
+    for row in source_rows:
+        occurred_at = _trade_time(row)
+        occurred_time = dt.datetime.fromisoformat(
+            occurred_at.replace("Z", "+00:00")
+        ).astimezone(dt.timezone.utc)
+        if occurred_time <= after_time or occurred_time > through_time:
+            continue
+        info = row.get("info") or {}
+        asset = str(row.get("currency") or info.get("asset") or "")
+        if asset != "USDT":
+            raise ValueError("account_ledger_asset_invalid")
+        ledger_id = str(
+            row.get("id")
+            or info.get("tranId")
+            or info.get("incomeId")
+            or info.get("id")
+            or ""
+        )
+        if not ledger_id or ledger_id in recorded_ids:
+            raise ValueError("account_ledger_identity_invalid")
+        recorded_ids.add(ledger_id)
+        kind = str(info.get("incomeType") or info.get("type") or "").upper()
+        amount = _cash_event_amount(row)
+        if kind in {"COMMISSION", "FEE"}:
+            if amount > 1e-12:
+                raise ValueError("account_ledger_commission_sign_invalid")
+            commissions += abs(amount)
+            continue
+        if kind == "REALIZED_PNL":
+            continue
+        if kind == "FUNDING_FEE":
+            event_type = "funding"
+            funding += amount
+        elif kind in {"TRANSFER", "INTERNAL_TRANSFER"}:
+            event_type = "transfer"
+            transfers += amount
+        elif abs(amount) <= 1e-12:
+            continue
+        else:
+            raise ValueError(f"account_ledger_event_unclassified:{kind or 'missing'}")
+        runtime_ledger.record_cash_event(
+            event_key=f"binance-ledger:{ledger_id}",
+            event_type=event_type,
+            amount=amount,
+            asset=asset,
+            occurred_at=occurred_at,
+            source_hash=source_hash,
+            symbol=(str(row.get("symbol") or info.get("symbol")) or None),
+        )
+    if commissions > 1e-12 and abs(commissions - fill_fees_usdt) > 1e-8:
+        raise ValueError("account_ledger_commission_mismatch")
+    return {
+        "funding_usdt": funding,
+        "transfer_usdt": transfers,
+        "commission_usdt": commissions,
+        "source_hash": source_hash,
+        "row_count": len(source_rows),
+    }
+
+
 def _post_dispatch_reconciliation(
     plan: Mapping[str, Any], snapshot: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -1092,7 +1843,7 @@ def _post_dispatch_reconciliation(
         symbol = order.get("data_symbol")
         managed = (
             symbol in TOP3
-            and str(order.get("client_order_id") or "").startswith("qmt-s-")
+            and _managed_protective_client_id(order.get("client_order_id"))
             and bool(order.get("close_position") or order.get("reduce_only"))
             and str(order.get("side") or "").lower() == "sell"
         )
@@ -1135,6 +1886,10 @@ def run_pilot_dispatch(
     *,
     exchange: Any | None = None,
     halt_path: str | os.PathLike[str] | None = None,
+    standard_batch: VerifiedDecisionBatch | None = None,
+    runtime_ledger: RuntimeLedger | None = None,
+    pre_dispatch_ledger_snapshot: RuntimeLedgerSnapshot | None = None,
+    standard_registry: StrategyRegistry | None = None,
 ) -> dict[str, Any]:
     """Record a dry decision or execute an already-authorized live plan."""
 
@@ -1175,19 +1930,78 @@ def run_pilot_dispatch(
         return result
     if not plan.get("meta", {}).get("live_orders_allowed"):
         return result
+    if (
+        standard_batch is None
+        or runtime_ledger is None
+        or pre_dispatch_ledger_snapshot is None
+        or standard_registry is None
+    ):
+        result["status"] = "blocked_standard_execution_ledger_missing"
+        return result
+    standard = plan.get("standard_execution") or {}
+    if (
+        standard.get("batch_id") != standard_batch.manifest.batch_id
+        or standard.get("plan_hash") != standard_batch.plan.plan_hash
+        or standard.get("pre_dispatch_ledger_snapshot_hash")
+        != pre_dispatch_ledger_snapshot.snapshot_hash
+        or pre_dispatch_ledger_snapshot.reconciliation.get("phase") != "pre_dispatch"
+        or pre_dispatch_ledger_snapshot.reconciliation.get("passed") is not True
+        or pre_dispatch_ledger_snapshot.unresolved_order_ids
+        or standard.get("registry_hash") != standard_registry.registry_hash
+        or standard.get("registry_promotion_status") != "minimal_live"
+        or not standard.get("registry_owner_authorization_hash")
+    ):
+        result["status"] = "blocked_standard_execution_authority_mismatch"
+        return result
+    replayed = build_runtime_ledger_snapshot(
+        runtime_ledger,
+        standard_batch,
+        captured_at=pre_dispatch_ledger_snapshot.captured_at,
+    )
+    if replayed.snapshot_hash != pre_dispatch_ledger_snapshot.snapshot_hash:
+        result["status"] = "blocked_standard_execution_ledger_drift"
+        return result
     client = exchange or build_exchange(settings, private=True)
     append_dispatch_journal(
         journal_path,
-        _event_row(plan, event_type="live_intent_locked", status="locked"),
+        _event_row(
+            plan,
+            event_type="live_intent_locked",
+            status="locked",
+            reconciliation={
+                "margin_balance_usdt": _float(
+                    (plan.get("account_equity") or {}).get(
+                        "margin_balance_usdt"
+                    )
+                ),
+                "snapshot_hash": plan.get("snapshot_hash"),
+            },
+        ),
     )
     result["event_recorded"] = True
     responses: list[dict[str, Any]] = []
     result["exchange_mutation_attempted"] = True
+    fill_fees = 0.0
+    slippage_breaches: list[dict[str, Any]] = []
     try:
         for order in sorted(
             plan.get("market_orders") or [],
             key=lambda row: 0 if row["side"] == "sell" else 1,
         ):
+            client_order_id = str(order["client_order_id"])
+            submitted_at = utc_now().isoformat()
+            runtime_ledger.transition_order(
+                client_order_id,
+                "SUBMITTING",
+                event_at=submitted_at,
+                source_hash=canonical_hash(
+                    {
+                        "event": "exchange_submission_started",
+                        "plan_hash": plan.get("plan_hash"),
+                        "client_order_id": client_order_id,
+                    }
+                ),
+            )
             params = {"newClientOrderId": order["client_order_id"]}
             if order.get("reduce_only"):
                 params["reduceOnly"] = True
@@ -1199,7 +2013,65 @@ def run_pilot_dispatch(
                 None,
                 params,
             )
-            responses.append(_exchange_response_view(response))
+            observed, fills = _fetch_market_fill_evidence(client, response, order)
+            reference_price = _float(
+                (plan.get("execution_reference_prices") or {}).get(order["symbol"])
+            )
+            slippage_bps = _adverse_slippage_bps(
+                side=str(order["side"]),
+                reference_price=reference_price,
+                average_fill_price=_float(observed.get("average")),
+            )
+            observed["reference_price"] = reference_price
+            observed["adverse_slippage_bps"] = slippage_bps
+            observed["maximum_adverse_slippage_bps"] = (
+                LIVE_PILOT_CONTRACT.maximum_adverse_slippage_bps
+            )
+            if slippage_bps > LIVE_PILOT_CONTRACT.maximum_adverse_slippage_bps:
+                slippage_breaches.append(
+                    {
+                        "symbol": order["symbol"],
+                        "client_order_id": order["client_order_id"],
+                        "adverse_slippage_bps": slippage_bps,
+                    }
+                )
+            responses.append(observed)
+            observation_hash = canonical_hash(
+                {
+                    "event": "exchange_market_fill_evidence",
+                    "plan_hash": plan.get("plan_hash"),
+                    "response": observed,
+                    "fills": fills,
+                }
+            )
+            runtime_ledger.transition_order(
+                client_order_id,
+                str(observed["ledger_status"]),
+                event_at=utc_now().isoformat(),
+                source_hash=observation_hash,
+                exchange_order_id=str(observed.get("id") or "") or None,
+                executed_quantity=_float(observed.get("filled")),
+                average_price=(
+                    _float(observed.get("average"))
+                    if _float(observed.get("average")) > 0.0
+                    else None
+                ),
+                reason=str(observed["ledger_reason"]),
+            )
+            for fill in fills:
+                fill_fees += _float(fill["fee"])
+                runtime_ledger.record_fill(
+                    client_order_id=client_order_id,
+                    exchange_trade_id=str(fill["exchange_trade_id"]),
+                    quantity=_float(fill["quantity"]),
+                    price=_float(fill["price"]),
+                    fee=_float(fill["fee"]),
+                    fee_asset=str(fill["fee_asset"]),
+                    occurred_at=str(fill["occurred_at"]),
+                    source_hash=observation_hash,
+                )
+            if observed["ledger_status"] != "FILLED":
+                raise RuntimeError("market_order_result_uncertain")
         for order in plan.get("stop_cancels") or []:
             client.cancel_order(
                 order["id"], order["symbol"], params={"stop": True}
@@ -1211,7 +2083,37 @@ def run_pilot_dispatch(
                     "symbol": order["symbol"],
                 }
             )
+            client_order_id = str(order.get("client_order_id") or "")
+            if client_order_id.startswith(_STANDARD_PROTECTIVE_PREFIX):
+                runtime_ledger.transition_order(
+                    client_order_id,
+                    "CANCELED",
+                    event_at=utc_now().isoformat(),
+                    source_hash=canonical_hash(
+                        {
+                            "event": "protective_stop_canceled",
+                            "plan_hash": plan.get("plan_hash"),
+                            "client_order_id": client_order_id,
+                            "exchange_order_id": order.get("id"),
+                        }
+                    ),
+                    exchange_order_id=str(order.get("id") or "") or None,
+                    reason="confirmed_protective_stop_cancel",
+                )
         for order in plan.get("stop_orders") or []:
+            client_order_id = str(order["client_order_id"])
+            runtime_ledger.transition_order(
+                client_order_id,
+                "SUBMITTING",
+                event_at=utc_now().isoformat(),
+                source_hash=canonical_hash(
+                    {
+                        "event": "protective_stop_submission_started",
+                        "plan_hash": plan.get("plan_hash"),
+                        "client_order_id": client_order_id,
+                    }
+                ),
+            )
             response = client.create_order(
                 order["ccxt_symbol"],
                 "STOP_MARKET",
@@ -1224,10 +2126,62 @@ def run_pilot_dispatch(
                     "newClientOrderId": order["client_order_id"],
                 },
             )
-            responses.append(_exchange_response_view(response))
+            observed = _exchange_response_view(response)
+            observed["client_order_id"] = client_order_id
+            responses.append(observed)
+            exchange_order_id = str(observed.get("id") or "")
+            if not exchange_order_id:
+                raise RuntimeError("protective_stop_acknowledgement_missing")
+            runtime_ledger.transition_order(
+                client_order_id,
+                "ACKNOWLEDGED",
+                event_at=utc_now().isoformat(),
+                source_hash=canonical_hash(
+                    {
+                        "event": "protective_stop_acknowledged",
+                        "plan_hash": plan.get("plan_hash"),
+                        "response": observed,
+                    }
+                ),
+                exchange_order_id=exchange_order_id,
+                reason="exchange_protective_stop_accepted",
+            )
     except Exception as exc:
         safe = _safe_error(exc, settings)
+        for order in standard_batch.plan.orders:
+            current = runtime_ledger.get_order(order.client_order_id)
+            if current["status"] in {"SUBMITTING", "PARTIALLY_FILLED"}:
+                runtime_ledger.transition_order(
+                    order.client_order_id,
+                    "UNKNOWN",
+                    event_at=utc_now().isoformat(),
+                    source_hash=canonical_hash(
+                        {
+                            "event": "exchange_execution_uncertain",
+                            "plan_hash": plan.get("plan_hash"),
+                            "client_order_id": order.client_order_id,
+                            "error_type": type(exc).__name__,
+                        }
+                    ),
+                    reason=f"execution_error:{type(exc).__name__}",
+                )
         responses.append({"error": safe})
+        halt_snapshot_hash = None
+        try:
+            halt_snapshot = _record_execution_halt_reconciliation(
+                runtime_ledger,
+                standard_batch,
+                reason=f"execution_error:{type(exc).__name__}",
+            )
+            halt_snapshot_hash = halt_snapshot.snapshot_hash
+        except Exception as reconciliation_exc:
+            responses.append(
+                {
+                    "halt_reconciliation_error": _safe_error(
+                        reconciliation_exc, settings
+                    )
+                }
+            )
         append_dispatch_journal(
             journal_path,
             _event_row(
@@ -1237,35 +2191,162 @@ def run_pilot_dispatch(
                 exchange_responses=responses,
             ),
         )
-        result.update({"responses": responses, "status": "halted_uncertain"})
-        if halt_path:
-            Path(halt_path).write_text("live_execution_error\n", encoding="ascii")
+        result.update(
+            {
+                "responses": responses,
+                "status": "halted_uncertain",
+                "runtime_ledger_snapshot_hash": halt_snapshot_hash,
+            }
+        )
+        _halt(halt_path, "live_execution_error")
         return result
 
-    post = fetch_pilot_dispatch_snapshot(settings, exchange=client)
-    reconciliation = _post_dispatch_reconciliation(plan, post)
-    completed = bool(reconciliation["passed"])
-    append_dispatch_journal(
-        journal_path,
-        _event_row(
-            plan,
-            event_type="live_completed" if completed else "live_reconciliation_error",
-            status="completed" if completed else "halted_reconciliation",
-            exchange_responses=responses,
-            reconciliation=reconciliation,
-        ),
-    )
-    result.update(
-        {
-            "responses": responses,
-            "status": "completed" if completed else "halted_reconciliation",
-            "reconciliation": reconciliation,
+    try:
+        post = fetch_pilot_dispatch_snapshot(settings, exchange=client)
+        reconciliation = _post_dispatch_reconciliation(plan, post)
+        post_hash = canonical_hash(
+            {"event": "post_dispatch_account_snapshot", "snapshot": post}
+        )
+        balance = post.get("balance") or {}
+        post_time = str(post.get("created_at") or utc_now().isoformat())
+        previous_nav = runtime_ledger.latest_nav_mark()
+        if previous_nav is None:
+            raise ValueError("standard_execution_pre_dispatch_nav_missing")
+        cash_evidence = _record_dispatch_cash_events(
+            client,
+            runtime_ledger,
+            after=previous_nav.marked_at,
+            through=post_time,
+            fill_fees_usdt=fill_fees,
+        )
+        runtime_ledger.record_account_observation(
+            batch_id=standard_batch.manifest.batch_id,
+            observed_at=post_time,
+            quote_asset="USDT",
+            wallet_balance=_float(balance.get("wallet_balance")),
+            available_balance=_float(balance.get("quote_free")),
+            actual_gross_notional=sum(
+                _float(row.get("notional_usdt"))
+                for row in post.get("positions") or ()
+            ),
+            margin_used=_float(balance.get("quote_used")),
+            source_id=canonical_hash({"account_snapshot": post.get("snapshot_hash")}),
+            source_hash=post_hash,
+        )
+        equity = _float(balance.get("margin_balance"))
+        nav = runtime_ledger.record_nav_mark(
+            marked_at=post_time,
+            equity=equity,
+            trading_pnl=(
+                equity
+                - previous_nav.equity
+                - _float(cash_evidence["funding_usdt"])
+                + fill_fees
+                - _float(cash_evidence["transfer_usdt"])
+            ),
+            residual_tolerance=0.001,
+            source_hash=post_hash,
+        )
+        standard_reconciliation = reconcile_three_way(
+            batch_id=standard_batch.manifest.batch_id,
+            reconciled_at=post_time,
+            phase="post_dispatch",
+            target_positions=dict(standard_batch.plan.expected_positions),
+            ledger_positions=runtime_ledger.position_quantities(),
+            exchange_positions=_snapshot_positions(post),
+            position_tolerances=dict(standard_batch.plan.reconciliation_tolerance),
+            ledger_open_order_ids=runtime_ledger.open_order_ids(),
+            exchange_open_order_ids=_snapshot_managed_open_order_ids(post),
+            equity_residual=nav.residual,
+            equity_residual_tolerance=nav.residual_tolerance,
+        )
+        runtime_ledger.record_reconciliation(standard_reconciliation)
+        standard_snapshot = build_runtime_ledger_snapshot(
+            runtime_ledger,
+            standard_batch,
+            captured_at=_utc_now_not_before(post_time),
+        )
+        reconciliation["standard_reconciliation"] = standard_reconciliation.as_dict()
+        reconciliation["runtime_ledger_snapshot_hash"] = standard_snapshot.snapshot_hash
+        reconciliation["cash_evidence"] = cash_evidence
+        completed = bool(reconciliation["passed"] and standard_reconciliation.passed)
+        slippage_halt = completed and bool(slippage_breaches)
+        completed_status = "halted_slippage" if slippage_halt else "completed"
+        reconciliation["slippage"] = {
+            "maximum_adverse_slippage_bps": (
+                LIVE_PILOT_CONTRACT.maximum_adverse_slippage_bps
+            ),
+            "breaches": slippage_breaches,
+            "passed": not slippage_breaches,
         }
-    )
-    if (not completed or plan.get("halt_after_dispatch")) and halt_path:
-        reason = "pilot_drawdown_halt" if plan.get("halt_after_dispatch") else "reconciliation_error"
-        Path(halt_path).write_text(reason + "\n", encoding="ascii")
-    return result
+        append_dispatch_journal(
+            journal_path,
+            _event_row(
+                plan,
+                event_type="live_completed" if completed else "live_reconciliation_error",
+                status=(completed_status if completed else "halted_reconciliation"),
+                exchange_responses=responses,
+                reconciliation=reconciliation,
+            ),
+        )
+        result.update(
+            {
+                "responses": responses,
+                "status": (
+                    completed_status if completed else "halted_reconciliation"
+                ),
+                "reconciliation": reconciliation,
+                "runtime_ledger_snapshot_hash": standard_snapshot.snapshot_hash,
+            }
+        )
+        if not completed or plan.get("halt_after_dispatch") or slippage_halt:
+            reason = (
+                str(plan.get("halt_reason") or "pilot_risk_halt")
+                if plan.get("halt_after_dispatch")
+                else (
+                    "pilot_slippage_halt"
+                    if slippage_halt
+                    else "reconciliation_error"
+                )
+            )
+            _halt(halt_path, reason)
+        return result
+    except Exception as exc:
+        responses.append({"post_dispatch_error": _safe_error(exc, settings)})
+        halt_snapshot_hash = None
+        try:
+            halt_snapshot = _record_execution_halt_reconciliation(
+                runtime_ledger,
+                standard_batch,
+                reason=f"post_dispatch_error:{type(exc).__name__}",
+            )
+            halt_snapshot_hash = halt_snapshot.snapshot_hash
+        except Exception as reconciliation_exc:
+            responses.append(
+                {
+                    "halt_reconciliation_error": _safe_error(
+                        reconciliation_exc, settings
+                    )
+                }
+            )
+        append_dispatch_journal(
+            journal_path,
+            _event_row(
+                plan,
+                event_type="live_reconciliation_error",
+                status="halted_reconciliation",
+                exchange_responses=responses,
+            ),
+        )
+        result.update(
+            {
+                "responses": responses,
+                "status": "halted_reconciliation",
+                "runtime_ledger_snapshot_hash": halt_snapshot_hash,
+            }
+        )
+        _halt(halt_path, "post_dispatch_accounting_error")
+        return result
 
 
 def write_pilot_dispatch_artifact(

@@ -1,10 +1,11 @@
 # qount 加密多策略组合系统计划
 
-更新时间：2026-07-19
+更新时间：2026-07-21
 
 状态：`research_sandbox`。本文件记录 owner 计划投入 `1000 USDT` 后的目标架构、策略合同和推进顺序；它不构成
-充值、下单或实盘授权。VPS只启用了Base的order-free forward/paper timer；当前VPS-only credential和账户只读
-预检已通过，但五项未来数据门与manual final arm尚未通过，所有实盘订单和Base以外的paper/live资格均关闭。
+充值、下单或实盘授权。Owner已要求直接推进Phase B/C/D，本次真钱canary严格固定为`100 USDT`；60/10 forward、
+30 paper days和7 dry days只作防篡改观察项，不再阻断readiness。MiniTrend timer、manual arm和live switch仍关闭，
+当前未发送真实订单；账户、订单、funding、标准authority/RuntimeLedger/对账和owner最终hash确认仍是硬门。
 
 本文负责策略sleeve、研究合同和晋级顺序。跨策略通用的运行架构、账本/对账、故障恢复、通知、Dashboard和LLM
 边界以 [system-architecture-design.md](system-architecture-design.md) 为主设计，避免在策略计划中重复维护第二套
@@ -149,8 +150,9 @@ virtual NAV或shadow execution。
 - 新事件单次模型化最大亏损目标不超过账户的0.25%；若最小名义价值或跳空使其不可满足，只能shadow。
 - LiquidTrend单币目标不超过25%，同一动态相关簇最多2个仓位；相关簇限制不影响Base控制组的历史合同。
 
-当前pilot已改为从已审计USD-M余额动态选择`100-1000 USDT`，manual arm时冻结；当前基线为
-`488.89481071 USDT`。1000 USDT只是该合同的上限，不会让未晋级sleeve自动获得真钱风险预算。
+历史pilot曾从已审计USD-M余额动态选择`100-1000 USDT`；代码中的`1000 USDT`上界现在只兼容已消费的300 USDT
+research/paper和旧order-free证据。本次canary在readiness、manual arm、live dispatcher和live journal四层均强制严格
+`100 USDT`，manual arm时冻结。未来扩到1000 USDT仍需新的owner授权，不会让未晋级sleeve自动获得真钱风险预算。
 
 ## 5. 策略合同
 
@@ -287,9 +289,10 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
 原文字节数与SHA-256，只向LLM暴露最多12,000字符的可见文本。共享托管域还要绑定资源身份：GitHub当前只允许
 `binance/binance-public-data`。模型提出的URL必须重新经过该层，不能直接成为事实。
 
-研究客户端通过`relay-station`的`https://llm.alyaloale.com/v1/chat/completions`访问ChatGPT，默认
-`gpt-5.6-terra`、并发1、SDK重试0、`trust_env=false`、输入/输出限长、精确五字段JSON、无tools。凭据只从仓库外
-`~/.qount/alpha-agent.env`读取。接口是显式opt-in；离线fixture通过不代表模型可用于策略晋级，更不代表下单权限。
+研究客户端通过`relay-station`的`https://llm.alyaloale.com/v1/responses`访问ChatGPT，默认
+`gpt-5.6-terra`、并发1、SDK重试0、应用层最多1次有界退避、`trust_env=false`、输入/输出限长、严格JSON Schema五字段、
+`store=false`且无tools。Daily Intelligence另行显式使用`gpt-5.6-sol`，不改变通用研究默认。凭据只从仓库外
+`~/.qount/alpha-agent.env`读取。接口是显式opt-in；离线fixture或单角色真实调用通过不代表模型可用于策略晋级，更不代表下单权限。
 
 ## 7. 晋级门
 
@@ -301,9 +304,10 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
 - G0 Data/Capacity：来源、as-of、覆盖、规则、流动性、有效广度、成本和容量。
 - G1 Research：相对Base/BTC/TOP3的净结果，分段稳定，trial ledger完整，无泄漏。
 - G2 Promotion：冻结候选在新时间数据通过，敏感性和块Bootstrap不依赖单一事件/年份；多重试验按假设族记录。
-- G3 Shadow：Base至少60根完成日线只构成operational evidence，不构成新Alpha统计证据。Equity Mapping至少
+- G3 Shadow：Base的60根完成日线继续构成operational observation，不构成新Alpha统计证据，也不阻断owner明确授权的
+  100 USDT canary。Equity Mapping至少
   30个独立美股交易日期；Funding按独立拥挤episode；LiquidTrend按独立调仓日期和市场阶段报告。
-- G4 Minimal Live：owner单独授权，私有预检、7天dry、幂等、回滚、无未管理仓位。
+- G4 Minimal Live：owner单独授权，私有预检、幂等、回滚、无未管理仓位、标准账本和三方对账；7天dry保留为观察指标。
 - G5 Scale：实盘摩擦、偏差和容量均在合同内，才允许逐级增加风险预算。
 
 ## 8. 90天推进顺序
@@ -323,20 +327,27 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
 1. 生成LiquidTrend10 G0容量artifact：10币日线、funding、quote-volume、相关矩阵、有效广度和1000 USDT过滤器。
 2. 建立Equity Mapping跨场所symbol contract，下一版补真实premarket锚和公司行动日历。
 3. 为LLM事件层实现schema/validator/fixture，不接交易或权重。
-4. Binance生产端已接受owner指定的现有Key并通过私有只读预检；order-free runtime已部署。继续累积forward/paper/dry，
-   五项数据门和manual final arm通过前不启用交易runtime，也不恢复旧交易cron。
+4. Binance生产端已接受owner指定的现有Key并通过私有只读预检；2026-07-21 owner要求固定100 USDT并直接推进B/C/D。
+   forward/paper/dry日历值继续观察但不阻断；manual final arm、当前标准authority、账本/对账和账户安全门仍阻断订单，
+   旧交易cron不恢复。
 
-执行进度（2026-07-19）：
+执行进度（2026-07-21）：
 
-- Base生产前置已部署到VPS：`qount-mini-trend-forward.timer`每天刷新TOP3公开rules/bar/funding，运行只读preflight、
-  幂等paper journal、latest causal projection、当前账户/普通单/条件单快照、dry dispatcher、独立runtime proof和
-  fail-closed readiness。当前资金从USD-M动态读取为`488.89481071 USDT`；owner接受现有VPS-only key和Spot/Margin
-  权限，Reading/Futures/IP限制/提现关闭及TOP3 one-way/isolated 1x/全平/0挂单均通过。
+- Phase B/C/D代码已同步VPS，`qount-mini-trend-forward.service`经`systemd-analyze verify`并手工运行一次oneshot；timer继续
+  `disabled/inactive`。成功run `/root/qount/state/mini_trend/forward/runs/20260721T063854Z`闭合标准authority、RuntimeLedger和
+  pre-dispatch reconciliation，最终readiness为`ready_for_manual_final_arm`、blocker 0，但`live_orders_allowed=false`。
+  账户全平、普通/条件单0、dry dispatcher 0 intent且未尝试mutation。观察值`0/0/0/1`不阻断；registry仍为`research`，arm为0。
+
+- Base生产前置service已部署到VPS，可在明确授权时手工刷新TOP3公开rules/bar/funding，运行只读preflight、幂等paper journal、
+  latest causal projection、当前账户/普通单/条件单快照、dry dispatcher、独立runtime proof和fail-closed readiness；
+  `qount-mini-trend-forward.timer`保持`disabled/inactive`。2026-07-21只读审计显示可用余额`486.15970914 USDT`，仅用于验证
+  至少覆盖本次固定`100 USDT` canary；owner接受现有VPS-only key和Spot/Margin权限，Reading/Futures/IP限制/提现关闭及
+  TOP3 one-way/isolated 1x/全平/0挂单均通过。
 - MiniTrend dispatcher已实现源hash与决策hash绑定、确定性client ID、重复决策锁、append-only row/chain journal、
   exchange-native `STOP_MARKET closePosition`、成交后仓位/保护单对账、10%回撤flatten+halt和独立manual arm。
   最新run `/root/qount/state/mini_trend/forward/runs/20260719T091232Z`的systemd runtime proof通过；因首个冻结完成bar
-  尚未出现，dry为`await_dispatch_decision`、0 journal/0订单。readiness只剩60/10 forward、30天paper、7天dry和完整
-  funding journal五个未来数据门，`live_orders_allowed=false`。
+  尚未出现，dry为`await_dispatch_decision`、0 journal/0订单。60/10 forward、30天paper、7天dry已降为非阻断观察项；
+  当前继续要求完整funding journal、authority/RuntimeLedger/对账和manual final arm，`live_orders_allowed=false`。
 - 任务1已完成v0.2 G0 artifact。1777个BTC参考日中10币共同1772日，覆盖`99.7186%`；10币Funding经交易所
   结算时间最近分钟规范化后覆盖全部通过，最低单币日成交额中位数约`225.47m USDT`。原始毫秒时间戳会把
   相邻两天错误分成2/4次结算，已由回归测试修复，不做0填充。

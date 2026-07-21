@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,54 @@ RELAY_STATION_CHATGPT_PROFILE = "relay_station_chatgpt"
 RELAY_STATION_BASE_URL = "https://llm.alyaloale.com/v1"
 RELAY_STATION_DEFAULT_MODEL = "gpt-5.6-terra"
 _REPORT_KEYS = frozenset({"status", "summary", "findings", "proposals", "risks"})
+_TRANSIENT_HTTP_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 524})
+_REPORT_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string", "enum": ["ok", "blocked", "needs_research"]},
+        "summary": {"type": "string", "minLength": 1},
+        "findings": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "maxItems": 6,
+        },
+        "proposals": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "maxItems": 6,
+        },
+        "risks": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "maxItems": 6,
+        },
+    },
+    "required": ["status", "summary", "findings", "proposals", "risks"],
+    "additionalProperties": False,
+}
+
+
+def _is_zh_cn(output_language: str | None) -> bool:
+    return output_language == "zh-CN"
+
+
+def _localized(output_language: str | None, *, zh: str, en: str) -> str:
+    return zh if _is_zh_cn(output_language) else en
+
+
+def _contains_cjk(value: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in value)
+
+
+def _payload_matches_language(
+    payload: dict[str, Any], output_language: str | None
+) -> bool:
+    if not _is_zh_cn(output_language):
+        return True
+    narratives = [payload["summary"]]
+    for name in ("findings", "proposals", "risks"):
+        narratives.extend(payload[name])
+    return all(_contains_cjk(value) for value in narratives)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -57,14 +106,22 @@ class AlphaLLMConfig:
     temperature: float = 0.0
     max_tokens: int = 2000
     max_concurrency: int = 1
-    max_retries: int = 0
+    max_retries: int = 1
+    retry_base_seconds: int = 10
+    max_retry_delay_seconds: int = 60
     provider_profile: str = RELAY_STATION_CHATGPT_PROFILE
     max_input_chars: int = 50_000
     max_response_chars: int = 20_000
 
     @classmethod
-    def from_env(cls, *, enabled_override: bool | None = None) -> "AlphaLLMConfig":
-        _load_local_alpha_env()
+    def from_env(
+        cls,
+        *,
+        enabled_override: bool | None = None,
+        load_local_file: bool = True,
+    ) -> "AlphaLLMConfig":
+        if load_local_file:
+            _load_local_alpha_env()
         enabled = _env_bool("QOUNT_ALPHA_AGENT_LLM_ENABLE", False)
         if enabled_override is not None:
             enabled = enabled_override
@@ -77,7 +134,14 @@ class AlphaLLMConfig:
             temperature=float(os.getenv("QOUNT_ALPHA_AGENT_TEMPERATURE", "0")),
             max_tokens=int(os.getenv("QOUNT_ALPHA_AGENT_MAX_TOKENS", "2000")),
             max_concurrency=max(1, int(os.getenv("QOUNT_ALPHA_AGENT_MAX_CONCURRENCY", "1"))),
-            max_retries=max(0, int(os.getenv("QOUNT_ALPHA_AGENT_MAX_RETRIES", "0"))),
+            max_retries=max(0, int(os.getenv("QOUNT_ALPHA_AGENT_MAX_RETRIES", "1"))),
+            retry_base_seconds=max(
+                1, int(os.getenv("QOUNT_ALPHA_AGENT_RETRY_BASE_SECONDS", "10"))
+            ),
+            max_retry_delay_seconds=max(
+                1,
+                int(os.getenv("QOUNT_ALPHA_AGENT_MAX_RETRY_DELAY_SECONDS", "60")),
+            ),
             provider_profile=os.getenv(
                 "QOUNT_ALPHA_AGENT_PROVIDER_PROFILE", RELAY_STATION_CHATGPT_PROFILE
             ),
@@ -105,28 +169,50 @@ class AlphaLLMConfig:
             errors.append("llm_max_tokens_invalid")
         if self.max_concurrency != 1:
             errors.append("research_llm_concurrency_must_equal_one")
-        if self.max_retries != 0:
-            errors.append("research_llm_retries_must_equal_zero")
+        if self.max_retries > 2:
+            errors.append("research_llm_retries_must_not_exceed_two")
+        if self.retry_base_seconds <= 0 or self.max_retry_delay_seconds <= 0:
+            errors.append("research_llm_retry_delay_invalid")
         if self.max_input_chars <= 0 or self.max_response_chars <= 0:
             errors.append("llm_payload_limit_invalid")
         return tuple(errors)
 
 
-def offline_report(role: AgentRole, task: ResearchTask, sources: tuple[SourceRef, ...], reason: str) -> AgentReport:
-    findings = (
-        f"role={role.role_id} registered; runtime LLM call skipped: {reason}",
-        "This report is a task scaffold, not research evidence or a trading signal.",
-        "Guardrail: research-only; portfolio allocation and live runtime changes are out of scope.",
-    )
-    risks = (
-        "No promotion claim is allowed until a deterministic quant artifact exists.",
-        "LLM output must stay descriptive and cannot allocate portfolio risk or alter runtime controls.",
-    )
+def offline_report(
+    role: AgentRole,
+    task: ResearchTask,
+    sources: tuple[SourceRef, ...],
+    reason: str,
+    *,
+    output_language: str | None = None,
+) -> AgentReport:
+    if _is_zh_cn(output_language):
+        findings = (
+            f"角色 {role.role_id} 已注册，但本次未调用 LLM：{reason}",
+            "本报告只是任务骨架，不构成研究证据或交易信号。",
+            "边界：仅限研究，不得分配组合风险或修改实盘运行状态。",
+        )
+        risks = (
+            "在确定性量化产物形成前，不得提出策略晋级结论。",
+            "LLM 输出只能用于描述和复核，不得分配风险或修改运行控制。",
+        )
+        summary = f"已为{role.name}创建“{task.title}”任务骨架。"
+    else:
+        findings = (
+            f"role={role.role_id} registered; runtime LLM call skipped: {reason}",
+            "This report is a task scaffold, not research evidence or a trading signal.",
+            "Guardrail: research-only; portfolio allocation and live runtime changes are out of scope.",
+        )
+        risks = (
+            "No promotion claim is allowed until a deterministic quant artifact exists.",
+            "LLM output must stay descriptive and cannot allocate portfolio risk or alter runtime controls.",
+        )
+        summary = f"{role.name} task scaffold created for {task.title}."
     report = AgentReport(
         role_id=role.role_id,
         task_id=task.task_id,
         status="needs_research",
-        summary=f"{role.name} task scaffold created for {task.title}.",
+        summary=summary,
         findings=findings,
         risks=risks,
         sources=sources,
@@ -137,7 +223,11 @@ def offline_report(role: AgentRole, task: ResearchTask, sources: tuple[SourceRef
             role_id=role.role_id,
             task_id=task.task_id,
             status="blocked",
-            summary="Offline report failed alpha-agent validation.",
+            summary=_localized(
+                output_language,
+                zh="离线报告未通过 Alpha Agent 合同校验。",
+                en="Offline report failed alpha-agent validation.",
+            ),
             risks=errors,
             sources=sources,
         )
@@ -162,18 +252,70 @@ def _validate_report_payload(parsed: Any) -> tuple[dict[str, Any] | None, str | 
     return parsed, None
 
 
-def _strict_json_retry_message(reason: str) -> dict[str, str]:
-    return {
-        "role": "user",
-        "content": (
-            "Your previous response failed validation: "
-            f"{reason}. Return ONLY one valid JSON object with exactly these keys: "
-            "status, summary, findings, proposals, risks. "
-            "status must be ok, blocked, or needs_research. "
-            "summary must be one sentence. findings/proposals/risks must be arrays of strings only. "
-            "No nested objects, no markdown, no comments, no extra keys."
-        ),
+def _exception_status(exc: Exception) -> int | None:
+    value = getattr(exc, "status_code", None)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _owner_action_required(exc: Exception) -> bool:
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        return False
+    if body.get("owner_action_required") is True:
+        return True
+    error = body.get("error")
+    return isinstance(error, dict) and error.get("owner_action_required") is True
+
+
+def _body_value(exc: Exception, name: str) -> Any:
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        return None
+    if name in body:
+        return body[name]
+    error = body.get("error")
+    return error.get(name) if isinstance(error, dict) else None
+
+
+def _retry_delay(config: AlphaLLMConfig, exc: Exception, attempt: int) -> float:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    retry_after = headers.get("retry-after") if headers is not None else None
+    if retry_after is None:
+        retry_after = _body_value(exc, "retry_after")
+    if retry_after is not None:
+        try:
+            seconds = float(retry_after)
+        except (TypeError, ValueError):
+            seconds = 0.0
+        if seconds > 0:
+            return min(float(config.max_retry_delay_seconds), seconds)
+    delay = config.retry_base_seconds * (2**attempt)
+    return float(min(config.max_retry_delay_seconds, delay))
+
+
+def _is_transient_request_error(exc: Exception) -> bool:
+    status = _exception_status(exc)
+    explicitly_retryable = _body_value(exc, "retryable") is True
+    if _owner_action_required(exc) and not explicitly_retryable:
+        return False
+    if status is not None:
+        return status in _TRANSIENT_HTTP_STATUSES
+    return type(exc).__name__ in {
+        "APIConnectionError",
+        "APITimeoutError",
+        "ConnectError",
+        "ConnectTimeout",
+        "ReadError",
+        "ReadTimeout",
+        "TimeoutException",
     }
+
+
+def _request_error_reason(exc: Exception, attempts: int) -> str:
+    status = _exception_status(exc)
+    status_part = f":http_{status}" if status is not None else ""
+    return f"llm_request_error:{type(exc).__name__}{status_part}:attempts_{attempts}"
 
 
 def request_agent_report(
@@ -183,20 +325,43 @@ def request_agent_report(
     task: ResearchTask,
     sources: tuple[SourceRef, ...],
     context: dict[str, Any],
+    output_language: str | None = None,
 ) -> AgentReport:
     if not config.enabled:
-        return offline_report(role, task, sources, "QOUNT_ALPHA_AGENT_LLM_ENABLE is not true")
+        return offline_report(
+            role,
+            task,
+            sources,
+            "QOUNT_ALPHA_AGENT_LLM_ENABLE is not true",
+            output_language=output_language,
+        )
     if not role.llm_allowed:
-        return offline_report(role, task, sources, "role is deterministic-only")
+        return offline_report(
+            role,
+            task,
+            sources,
+            "role is deterministic-only",
+            output_language=output_language,
+        )
     if not config.api_key:
-        return offline_report(role, task, sources, "QOUNT_ALPHA_AGENT_API_KEY is not set")
+        return offline_report(
+            role,
+            task,
+            sources,
+            "QOUNT_ALPHA_AGENT_API_KEY is not set",
+            output_language=output_language,
+        )
     config_errors = config.validate()
     if config_errors:
         return AgentReport(
             role_id=role.role_id,
             task_id=task.task_id,
             status="blocked",
-            summary="LLM configuration failed the relay-station research boundary.",
+            summary=_localized(
+                output_language,
+                zh="LLM 配置未通过 relay-station 研究边界校验。",
+                en="LLM configuration failed the relay-station research boundary.",
+            ),
             risks=config_errors,
             sources=sources,
         )
@@ -229,6 +394,7 @@ def request_agent_report(
         ],
         "context": context,
         "output_contract": {
+            "language": output_language or "unspecified",
             "required_top_level_keys": ["status", "summary", "findings", "proposals", "risks"],
             "status": "ok | blocked | needs_research",
             "summary": "one sentence string",
@@ -251,13 +417,22 @@ def request_agent_report(
         },
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=2)},
     ]
+    if _is_zh_cn(output_language):
+        messages[0]["content"] += (
+            " summary、findings、proposals 和 risks 中的所有自然语言必须使用简体中文；"
+            "市场代码、哈希、URL 和专有名词可以保留原文。"
+        )
     serialized_payload = messages[1]["content"]
     if len(serialized_payload) > config.max_input_chars:
         return AgentReport(
             role_id=role.role_id,
             task_id=task.task_id,
             status="blocked",
-            summary="LLM input exceeded the frozen research payload limit.",
+            summary=_localized(
+                output_language,
+                zh="LLM 输入超过冻结的研究载荷上限。",
+                en="LLM input exceeded the frozen research payload limit.",
+            ),
             risks=("llm_input_too_large",),
             sources=sources,
         )
@@ -270,28 +445,46 @@ def request_agent_report(
     )
     last_raw = ""
     last_reason = "unknown_error"
-    current_messages = list(messages)
     for attempt in range(config.max_retries + 1):
         try:
-            response = client.chat.completions.create(
+            response = client.responses.create(
                 model=config.model,
-                messages=current_messages,
+                input=messages,
                 temperature=config.temperature,
-                max_tokens=config.max_tokens,
-                response_format={"type": "json_object"},
+                max_output_tokens=config.max_tokens,
+                store=False,
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "qount_agent_report",
+                        "strict": True,
+                        "schema": _REPORT_JSON_SCHEMA,
+                    }
+                },
             )
         except Exception as exc:
+            if attempt < config.max_retries and _is_transient_request_error(exc):
+                time.sleep(_retry_delay(config, exc, attempt))
+                continue
             client.close()
             return AgentReport(
                 role_id=role.role_id,
                 task_id=task.task_id,
                 status="blocked",
-                summary="LLM request failed; agent report was blocked and the batch may continue.",
+                summary=_localized(
+                    output_language,
+                    zh="LLM 请求失败；该角色报告已阻断，但日报批次可继续归档。",
+                    en="LLM request failed; agent report was blocked and the batch may continue.",
+                ),
                 findings=(),
-                risks=(f"llm_request_error:{type(exc).__name__}",),
+                risks=(_request_error_reason(exc, attempt + 1),),
                 sources=sources,
             )
-        raw = response.choices[0].message.content or "{}"
+        response_status = getattr(response, "status", "completed")
+        if response_status != "completed":
+            last_reason = f"llm_response_status_invalid:{response_status}"
+            break
+        raw = getattr(response, "output_text", "") or "{}"
         last_raw = raw
         if len(raw) > config.max_response_chars:
             last_reason = "llm_response_too_large"
@@ -300,18 +493,13 @@ def request_agent_report(
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
             last_reason = f"llm_parse_error:{exc.__class__.__name__}"
-            if attempt < config.max_retries:
-                current_messages.append({"role": "assistant", "content": raw[:2000]})
-                current_messages.append(_strict_json_retry_message(last_reason))
-                continue
             break
         strict_payload, payload_error = _validate_report_payload(parsed)
         if payload_error is not None or strict_payload is None:
             last_reason = payload_error or "llm_payload_invalid"
-            if attempt < config.max_retries:
-                current_messages.append({"role": "assistant", "content": raw[:2000]})
-                current_messages.append(_strict_json_retry_message(last_reason))
-                continue
+            break
+        if not _payload_matches_language(strict_payload, output_language):
+            last_reason = "llm_payload_language_invalid"
             break
         candidate = AgentReport(
             role_id=role.role_id,
@@ -329,16 +517,17 @@ def request_agent_report(
             client.close()
             return candidate
         last_reason = ",".join(validation_errors)
-        if attempt < config.max_retries:
-            current_messages.append({"role": "assistant", "content": raw[:2000]})
-            current_messages.append(_strict_json_retry_message(last_reason))
-            continue
+        break
     client.close()
     return AgentReport(
         role_id=role.role_id,
         task_id=task.task_id,
         status="blocked",
-        summary="LLM response failed alpha-agent validation.",
+        summary=_localized(
+            output_language,
+            zh="LLM 响应未通过 Alpha Agent 合同校验。",
+            en="LLM response failed alpha-agent validation.",
+        ),
         findings=(),
         risks=(last_reason,),
         sources=sources,

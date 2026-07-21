@@ -111,7 +111,7 @@
         "title": { "type": "string", "minLength": 1, "maxLength": 160 },
         "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
         "occurred_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
-        "source_type": { "enum": ["decision_batch", "runtime_ledger", "reconciliation", "system"] },
+        "source_type": { "enum": ["decision_batch", "intelligence", "runtime_ledger", "reconciliation", "system"] },
         "source_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
         "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
         "dedupe_key": { "type": "string", "minLength": 1, "maxLength": 240 },

@@ -17,6 +17,8 @@ from qount.mini_trend.live_pilot import (
 from qount.mini_trend.pilot_dispatcher import (
     PILOT_DISPATCH_SNAPSHOT_VERSION,
     PILOT_MANUAL_ARM_VERSION,
+    _adverse_slippage_bps,
+    _record_dispatch_cash_events,
     build_manual_arm,
     build_pilot_dispatch_plan,
     dry_dispatch_evidence,
@@ -24,6 +26,7 @@ from qount.mini_trend.pilot_dispatcher import (
     run_pilot_dispatch,
     verify_dispatch_journal,
 )
+from qount.models import utc_now
 from qount.settings import Settings
 
 
@@ -50,6 +53,7 @@ def _rules() -> dict:
 
 def _preflight() -> dict:
     return {
+        "created_at": utc_now().isoformat(),
         "artifact_type": "mini_trend_um_pilot_account_preflight",
         "contract_hash": LIVE_PILOT_CONTRACT.contract_hash,
         "meta": {
@@ -103,16 +107,31 @@ def _readiness(*, preflight_hash: str = "p") -> dict:
         legacy_production_cron_disabled=True,
         legacy_live_guard_disarmed=True,
         rollback_documented=True,
+        standard_authority_verified=True,
+        authority_batch_id="a" * 64,
+        runtime_ledger_snapshot_hash="b" * 64,
+        pre_dispatch_reconciliation_hash="c" * 64,
+        pre_dispatch_reconciliation_passed=True,
+        notification_snapshot_hash="d" * 64,
+        daily_brief_hash="e" * 64,
+        system_health_snapshot_hash="f" * 64,
+        system_health_ready=True,
+        release_provenance_verified=True,
+        release_git_commit="1" * 40,
+        release_version="0.2.1",
+        release_source_tree_hash="2" * 64,
+        release_provenance_hash="3" * 64,
     )
     payload = build_live_pilot_readiness(
         LivePilotRequest(
             owner_requested_one_month_live=True,
-            capital_usdt=300.0,
+            capital_usdt=100.0,
             start_date="2026-08-01",
         ),
         evidence,
     )
     payload["runtime_sources"] = {"preflight": {"sha256": preflight_hash}}
+    payload["created_at"] = utc_now().isoformat()
     return payload
 
 
@@ -126,7 +145,7 @@ def _projection(rules: dict) -> dict:
         "decision_date": "2026-08-01",
         "decision_available_after": "2026-08-02T00:00:00+00:00",
         "strategy": LIVE_PILOT_CONTRACT.strategy,
-        "pre_decision_equity_usdt": 300.0,
+        "pre_decision_equity_usdt": 100.0,
         "prices": {"BTCUSDT": 10_000.0, "ETHUSDT": 2_000.0, "BNBUSDT": 300.0},
         "previous_weights": {symbol: 0.0 for symbol in TOP3},
         "desired_weights": {symbol: 0.2 for symbol in TOP3},
@@ -151,6 +170,7 @@ def _projection(rules: dict) -> dict:
         )
     }
     return {
+        "created_at": utc_now().isoformat(),
         "artifact_type": "mini_trend_um_pilot_latest_projection",
         "meta": {
             "orders_allowed": False,
@@ -159,7 +179,7 @@ def _projection(rules: dict) -> dict:
         },
         "contract": {
             "live_pilot_contract_hash": LIVE_PILOT_CONTRACT.contract_hash,
-            "capital_usdt": 300.0,
+            "capital_usdt": 100.0,
         },
         "decision": decision,
     }
@@ -168,6 +188,7 @@ def _projection(rules: dict) -> dict:
 def _snapshot() -> dict:
     prices = {"BTCUSDT": 10_000.0, "ETHUSDT": 2_000.0, "BNBUSDT": 300.0}
     payload = {
+        "created_at": utc_now().isoformat(),
         "schema_version": PILOT_DISPATCH_SNAPSHOT_VERSION,
         "artifact_type": "mini_trend_um_dispatch_account_snapshot",
         "contract_hash": LIVE_PILOT_CONTRACT.contract_hash,
@@ -217,10 +238,11 @@ def _plan(*, mode: str = "dry", switch: bool = False) -> dict:
         "readiness_hash": readiness["readiness_hash"],
         "readiness_artifact_sha256": "r",
         "arm_token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-        "capital_usdt": 300.0,
+        "capital_usdt": 100.0,
         "start_date": "2026-08-01",
         "end_date_exclusive": "2026-08-31",
     }
+    rules["created_at"] = utc_now().isoformat()
     return build_pilot_dispatch_plan(
         _preflight(),
         _projection(rules),
@@ -242,6 +264,111 @@ def _plan(*, mode: str = "dry", switch: bool = False) -> dict:
 
 
 class MiniTrendPilotDispatcherTest(unittest.TestCase):
+    def test_dispatch_cash_events_preserve_binance_income_signs(self) -> None:
+        class Exchange:
+            def fetch_ledger(self, currency, since, limit):
+                self.query = (currency, since, limit)
+                return [
+                    {
+                        "id": "funding-1",
+                        "amount": 0.2,
+                        "direction": "out",
+                        "currency": "USDT",
+                        "datetime": "2026-08-02T00:00:10+00:00",
+                        "info": {
+                            "incomeType": "FUNDING_FEE",
+                            "income": "-0.2",
+                            "asset": "USDT",
+                            "symbol": "BTCUSDT",
+                        },
+                    },
+                    {
+                        "id": "transfer-1",
+                        "amount": 3.0,
+                        "direction": "out",
+                        "currency": "USDT",
+                        "datetime": "2026-08-02T00:00:11+00:00",
+                        "info": {
+                            "incomeType": "TRANSFER",
+                            "income": "-3.0",
+                            "asset": "USDT",
+                        },
+                    },
+                    {
+                        "id": "commission-1",
+                        "amount": 0.01,
+                        "direction": "out",
+                        "currency": "USDT",
+                        "datetime": "2026-08-02T00:00:12+00:00",
+                        "info": {
+                            "incomeType": "COMMISSION",
+                            "income": "-0.01",
+                            "asset": "USDT",
+                        },
+                    },
+                    {
+                        "id": "pnl-1",
+                        "amount": 1.5,
+                        "direction": "in",
+                        "currency": "USDT",
+                        "datetime": "2026-08-02T00:00:13+00:00",
+                        "info": {
+                            "incomeType": "REALIZED_PNL",
+                            "income": "1.5",
+                            "asset": "USDT",
+                        },
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory():
+            ledger = mock.Mock()
+            evidence = _record_dispatch_cash_events(
+                Exchange(),
+                ledger,
+                after="2026-08-02T00:00:00+00:00",
+                through="2026-08-02T00:01:00+00:00",
+                fill_fees_usdt=0.01,
+            )
+
+        self.assertEqual(evidence["funding_usdt"], -0.2)
+        self.assertEqual(evidence["transfer_usdt"], -3.0)
+        self.assertEqual(evidence["commission_usdt"], 0.01)
+        self.assertEqual(ledger.record_cash_event.call_count, 2)
+        self.assertEqual(
+            [call.kwargs["amount"] for call in ledger.record_cash_event.call_args_list],
+            [-0.2, -3.0],
+        )
+
+    def test_dispatch_cash_events_fail_closed_on_unknown_binance_income_type(self) -> None:
+        class Exchange:
+            def fetch_ledger(self, currency, since, limit):
+                return [
+                    {
+                        "id": "mystery-1",
+                        "amount": 1.0,
+                        "direction": "in",
+                        "currency": "USDT",
+                        "datetime": "2026-08-02T00:00:10+00:00",
+                        "info": {
+                            "incomeType": "WELCOME_BONUS",
+                            "income": "1.0",
+                            "asset": "USDT",
+                        },
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory(), self.assertRaisesRegex(
+            ValueError,
+            "account_ledger_event_unclassified:WELCOME_BONUS",
+        ):
+            _record_dispatch_cash_events(
+                Exchange(),
+                mock.Mock(),
+                after="2026-08-02T00:00:00+00:00",
+                through="2026-08-02T00:01:00+00:00",
+                fill_fees_usdt=0.0,
+            )
+
     def test_manual_arm_requires_ready_and_exact_hash_confirmation(self) -> None:
         readiness = _readiness()
         arm = build_manual_arm(
@@ -251,7 +378,7 @@ class MiniTrendPilotDispatcherTest(unittest.TestCase):
             arm_token="a-long-manual-arm-token",
         )
         self.assertEqual(arm["status"], "armed")
-        self.assertEqual(arm["capital_usdt"], 300.0)
+        self.assertEqual(arm["capital_usdt"], 100.0)
         self.assertNotIn("a-long-manual-arm-token", str(arm))
         with self.assertRaisesRegex(ValueError, "does not match"):
             build_manual_arm(
@@ -369,8 +496,92 @@ class MiniTrendPilotDispatcherTest(unittest.TestCase):
         self.assertIn(
             "manual_arm_or_live_switch_invalid", blocked["diagnostics"]["blockers"]
         )
-        self.assertEqual(ready["diagnostics"]["verdict"], "live_dispatch_ready")
-        self.assertTrue(ready["meta"]["live_orders_allowed"])
+        self.assertEqual(ready["diagnostics"]["verdict"], "blocked_dispatch")
+        self.assertIn(
+            "standard_live_execution_authority_missing",
+            ready["diagnostics"]["blockers"],
+        )
+        self.assertFalse(ready["meta"]["live_orders_allowed"])
+
+    def test_live_rejects_stale_source_artifacts(self) -> None:
+        rules = _rules()
+        readiness = _readiness()
+        projection = _projection(rules)
+        projection["created_at"] = "2020-01-01T00:00:00+00:00"
+        rules["created_at"] = utc_now().isoformat()
+        report = build_pilot_dispatch_plan(
+            _preflight(),
+            projection,
+            readiness,
+            rules,
+            _snapshot(),
+            mode="live",
+            source_hashes={
+                "preflight": "p",
+                "projection": "x",
+                "readiness": "r",
+                "exchange_rules": "e",
+            },
+        )
+        self.assertIn(
+            "live_source_stale:projection", report["diagnostics"]["blockers"]
+        )
+
+    def test_daily_loss_flattens_the_next_dispatch(self) -> None:
+        rules = _rules()
+        snapshot = _snapshot()
+        snapshot["balance"]["margin_balance"] = 294.0
+        snapshot["snapshot_hash"] = canonical_hash(
+            {
+                "contract_hash": snapshot["contract_hash"],
+                "balance": snapshot["balance"],
+                "prices": snapshot["prices"],
+                "positions": snapshot["positions"],
+                "regular_open_orders": snapshot["regular_open_orders"],
+                "conditional_open_orders": snapshot["conditional_open_orders"],
+                "position_mode": snapshot["position_mode"],
+                "resolved_symbols": snapshot["resolved_symbols"],
+            }
+        )
+        report = build_pilot_dispatch_plan(
+            _preflight(),
+            _projection(rules),
+            _readiness(),
+            rules,
+            snapshot,
+            source_hashes={
+                "preflight": "p",
+                "projection": "x",
+                "readiness": "r",
+                "exchange_rules": "e",
+            },
+            journal_summary={
+                "peak_margin_balance_usdt": 300.0,
+                "latest_margin_balance_usdt": 300.0,
+                "daily_opening_margin_balance_usdt": {
+                    utc_now().date().isoformat(): 300.0
+                },
+            },
+        )
+        self.assertTrue(report["halt_after_dispatch"])
+        self.assertEqual(report["halt_reason"], "pilot_daily_loss_halt")
+        self.assertTrue(
+            all(value == 0.0 for value in report["desired_weights"].values())
+        )
+
+    def test_adverse_slippage_respects_side(self) -> None:
+        self.assertAlmostEqual(
+            _adverse_slippage_bps(
+                side="buy", reference_price=100.0, average_fill_price=100.25
+            ),
+            25.0,
+        )
+        self.assertAlmostEqual(
+            _adverse_slippage_bps(
+                side="sell", reference_price=100.0, average_fill_price=99.75
+            ),
+            25.0,
+        )
 
     def test_dry_journal_counts_unique_valid_dates_and_detects_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -388,6 +599,7 @@ class MiniTrendPilotDispatcherTest(unittest.TestCase):
 
     def test_live_execution_uses_close_position_stop_and_reconciles(self) -> None:
         plan = _plan(mode="live", switch=True)
+        self.assertEqual(plan["diagnostics"]["verdict"], "blocked_dispatch")
         post = _snapshot()
         post["positions"] = [
             {
@@ -445,12 +657,9 @@ class MiniTrendPilotDispatcherTest(unittest.TestCase):
                 exchange=exchange,
             )
             summary = verify_dispatch_journal(Path(tmp) / "dispatcher.jsonl")
-        stop_calls = [row for row in exchange.calls if row[1] == "STOP_MARKET"]
-        self.assertEqual(result["status"], "completed")
-        self.assertEqual(len(stop_calls), 3)
-        self.assertTrue(all(row[3] is None for row in stop_calls))
-        self.assertTrue(all(row[5]["closePosition"] for row in stop_calls))
-        self.assertEqual(summary["executed_decision_ids"], [plan["decision"]["decision_id"]])
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(exchange.calls, [])
+        self.assertEqual(summary["executed_decision_ids"], [])
 
 
 if __name__ == "__main__":

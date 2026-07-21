@@ -11,6 +11,7 @@ const ROUTES = {
   system: ["系统观测", "系统健康", "账本完整性与显式健康观测"],
   alerts: ["事件管理", "告警", "分级事件、状态与投递审计"],
   reports: ["确定性报告", "日报", "确定性日报与来源覆盖"],
+  intelligence: ["只读情报平面", "情报复盘", "行情、事件、交易历史与多智能体复核"],
 };
 
 const MODEL_PATHS = {
@@ -24,6 +25,7 @@ const MODEL_PATHS = {
   system: "data/v1/system.json",
   alerts: "data/v1/alerts.json",
   reports: "data/v1/reports.json",
+  intelligence: "data/v1/intelligence.json",
 };
 
 const ROUTE_MODELS = {
@@ -37,6 +39,7 @@ const ROUTE_MODELS = {
   system: "system",
   alerts: "alerts",
   reports: "reports",
+  intelligence: "intelligence",
 };
 
 const state = { status: "loading", publication: null, models: {}, error: null };
@@ -255,7 +258,7 @@ function validateModel(model, type, publication) {
   if (!reference || reference.read_model_id !== model.read_model_id || reference.read_model_hash !== model.read_model_hash) {
     throw new Error(`${type} 与 publication 不一致`);
   }
-  if (!["system", "alerts", "reports"].includes(type) && JSON.stringify(model.source_hashes) !== JSON.stringify(publication.source_hashes)) {
+  if (!["system", "alerts", "reports", "intelligence"].includes(type) && JSON.stringify(model.source_hashes) !== JSON.stringify(publication.source_hashes)) {
     throw new Error(`${type} 权威来源不一致`);
   }
 }
@@ -472,6 +475,26 @@ function renderReports() {
       <section class="panel"><header class="panel-head"><div><h2>所有者待办</h2><p>${brief.owner_actions.length} 项</p></div>${pill(brief.status)}</header><div class="code-list">${brief.owner_actions.map((action) => `<code>${escapeHtml(action)}</code>`).join("") || `<span class="empty-cell">无待办</span>`}</div></section></div>`;
 }
 
+function renderIntelligence() {
+  const payload = state.models.intelligence.payload;
+  if (payload.summary.status !== "available") {
+    $("view-intelligence").innerHTML = unavailableBlock("情报复盘不可用", "当前发布没有已验证的 DailyIntelligenceReport。");
+    return;
+  }
+  const report = payload.report;
+  const history = report.trading_history;
+  const symbols = report.market_pulse.symbols;
+  $("view-intelligence").innerHTML = `<div class="metrics metrics-four">
+      ${metric("报告状态", statusText(report.status), report.report_date, report.status === "clear" ? "good" : "bad")}
+      ${metric("验证来源", String(report.sources.length), `${report.searches.length} 个搜索查询`, report.sources.length ? "good" : "bad")}
+      ${metric("研究建议", String(report.research_proposals.length), "仅进入研究队列", "accent")}
+      ${metric("交易历史", history.status === "available" ? "已接入" : "不可用", history.status === "available" ? `${history.fill_count} 笔成交` : "缺少账本", history.status === "available" ? "good" : "bad")}
+    </div>
+    <section class="market-strip">${symbols.map((row) => `<article><span>${escapeHtml(row.symbol)}</span><strong>${escapeHtml(formatMoney(row.last_price))}</strong><small class="${Number(row.change_24h_pct) >= 0 ? "positive" : "negative"}">${escapeHtml(formatPercent(Number(row.change_24h_pct) / 100))} / funding ${escapeHtml(formatPercent(row.funding_rate))}</small></article>`).join("")}</section>
+    <section class="panel full-panel"><header class="panel-head"><div><h2>综合结论</h2><p>${escapeHtml(report.llm.model)} / ${escapeHtml(formatTime(report.created_at))}</p></div><span class="mono">${escapeHtml(shortHash(report.report_hash))}</span></header><div class="intelligence-summary"><p>${escapeHtml(report.executive_summary)}</p><div class="split-layout"><div><h3>影响判断</h3><div class="code-list">${report.observed_impacts.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无已验证影响结论</span>`}</div></div><div><h3>研究建议</h3><div class="code-list">${report.research_proposals.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无新研究建议</span>`}</div></div></div></div></section>
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>Agent 复核链</h2><p>固定角色与状态</p></div><span>${report.agent_reports.length}</span></header><div class="agent-list">${report.agent_reports.map((row) => `<article><div>${pill(row.status)}<strong>${escapeHtml(row.role_id)}</strong></div><p>${escapeHtml(row.summary)}</p></article>`).join("")}</div></section><section class="panel"><header class="panel-head"><div><h2>来源证据</h2><p>原文 hash 与观测时间</p></div><span>${report.sources.length}</span></header><div class="source-list">${report.sources.map((row) => `<article><strong>${escapeHtml(row.title || row.final_url)}</strong><small>${escapeHtml(formatTime(row.observed_at))} / ${escapeHtml(shortHash(row.source_hash))}</small><p>${escapeHtml(row.final_url)}</p></article>`).join("") || `<div class="empty-cell">无可验证来源</div>`}</div></section></div>`;
+}
+
 function renderAll() {
   renderLive();
   renderPositions();
@@ -483,6 +506,7 @@ function renderAll() {
   renderSystem();
   renderAlerts();
   renderReports();
+  renderIntelligence();
 }
 
 function renderOffline() {

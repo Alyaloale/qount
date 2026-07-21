@@ -220,7 +220,10 @@ def build_official_source_document(
         byte_count=len(body),
         source_hash=hashlib.sha256(body).hexdigest(),
         title=title[:500],
-        text_excerpt=text[:maximum_excerpt_chars],
+        # The normalized source text has no surrounding whitespace, but a bounded
+        # slice can end on a separator. Preserve the source body/hash while keeping
+        # the structured excerpt valid for downstream evidence contracts.
+        text_excerpt=text[:maximum_excerpt_chars].strip(),
         body=body,
     )
 

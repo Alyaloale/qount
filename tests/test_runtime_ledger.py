@@ -530,7 +530,7 @@ class RuntimeLedgerTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(
                 RuntimeLedgerError,
-                "target_not_batch_authoritative",
+                "target_not_phase_authoritative",
             ):
                 ledger.record_reconciliation(fabricated)
 

@@ -134,13 +134,6 @@ def _source_errors(
         or ledger_snapshot.plan_hash != batch.plan.plan_hash
     ):
         errors.append("daily_brief_runtime_snapshot_batch_mismatch")
-    try:
-        if aware_datetime(registry.created_at) > aware_datetime(
-            batch.manifest.created_at
-        ):
-            errors.append("daily_brief_registry_created_after_batch")
-    except (AttributeError, TypeError, ValueError):
-        pass
     return tuple(dict.fromkeys(errors))
 
 

@@ -10,7 +10,25 @@ from qount.mini_trend.pilot_runtime import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 class MiniTrendPilotRuntimeTest(unittest.TestCase):
+    def test_forward_cycle_scopes_dispatch_journal_to_contract_hash(self) -> None:
+        cycle = (
+            ROOT / "scripts" / "desktop" / "mini_trend_um_forward_cycle.sh"
+        ).read_text(encoding="ascii")
+
+        self.assertIn("LIVE_PILOT_CONTRACT.contract_hash", cycle)
+        self.assertIn(
+            'DISPATCH_JOURNAL_PATH="$DRY_ROOT/contracts/'
+            '$DISPATCH_CONTRACT_HASH/dispatcher.jsonl"',
+            cycle,
+        )
+        self.assertNotIn(
+            'DISPATCH_JOURNAL_PATH="$DRY_ROOT/dispatcher.jsonl"', cycle
+        )
+
     def test_systemd_order_free_runtime_is_verified(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

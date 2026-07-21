@@ -1,10 +1,229 @@
 # qount 更新记录
 
-更新时间：2026-07-20
+更新时间：2026-07-22
 
 这份文档只记录近期关键变更、验证结果和当前读法。当前策略结论以
 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
+
+## 2026-07-22
+
+### MiniTrend 100 USDT canary risk calibration and release gates
+
+- Owner明确否决2%账户日损门，认为它对小额加密日线趋势试点过严。当前合同改为按冻结的100 USDT试点本金计算：
+  单日损失5%（约5 USDT）或试点峰值累计回撤10%（约10 USDT）均在下一次日线dispatch执行flatten+halt；
+  不改变Base v0.2的3xATR逐币吊灯、3根完成日线冷却和35% deadband。dispatcher不是盘中watchdog，盘中保护仍由
+  Binance原生`STOP_MARKET closePosition`承担。paper和dispatcher测试覆盖5%日损与10%累计回撤可同时触发。
+- live source freshness固定15分钟，覆盖preflight/projection/readiness/exchange rules/account snapshot；缺时间、过期或
+  明显未来时间都在订单前失败关闭。每笔市价成交从确认的逐笔trade计算加权均价、fee和adverse slippage；超过25bps时
+  已确认成交不会被伪装成失败，执行器继续保护止损和对账，然后写`halted_slippage`与HALT供后续扩容评估。
+- 新增file-level release provenance：clean Git commit、项目版本、默认发布文件逐项SHA-256、source tree hash和manifest hash
+  随rsync部署，VPS forward在私有预检、arm和订单前验证。readiness与manual-arm owner authorization hash同时绑定release证据。
+  标准计划哈希适配器也补齐`execution_reference_prices/source_freshness/halt_reason`，避免0.2.1计划被旧字段集合错误拒绝。
+- 首次0.2.1 VPS回归在297项后因Dashboard合同测试缺少`jsonschema`而导入失败，未执行forward。项目现显式声明
+  `test` extra，受控VPS安装使用`.[test]`；这只补齐测试环境合同，不把可选研究依赖装入生产venv。
+- Daily Intelligence报告`f4d90e84...dd63a94`只作为只读研究事实：TOP3同步上涨、正funding、Binance公告存在和内部账本
+  对账通过不能建立事件因果或策略结论；`needs_research`结果不得进入Base信号、订单、live参数或风险豁免。
+- 本条记录写入时仍未部署0.2.1、未生成manual arm、未发送真实订单。发布、order-free refresh和100 USDT canary结果必须在
+  后续同日条目中按真实artifact/hash/订单/fee/slippage/保护单/HALT状态追加，不能预写成功。
+
+### Dynamic OpenClaw context-token cutover and audited production verification
+
+- 修复长期会话漂移风险：Qount凭据不再复制会被手机入站刷新的context token，只保留`account_id/base_url/recipient/token`四个稳定字段；
+  `OpenClawWeixinProvider`新增动态accounts目录，在每次发送前读取`<account_id>.context-tokens.json`中的目标recipient。静态字段只保留为
+  手工/测试回退，生产`/etc/qount/intelligence/openclaw-weixin.json`已原子删除`context_token`且继续为`0600 root:root`。
+- 动态读取失败关闭：目录必须是无symlink的绝对目录、owner为当前用户且不可group/world writable；文件必须是无symlink的普通文件、同owner、
+  精确`0600`且最多64KB；重复JSON key、无效recipient映射、缺少当前recipient或无效token均拒绝。日报CLI新增
+  `--personal-weixin-context-token-directory`；systemd unit显式`Wants/After=openclaw-gateway.service`、增加accounts目录condition和只读挂载。
+- 精确同步provider、日报runner、unit及两份测试到VPS，SHA-256为`65af6bf2...8780` / `0254618c...02c8` / `9280a8bf...1691`；
+  安装unit经daemon-reload后正确依赖gateway。旧代码保存在`/root/qount-notify-backup.rl6QL6`，临时部署目录和短暂凭据回滚副本已清理，
+  回滚目录不含secret。Mac通知/日报/Dashboard扩大回归`75 OK`，VPS部署聚焦`24 OK`，compileall和`git diff --check`通过；
+  `systemd-analyze verify`只报告无关的cloudmonitor既有警告。
+- 使用四字段凭据和动态目录，经生产NotificationStore发送“Qount 动态微信通知架构已上线”。事件`3b1a0dd9...0f43`、job
+  `6d51a764...4324`一次完成为`DELIVERED/SUCCEEDED`，response hash为`77706ae2...4025`；全store现为5 event、5 job、5 attempt和
+  20行完整audit chain。最终复核OpenClaw/日报/Dashboard均`enabled/active`，日报oneshot最近结果`success`，MiniTrend timer
+  `disabled/inactive`、active cron 0、manual arm 0；站点匿名访问仍为Basic Auth `401`和`no-store`。未调用Binance私有API、未修改账户或订单、
+  未启用live switch，也未发送任何真实订单。
+
+### Personal Weixin handset-delivery diagnosis and truthful failure handling
+
+- 手机未出现日报通知的根因不是Qount调用或交易路径：VPS上的`openclaw-gateway.service`当时为`disabled/inactive`，没有OpenClaw
+  进程，微信客户端因而显示“暂无法连接 OpenClaw”。已将该服务设为`enabled/active`；它只绑定`127.0.0.1:18789`，腾讯微信通道探针为
+  `running`，未开放公网端口、未改动任何交易timer、账户或订单。
+- 历史`DELIVERED/SUCCEEDED`的语义纠正：旧`OpenClawWeixinProvider`只要HTTP为2xx就接受并丢弃body。使用当前凭据、官方host/header、
+  官方client ID格式以及有/无旧context token的真实诊断均返回HTTP `200`、JSON `ret=-2`、`errmsg=prepare failed`，所以此前的本地
+  状态不能被表述为腾讯业务接受、手机展示或已读。`src/qount/notifications/weixin.py`现要求有限大小的JSON object；非零`ret`、缺失或无效
+  正整数`message_id`以及无效body均失败关闭，新增覆盖HTTP 200 + `ret=-2`与无效body的测试。
+- 已按腾讯插件官方流程扫码重绑；腾讯返回“已连接过此 OpenClaw”，没有替换或泄露凭据。Owner随后从手机发送一条2字符测试消息，VPS在
+  `2026-07-22T00:06:40+08:00`记录真实入站并刷新context-token文件；同一微信通道随后成功把一条OpenClaw错误提示回发到手机，证明下行展示可见。
+  该错误不是微信传输失败，而是OpenClaw独立聊天模型仍指向无法DNS解析的旧`api.alyaloale.com`；旧key对当前relay返回403，未冒险混用日报key。
+- 新context token已原子写回Qount仓库外凭据，文件保持`0600`且去除通用loader禁止的首尾空白。真实成功响应合同不是`ret=0`，而是仅含正整数
+  `message_id`；provider现要求合法JSON、无非零`ret`且有正整数`message_id`，并将该真实ID写入`ProviderResponse`。最终中文
+  “Qount 微信通知链路验证完成”请求得到19位`message_id`、`accepted=true/status=ACCEPTED`和response hash。Mac/VPS通知聚焦各13项通过，
+  随后通过生产`NotificationStore`新建事件`cd078514d6c7...`，唯一job `9c6fca5efc6b...`为`DELIVERED`、attempt为`SUCCEEDED`、response hash存在，
+  16行audit chain完整重放。compileall与`git diff --check`通过。每日timer保持启用，未触及Binance私有API、账户、订单、arm或交易timer。
+
+### Free official-feed Daily Intelligence completed production E2E
+
+- 放弃付费Brave依赖。真实预检中GDELT连续429、DuckDuckGo对Fed/SEC查询返回反自动化202；生产改用固定的Binance公告API、
+  Federal Reserve RSS和SEC press release RSS。三类入口均稳定200，每个feed最多取3条，避免Binance独占详情名额；保存feed原始字节和
+  SHA-256后，候选URL仍须通过HTTPS/官方域名allowlist、无代理、重定向复核、content-type/大小/XML实体限制并再次抓取正文。
+  Brave adapter只保留兼容，production unit不需要搜索Key。
+- 第一次完整oneshot报告ID`c326f31cc4dbd1799cf2f853bd15d3d966a98356fb74d513db1e44844dc0053f`、report hash
+  `368f8756d2b11a680e6e8e6d63afb5602ceeda78f881cc6dff533be99ed88da8`、manifest hash
+  `0534773ada0444cef564d86312e10c5f04d89368e8213b9b3a74d31d907f8f66`；3份feed、8份详情、2份行情、可用交易历史和个人微信通知均已归档，
+  但8份最多12,000字符的正文让六角色在网络前触发`llm_input_too_large`。该不完整报告、原文、manifest和通知全部保留，未覆盖或删除。
+- 修复官方正文恰在空格边界截断后留下尾空白、进而被`SourceEvidence`拒绝的问题；原文字节和hash不变。六角色改为按职责构造有界context：
+  event每来源最多1,800字符，strategy/red-team/editor每来源最多600字符，red-team/editor只读取前序报告的受限summary/findings/proposals/
+  risks；market主要读行情、execution主要读账本。全局`AlphaLLMConfig.max_input_chars=50_000`没有提高，8份真实形状来源的测试要求每个角色
+  序列化context都小于35,000字符。
+- 第二次production oneshot从`2026-07-21T15:11:03.900365+00:00`运行至`15:14:23`，报告ID
+  `24defae63419d002a74ff07fd578c994b3b68f6eb200bd76b3a4fc6ca1fb6adc`、report hash
+  `f4d90e84b1828345261568043623ba7b32ea5b66ede9fbe66d490f54ddd63a94`、manifest hash
+  `295a9d117a241099f531aa799af8c8dc012a37a2effd775049bdc5aa3c11dbff`。再次保存3份feed、8份详情和2份行情；六个qount专用非流式
+  Responses载荷约13.4-40.2KB，全部返回中文严格Schema报告，无`llm_input_too_large`、403、502、503或524。
+- market/execution角色为`ok`；event/strategy/red-team/editor根据正文截断、发布时间不精确、目标资产行情和外部成交证据缺口诚实返回
+  `needs_research`，所以总状态仍为`incomplete`。这是研究证据状态而不是E2E失败；不得把它改写为`clear`。报告固定
+  `orders_allowed=false/live_changes_allowed=false`，readback已重放报告、manifest、source/search/market原文字节hash。
+- 新日报个人微信job`57c0da6c51b01509dfab285398f8b5125fc928065be1f87df32ec5d4062dcd2a`为`DELIVERED`，首次attempt
+  `9e63f07074cafee7ee7ae9adc886a51c61997cf1fc7d458f93a43dbc5987cc00`为`SUCCEEDED`，NotificationStore共12行canonical audit chain
+  完整重放。Dashboard publisher随后把`intelligence.summary.status=available`发布到受Basic Auth保护的
+  `https://qount.alyaloale.com/#/intelligence`，source hash精确等于上述report hash；publisher readback和备份恢复演练通过。
+- `qount-daily-intelligence.timer`已设为`enabled/active`，每日`04:30 UTC`并带0-10分钟随机延迟。首次启用前创建当前persistent stamp，
+  避免把同日手工oneshot当漏跑而重复通知；启用后service保持inactive，下一次指向未来日程。`qount-dashboard-publisher.timer`继续
+  `enabled/active`，MiniTrend/其它交易timer、production cron、manual arm和全部live switch保持关闭。
+- Mac与VPS官方源/日报/个人微信/通知/relay聚焦测试各`45 OK`，compileall和`git diff --check`通过。VPS上sub2api与
+  aishenji-normalizer均healthy，account 25为`active/schedulable`；没有读取Binance私有API、修改账户/仓位/挂单、发送订单或赋予LLM交易权限。
+
+## 2026-07-21
+
+### Personal Weixin production notification delivered through Tencent iLink
+
+- 新增`notifications/weixin.py`，复用VPS已安装的腾讯官方`@tencent-weixin/openclaw-weixin 2.4.4`账号合同，固定
+  `ilinkai.weixin.qq.com/ilink/bot/sendmessage`、iLink鉴权头、版本编码、recipient/context token和中文纯文本payload；client ID由
+  NotificationStore稳定delivery key派生。`deliver_due(channel=...)`只处理指定channel，避免个人微信transport误投递历史WeCom任务。
+- 日报CLI新增个人微信enqueue/send/credential参数，拒绝同轮同时选择WeCom和个人微信；production unit改为要求仓库外
+  `/etc/qount/intelligence/openclaw-weixin.json`并只发送个人微信。WeCom adapter保留为兼容代码，不再是production unit依赖。日报timer
+  继续`disabled/inactive`，Brave凭据缺失时unit condition失败关闭。
+- 从现有OpenClaw账号文件、主会话delivery route和对应context-token对象生成最小五字段凭据；全程未输出、提交或归档token、context token
+  或recipient。新文件为`0600 root:root`，原先`0644`的context-token源文件同步收紧为`0600 root:root`。代码请求合同逐字段对照腾讯插件
+  TypeScript源码确认。
+- 首次投递在网络前因凭据JSON末尾换行被通用loader拒绝，fail-closed且任务保持`PENDING`、无网络请求；原子去掉末尾换行后重试同一任务，
+  腾讯接口接受，job `DELIVERED`、attempt `SUCCEEDED`，NotificationStore 4行canonical audit chain完整重放。该消息是中文接入通知，服务端
+  成功不等同客户端已读回执。
+- Mac和VPS个人微信/通知/日报/WeCom聚焦测试各`20 OK`，compileall、`git diff --check`与`systemd-analyze verify`通过；后者只有无关
+  cloudmonitor旧unit警告。没有调用LLM、Brave、Binance私有API，没有改账户、订单、arm、交易timer/cron/live；当前完整六角色日报唯一
+  外部阻塞为Brave Search API Key。
+
+### Daily Intelligence Responses recovered through the internal normalizer
+
+- 旧New-API请求路径已经删除，当前链路为
+  `qount-vps -> llm.alyaloale.com -> TokenRouter -> aishenji-normalizer -> aishenji.top`，其中normalizer仅在Docker内网可见。根因确认是
+  aishenji Cloudflare WAF间歇误杀TokenRouter的Go HTTP/TLS请求特征，并非qount key、
+  Responses、严格Schema、非流式协议、VPS资源或单一出口IP。normalizer使用nginx/OpenSSL重建TLS、SNI、Host和browser User-Agent；
+  account 25的`credentials.base_url`已指向内网normalizer且`proxy_id=NULL`，不得再绑定proxy 6或恢复VPS直连。配置真相在relay-station的
+  `deploy/aishenji-normalizer/nginx.conf`与`deploy/aishenji-normalizer.compose.yml`，TokenRouter未重启。
+- qount-vps原API Key的真实非流式与流式`/v1/responses`均返回`completed/OK`。account 25为`active/schedulable`，TokenRouter和
+  normalizer均healthy，修复后观测请求为HTTP 200且无新增403/502/503。通用Alpha Agent研究默认保持`gpt-5.6-terra`；日报unit和CLI
+  独立显式使用`gpt-5.6-sol`，避免把日报模型选择误写成全局默认变更。
+- `2026-07-21T13:23:23.472311+00:00`执行一次有实际研究用途的TOP3首角色请求：`store=false`、非流式、简体中文、严格JSON Schema、
+  应用层重试关闭，约`26.5s`完成。pulse/ticker/premium原始证据hash为
+  `e991a4a3ca181d764129415d72d26e56b13eb6db20fff3898ed64dfcfa87d04c` /
+  `df89881fe27fe207a4c4d9a76ac5cbb85af0a4673a7adc15a5018658e87c3787` /
+  `30a0ddfeb457dee77c84c6cc1401b229846e52bf3a758cccd2811f9c2765deee`。五字段、中文、越权语言和source hash校验均通过，报告固定
+  `orders_allowed=false/live_changes_allowed=false`；这只是research-only单角色证据，不是策略、promotion或订单授权。
+- 残余风险是两次长流式Codex请求分别约`125.7s/126.7s`后收到上游Cloudflare `524`，TokenRouter映射为502；两次随后均恢复200。
+  WAF 403路径已经解决，但长请求超时仍要求有界退避、失败关闭和本地审计。日报客户端新增明确分类：仅对瞬时HTTP状态和错误体
+  `retryable=true`最多重试一次，可从响应头或错误体读取并封顶`retry_after`；纯`owner_action_required`继续立即阻断。Brave与WeCom凭据
+  文件仍缺失，因此没有运行六角色完整日报、没有enable日报timer、没有发送真实企业微信，也没有调用Binance私有API、创建arm、
+  启用交易timer或订单路径。
+- 日报默认模型改动已精确同步VPS：`run_daily_intelligence.py`新增`--llm-model`且默认sol，production service显式传
+  `--llm-model gpt-5.6-sol`，测试同时锁定通用research默认仍为terra。本地与VPS聚焦`20 OK`，Python compileall、CLI help、
+  `systemd-analyze verify`和`git diff --check`通过；补充上游波动分类后本地日报/relay/WeCom聚焦`21 OK`，日报timer继续
+  `disabled/inactive`。
+
+### Historical failed relay investigation before the normalizer (superseded above)
+
+以下记录保留故障定位过程，不代表当前生产路径；其中New-API、标准池双account和Chat Completions描述已由上方Responses/normalizer事实覆盖。
+
+- 将新增情报合同、11业务read model前端、15份schema、publisher空日报处理和未启用日报unit同步到VPS及域名served root。
+  `qount-dashboard-publisher.timer`保持`enabled/active`；`qount-daily-intelligence.timer`与`qount-mini-trend-forward.timer`均为
+  `disabled/inactive`，production cron仍为零active entry。当前release ID
+  `14374b14f09c89b249b3a3ddeb2ec5288954aa6cfd8f4d8acc87d611a9391d16`包含11份业务read model和
+  `publication.json`，情报authority明确为`unavailable_until_daily_intelligence`，未复制测试fixture。
+- 生产`index.html/app.js/style.css` SHA-256为`86e2535b...d139` / `ddc51a8c...487b` / `3baaff67...8eb9`。
+  通过只读SSH隧道对真实release执行Chromium桌面`1440x1000`和移动`390x844`验收，无可见重叠、裁切或横向溢出；匿名域名请求仍为
+  Basic Auth `401`和`no-store`。临时本地隧道与VPS `127.0.0.1:8766` HTTP server随后均已关闭。
+- relay-station token只写入VPS仓库外`/etc/qount/intelligence/relay-station.key`，权限`0600 root:root`；未回显、归档或提交。
+  Brave和WeCom凭据文件仍缺失。模型目录无代理查询为200、16个模型且包含`gpt-5.6-terra`。此前两次请求返回502后，按退避合同于
+  `2026-07-21T09:17:15Z`执行唯一一次真实中文TOP3市场分析：Binance公共行情成功，pulse hash
+  `73bddd0104d6d1dd4e84e416980156b52dfaabe2323dc1a6714af844f09bd8e8`，ticker/premium原始字节hash为
+  `b7dc27f...dece7` / `f9c36e2c...59a1`；Chat Completions仍返回Cloudflare `502`、`Retry-After: 60`和跟踪头。
+  relay VPS只读日志确认生产Caddy直接反代TokenRouter `127.0.0.1:8080`，停用的`new-api.service`不是故障点。本次请求先命中
+  Standard Pool account 25并自动切换26；两者都收到上游`403 Your request was blocked`，进入10分钟临时摘除后返回
+  `no available OpenAI accounts supporting model`并映射为502。过去12小时terra `/v1/chat/completions`共3次且全部502；同期
+  sol `/v1/responses`虽有成功，也存在大量502/503，不能把静态模型目录当健康证据。立即停止重试且不切模型或协议；这属于relay
+  上游可用性阻断，不是中文五字段报告校验失败。
+- 本地最终全仓`1508 OK`，新增修改聚焦`14/26 OK`；VPS生产聚焦`25/12 OK`。Python compileall、Node语法、15份Schema JSON、
+  `systemd-analyze verify`和`git diff --check`通过。没有调用Binance私有API、修改账户、启用交易/日报timer、arm、发通知或下单。
+
+### Read-only daily intelligence, review, Dashboard and WeCom plane
+
+- 新增`src/qount/intelligence/`的`MarketPulse/SearchEvidence/SourceEvidence/DailyIntelligenceReport`合同和日报编排。Brave只负责URL
+  discovery；候选URL必须再次通过官方allowlist抓取。Brave响应、Binance USD-M TOP3 `ticker/24hr`与`premiumIndex`响应、官方正文
+  全部保存原始HTTP字节SHA-256，不再用解析后canonical JSON冒充网络响应hash。
+- 从冻结`RuntimeLedgerSnapshot v3`确定性提取订单、逐笔fill、fee/funding、NAV、current/peak drawdown和reconciliation；修正初版
+  摘要误读`filled_quantity/fee_amount/current_equity`等不存在字段的问题。六角色固定为market/event/execution/strategy/red-team/editor，
+  后两者读取前序报告；报告嵌套对象、source map、角色顺序、只读authority和外层hash均可重放验证。
+- `archive.py`使用`0700`目录、`0600`不可覆盖文件、manifest/hash和原子latest相对symlink，归档report及market/search/source原文；
+  readback逐文件复核字节数/hash及报告引用。Dashboard新增第11份`intelligence`业务read model与独立freshness，release为12个JSON；新增
+  `daily-intelligence-v1`和`dashboard-v1-intelligence`，总schema为15份，并扩展publication/envelope/alerts合同。
+- 新增企业微信群机器人provider：严格固定`qyapi.weixin.qq.com/cgi-bin/webhook/send`、校验`errcode/errmsg`、复用NotificationStore
+  delivery key、限流/超时和仓库外`0600`凭据。WeCom没有服务端幂等键，HTTP成功后本地落标前崩溃可能导致可见重复，不能宣称
+  exactly-once。新增`qount-daily-intelligence.service/.timer`未启用模板，候选每日`04:30 UTC`运行；它允许公网但清空代理、移除全部
+  Binance私钥，Brave/relay/WeCom各用独立凭据文件。
+- Dashboard/情报/WeCom/账本聚焦回归当前`61 OK`，Dashboard ledger golden更新为
+  `23076111ee2d578ef7b93ccee4a9bc7af78731a7693f0d8b1ebc45215536a7f9`。本批仍是`research_sandbox`：没有真实凭据，因此未执行
+  Brave、relay LLM、WeCom消息或VPS/systemd部署；未改账户、订单、manual arm、live/timer/cron。全仓回归`1506 OK`，唯一warning
+  为既有`cta_data.py` UTC deprecation；Node语法、15份Schema JSON、Python compileall和`git diff --check`通过。Chromium桌面
+  `1440x1000`与移动`390x844`首屏及完整长页验收通过，文档宽度等于viewport，六角色和来源证据完整，无越界、重叠或裁切。
+
+### Phase B/C/D VPS order-free deployment and final-arm readiness
+
+- VPS部署前只读审计确认MiniTrend timer `disabled/inactive`、旧runtime inactive、root cron 0、全部live开关false、无arm/HALT，
+  RuntimeLedger无`SUBMITTING/PARTIALLY_FILLED/UNKNOWN`；私有只读preflight与dispatcher snapshot确认可用余额
+  `486.15970914 USDT`、one-way、TOP3 isolated 1x、全平、普通单和条件单均0。所有artifact仍固定100 USDT canary。
+- 首次SSH直接cycle `/root/qount/state/mini_trend/forward/runs/20260721T063406Z`在dispatcher前失败关闭：旧
+  `dispatcher.jsonl`的单行绑定旧contract hash，且非systemd调用缺`INVOCATION_ID`。没有创建dispatch row、authority、arm、HALT或
+  交易所mutation。forward cycle现将dry journal写入`dry/contracts/<contract_hash>/dispatcher.jsonl`，旧证据不删除、不覆盖；新增
+  回归证明不同live合同不会错误续链。
+- 更新并reload `qount-mini-trend-forward.service`后，以`systemctl start --wait`手工运行oneshot，timer继续`disabled/inactive`。
+  成功run `/root/qount/state/mini_trend/forward/runs/20260721T063854Z`通过independent runtime、账户preflight、projection、dry
+  dispatcher、standard authority/RuntimeLedger/三方对账与最终readiness。dispatcher为`dry_validated`，0 market/stop intent、
+  `exchange_mutation_attempted=false`；账户仍0仓位/0普通单/0条件单。
+- 最终readiness verdict为`ready_for_manual_final_arm`、blocker 0、`live_orders_allowed=false`，hash
+  `8496f70e49081e47a4fa3a610b86c8686a14c22c5d0cd0a94199fa0a97ad2a87`。authority batch/manifest为
+  `70d1b38bd6769122b67634f46bd4cf6e2b28533f8bee86abf0b526e596ff0a49` /
+  `1520b6afe616ddd9d7c35467c4477d054d1338bed9fe912580d0d1b2dd2e2ec3`；RuntimeLedger snapshot为
+  `701848603d3ea41d8089e841072acec15826e6db27d70cb95cc84c23444575fb`；pre-dispatch reconciliation为
+  `9971ca5f5b93ec324f8654f9998ecd17f558ea413f6cb254848924de58222d96`且passed。observations为
+  forward pair/active/paper/dry=`0/0/0/1`，funding journal完整。
+- registry仍为`research`且hash `e9de92af...c7bd`；manual arm为0，所有live switch、MiniTrend timer和旧cron保持关闭。
+  `systemd-analyze verify`通过目标unit，仅报告无关cloudmonitor旧unit警告。VPS production/B-C-D/post-fix测试为
+  `303/59/21 OK`；Mac全仓最终复跑`1497 OK`。首次全仓运行曾有1个历史derivatives并行fixture瞬时失败，单测与整套复跑均通过，
+  未改动或放宽该校验。
+
+### Phase B/C/D 本地执行链收口
+
+- DailyBrief与legacy replay golden按规范生成器重建并绑定SHA-256；registry允许在batch之后由manual arm原子晋级，
+  下一order-free batch在合同/code/config不变时延续已有`minimal_live`授权。对应晚registry与跨日继承已有明确测试。
+- `1000 USDT`恢复为历史300 USDT research/paper及旧order-free证据兼容上界，但真钱canary在readiness、arm、live dispatcher
+  和live journal四层均严格要求`100 USDT`；100.01会失败关闭。60/10/30/7观察值纳入readiness hash防篡改但不进入blocker。
+- Binance短窗口cash ledger修复CCXT将金额绝对值化的问题：以原始有符号`income`为准，只处理funding、commission和transfer
+  白名单；未知非零incomeType触发HALT，`REALIZED_PNL`不重复写cash ledger。
+- 当时本地全仓`1496 OK`、B/C/D聚焦`39 OK`；compileall、Bash语法、DailyBrief golden
+  `26c53f28...f382`、legacy replay golden `5b9bbbc0...15d2`及`git diff --check`通过。唯一输出为既存
+  `cta_data.py` UTC deprecation warning；Mac无`systemd-analyze`。本轮仍未创建arm、未开启timer/live switch、未发真实订单。
 
 ## 2026-07-20
 
@@ -6231,11 +6450,9 @@ src/qount/artifacts.py
 
 ## 当前下一步
 
-1. 不开 live，不 forward paper。
-2. 不放宽 broad `range_noise` / `short_rebound_fail`。
-3. 旧 13-window 和 5/30 前后 OOS 只算 `discovery_pool`；promotion 级读数必须等
-   `validation_pool_v1` once-only 窗口。
-4. T-C 第一版 v2 已证不够；继续时只做 targeted ablation / calibration，不替换主线。
-5. 继续做 T-B：扩大 AI hold-bias 对照，不在 discovery 上调 prompt。
-6. T-G 第一版已落地；只补诊断，不从 discovery 0 交易读数直接加 gate。
-7. 只有 `G_paper` 通过后才进入 forward paper；只有 forward paper 后才讨论 `G_live`。
+1. 保持MiniTrend timer、全部live switch和旧交易cron关闭，不自动生成manual arm。
+2. 由owner核对并明确确认本次readiness、authority batch/manifest、RuntimeLedger snapshot和reconciliation四类最终hash。
+3. 只有收到该次确认后，才生成一次性manual arm并把同一authority registry原子提升为`minimal_live`；生成后仍须重新只读核对
+   账户、0未管理仓位/挂单和四类hash，任何漂移都作废arm。
+4. 第一笔100 USDT canary订单必须单独执行、观察成交trade/fee、保护单ACK、post-dispatch账本/NAV/三方对账和Dashboard authority；
+   任一证据缺失进入`UNKNOWN + HALT`，不得重发或继续后续订单。

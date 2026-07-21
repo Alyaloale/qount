@@ -20,6 +20,11 @@ from qount.mini_trend.pilot_dispatcher import (  # noqa: E402
     verify_dispatch_journal,
     write_pilot_dispatch_artifact,
 )
+from qount.ledger import RuntimeLedger  # noqa: E402
+from qount.models import utc_now  # noqa: E402
+from qount.operations import AuthorityWriterConfig  # noqa: E402
+from qount.operations import refresh_authority_bundle_from_runtime  # noqa: E402
+from qount.reporting import read_vps_authority_bundle  # noqa: E402
 from qount.settings import Settings  # noqa: E402
 
 
@@ -46,6 +51,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--journal-path", required=True)
     parser.add_argument("--arm-path")
     parser.add_argument("--arm-token-env", default="QOUNT_MINI_TREND_ARM_TOKEN")
+    parser.add_argument("--authority-root")
+    parser.add_argument("--authority-source-root")
+    parser.add_argument("--runtime-root")
+    parser.add_argument("--backup-root")
+    parser.add_argument("--dashboard-root")
+    parser.add_argument("--authority-lock-path")
     parser.add_argument("--halt-path")
     parser.add_argument("--output-path")
     return parser.parse_args(argv)
@@ -61,6 +72,28 @@ def main(argv: list[str] | None = None) -> int:
     arm_hash = None
     if args.arm_path:
         arm, arm_hash = _object(args.arm_path)
+
+    authority_bundle = None
+    runtime_ledger = None
+    if args.mode == "live":
+        live_authority_paths = (
+            args.authority_root,
+            args.authority_source_root,
+            args.runtime_root,
+            args.backup_root,
+            args.dashboard_root,
+            args.authority_lock_path,
+        )
+        if not all(live_authority_paths):
+            raise ValueError(
+                "live mode requires all authority/runtime/dashboard path arguments"
+            )
+        authority_bundle = read_vps_authority_bundle(
+            Path(args.authority_root).expanduser().resolve()
+        )
+        runtime_ledger = RuntimeLedger(
+            Path(args.runtime_root).expanduser().resolve() / "runtime.sqlite3"
+        )
 
     settings = Settings.from_env()
     snapshot = fetch_pilot_dispatch_snapshot(settings)
@@ -86,13 +119,46 @@ def main(argv: list[str] | None = None) -> int:
         live_switch_enabled=_enabled("QOUNT_MINI_TREND_LIVE_ENABLE"),
         live_confirmation=os.getenv("QOUNT_MINI_TREND_LIVE_CONFIRMATION"),
         journal_summary=journal_summary,
+        standard_batch=(authority_bundle.batch if authority_bundle else None),
+        standard_ledger_snapshot=(
+            authority_bundle.ledger_snapshot if authority_bundle else None
+        ),
+        standard_registry=(authority_bundle.registry if authority_bundle else None),
     )
     dispatch = run_pilot_dispatch(
         settings,
         plan,
         args.journal_path,
         halt_path=args.halt_path,
+        standard_batch=(authority_bundle.batch if authority_bundle else None),
+        runtime_ledger=runtime_ledger,
+        pre_dispatch_ledger_snapshot=(
+            authority_bundle.ledger_snapshot if authority_bundle else None
+        ),
+        standard_registry=(authority_bundle.registry if authority_bundle else None),
     )
+    if args.mode == "live" and dispatch["status"] in {
+        "completed",
+        "halted_reconciliation",
+        "halted_uncertain",
+        "halted_slippage",
+    }:
+        try:
+            refresh = refresh_authority_bundle_from_runtime(
+                AuthorityWriterConfig(
+                    repo_root=REPO.resolve(),
+                    source_root=Path(args.authority_source_root).expanduser().resolve(),
+                    authority_root=Path(args.authority_root).expanduser().resolve(),
+                    runtime_root=Path(args.runtime_root).expanduser().resolve(),
+                    backup_root=Path(args.backup_root).expanduser().resolve(),
+                    dashboard_root=Path(args.dashboard_root).expanduser().resolve(),
+                    lock_path=Path(args.authority_lock_path).expanduser().resolve(),
+                ),
+                captured_at=utc_now().isoformat(),
+            )
+            dispatch["authority_refresh"] = refresh.as_dict()
+        except Exception as exc:
+            dispatch["authority_refresh_error"] = f"{type(exc).__name__}: {exc}"[:1000]
     payload = dict(plan)
     payload["account_snapshot"] = snapshot
     payload["dispatch_result"] = dispatch

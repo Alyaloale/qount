@@ -13,7 +13,11 @@ FUNDING_ROOT="$FORWARD_ROOT/funding"
 PAPER_ROOT="$STATE_ROOT/paper"
 JOURNAL_PATH="$PAPER_ROOT/pilot.jsonl"
 DRY_ROOT="$STATE_ROOT/dry"
-DISPATCH_JOURNAL_PATH="$DRY_ROOT/dispatcher.jsonl"
+AUTHORITY_ROOT="${QOUNT_DASHBOARD_AUTHORITY_ROOT:-/var/lib/qount/dashboard-authority}"
+AUTHORITY_RUNTIME_ROOT="${QOUNT_DASHBOARD_RUNTIME_ROOT:-/var/lib/qount/dashboard-runtime}"
+AUTHORITY_BACKUP_ROOT="${QOUNT_DASHBOARD_BACKUP_ROOT:-/var/lib/qount/dashboard-backups}"
+DASHBOARD_ROOT="${QOUNT_DASHBOARD_ROOT:-/var/www/qount/data}"
+AUTHORITY_LOCK_PATH="${QOUNT_DASHBOARD_LOCK_PATH:-/run/qount-dashboard/publisher.lock}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_DIR="$FORWARD_ROOT/runs/$STAMP"
 LOCK_PATH="$STATE_ROOT/forward-cycle.lock"
@@ -58,6 +62,17 @@ if [[ ! -x "$PYTHON" ]]; then
   exit 77
 fi
 
+DISPATCH_CONTRACT_HASH="$(
+  PYTHONPATH="$REPO/src" "$PYTHON" -c \
+    'from qount.mini_trend.live_pilot import LIVE_PILOT_CONTRACT; print(LIVE_PILOT_CONTRACT.contract_hash)'
+)"
+if [[ ! "$DISPATCH_CONTRACT_HASH" =~ ^[0-9a-f]{64}$ ]]; then
+  printf 'dispatch_contract_hash_invalid=%s\n' "$DISPATCH_CONTRACT_HASH" >&2
+  exit 78
+fi
+DISPATCH_JOURNAL_PATH="$DRY_ROOT/contracts/$DISPATCH_CONTRACT_HASH/dispatcher.jsonl"
+mkdir -p "$(dirname "$DISPATCH_JOURNAL_PATH")"
+
 export QOUNT_EXCHANGE_BYPASS_PROXY=true
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 
@@ -70,8 +85,16 @@ DISPATCH_READINESS_PATH="$RUN_DIR/dispatch_readiness.json"
 READINESS_PATH="$RUN_DIR/live_readiness.json"
 DISPATCH_PATH="$RUN_DIR/dry_dispatch.json"
 RUNTIME_PROOF_PATH="$RUN_DIR/runtime_proof.json"
+AUTHORITY_RESULT_PATH="$RUN_DIR/authority_result.json"
+RELEASE_PROVENANCE_PATH="$REPO/.qount-release-provenance.json"
+RELEASE_PROVENANCE_VERIFY_PATH="$RUN_DIR/release_provenance.json"
 
 cd "$REPO"
+
+"$PYTHON" scripts/operations/verify_release_provenance.py \
+  --repo-root "$REPO" \
+  --provenance-path "$RELEASE_PROVENANCE_PATH" \
+  --output-path "$RELEASE_PROVENANCE_VERIFY_PATH"
 
 "$PYTHON" scripts/desktop/mini_trend_um_runtime_proof.py \
   --cycle-path "$REPO/scripts/desktop/mini_trend_um_forward_cycle.sh" \
@@ -98,7 +121,7 @@ fi
 "$PYTHON" scripts/desktop/mini_trend_um_preflight.py \
   --output-path "$PREFLIGHT_PATH"
 
-CAPITAL_USDT="$("$PYTHON" -c 'import json,sys; p=json.load(open(sys.argv[1])); v=float(p["evidence"]["available_balance_usdt"]); assert 0 < v <= 1000; print(format(v, ".8f"))' "$PREFLIGHT_PATH")"
+CAPITAL_USDT="$("$PYTHON" -c 'import json,sys; p=json.load(open(sys.argv[1])); v=float(p["evidence"]["available_balance_usdt"]); assert v >= 100; print("100.00000000")' "$PREFLIGHT_PATH")"
 
 "$PYTHON" scripts/desktop/mini_trend_um_paper.py \
   --exchange-rules-path "$RULES_PATH" \
@@ -124,6 +147,7 @@ readiness_args=(
   --preflight-path "$PREFLIGHT_PATH" \
   --paper-path "$PAPER_PATH" \
   --shadow-input-path "$INPUT_PATH" \
+  --release-provenance-path "$RELEASE_PROVENANCE_VERIFY_PATH" \
   --dry-journal-path "$DISPATCH_JOURNAL_PATH" \
   --runtime-proof-path "$RUNTIME_PROOF_PATH" \
   --legacy-live-guard-disarmed
@@ -173,9 +197,27 @@ fi
   --halt-path "$STATE_ROOT/HALT" \
   --output-path "$DISPATCH_PATH"
 
-# A newly validated completed-bar decision must count in this run's final readiness.
+# Publish this completed order-free run through the standard Phase B/C authority
+# before final readiness is evaluated. A failed writer leaves the prior authority
+# intact and stops this cycle.
+ln -sfn "runs/$STAMP" "$FORWARD_ROOT/latest"
+env -u BINANCE_API_KEY -u BINANCE_SECRET \
+  -u QOUNT_BINANCE_API_KEY -u QOUNT_BINANCE_API_SECRET \
+  "$PYTHON" scripts/operations/write_authority_bundle.py \
+  --repo-root "$REPO" \
+  --source-root "$FORWARD_ROOT/latest" \
+  --authority-root "$AUTHORITY_ROOT" \
+  --runtime-root "$AUTHORITY_RUNTIME_ROOT" \
+  --backup-root "$AUTHORITY_BACKUP_ROOT" \
+  --dashboard-root "$DASHBOARD_ROOT" \
+  --lock-path "$AUTHORITY_LOCK_PATH" \
+  --result-path "$AUTHORITY_RESULT_PATH"
+
+# A newly validated decision and the matching standard authority must count in
+# this run's final readiness. Elapsed-day targets remain visible observations.
 "$PYTHON" scripts/research/mini_trend_live_pilot_readiness.py \
   "${readiness_args[@]}" \
+  --authority-root "$AUTHORITY_ROOT" \
+  --authority-result-path "$AUTHORITY_RESULT_PATH" \
   --output-path "$READINESS_PATH"
-ln -sfn "runs/$STAMP" "$FORWARD_ROOT/latest"
 printf 'mini_trend_forward_cycle=complete\nrun_dir=%s\n' "$RUN_DIR"

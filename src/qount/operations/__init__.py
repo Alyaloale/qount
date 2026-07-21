@@ -14,6 +14,8 @@ from qount.operations.authority_writer import AuthorityWriterBlocked
 from qount.operations.authority_writer import AuthorityWriterConfig
 from qount.operations.authority_writer import AuthorityWriterError
 from qount.operations.authority_writer import AuthorityWriterResult
+from qount.operations.authority_writer import authorize_minimal_live_authority_bundle
+from qount.operations.authority_writer import refresh_authority_bundle_from_runtime
 from qount.operations.authority_writer import write_order_free_authority_bundle
 from qount.operations.health_probes import CommandResult
 from qount.operations.health_probes import HealthProbeConfig
@@ -26,6 +28,12 @@ from qount.operations.publisher_paths import PUBLISHER_PATH_AUDIT_SCHEMA_VERSION
 from qount.operations.publisher_paths import PublisherPathAudit
 from qount.operations.publisher_paths import PublisherPathAuditError
 from qount.operations.publisher_paths import audit_publisher_paths
+from qount.operations.release_provenance import RELEASE_PROVENANCE_ARTIFACT_TYPE
+from qount.operations.release_provenance import RELEASE_PROVENANCE_SCHEMA_VERSION
+from qount.operations.release_provenance import ReleaseProvenanceError
+from qount.operations.release_provenance import build_release_provenance
+from qount.operations.release_provenance import build_release_provenance_verification
+from qount.operations.release_provenance import verify_release_provenance
 
 __all__ = [
     "BACKUP_SCHEMA_VERSION",
@@ -34,6 +42,7 @@ __all__ = [
     "AuthorityWriterConfig",
     "AuthorityWriterError",
     "AuthorityWriterResult",
+    "authorize_minimal_live_authority_bundle",
     "BackupError",
     "BackupRecord",
     "BackupRetentionResult",
@@ -44,6 +53,9 @@ __all__ = [
     "PUBLISHER_AUTHORIZATION_GRANTED",
     "PUBLISHER_AUTHORIZATION_PENDING",
     "PUBLISHER_PATH_AUDIT_SCHEMA_VERSION",
+    "RELEASE_PROVENANCE_ARTIFACT_TYPE",
+    "RELEASE_PROVENANCE_SCHEMA_VERSION",
+    "ReleaseProvenanceError",
     "PublisherPathAudit",
     "PublisherPathAuditError",
     "RestoreDrillResult",
@@ -51,7 +63,11 @@ __all__ = [
     "collect_os_system_health",
     "prune_dashboard_backups",
     "read_latest_dashboard_backup",
+    "refresh_authority_bundle_from_runtime",
     "verify_dashboard_restore_drill",
     "write_order_free_authority_bundle",
     "audit_publisher_paths",
+    "build_release_provenance",
+    "build_release_provenance_verification",
+    "verify_release_provenance",
 ]

@@ -14,6 +14,9 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from qount.mini_trend.pilot_dispatcher import build_manual_arm  # noqa: E402
+from qount.models import utc_now  # noqa: E402
+from qount.operations import AuthorityWriterConfig  # noqa: E402
+from qount.operations import authorize_minimal_live_authority_bundle  # noqa: E402
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -22,6 +25,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--confirm-readiness-hash", required=True)
     parser.add_argument("--arm-token-env", default="QOUNT_MINI_TREND_ARM_TOKEN")
     parser.add_argument("--output-path", required=True)
+    parser.add_argument("--authority-root", required=True)
+    parser.add_argument("--authority-source-root", required=True)
+    parser.add_argument("--runtime-root", required=True)
+    parser.add_argument("--backup-root", required=True)
+    parser.add_argument("--dashboard-root", required=True)
+    parser.add_argument("--authority-lock-path", required=True)
     return parser.parse_args(argv)
 
 
@@ -51,9 +60,30 @@ def main(argv: list[str] | None = None) -> int:
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())
+    raw_arm = output.read_bytes()
+    try:
+        promotion = authorize_minimal_live_authority_bundle(
+            AuthorityWriterConfig(
+                repo_root=REPO.resolve(),
+                source_root=Path(args.authority_source_root).expanduser().resolve(),
+                authority_root=Path(args.authority_root).expanduser().resolve(),
+                runtime_root=Path(args.runtime_root).expanduser().resolve(),
+                backup_root=Path(args.backup_root).expanduser().resolve(),
+                dashboard_root=Path(args.dashboard_root).expanduser().resolve(),
+                lock_path=Path(args.authority_lock_path).expanduser().resolve(),
+            ),
+            arm=payload,
+            arm_artifact_hash=hashlib.sha256(raw_arm).hexdigest(),
+            captured_at=utc_now().isoformat(),
+        )
+    except Exception:
+        output.unlink()
+        raise
     print(f"arm_path={output.resolve()}")
     print(f"arm_id={payload['arm_id']}")
     print(f"readiness_hash={payload['readiness_hash']}")
+    print(f"authority_hash={promotion.authority_hash}")
+    print("promotion_status=minimal_live")
     print("exchange_mutation_attempted=false")
     return 0
 

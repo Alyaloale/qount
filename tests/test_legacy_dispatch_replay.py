@@ -28,7 +28,7 @@ CREATED_AT = "2026-08-02T00:00:00+00:00"
 PROJECTION_EVIDENCE_HASH = "a" * 64
 TARGET_STRESS_LOSS_FRACTION = 0.01
 GOLDEN_PATH = Path(__file__).parent / "fixtures" / "legacy_dispatch_replay_golden.json"
-GOLDEN_SHA256 = "f52af0a63d22044affee5c1a398341f266d0ffc57407b9f9c5ec57725429529a"
+GOLDEN_SHA256 = "6134357fb8386139472358168bc761d04299eb9db9e4bb071dbf4ab0c1aa0ecb"
 
 
 def _artifacts() -> tuple[dict, dict]:

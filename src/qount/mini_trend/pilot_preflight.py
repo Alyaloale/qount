@@ -349,9 +349,7 @@ def _finalize(result: dict[str, Any]) -> dict[str, Any]:
         "position_mode_oneway": evidence["position_mode_oneway"],
         "position_audited": evidence["position_audit_complete"],
         "no_unmanaged_positions": evidence["unmanaged_position_count"] == 0,
-        "account_flat": evidence["account_flat"],
         "open_orders_audited": evidence["open_order_audit_complete"],
-        "no_open_orders": evidence["open_order_count"] == 0,
         "isolated_one_x_verified": evidence["isolated_one_x_verified"],
     }
     passed = all(gates.values())

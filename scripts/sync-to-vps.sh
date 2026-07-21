@@ -38,6 +38,21 @@ done
 
 cd "$(dirname "$0")/.."
 
+if [[ "$dry_run" != true ]]; then
+  if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+    printf '%s\n' "refusing VPS sync from a dirty worktree; commit the release first" >&2
+    exit 3
+  fi
+  release_python="${QOUNT_SYNC_PYTHON:-./.venv/bin/python}"
+  if [[ ! -x "$release_python" ]]; then
+    printf 'release_provenance_python_not_executable=%s\n' "$release_python" >&2
+    exit 4
+  fi
+  PYTHONPATH=src "$release_python" scripts/operations/write_release_provenance.py \
+    --repo-root . \
+    --output-path .qount-release-provenance.json
+fi
+
 ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_DIR'"
 
 rsync_args=(
@@ -64,12 +79,13 @@ items=(
   ./src/qount
   ./tests
   ./web
+  ./.qount-release-provenance.json
 )
 
 rsync "${rsync_args[@]}" "${items[@]}" "$REMOTE_HOST:$REMOTE_DIR/"
 
 if [[ "$install" == true && "$dry_run" != true ]]; then
-  ssh "$REMOTE_HOST" "cd '$REMOTE_DIR' && ./.venv/bin/python -m pip install -e ."
+  ssh "$REMOTE_HOST" "cd '$REMOTE_DIR' && ./.venv/bin/python -m pip install -e '.[test]'"
 fi
 
 printf '%s\n' "synced to ${REMOTE_HOST}:${REMOTE_DIR}"

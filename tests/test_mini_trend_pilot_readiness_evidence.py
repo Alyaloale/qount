@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -64,6 +65,26 @@ def _inputs() -> dict:
     }
 
 
+def _release_provenance() -> dict:
+    core = {
+        "schema_version": "qount_release_provenance_v0.1",
+        "artifact_type": "qount_release_provenance_verification",
+        "created_at": "2026-08-01T00:00:00+00:00",
+        "meta": {"read_only": True, "orders_allowed": False},
+        "provenance": {
+            "git_commit": "1" * 40,
+            "version": "0.2.1",
+            "source_tree_hash": "2" * 64,
+            "provenance_hash": "3" * 64,
+        },
+        "evidence": {"verified": True},
+    }
+    encoded = json.dumps(
+        core, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("ascii")
+    return core | {"verification_hash": hashlib.sha256(encoded).hexdigest()}
+
+
 class MiniTrendPilotReadinessEvidenceTest(unittest.TestCase):
     def test_extracts_order_free_runtime_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -72,6 +93,9 @@ class MiniTrendPilotReadinessEvidenceTest(unittest.TestCase):
                 preflight_path=_write(root, "preflight.json", _preflight()),
                 paper_path=_write(root, "paper.json", _paper()),
                 shadow_input_path=_write(root, "inputs.json", _inputs()),
+                release_provenance_path=_write(
+                    root, "release.json", _release_provenance()
+                ),
                 legacy_production_cron_disabled=True,
                 legacy_live_guard_disarmed=True,
                 rollback_documented=True,
@@ -84,6 +108,7 @@ class MiniTrendPilotReadinessEvidenceTest(unittest.TestCase):
         self.assertFalse(result.evidence.credentials_ok)
         self.assertTrue(result.evidence.api_key_reading_enabled)
         self.assertTrue(result.evidence.api_key_spot_margin_disabled)
+        self.assertTrue(result.evidence.release_provenance_verified)
         self.assertTrue(all(source["valid"] for source in result.sources.values()))
 
     def test_order_capable_paper_artifact_fails_closed(self) -> None:
@@ -95,6 +120,9 @@ class MiniTrendPilotReadinessEvidenceTest(unittest.TestCase):
                 preflight_path=_write(root, "preflight.json", _preflight()),
                 paper_path=_write(root, "paper.json", paper),
                 shadow_input_path=_write(root, "inputs.json", _inputs()),
+                release_provenance_path=_write(
+                    root, "release.json", _release_provenance()
+                ),
             )
         self.assertEqual(result.evidence.paper_days, 0)
         self.assertGreater(result.evidence.paper_schema_error_count, 0)

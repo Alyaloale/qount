@@ -1,8 +1,8 @@
 # qount 当前状态
 
-更新时间：2026-07-20
+更新时间：2026-07-22
 
-当前版本：`0.2.0`
+当前版本：`0.2.1`
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -19,6 +19,99 @@
 [ashare-etf-month-plan.md](ashare-etf-month-plan.md)，1000 USDT加密多策略组合架构、策略合同和90天推进顺序看
 [crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，交易、账本、对账、通知、Dashboard和LLM的系统工程
 主设计看 [system-architecture-design.md](system-architecture-design.md)。
+
+- **2026-07-22 owner将100 USDT MiniTrend canary的账户级日损熔断固定为5%，累计试点峰值回撤保持10%。**
+  两条线都按冻结的`100 USDT`试点本金计算，即分别约`5 USDT`和`10 USDT`，不会改变Base v0.2的逐币
+  `3xATR`吊灯止损、3根完成日线冷却或35% deadband。日损与累计回撤只在日线dispatcher运行时评估，
+  不是盘中watchdog；两次dispatch之间的盘中保护仍依赖Binance原生`STOP_MARKET closePosition`。触线后只允许
+  flatten并写HALT，不自动恢复。该决定覆盖下文2026-07-18的300 USDT/无日损门历史合同，历史证据本身不回写。
+- **0.2.1发布候选补齐首单前的三个独立生产门。** live输入中的preflight、projection、readiness、exchange rules和
+  account snapshot必须在15分钟内生成；每笔市价成交按逐笔trade加权均价计算adverse slippage，超过25bps时仍先完成
+  保护止损和对账，再写`halted_slippage`；Mac release commit、项目版本、逐文件SHA-256和source tree hash通过
+  `.qount-release-provenance.json`绑定到VPS部署文件，forward在任何私有预检、arm或订单前先验证。当前发布尚未部署、
+  未生成manual arm、未发送真实订单；只有新的order-free forward refresh、authority、RuntimeLedger和三方对账全部通过后，
+  才允许尝试一次100 USDT canary，且不会为了产生首单而覆盖Base信号。
+- **Daily Intelligence报告`f4d90e84...dd63a94`不改变策略或订单。** 它只确认观测时点TOP3同步上涨、正funding、
+  Binance公告存在和内部账本对账通过；正文、精确事件时点、目标资产事件窗与外部成交证据不足。market/execution为`ok`，
+  event/strategy/red-team/editor为`needs_research`，因此不得把公告、同步上涨或正funding转换为Base信号、仓位或风控豁免。
+
+- **2026-07-22 只读 Daily Intelligence 已完成搜索、六角色、归档、Dashboard和个人微信真实投递闭环。**
+  `src/qount/intelligence/`生产默认使用免费`OfficialFeedSearchProvider`读取Binance公告API、Federal Reserve RSS和SEC press release RSS，
+  每个来源最多3条；feed原始字节和SHA-256先归档，再对候选URL经过既有官方域名allowlist复抓正文。Brave adapter只保留兼容，不再是
+  production依赖。Binance USD-M TOP3 `24hr/premiumIndex`响应和官方正文均保存原始HTTP字节及SHA-256。系统从冻结
+  `RuntimeLedgerSnapshot v3`确定性提取订单、逐笔成交、fee/funding、NAV、回撤和三方对账摘要，再依次运行
+  `market_analyst/event_analyst/execution_reviewer/strategy_reviewer/red_team/editor`六个本地Alpha Agent；red-team/editor会读取前序
+  报告。`DailyIntelligenceReport`、source/search/market原文、manifest和`latest`指针以`0700/0600`不可覆盖归档，重载时重放嵌套
+  合同、原文字节hash和source引用。所有报告固定`orders_allowed=false/live_changes_allowed=false`，研究建议只能进入后续
+  deterministic实验，不能成为订单、目标权重、live配置、风控豁免或promotion证据。
+- 首次真实日报`c326f31c...05f`完整归档3份搜索、8份详情和2份行情，但六角色在网络前被50,000字符上限以
+  `llm_input_too_large`阻断；该报告和通知原样保留。随后按角色压缩上下文且不提高全局上限，第二次真实报告ID
+  `24defae63419d002a74ff07fd578c994b3b68f6eb200bd76b3a4fc6ca1fb6adc`、report hash
+  `f4d90e84b1828345261568043623ba7b32ea5b66ede9fbe66d490f54ddd63a94`、manifest hash
+  `295a9d117a241099f531aa799af8c8dc012a37a2effd775049bdc5aa3c11dbff`。六个真实Responses请求载荷约13.4-40.2KB，全部返回中文严格
+  Schema报告，无`llm_input_too_large`或403/502/503/524；market/execution为`ok`，event/strategy/red-team/editor因来源发布时间、
+  正文质量和外部成交证据不足主动为`needs_research`，所以外层`incomplete`是研究证据状态，不是链路故障或缺失报告。
+- Dashboard新增独立`intelligence` source/freshness和`#/intelligence`“情报复盘”页；当前为11份业务read model，原子release为
+  11份模型加`publication.json`共12个JSON，静态Draft 2020-12合同为15份。`DailyIntelligenceReport`可映射为
+  `NotificationStore`事件；生产通知已改为`OpenClawWeixinProvider`复用腾讯官方`@tencent-weixin/openclaw-weixin 2.4.4`账号，固定
+  `ilinkai.weixin.qq.com/ilink/bot/sendmessage`、稳定client ID、严格route、HTTP与腾讯JSON业务响应双层校验、限流/超时和仓库外`0600`凭据边界。失败响应
+  必须拒绝非零`ret`，成功响应必须包含正整数`message_id`。WeCom adapter
+  继续作为未启用兼容实现；外部接受后、本地成功标记前崩溃仍可能出现重复，不能声称exactly-once。
+- `qount-daily-intelligence.timer`现为`enabled/active`，每日`04:30 UTC`并带0-10分钟随机延迟；首次启用前写入当前systemd persistent
+  stamp，避免把已手工完成的当日日报重复发送，下一次按未来日程运行。unit只允许官方feed/详情、公开行情、LLM和个人微信访问，显式
+  清空代理并移除全部Binance私钥环境。relay-station与个人微信凭据以仓库外`0600 root:root`文件接入，不需要Brave Key。通用Alpha
+  Agent研究默认仍为`gpt-5.6-terra`；Daily
+  Intelligence独立固定`gpt-5.6-sol`，通过`/v1/responses`、`store=false`和严格JSON Schema输出简体中文。New-API已经删除，当前请求链为
+  `qount-vps -> llm.alyaloale.com -> TokenRouter -> Docker内网aishenji-normalizer -> aishenji.top`。normalizer由nginx/OpenSSL重建
+  TLS、SNI、Host和User-Agent请求特征；account 25的`base_url`指向该内网服务、`proxy_id=NULL`，不得恢复VPS直连或proxy 6。
+- normalizer上线后，`2026-07-21T13:23:23.472311+00:00`执行一次有真实研究用途的TOP3首角色分析：单次非流式请求约`26.5s`完成，
+  五字段严格合同、简体中文、越权语言与source hash校验全部通过，`orders_allowed=false/live_changes_allowed=false`。pulse/ticker/premium
+  原始证据hash分别为`e991a4a3...04c` / `df89881f...787` / `30a0ddfe...eee`；报告结论只指出TOP3 24小时上涨且资金费率为正，单次快照
+  不足以确认趋势持续或杠杆拥挤。qount-vps随后真实非流式与流式Responses均为`completed/OK`，account 25保持
+  `active/schedulable`，TokenRouter与normalizer均healthy，且TokenRouter未重启。只读日志另确认两次长流式Codex请求分别约
+  `125.7s/126.7s`后收到上游`524`并由TokenRouter映射为502，两次之后均恢复200；WAF 403路径已修复，但长请求超时仍是必须退避、
+  失败关闭的上游波动风险。日报客户端现仅对瞬时状态和显式`retryable=true`执行最多一次有界退避，并可读取错误体`retry_after`；纯
+  `owner_action_required`仍立即阻断。本次完整E2E后，account 25保持`active/schedulable`，TokenRouter、sub2api和normalizer均healthy。
+- 个人微信通知已形成接入与真实日报两类本地投递记录：从现有OpenClaw账号、会话route和对应context token原地导入最小五字段凭据，不回显或归档
+  token/recipient；原context-token文件也从`0644`收紧为`0600 root:root`。历史中文接入事件和日报任务曾因仅检查HTTP `2xx`而本地标记
+  `DELIVERED/SUCCEEDED`，audit chain可重放，但这只证明旧实现的transport状态，不能证明腾讯业务接受或手机展示。2026-07-22直接诊断得到
+  HTTP `200`、JSON `ret=-2`、`prepare failed`，故已把provider收紧为解析真实业务合同；未来失败将诚实进入NotificationStore失败/重试路径。
+  同时已恢复并启用仅回环监听的`openclaw-gateway.service`，腾讯通道显示`running`；账号扫码确认“已连接过此 OpenClaw”。Owner随后从手机发送
+  一条2字符测试消息，VPS在`2026-07-22T00:06:40+08:00`收到入站、刷新context token并成功向同一手机回发错误提示，证明手机通道可见。
+  新context token已原子同步到Qount `0600`凭据且无首尾空白；真实Qount中文验证消息返回HTTP 200和19位正整数`message_id`，provider为
+  `ACCEPTED`。随后新建生产`NotificationStore`事件`cd078514d6c7...`，唯一job `9c6fca5efc6b...`为`DELIVERED`、attempt为`SUCCEEDED`，
+  response hash存在且16行audit chain完整重放。OpenClaw聊天提示本身报错来自其独立旧模型域名`api.alyaloale.com`无法DNS解析；该旧key对当前relay也为403，不影响Qount日报通知。
+  本次诊断没有调用Binance私有API或交易路径。
+- 个人微信会话现已消除双副本漂移：Qount仓库外凭据只保留`account_id/base_url/recipient/token`四个稳定字段，发送前从
+  `/root/.openclaw/openclaw-weixin/accounts/<account_id>.context-tokens.json`读取该recipient的最新context token；静态`context_token`
+  仅保留为手工/测试回退且已从生产凭据移除。provider要求绝对目录、无symlink、正确owner、目录不可group/world writable，token文件必须
+  是同owner的普通`0600`文件且不超过64KB；缺文件、无recipient、无效JSON或权限不安全均失败关闭。日报unit显式`Wants/After`
+  `openclaw-gateway.service`并只读挂载accounts目录。部署provider/runner/unit哈希分别为`65af6bf2...8780`、`0254618c...02c8`、
+  `9280a8bf...1691`；新架构验证事件`3b1a0dd9...0f43`、job `6d51a764...4324`已一次投递为`DELIVERED/SUCCEEDED`，生产store现有
+  5 event/job/attempt和20行可重放audit chain。本地扩大回归`75 OK`、VPS聚焦`24 OK`，compileall、`git diff --check`和目标unit
+  `systemd-analyze verify`通过；旧代码保存在VPS `/root/qount-notify-backup.rl6QL6`，其中不含凭据副本。
+- 生产前端已部署到`https://qount.alyaloale.com/#/intelligence`；publisher timer保持`enabled/active`并持续生成原子publication，
+  `intelligence.summary.status=available`且source hash精确绑定上述`f4d90e84...63a94`真实报告，未复制fixture。
+  静态`index.html/app.js/style.css` SHA-256分别为
+  `86e2535b...d139` / `ddc51a8c...487b` / `3baaff67...8eb9`。通过只读SSH隧道完成生产release桌面`1440x1000`和移动
+  `390x844`Chromium验收，布局无重叠、裁切或横向溢出；域名匿名请求仍为Basic Auth `401`和`no-store`。临时8766隧道及远端HTTP
+  server已关闭。此前全仓`1508 OK`、生产聚焦VPS回归`25/12 OK`；本次官方源/个人微信/通知/日报/relay聚焦在Mac和VPS各`45 OK`，
+  Python compileall和`git diff --check`通过。没有读取Binance私有API、修改账户、恢复交易timer/cron/manual arm/live或发送订单；外部
+  写入仅限通过NotificationStore审计的个人微信通知，最新一条是上述动态会话架构验证。
+
+- **2026-07-21 Phase B/C/D已部署并完成一次systemd order-free闭环，真钱订单仍关闭。** VPS只读前审计确认
+  MiniTrend timer为`disabled/inactive`、production cron为0、全部live开关为false、无arm/HALT/UNKNOWN；账户为one-way、
+  TOP3 isolated 1x、全平，普通单/条件单均0。成功run为
+  `/root/qount/state/mini_trend/forward/runs/20260721T063854Z`：runtime proof通过，dry dispatcher为`dry_validated`，
+  0 market/stop intent且`exchange_mutation_attempted=false`；最终readiness为`ready_for_manual_final_arm`、blocker 0，
+  但`live_orders_allowed=false`。readiness hash为`8496f70e49081e47a4fa3a610b86c8686a14c22c5d0cd0a94199fa0a97ad2a87`；
+  authority batch/manifest hash为`70d1b38b...f0a49` / `1520b6af...e2ec3`；RuntimeLedger snapshot hash为
+  `70184860...575fb`；pre-dispatch reconciliation hash为`9971ca5f...22d96`且passed。观察值为
+  forward pair/active bar/paper day/dry day=`0/0/0/1`，funding journal完整；它们不再阻断，但样本成熟度仍如实为0。
+  registry保持`research`，arm仍为0，timer/live switch/旧cron仍关闭。首次SSH直接执行的run
+  `20260721T063406Z`在dispatcher前因旧合同journal和缺systemd invocation proof失败关闭，未尝试交易所mutation；dry journal现按
+  live contract hash隔离，旧1行证据原样保留。VPS `systemd-analyze verify`通过目标unit（仅报告无关cloudmonitor旧警告），
+  VPS production/B-C-D/post-fix分别`303/59/21 OK`；Mac全仓复跑`1497 OK`。
 
 - **2026-07-20 verified Dashboard publisher 已在VPS受控启用，交易侧继续关闭。** 新的order-free cycle
   `/root/qount/state/mini_trend/forward/runs/20260720T101653Z`通过账户flat/0仓位/0挂单、projection、dry dispatcher和
@@ -343,7 +436,7 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
 2026-07-19 Equity Mapping G0 v0.4 adds an immutable raw-collection gate: real point-in-time inputs must link every mapping/quote/calendar/corporate-action/context/stress source hash to a same-cash-date sealed manifest whose raw response bodies pass readback SHA-256. The first readiness artifact targets 2026-07-20 09:24:30-09:25:00 New York (13:24:30-13:25:00 UTC) and currently says await_collection_window; it contains no market observation, PnL, strategy trial or execution authority.
 2026-07-19 Equity Mapping public source-capacity v0.1 tested ten bounded no-proxy probes without creating a market event. Only Nasdaq market-info passed the cash-calendar role; Binance mapping/bookTicker and four USDT/USD venues were transport-unavailable from the current Mac route, while Nasdaq cash quote was delayed with no executable bid/ask or quote-event timestamp, and its split/earnings responses could not bind target-date absence. Seven of eight roles remain blocked, including an unassigned stress source; trial count stays 143.
 2026-07-19 VPS order-free MiniTrend forward/paper timer is active. Latest run refreshed public inputs, then preflight v0.3 proved valid credentials, one-way mode, a flat account and zero open orders without mutation. It remains blocked on Spot/Margin permission, capital below 300 USDT and TOP3 isolated 2x instead of 1x; readiness v0.4 blocks 10 gates and live_orders_allowed is false. Forward/paper counts remain zero because the frozen start bar is not completed; no order endpoint, dry dispatcher or legacy cron was enabled.
-2026-07-19 the owner superseded the fixed 300 USDT and credential-rotation requirements: pre-arm capital is now the audited USD-M available balance within 100-1000 USDT, currently 488.89481071 USDT, and is frozen only by a later manual arm. The current VPS-only credential is accepted for production; Reading/Futures/IP restriction are enabled, Withdrawals disabled, and owner-accepted Spot/Margin permission no longer blocks. TOP3 are now isolated 1x, one-way, flat, with zero open orders. No credential bytes or exact production IP are stored in the repository.
+2026-07-19 the owner superseded the fixed 300 USDT and credential-rotation requirements with an audited 100-1000 USDT pre-arm range; on 2026-07-21 the owner superseded that range for this canary with a strict 100 USDT principal. The current VPS-only credential is accepted for production; Reading/Futures/IP restriction are enabled, Withdrawals disabled, and owner-accepted Spot/Margin permission no longer blocks. TOP3 are now isolated 1x, one-way, flat, with zero open orders. No credential bytes or exact production IP are stored in the repository.
 2026-07-19 the MiniTrend-specific dispatcher is deployed order-disabled. It binds current preflight/projection/rules/readiness/source hashes, verifies deterministic decision and execution-state hashes, reads regular and conditional order books, rejects unmanaged positions/orders, creates deterministic client IDs, plans Binance STOP_MARKET closePosition protection, records append-only row/chain hashes, reconciles resulting positions/stops, and implements 10% peak-equity flatten-then-halt. Live additionally requires ready_for_manual_final_arm, an exact readiness-bound 0600 arm file, a separate token, the independent MiniTrend live switch and matching arm confirmation; none exists or is enabled.
 2026-07-19 latest VPS run `/root/qount/state/mini_trend/forward/runs/20260719T091232Z` completed successfully with capital 488.89481071 USDT. Its independent systemd runtime proof passed with all live switches false. The account snapshot passed; dry dispatch returned await_dispatch_decision with zero market/stop intents, zero journal rows, exchange_mutation_attempted=false and live_orders_allowed=false. Readiness now has exactly five blockers, all requiring future completed bars: minimum_forward_pairs, minimum_forward_active_bars, minimum_paper_days, minimum_dry_run_days, and complete_funding_journal.
 2026-07-19 the multi-sleeve portfolio boundary now has a standard order-free StrategyIntent, a causal Base projection adapter, deterministic stress-budget scaling and fail-closed allocation. Gross, per-symbol cap, correlation-cluster, allowlist and minimum-notional checks run before any order plan; minimum notional is checked per standalone sleeve before netting so Base cannot subsidize an unexecutable alpha sleeve. The current VPS dispatcher still accepts Base only and was not changed or redeployed.
@@ -2566,12 +2659,24 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    可执行cash premarket bid/ask，并补齐mapping、mapped quote、USDTUSD、公司行动、事件上下文和stress来源。
    Nasdaq当前delayed quote不能代替现金腿，也不得用HTTP接收时点冒充市场quote时点。仍需累计30个独立现金交易日，
    且不因此进入shadow/paper/live。
-3. 一个月小资金实盘作为`paper_live`目标，当前严格停在readiness：本金在manual arm前动态读取已审计USD-M余额，
-   最后一次授权观测为`486.15970914 USDT`且已经stale，不设账户单日止损。owner接受当前VPS-only key和Spot/Margin权限；Reading/Futures/
-   IP限制、提现关闭、空仓/one-way/1x逐仓/0挂单均已通过。独立systemd runtime、exchange-native stop、幂等
-   dispatcher、哈希journal和回读对账已经验证；只剩Funding完整记录、60/10 forward、30天paper和7个唯一dry
-   决策日，随后仍须单独生成manual final arm。不得恢复旧X4/C×D cron。全局2.0%风险档和Funding Veto只能做
-   shadow，不能控制真钱订单。
+3. 一个月小资金实盘作为`paper_live`目标，2026-07-21 owner已把本金严格固定为`100 USDT`并要求直接推进
+   Phase B/C/D，不等待约两个月日历累积。`60 forward pairs / 10 active bars / 30 paper days / 7 unique dry days`
+   现为Dashboard/readiness非阻断观察指标；它们当前为0只表示尚无时间样本，不等于策略0收益或系统错误。Funding完整性、
+   当前私有预检、无未管理仓位/订单、one-way/isolated 1x、标准authority batch、RuntimeLedger、pre/post-dispatch
+   reconciliation、UNKNOWN停机和manual final arm仍是阻断门。dispatcher已要求订单提交前落`SUBMITTING`，market成交只接受
+   交易所order+逐笔trade/fee证据；超时或证据缺失进入`UNKNOWN + HALT`且不重发，失败authority同步发布halted registry。
+   四项观察值已纳入readiness hash防篡改但不进入blocker。Binance cash ledger保留原始`income`正负号，只白名单处理
+   `FUNDING_FEE`、`COMMISSION/FEE`和`TRANSFER/INTERNAL_TRANSFER`；未知非零incomeType失败关闭，`REALIZED_PNL`
+   由fill/position账本负责，避免重复记账。`1000 USDT`只作历史research/paper/order-free兼容上界，真钱readiness、arm、
+   dispatcher和live journal均要求精确`100 USDT`。
+   2026-07-21成功order-free run已把这些工程门闭合到`ready_for_manual_final_arm`，但arm尚未生成，MiniTrend timer/live switch
+   和旧X4/C×D cron保持关闭，本轮未发送真实订单。首笔订单前仍须向owner展示
+   最终readiness hash、authority batch/hash、ledger snapshot和reconciliation hash并取得单独确认。全局2.0%风险档和
+   Funding Veto只能做shadow，不能控制真钱订单。
+
+   当前本地全仓复跑为`1497 OK`；VPS production/B-C-D/post-fix分别`303/59/21 OK`。Python compileall、Bash语法、两份golden
+   SHA-256和`git diff --check`通过；VPS `systemd-analyze verify`通过目标unit，只报告无关cloudmonitor旧unit警告。唯一测试输出是
+   既存`src/qount/cta_data.py` UTC deprecation warning。
 4. Owner外部建议按 `docs/mini-trend-agent/review.md` 矩阵执行：Coin Metrics latest-vintage链上G0与经济
    审计已完成，算力预测成立但策略门失败；H.4.1 release-calendar/point-in-time G0、固定宏观特征和策略
    消融也已完成，4周变化预测保留但三档风险、事件闸门和边际boost否决均失败。Base episode归因进一步
@@ -2601,8 +2706,8 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
 
 硬边界：
 
-- 不开 live。
-- 不 forward paper。
+- 不在缺少最终hash确认和manual arm时开live。
+- 不自动启用forward timer；order-free B/C/D演练只允许手工一次性执行。
 - 不把 `discovery_pool` 窗口当 validation。
 - 不放宽 broad `range_noise` / `short_rebound_fail`。
 - 不把 `offline_future_edge_readiness` 当 promotion 证据。

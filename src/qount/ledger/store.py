@@ -1688,8 +1688,13 @@ class RuntimeLedger:
                 < aware_datetime(str(previous_reconciliation["reconciled_at"]))
             ):
                 raise RuntimeLedgerError("reconciliation_time_regression")
-            if dict(report.target_positions) != expected_positions:
-                raise RuntimeLedgerError("reconciliation_target_not_batch_authoritative")
+            authoritative_target = (
+                ledger_positions
+                if report.phase == "pre_dispatch"
+                else expected_positions
+            )
+            if dict(report.target_positions) != authoritative_target:
+                raise RuntimeLedgerError("reconciliation_target_not_phase_authoritative")
             if dict(report.position_tolerances) != expected_tolerances:
                 raise RuntimeLedgerError("reconciliation_tolerance_not_batch_authoritative")
             if dict(report.ledger_positions) != ledger_positions:
@@ -1739,7 +1744,7 @@ class RuntimeLedger:
         with self._connection() as connection:
             unresolved = connection.execute(
                 "SELECT 1 FROM orders WHERE status IN "
-                "('SUBMITTING','ACKNOWLEDGED','PARTIALLY_FILLED','UNKNOWN') LIMIT 1"
+                "('SUBMITTING','PARTIALLY_FILLED','UNKNOWN') LIMIT 1"
             ).fetchone()
             nav = connection.execute(
                 "SELECT passed FROM nav_marks ORDER BY marked_at DESC LIMIT 1"

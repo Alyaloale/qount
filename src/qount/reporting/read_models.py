@@ -20,6 +20,9 @@ from qount.contracts.trace import aware_datetime
 from qount.contracts.trace import is_sha256
 from qount.governance import StrategyRegistry
 from qount.governance import validate_registered_intents
+from qount.intelligence import DailyIntelligenceReport
+from qount.intelligence import IntelligenceContractError
+from qount.intelligence import daily_intelligence_from_dict
 from qount.ledger import RuntimeLedgerSnapshot
 from qount.notifications import ALERT_SEVERITIES
 from qount.notifications import DELIVERY_STATES
@@ -47,6 +50,7 @@ READ_MODEL_TYPES = (
     "system",
     "alerts",
     "reports",
+    "intelligence",
 )
 _READ_MODEL_FILES = {
     "overview": "overview.json",
@@ -59,12 +63,14 @@ _READ_MODEL_FILES = {
     "system": "system.json",
     "alerts": "alerts.json",
     "reports": "reports.json",
+    "intelligence": "intelligence.json",
 }
 _PUBLICATION_FILE = "publication.json"
 _BASE_SOURCE_KEYS = {"decision_batch_manifest", "strategy_registry"}
 _RUNTIME_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"runtime_ledger"}
 _NOTIFICATION_SOURCE_KEYS = {"notification_store"}
 _REPORT_SOURCE_KEYS = {"daily_brief"}
+_INTELLIGENCE_SOURCE_KEYS = {"daily_intelligence"}
 _SYSTEM_HEALTH_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"system_health"}
 _SYSTEM_RUNTIME_SOURCE_KEYS = _RUNTIME_SOURCE_KEYS | {"system_health"}
 _HEX_ID_LENGTH = 64
@@ -155,6 +161,10 @@ def _valid_source_hashes(
             and keys == _REPORT_SOURCE_KEYS
         )
         or (
+            read_model_type == "intelligence"
+            and keys == _INTELLIGENCE_SOURCE_KEYS
+        )
+        or (
             read_model_type == "system"
             and (
                 keys == _SYSTEM_HEALTH_SOURCE_KEYS
@@ -239,13 +249,6 @@ def _source_errors(
             environment="research",
         )
     )
-    try:
-        if aware_datetime(registry.created_at) > aware_datetime(
-            batch.manifest.created_at
-        ):
-            errors.append("dashboard_source_registry_created_after_batch")
-    except (AttributeError, TypeError, ValueError):
-        pass
     return tuple(dict.fromkeys(errors))
 
 
@@ -375,6 +378,16 @@ class DashboardReadModel:
                 raise DashboardReadModelError(
                     "dashboard_report_authority_source_mismatch"
                 )
+        elif self.read_model_type == "intelligence":
+            intelligence_authoritative = (
+                authority["intelligence"] == "daily_intelligence"
+            )
+            if intelligence_authoritative is not (
+                "daily_intelligence" in self.source_hashes
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_intelligence_authority_source_mismatch"
+                )
         else:
             runtime_authoritative = authority["account_and_pnl"] == "runtime_ledger"
             if runtime_authoritative is not (
@@ -471,6 +484,7 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
         "system": {"authority", "summary", "ledger", "health"},
         "alerts": {"authority", "summary", "alerts"},
         "reports": {"authority", "summary", "brief"},
+        "intelligence": {"authority", "summary", "report"},
     }[read_model_type]
     _exact_keys(value, expected, name=f"dashboard_{read_model_type}_payload")
     if read_model_type == "alerts":
@@ -478,6 +492,9 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
         return
     if read_model_type == "reports":
         _validate_reports_payload(value)
+        return
+    if read_model_type == "intelligence":
+        _validate_intelligence_payload(value)
         return
     authority = _mapping(value["authority"], name="dashboard_authority")
     _exact_keys(
@@ -1363,7 +1380,7 @@ def _validate_orders_payload(value: Mapping[str, object]) -> None:
             for row in rows
         ),
         "unresolved_order_count": sum(
-            row["status"] in {"SUBMITTING", "ACKNOWLEDGED", "PARTIALLY_FILLED", "UNKNOWN"}
+            row["status"] in {"SUBMITTING", "PARTIALLY_FILLED", "UNKNOWN"}
             for row in rows
         ),
         "partial_fill_count": sum(row["status"] == "PARTIALLY_FILLED" for row in rows),
@@ -3120,6 +3137,100 @@ def _reports_payload(brief: DailyBrief | None) -> dict[str, object]:
     }
 
 
+def _validate_intelligence_payload(value: Mapping[str, object]) -> None:
+    authority = _mapping(
+        value["authority"], name="dashboard_intelligence_authority"
+    )
+    _exact_keys(
+        authority,
+        {"intelligence"},
+        name="dashboard_intelligence_authority",
+    )
+    summary = _mapping(value["summary"], name="dashboard_intelligence_summary")
+    _exact_keys(
+        summary,
+        {
+            "status",
+            "report_id",
+            "report_hash",
+            "report_date",
+            "report_status",
+            "source_count",
+            "proposal_count",
+        },
+        name="dashboard_intelligence_summary",
+    )
+    if authority["intelligence"] == "unavailable_until_daily_intelligence":
+        if dict(summary) != {
+            "status": "unavailable_until_daily_intelligence",
+            "report_id": None,
+            "report_hash": None,
+            "report_date": None,
+            "report_status": None,
+            "source_count": 0,
+            "proposal_count": 0,
+        } or value["report"] is not None:
+            raise DashboardReadModelError(
+                "dashboard_intelligence_unavailable_invalid"
+            )
+        return
+    if authority["intelligence"] != "daily_intelligence":
+        raise DashboardReadModelError("dashboard_intelligence_authority_invalid")
+    report_value = _mapping(value["report"], name="dashboard_intelligence_report")
+    try:
+        report = daily_intelligence_from_dict(report_value)
+    except IntelligenceContractError as exc:
+        raise DashboardReadModelError(
+            f"dashboard_intelligence_report_invalid:{exc}"
+        ) from exc
+    expected = {
+        "status": "available",
+        "report_id": report.report_id,
+        "report_hash": report.report_hash,
+        "report_date": report.report_date,
+        "report_status": report.status,
+        "source_count": len(report.sources),
+        "proposal_count": len(report.research_proposals),
+    }
+    if dict(summary) != expected:
+        raise DashboardReadModelError("dashboard_intelligence_summary_mismatch")
+
+
+def _intelligence_payload(
+    report: DailyIntelligenceReport | None,
+) -> dict[str, object]:
+    if report is None:
+        return {
+            "authority": {
+                "intelligence": "unavailable_until_daily_intelligence"
+            },
+            "summary": {
+                "status": "unavailable_until_daily_intelligence",
+                "report_id": None,
+                "report_hash": None,
+                "report_date": None,
+                "report_status": None,
+                "source_count": 0,
+                "proposal_count": 0,
+            },
+            "report": None,
+        }
+    report.validate()
+    return {
+        "authority": {"intelligence": "daily_intelligence"},
+        "summary": {
+            "status": "available",
+            "report_id": report.report_id,
+            "report_hash": report.report_hash,
+            "report_date": report.report_date,
+            "report_status": report.status,
+            "source_count": len(report.sources),
+            "proposal_count": len(report.research_proposals),
+        },
+        "report": report.as_dict(),
+    }
+
+
 @dataclass(frozen=True)
 class DashboardReadModelSet:
     overview: DashboardReadModel
@@ -3132,6 +3243,7 @@ class DashboardReadModelSet:
     system: DashboardReadModel
     alerts: DashboardReadModel
     reports: DashboardReadModel
+    intelligence: DashboardReadModel
 
     def models(self) -> tuple[DashboardReadModel, ...]:
         return (
@@ -3145,6 +3257,7 @@ class DashboardReadModelSet:
             self.system,
             self.alerts,
             self.reports,
+            self.intelligence,
         )
 
     def validate(self) -> None:
@@ -3156,7 +3269,8 @@ class DashboardReadModelSet:
         core_models = tuple(
             model
             for model in models
-            if model.read_model_type not in {"system", "alerts", "reports"}
+            if model.read_model_type
+            not in {"system", "alerts", "reports", "intelligence"}
         )
         for name in (
             "generated_at",
@@ -3182,6 +3296,10 @@ class DashboardReadModelSet:
             raise DashboardReadModelError(
                 "dashboard_read_model_set_generation_mismatch"
             )
+        if self.intelligence.generated_at != self.overview.generated_at:
+            raise DashboardReadModelError(
+                "dashboard_read_model_set_generation_mismatch"
+            )
 
 
 def build_dashboard_v1(
@@ -3196,6 +3314,8 @@ def build_dashboard_v1(
     alert_stale_after_seconds: int | None = None,
     daily_brief: DailyBrief | None = None,
     report_stale_after_seconds: int | None = None,
+    daily_intelligence: DailyIntelligenceReport | None = None,
+    intelligence_stale_after_seconds: int | None = None,
     system_health: SystemHealthSnapshot | None = None,
     system_stale_after_seconds: int | None = None,
 ) -> DashboardReadModelSet:
@@ -3265,6 +3385,17 @@ def build_dashboard_v1(
             raise DashboardReadModelError(
                 f"dashboard_daily_brief_invalid:{exc}"
             ) from exc
+    if daily_intelligence is not None:
+        if not isinstance(daily_intelligence, DailyIntelligenceReport):
+            raise DashboardReadModelError(
+                "dashboard_daily_intelligence_required"
+            )
+        try:
+            daily_intelligence.validate()
+        except IntelligenceContractError as exc:
+            raise DashboardReadModelError(
+                f"dashboard_daily_intelligence_invalid:{exc}"
+            ) from exc
     if (
         not isinstance(stale_after_seconds, int)
         or isinstance(stale_after_seconds, bool)
@@ -3293,6 +3424,19 @@ def build_dashboard_v1(
         or report_stale_after_seconds < 1
     ):
         raise DashboardReadModelError("dashboard_report_stale_after_invalid")
+    intelligence_stale_after_seconds = (
+        129_600
+        if intelligence_stale_after_seconds is None
+        else intelligence_stale_after_seconds
+    )
+    if (
+        not isinstance(intelligence_stale_after_seconds, int)
+        or isinstance(intelligence_stale_after_seconds, bool)
+        or intelligence_stale_after_seconds < 1
+    ):
+        raise DashboardReadModelError(
+            "dashboard_intelligence_stale_after_invalid"
+        )
     system_stale_after_seconds = (
         stale_after_seconds
         if system_stale_after_seconds is None
@@ -3327,6 +3471,11 @@ def build_dashboard_v1(
             if daily_brief is not None
             else None
         )
+        intelligence_source_time = (
+            aware_datetime(daily_intelligence.created_at)
+            if daily_intelligence is not None
+            else None
+        )
         system_source_time = (
             aware_datetime(system_health.source_updated_at)
             if system_health is not None
@@ -3355,6 +3504,10 @@ def build_dashboard_v1(
                 generated < aware_datetime(daily_brief.generated_at)
                 or generated < report_source_time
             )
+        )
+        or (
+            daily_intelligence is not None
+            and generated < intelligence_source_time
         )
         or (
             system_health is not None
@@ -3414,6 +3567,22 @@ def build_dashboard_v1(
                 source_updated_at=daily_brief.source_updated_at,
                 evaluated_at=evaluated_at,
                 stale_after_seconds=report_stale_after_seconds,
+            ),
+        }
+    if daily_intelligence is None:
+        intelligence_common = common
+    else:
+        intelligence_common = {
+            "generated_at": generated_at,
+            "data_cutoff": daily_intelligence.created_at,
+            "source_hashes": {
+                "daily_intelligence": daily_intelligence.report_hash
+            },
+            "stale_after_seconds": intelligence_stale_after_seconds,
+            "freshness": _freshness(
+                source_updated_at=daily_intelligence.created_at,
+                evaluated_at=evaluated_at,
+                stale_after_seconds=intelligence_stale_after_seconds,
             ),
         }
     if system_health is None:
@@ -3488,6 +3657,11 @@ def build_dashboard_v1(
             read_model_type="reports",
             payload=_reports_payload(daily_brief),
             **reports_common,
+        ),
+        intelligence=DashboardReadModel.create(
+            read_model_type="intelligence",
+            payload=_intelligence_payload(daily_intelligence),
+            **intelligence_common,
         ),
     )
     models.validate()
@@ -3750,6 +3924,7 @@ def _read_release(directory: Path) -> tuple[DashboardReadModelSet, DashboardPubl
         system=loaded["system"],
         alerts=loaded["alerts"],
         reports=loaded["reports"],
+        intelligence=loaded["intelligence"],
     )
     publication.validate(models=models)
     if directory.name != publication.publication_id:

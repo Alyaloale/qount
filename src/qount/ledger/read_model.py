@@ -577,6 +577,7 @@ def _reconciliation_from_mapping(
             reconciliation_id=str(value["reconciliation_id"]),
             batch_id=str(value["batch_id"]),
             reconciled_at=str(value["reconciled_at"]),
+            phase=str(value["phase"]),
             target_positions=dict(value["target_positions"]),
             ledger_positions=dict(value["ledger_positions"]),
             exchange_positions=dict(value["exchange_positions"]),
@@ -843,9 +844,20 @@ class RuntimeLedgerSnapshot:
                 order_id
                 for order_id, row in orders_by_id.items()
                 if row["status"] in RECOVERABLE_ORDER_STATUSES
+                or row["status"] == "ACKNOWLEDGED"
             )
         )
-        if self.open_order_ids != expected_open_ids or self.unresolved_order_ids != expected_open_ids:
+        expected_unresolved_ids = tuple(
+            sorted(
+                order_id
+                for order_id, row in orders_by_id.items()
+                if row["status"] in RECOVERABLE_ORDER_STATUSES
+            )
+        )
+        if (
+            self.open_order_ids != expected_open_ids
+            or self.unresolved_order_ids != expected_unresolved_ids
+        ):
             raise RuntimeLedgerSnapshotError(
                 "runtime_snapshot_open_order_state_mismatch"
             )
@@ -1237,16 +1249,27 @@ def build_runtime_ledger_snapshot(
                         )
                     recovery_values.append(recovery)
                 recoveries = tuple(recovery_values)
-                placeholders = ",".join("?" for _ in RECOVERABLE_ORDER_STATUSES)
+                open_statuses = tuple(sorted((*RECOVERABLE_ORDER_STATUSES, "ACKNOWLEDGED")))
+                placeholders = ",".join("?" for _ in open_statuses)
                 open_order_ids = tuple(
                     str(row["client_order_id"])
                     for row in connection.execute(
                         f"SELECT client_order_id FROM orders WHERE status IN ({placeholders}) "
                         "ORDER BY client_order_id",
+                        open_statuses,
+                    )
+                )
+                recoverable_placeholders = ",".join(
+                    "?" for _ in RECOVERABLE_ORDER_STATUSES
+                )
+                unresolved_order_ids = tuple(
+                    str(row["client_order_id"])
+                    for row in connection.execute(
+                        f"SELECT client_order_id FROM orders WHERE status IN ({recoverable_placeholders}) "
+                        "ORDER BY client_order_id",
                         tuple(sorted(RECOVERABLE_ORDER_STATUSES)),
                     )
                 )
-                unresolved_order_ids = open_order_ids
                 nav_rows = connection.execute(
                     "SELECT * FROM nav_marks ORDER BY marked_at,nav_mark_id"
                 ).fetchall()
