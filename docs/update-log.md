@@ -8,10 +8,36 @@
 
 ## 2026-07-22
 
+### 0.2.7 observability, readiness and intelligence architecture upgrade
+
+- 维护窗口开始前只读确认USD-M钱包`486.15970914 USDT`、TOP3全平、普通挂单0、one-way和isolated 1x；随后
+  `qount-mini-trend-live.timer`停为`disabled/inactive`，service为`inactive/success`。publisher和Daily Intelligence timer保持运行，
+  回滚包为VPS root-only目录`/root/qount-maintenance-backup-20260722T072740Z`，新版恢复验证前不删除。
+- NotificationSnapshot升级到v2：分离监控观测、内容变化与捕获时间；OPEN和历史严重度分开；空库为合法0事件；authority/live/
+  publisher统一到`/var/lib/qount/notifications/store.sqlite3`，publisher保持只读；新增verified、idempotent legacy replay迁移，明确
+  不重放delivery历史。Daily Intelligence incident使用supersession关闭旧故障，不把历史INFO保留为当前告警。
+- Dashboard freshness按来源逐项计算，旧source不会被其它模块或重新发布的较新时间洗新。readiness新增publication integrity、
+  observation state、operational state、trading authority、evidence state五轴；Ops Observer只读检查Caddy、publisher、日报、
+  OpenClaw、live/forward timer、live service、HALT、manual arm和release provenance，并以影响域区分execution、observation、
+  intelligence和delivery。通知/LLM故障不再错误阻断execution。
+- Daily Intelligence升级为v2：官方feed按主题和45天窗口过滤，Binance JSON、Federal Reserve article和SEC press release正文使用
+  专用抽取器；来源保存published/modified/observed、body hash、parser/extractor和content quality。交易历史区分
+  `no_order_expected/orders_expected_but_missing/fills_verified`，pipeline与evidence状态分离，研究建议结构化为baseline、kill test、
+  成本、holdout、source/history容量和G0状态。LLM仍固定research-only，不得改订单、仓位、风险或promotion。
+- 静态控制台显示各模块和各来源的独立时间/到期状态、readiness五轴、OPEN/RESOLVED/outbox三类告警、Ops Observer以及事实/缺口/
+  假设/研究建议分区；桌面和iPhone 13 Playwright验收无重叠、裁切或横向溢出。静态资源版本为v23。
+- 本地组合回归`83/83`、全仓`1548/1548`通过；Python compileall、16份JSON Schema自检、`node --check`、shell `bash -n`、
+  `git diff --check`和密钥模式扫描均通过。DailyBrief与Dashboard golden SHA-256分别更新为
+  `4c80cea12ad9bdd9a6feb885809869b4a0b3dedcdd0f7a53762b8b3c6ed7845a`和
+  `9872e15ba253df032f4f8600aa984da8b24380553f304012da38e4f3f7e78df5`。
+- 本条只记录`0.2.7`发布候选，不预写VPS部署成功。恢复范围仍严格限定为`MiniTrend-UM-Base-v0.2`固定100 USDT、TOP3、
+  long/cash、one-way、isolated 1x和gross<=1；RiskTier/FundingVeto只做shadow，不恢复forward timer、legacy cron、X4/CxD、
+  line A、carry、short或其它sleeve。
+
 ### Source package version bumped to 0.2.6
 
 - `pyproject.toml`从`0.2.5`升至`0.2.6`，作为下一次源码发布版本；当前VPS仍运行已验证的`0.2.5` release，未执行同步、部署或任何交易路径变更。
-- 最新VPS只读核查仍为：live timer=`enabled/active`、forward timer=`disabled/inactive`、legacy cron有效项`0`、live service最近结果
+- 当时最新VPS只读核查为：live timer=`enabled/active`、forward timer=`disabled/inactive`、legacy cron有效项`0`、live service最近结果
   `success/0`、arm=`armed`、capital=`100 USDT`、HALT与未完成live lock为空；最新run仍为`20260722T061346Z`。
 - 文档入口已清理为当前事实/架构/交接/项目规则加`docs/archive/README.md`索引；旧研究线文件保留为历史证据，不再出现在当前生产导航中。
 
@@ -43,7 +69,7 @@
   `dbac0f9141c89eeb4fdc50deb85e428e69c1210b1ce83665ed0657299e13c434`、pre-reconciliation=
   `dba39b3ce5b8eb43e2a96505d715fc6aacf6ad718be7bcdf87e2e0c1be79f2c7` passed。recurring service实际返回
   `duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
-- 最终生产状态：`qount-mini-trend-live.timer=enabled/active`，forward timer=`disabled/inactive`，legacy cron有效项0，
+- 该阶段最终生产状态：`qount-mini-trend-live.timer=enabled/active`，forward timer=`disabled/inactive`，legacy cron有效项0，
   HALT不存在，arm/env root `0600`，registry=`minimal_live`；账户可用余额`486.15970914 USDT`，TOP3全平、普通/条件挂单0。
   当前尚无真实fill/fee/slippage/STOP/UNKNOWN恢复样本，禁止扩容、强制首单或开放其它sleeve。
 - 当前事实面已同步更新README、current、quick handoff、系统架构、组合计划和项目规则；同日0.2.1/Phase B-C-D旧状态明确标为

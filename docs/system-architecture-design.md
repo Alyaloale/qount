@@ -1,6 +1,6 @@
 # qount 个人量化交易系统架构设计
 
-版本：`v1.1`
+版本：`v1.2`
 
 更新时间：`2026-07-22`
 
@@ -94,7 +94,8 @@ runtime proof
 - 5%试点单日损失或10%试点峰值回撤时 flatten-then-halt；
 - 独立 manual arm、live switch 和 confirmation 三重授权。
 
-`qount-mini-trend-live.timer`现为`enabled/active`。首次live cycle已写完整锁定、完成、账本和post-dispatch对账，
+`qount-mini-trend-live.timer`在0.2.7升级维护期间为`disabled/inactive`。恢复前必须重新验证release provenance、
+canonical通知库迁移、无订单周期、readiness五轴、账本和post-dispatch对账。首次live cycle已写完整锁定、完成、账本和post-dispatch对账，
 但Base信号为全现金，实际0订单、0成交；因此系统已获得minimal-live运行证据，尚未获得真实fill/fee/slippage/STOP触发证据。
 
 ### 2.3 当前代码问题
@@ -552,6 +553,24 @@ Signal NAV return
 ### 5.9 Operations, Reporting And Intelligence
 
 Operations 负责调度、锁、时钟、健康检查、恢复、告警、read model 和报告，不包含策略逻辑。
+
+可观测性必须拆成五个独立轴，禁止用一个总状态掩盖不同故障域：
+
+| 轴 | 权威输入 | 主要影响域 |
+| --- | --- | --- |
+| publication integrity | 原子release、read model/hash readback | observation |
+| observation state | 每个source自己的观测时间、内容变化时间和TTL | observation、execution |
+| operational state | Caddy、publisher、日报、OpenClaw、交易timer/service、HALT、arm、provenance | execution、observation、intelligence、delivery |
+| trading authority | registry、owner arm、runtime与staleness硬门 | execution |
+| evidence state | 订单预期、fills、账本和三方对账 | execution、observation |
+
+通知库只有一个canonical writer store。publisher只能只读复核它；每个快照分离`observed_at`、`content_updated_at`和
+`captured_at`，当前OPEN严重度不能与RESOLVED历史混算。空库是合法的0事件状态，不生成合成INFO。旧通知库只能通过
+验证audit chain的幂等replay迁移，且不得伪造历史delivery parity。
+
+Daily Intelligence v2把`pipeline_status`与`evidence_status`分离：官方feed先按主题和时间窗筛选，再对allowlist正文复抓，
+保存published/modified/observed时间、body hash、parser/extractor与content quality。研究建议使用带baseline、kill test、
+成本、holdout和G0容量状态的结构化合同。LLM和情报平面永远不拥有订单、权重、参数晋级或风险豁免权限。
 
 Intelligence 负责官方源抓取、`InformationEvent`、LLM分析和研究建议。LLM是旁路：
 
@@ -1262,7 +1281,7 @@ production-shaped publisher已实现；静态前端与publisher scheduler已在V
   生成不可覆盖`DailyIntelligenceReport`。报告固定禁止订单和live修改，只能形成解释、批评和可证伪研究建议；
 - `positions/decisions`提供可点击的仓位到批次证据链；`orders/risk/system`分别展示订单与成交、RiskDecision/runtime gate/三方差异和
   ledger/audit/recovery及`clock/disk/service/backup`健康状态；`reports/intelligence`分别使用独立DailyBrief/DailyIntelligence
-  source/freshness。原子release为12个JSON，静态schema为15份；情报页已用Chromium完成桌面`1440x1000`和移动`390x844`
+  source/freshness。原子release为12个JSON，静态schema为16份；情报页已用Chromium完成桌面`1440x1000`和移动`390x844`
   首屏、完整长页及文档宽度检查，六角色与来源证据完整，无可见元素越界、重叠或裁切；
 - 旧CTA-R SwiftBar/Übersicht展示源、缓存和`cta.json`推送链已删除，本机`com.qount.dashboard`已卸载；独立
   `com.qount.ctar-daily`研究采集任务保留。

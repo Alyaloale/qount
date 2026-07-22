@@ -6,10 +6,11 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前源码版本为 `0.2.6`；VPS 当前生产版本仍为 `0.2.5`（release commit `e279b966...b95cf`）。唯一获得真钱权限的连续策略是
+当前源码版本为 `0.2.7`（完整升级发布候选）；VPS 当前仍是 `0.2.5`（release commit `e279b966...b95cf`），且
+`qount-mini-trend-live.timer` 已在升级维护期间停用。唯一可在验收后恢复真钱权限的连续策略是
 `MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
-effective gross `<=1`；RiskTier和FundingVeto只做shadow。`qount-mini-trend-live.timer`现为
-`enabled/active`，旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。首次live cycle因冻结信号
+effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。
+恢复前必须通过 `0.2.7` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账验收。首次live cycle因冻结信号
 为全现金而完成0订单账本闭环，不代表系统未启动，也不得强制制造首单。
 
 ## 主机职责
@@ -430,18 +431,18 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
   research-only 角色、任务、source book、relay-station ChatGPT接入和后续量化接入边界。
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 
-当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一真钱运行链为VPS `/root/qount` 上固定100 USDT的
-MiniTrend Base minimal-live。Dashboard静态前端已部署，
+当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一可恢复的真钱运行链为VPS `/root/qount` 上固定100 USDT的
+MiniTrend Base minimal-live，当前因0.2.7升级维护停盘。Dashboard静态前端已部署，
 served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
 publisher timer现为`enabled/active`，只读完整batch/registry/ledger/notification/health/brief，每两分钟刷新系统健康、release、
 备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单；
 recurring readiness已通过且registry为`minimal_live`。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
 在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持
-`static/inactive`，MiniTrend forward timer和production cron关闭，live timer每日运行；publisher不查询交易所，也不授予订单权。
+`static/inactive`，MiniTrend forward timer、live timer和production cron当前关闭；publisher不查询交易所，也不授予订单权。
 只读日报生产默认使用Binance公告API、Federal Reserve RSS和SEC RSS，不需要Brave；六角色中文Responses经
 内网normalizer完成真实E2E并保存3份feed、8份详情和2份行情，个人微信投递为`DELIVERED/SUCCEEDED`。Dashboard
 `intelligence`现发布真实报告且source hash为`f4d90e84...63a94`；日报timer为`enabled/active`，每日`04:30 UTC`运行。报告外层
-`incomplete`来自证据不足的`needs_research`，不是基础设施失败。除MiniTrend Base live timer外，其它交易timer和production cron仍关闭。
+`incomplete`来自证据不足的`needs_research`，不是基础设施失败。验收后只允许恢复MiniTrend Base live timer，其它交易timer和production cron继续关闭。
 Mac
 `/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
 `--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL

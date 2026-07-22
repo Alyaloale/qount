@@ -31,7 +31,8 @@ alpha。Alpha Agents 的目标不是继续调 long/cash trend，而是把研究�
 - `src/qount/intelligence/search.py`：生产默认从Binance公告API、Fed RSS和SEC RSS免费发现官方URL并保存原始字节hash；Brave adapter只保留兼容。
 - `src/qount/intelligence/market.py`：Binance USD-M TOP3公开24小时行情、funding与下一结算时间；两份原始响应字节hash/归档。
 - `src/qount/intelligence/history.py`：从冻结RuntimeLedger v3提取订单、逐笔成交、费用、funding、NAV、回撤和对账摘要。
-- `src/qount/intelligence/daily.py`：固定六角色日报链，red-team/editor接收前序报告，所有输出保持research-only。
+- `src/qount/intelligence/daily.py`：固定六角色日报链，red-team/editor接收前序报告，所有输出保持research-only；v2把pipeline状态、
+  evidence状态和结构化ResearchProposal分离。
 - `src/qount/intelligence/archive.py`：日报、market/search/source原文、manifest和latest指针的不可覆盖`0700/0600`归档与重放。
 - `src/qount/intelligence/notifications.py`：把日报映射为`AlertEvent`，不赋予通知或订单权限。
 - `scripts/operations/run_daily_intelligence.py`：串联authority、公开行情、官方feed、LLM、归档、NotificationStore和可选个人微信/WeCom投递。
@@ -150,6 +151,12 @@ source_hash`；模型记忆、模型自称搜索或搜索摘要都不能替代�
 日报角色固定为`market_analyst -> event_analyst -> execution_reviewer -> strategy_reviewer -> red_team -> editor`。LLM可输出解释、
 反例和带baseline/kill-test的研究建议；不得输出订单、目标权重、live配置、杠杆/风险override。日报本身固定
 `orders_allowed=false/live_changes_allowed=false`，必须经确定性dataset/backtest/scorecard和独立promotion流程后才可能影响策略。
+
+Daily Intelligence v2额外要求：`pipeline_status`只说明抓取/解析/角色链是否完成，`evidence_status`才说明结论证据是否充分；
+两者不得互相替代。每个`ResearchProposal`必须明确简单基线、kill test、完整成本、时间顺序holdout、来源与历史容量和G0状态。
+任一项缺失或`g0_status=blocked`时，提案只留在研究队列，不能创建promotion候选。全现金且策略没有计划订单的账本周期记为
+`no_order_expected`；只有计划了订单却没有exchange order/trade/fee证据时才是`orders_expected_but_missing`，不得用0订单制造假告警，
+也不得把0订单说成已验证成交能力。
 
 个人微信provider复用腾讯官方OpenClaw插件账号和recipient，固定官方host/path/header，并以NotificationStore delivery key派生稳定client ID。
 生产凭据只保存`account_id/base_url/recipient/token`；每次发送前从OpenClaw accounts目录按account和recipient读取最新context token，避免手机

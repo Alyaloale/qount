@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/daily-intelligence-v2.schema.json",
+  "title": "qount read-only DailyIntelligenceReport v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "report_id", "report_date", "created_at", "status", "pipeline_status", "evidence_status", "evidence_summary", "market_pulse", "trading_history", "searches", "sources", "agent_reports", "executive_summary", "observed_impacts", "research_proposals", "risk_notes", "source_hashes", "llm", "orders_allowed", "live_changes_allowed", "report_hash"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "report_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+    "report_date": { "type": "string", "format": "date" },
+    "created_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+    "status": { "enum": ["clear", "attention_required", "incomplete"] },
+    "pipeline_status": { "enum": ["complete", "partial", "failed"] },
+    "evidence_status": { "enum": ["sufficient", "limited", "insufficient"] },
+    "evidence_summary": { "$ref": "#/$defs/evidence_summary" },
+    "market_pulse": { "$ref": "daily-intelligence-v1.schema.json#/$defs/market_pulse" },
+    "trading_history": {
+      "oneOf": [
+        { "$ref": "#/$defs/trading_history_unavailable" },
+        { "$ref": "#/$defs/trading_history_available" }
+      ]
+    },
+    "searches": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/search" }
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "agent_reports": {
+      "type": "array",
+      "prefixItems": [
+        { "$ref": "daily-intelligence-v1.schema.json#/$defs/market_agent" },
+        { "$ref": "daily-intelligence-v1.schema.json#/$defs/event_agent" },
+        { "$ref": "daily-intelligence-v1.schema.json#/$defs/execution_agent" },
+        { "$ref": "daily-intelligence-v1.schema.json#/$defs/strategy_agent" },
+        { "$ref": "daily-intelligence-v1.schema.json#/$defs/red_team_agent" },
+        { "$ref": "daily-intelligence-v1.schema.json#/$defs/editor_agent" }
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "executive_summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "observed_impacts": { "$ref": "daily-intelligence-v1.schema.json#/$defs/report_string_list" },
+    "research_proposals": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/research_proposal" }
+    },
+    "risk_notes": { "$ref": "daily-intelligence-v1.schema.json#/$defs/report_string_list" },
+    "source_hashes": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(market_pulse|trading_history|search_[0-9]{2}|source_[0-9]{2})$": {
+          "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash"
+        }
+      },
+      "required": ["market_pulse", "trading_history"]
+    },
+    "llm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "model", "provider_profile"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "provider_profile": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "orders_allowed": { "const": false },
+    "live_changes_allowed": { "const": false },
+    "report_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "evidence_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "verified_source_count", "substantive_source_count", "source_domain_count", "trading_history_status", "execution_evidence_status", "gaps"],
+      "properties": {
+        "status": { "enum": ["sufficient", "limited", "insufficient"] },
+        "verified_source_count": { "type": "integer", "minimum": 0 },
+        "substantive_source_count": { "type": "integer", "minimum": 0 },
+        "source_domain_count": { "type": "integer", "minimum": 0 },
+        "trading_history_status": { "enum": ["available", "unavailable"] },
+        "execution_evidence_status": {
+          "oneOf": [
+            { "type": "null" },
+            { "enum": ["no_order_expected", "orders_expected_but_missing", "fills_verified"] }
+          ]
+        },
+        "gaps": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "history_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source", "batch_id", "source_updated_at", "position_count", "order_count", "fill_count", "cash_event_count", "recoverable_order_count", "unresolved_order_count", "execution_evidence_status", "execution_evidence_sufficient", "wallet_balance", "available_balance", "current_equity", "current_drawdown_fraction", "peak_drawdown_fraction", "trading_pnl", "trading_pnl_cumulative", "funding", "funding_cumulative", "fees", "fees_cumulative", "transfers", "transfers_cumulative", "residual", "reconciliation_passed", "halt_required", "recent_orders", "recent_fills", "summary_hash"],
+      "properties": {
+        "status": {},
+        "source": { "const": "runtime_ledger" },
+        "batch_id": {},
+        "source_updated_at": {},
+        "position_count": {},
+        "order_count": {},
+        "fill_count": {},
+        "cash_event_count": {},
+        "recoverable_order_count": {},
+        "unresolved_order_count": {},
+        "execution_evidence_status": {},
+        "execution_evidence_sufficient": {},
+        "wallet_balance": {},
+        "available_balance": {},
+        "current_equity": {},
+        "current_drawdown_fraction": {},
+        "peak_drawdown_fraction": {},
+        "trading_pnl": {},
+        "trading_pnl_cumulative": {},
+        "funding": {},
+        "funding_cumulative": {},
+        "fees": {},
+        "fees_cumulative": {},
+        "transfers": {},
+        "transfers_cumulative": {},
+        "residual": {},
+        "reconciliation_passed": {},
+        "halt_required": {},
+        "recent_orders": {},
+        "recent_fills": {},
+        "summary_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "trading_history_unavailable": {
+      "allOf": [
+        { "$ref": "#/$defs/history_fields" },
+        {
+          "properties": {
+            "status": { "const": "unavailable" },
+            "batch_id": { "type": "null" },
+            "source_updated_at": { "type": "null" },
+            "position_count": { "type": "null" },
+            "order_count": { "type": "null" },
+            "fill_count": { "type": "null" },
+            "cash_event_count": { "type": "null" },
+            "recoverable_order_count": { "type": "null" },
+            "unresolved_order_count": { "type": "null" },
+            "execution_evidence_status": { "type": "null" },
+            "execution_evidence_sufficient": { "type": "null" },
+            "wallet_balance": { "type": "null" },
+            "available_balance": { "type": "null" },
+            "current_equity": { "type": "null" },
+            "current_drawdown_fraction": { "type": "null" },
+            "peak_drawdown_fraction": { "type": "null" },
+            "trading_pnl": { "type": "null" },
+            "trading_pnl_cumulative": { "type": "null" },
+            "funding": { "type": "null" },
+            "funding_cumulative": { "type": "null" },
+            "fees": { "type": "null" },
+            "fees_cumulative": { "type": "null" },
+            "transfers": { "type": "null" },
+            "transfers_cumulative": { "type": "null" },
+            "residual": { "type": "null" },
+            "reconciliation_passed": { "type": "null" },
+            "halt_required": { "type": "null" },
+            "recent_orders": { "type": "array", "maxItems": 0 },
+            "recent_fills": { "type": "array", "maxItems": 0 }
+          }
+        }
+      ]
+    },
+    "trading_history_available": {
+      "allOf": [
+        { "$ref": "#/$defs/history_fields" },
+        {
+          "properties": {
+            "status": { "const": "available" },
+            "batch_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+            "source_updated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+            "position_count": { "$ref": "daily-intelligence-v1.schema.json#/$defs/count" },
+            "order_count": { "$ref": "daily-intelligence-v1.schema.json#/$defs/count" },
+            "fill_count": { "$ref": "daily-intelligence-v1.schema.json#/$defs/count" },
+            "cash_event_count": { "$ref": "daily-intelligence-v1.schema.json#/$defs/count" },
+            "recoverable_order_count": { "$ref": "daily-intelligence-v1.schema.json#/$defs/count" },
+            "unresolved_order_count": { "$ref": "daily-intelligence-v1.schema.json#/$defs/count" },
+            "execution_evidence_status": { "enum": ["no_order_expected", "orders_expected_but_missing", "fills_verified"] },
+            "execution_evidence_sufficient": { "type": "boolean" },
+            "wallet_balance": { "$ref": "daily-intelligence-v1.schema.json#/$defs/nonnegative_number" },
+            "available_balance": { "$ref": "daily-intelligence-v1.schema.json#/$defs/nonnegative_number" },
+            "current_equity": { "$ref": "daily-intelligence-v1.schema.json#/$defs/nonnegative_number" },
+            "current_drawdown_fraction": { "$ref": "daily-intelligence-v1.schema.json#/$defs/nonnegative_number" },
+            "peak_drawdown_fraction": { "$ref": "daily-intelligence-v1.schema.json#/$defs/nonnegative_number" },
+            "trading_pnl": { "type": "number" },
+            "trading_pnl_cumulative": { "type": "number" },
+            "funding": { "type": "number" },
+            "funding_cumulative": { "type": "number" },
+            "fees": { "$ref": "daily-intelligence-v1.schema.json#/$defs/nonnegative_number" },
+            "fees_cumulative": { "$ref": "daily-intelligence-v1.schema.json#/$defs/nonnegative_number" },
+            "transfers": { "type": "number" },
+            "transfers_cumulative": { "type": "number" },
+            "residual": { "type": "number" },
+            "reconciliation_passed": { "type": "boolean" },
+            "halt_required": { "type": "boolean" },
+            "recent_orders": { "type": "array", "maxItems": 20, "items": { "$ref": "daily-intelligence-v1.schema.json#/$defs/recent_order" } },
+            "recent_fills": { "type": "array", "maxItems": 20, "items": { "$ref": "daily-intelligence-v1.schema.json#/$defs/recent_fill" } }
+          }
+        }
+      ]
+    },
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "provider", "searched_at", "result_count", "response_hash", "urls"],
+      "properties": {
+        "query": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "provider": { "enum": ["brave_web_search", "official_feed_discovery", "static_source_plan"] },
+        "searched_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "result_count": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "response_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "urls": { "type": "array", "maxItems": 20, "uniqueItems": true, "items": { "type": "string", "format": "uri", "pattern": "^https://" } }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "source_url", "final_url", "observed_at", "content_type", "byte_count", "source_hash", "body_hash", "text_excerpt", "published_at", "modified_at", "parser_version", "content_quality", "extractor"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "source_url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "final_url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "observed_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "content_type": { "enum": ["application/json", "application/vnd.github.raw+json", "application/xml", "text/html", "text/plain", "text/xml"] },
+        "byte_count": { "type": "integer", "minimum": 1 },
+        "source_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "body_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "text_excerpt": { "type": "string", "minLength": 1, "maxLength": 12000 },
+        "published_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+        "modified_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+        "parser_version": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "content_quality": { "enum": ["substantive", "limited", "metadata_only"] },
+        "extractor": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "research_proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_id", "hypothesis", "baseline_contract", "kill_test_contract", "cost_contract", "holdout_role", "source_capacity", "history_capacity", "g0_status", "orders_allowed", "live_changes_allowed", "proposal_hash"],
+      "properties": {
+        "proposal_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "hypothesis": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "baseline_contract": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "kill_test_contract": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "cost_contract": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "holdout_role": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "source_capacity": { "enum": ["sufficient", "limited", "blocked"] },
+        "history_capacity": { "enum": ["sufficient", "limited", "blocked"] },
+        "g0_status": { "enum": ["blocked_source_and_history_capacity", "blocked_source_capacity", "blocked_history_capacity", "eligible_for_research_design"] },
+        "orders_allowed": { "const": false },
+        "live_changes_allowed": { "const": false },
+        "proposal_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    }
+  }
+}

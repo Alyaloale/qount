@@ -16,8 +16,9 @@ from qount.contracts.trace import aware_datetime
 
 SYSTEM_COMPONENT_OBSERVATION_SCHEMA_VERSION = 1
 SYSTEM_HEALTH_SNAPSHOT_SCHEMA_VERSION = 1
-SYSTEM_COMPONENTS = ("clock", "disk", "service", "backup")
+SYSTEM_COMPONENTS = ("clock", "disk", "service", "backup", "operations")
 SYSTEM_HEALTH_STATUSES = ("healthy", "degraded", "unavailable")
+IMPACT_SCOPES = ("delivery", "execution", "intelligence", "observation")
 _DETAIL_CODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/=-]{0,127}$")
 _SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,127}$")
 
@@ -111,6 +112,77 @@ def _normalize_metrics(component: str, metrics: Mapping[str, Any]) -> dict[str, 
                 age_seconds, name="system_backup_age_seconds"
             )
         return {"last_success_at": last_success_at, "age_seconds": age_seconds}
+    if component == "operations":
+        if set(value) != {"checks", "scope_status"}:
+            raise SystemHealthContractError("system_operations_metrics_invalid")
+        checks = value["checks"]
+        if not isinstance(checks, (list, tuple)) or not checks:
+            raise SystemHealthContractError("system_operations_checks_invalid")
+        normalized_checks: list[dict[str, Any]] = []
+        check_ids: list[str] = []
+        for raw in checks:
+            if not isinstance(raw, Mapping) or set(raw) != {
+                "check_id",
+                "status",
+                "detail",
+                "impact_scopes",
+                "blocks_execution",
+                "observed_value",
+            }:
+                raise SystemHealthContractError(
+                    "system_operations_check_invalid"
+                )
+            check_id = raw["check_id"]
+            scopes = tuple(raw["impact_scopes"])
+            if (
+                not isinstance(check_id, str)
+                or not _DETAIL_CODE_RE.fullmatch(check_id)
+                or raw["status"] not in {"pass", "warn", "block", "unavailable"}
+                or not isinstance(raw["detail"], str)
+                or not raw["detail"]
+                or tuple(sorted(scopes)) != scopes
+                or not scopes
+                or len(scopes) != len(set(scopes))
+                or any(scope not in IMPACT_SCOPES for scope in scopes)
+                or not isinstance(raw["blocks_execution"], bool)
+                or not isinstance(
+                    raw["observed_value"], (str, int, float, bool, type(None))
+                )
+            ):
+                raise SystemHealthContractError(
+                    "system_operations_check_invalid"
+                )
+            check_ids.append(check_id)
+            normalized_checks.append(
+                {
+                    "check_id": check_id,
+                    "status": raw["status"],
+                    "detail": raw["detail"],
+                    "impact_scopes": list(scopes),
+                    "blocks_execution": raw["blocks_execution"],
+                    "observed_value": raw["observed_value"],
+                }
+            )
+        if check_ids != sorted(check_ids) or len(check_ids) != len(set(check_ids)):
+            raise SystemHealthContractError("system_operations_check_order_invalid")
+        scope_status = value["scope_status"]
+        if (
+            not isinstance(scope_status, Mapping)
+            or set(scope_status) != set(IMPACT_SCOPES)
+            or any(
+                status not in {"pass", "degraded", "unavailable"}
+                for status in scope_status.values()
+            )
+        ):
+            raise SystemHealthContractError(
+                "system_operations_scope_status_invalid"
+            )
+        return {
+            "checks": normalized_checks,
+            "scope_status": {
+                scope: scope_status[scope] for scope in IMPACT_SCOPES
+            },
+        }
     raise SystemHealthContractError("system_component_invalid")
 
 
@@ -181,7 +253,7 @@ class SystemComponentObservation:
             status=value["status"],
             observed_at=value["observed_at"],
             detail_codes=tuple(value["detail_codes"]),
-            metrics=dict(value["metrics"]),
+            metrics=_normalize_metrics(value["component"], value["metrics"]),
             source_id=value["source_id"],
             source_hash=value["source_hash"],
             observation_hash=value["observation_hash"],
@@ -249,6 +321,23 @@ class SystemComponentObservation:
             )
         ):
             raise SystemHealthContractError("system_service_status_mismatch")
+        if self.component == "operations":
+            checks = self.metrics["checks"]
+            expected_status = (
+                "unavailable"
+                if any(
+                    row["blocks_execution"]
+                    and row["status"] in {"block", "unavailable"}
+                    for row in checks
+                )
+                else "degraded"
+                if any(row["status"] != "pass" for row in checks)
+                else "healthy"
+            )
+            if self.status != expected_status:
+                raise SystemHealthContractError(
+                    "system_operations_status_mismatch"
+                )
         for name in (
             "observation_id",
             "source_id",
@@ -342,13 +431,17 @@ class SystemHealthSnapshot:
     def from_dict(cls, value: Mapping[str, Any]) -> SystemHealthSnapshot:
         if set(value) != set(cls.__dataclass_fields__):
             raise SystemHealthContractError("system_health_snapshot_fields_invalid")
+        normalized_observations = tuple(
+            SystemComponentObservation.from_dict(row).as_dict()
+            for row in value["observations"]
+        )
         snapshot = cls(
             schema_version=value["schema_version"],
             snapshot_id=value["snapshot_id"],
             captured_at=value["captured_at"],
             source_updated_at=value["source_updated_at"],
             status=value["status"],
-            observations=tuple(dict(row) for row in value["observations"]),
+            observations=normalized_observations,
             snapshot_hash=value["snapshot_hash"],
         )
         snapshot.validate()

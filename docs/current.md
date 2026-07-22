@@ -2,9 +2,9 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.6`（已推送，尚未部署）
+源码版本：`0.2.7`（完整升级发布候选，已通过本地验证）
 
-VPS生产版本：`0.2.5`（release `e279b966...b95cf`）
+VPS生产版本：`0.2.5`（release `e279b966...b95cf`，升级维护中，live timer已停）
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -15,7 +15,17 @@ VPS生产版本：`0.2.5`（release `e279b966...b95cf`）
 [alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-22 MiniTrend Base 100 USDT单策略minimal-live已正式启用，系统当前运行正常。** VPS部署release为
+- **2026-07-22 0.2.7完整升级候选已通过本地发布门，VPS仍保持停盘维护。** 本次统一了逐模块freshness、
+  NotificationSnapshot v2、当前/历史告警严重度、空告警库、canonical通知库、Daily Intelligence v2正文证据与
+  结构化研究建议、readiness五轴和Ops Observer。Dashboard分别显示观测时间、内容变化时间、本轮评估时间和每个来源
+  的到期状态；通知/微信/日报故障只影响对应observation/intelligence/delivery域，不会被错误解释为execution异常。
+  Daily Intelligence把pipeline健康与evidence充分性分离，全现金且0计划订单的账本明确为`no_order_expected`；LLM仍固定
+  `orders_allowed=false/live_changes_allowed=false`，只能提出进入deterministic研究门的假设。本地聚焦`83/83`、全仓
+  `1548/1548`、compileall、16份schema、前端与shell语法、diff及密钥模式扫描均通过。VPS live timer当前为
+  `disabled/inactive`，账户停盘前为flat且普通/条件挂单0；只有部署、通知库verified replay、无订单生产周期、release
+  provenance、readiness五轴、RuntimeLedger和reconciliation全部复核后，才重新生成arm并恢复同一Base 100 USDT timer。
+
+- **维护前阶段（2026-07-22）：MiniTrend Base 100 USDT单策略minimal-live已正式启用并正常运行。** VPS部署release为
   commit `e279b966...b95cf`、version `0.2.5`、source tree `42681594...8eb38`；本地全仓`1542 OK`，VPS production
   `328 OK`。唯一真钱策略为`MiniTrend-UM-Base-v0.2`，TOP3 long/cash、one-way、isolated 1x、effective gross `<=1`；
   RiskTier与FundingVeto继续shadow-only，旧X4/C×D/line A和production cron保持关闭。
@@ -33,9 +43,9 @@ VPS生产版本：`0.2.5`（release `e279b966...b95cf`）
   dedupe identity冲突、已完成live decision使recurring dry refresh返回75。对应版本`0.2.3/0.2.4/0.2.5`均有回归；
   recurring service已实际复跑为`duplicate_decision_noop`且systemd result success。旧`0.2.4` arm artifact已0600归档，
   旧live env token已删除且不可恢复，新arm绑定`0.2.5` release。
-- **最新只读核查（2026-07-22）：** VPS源码/production provenance仍为`0.2.5`，live timer=`enabled/active`，
+- **升级维护前的最后一次只读核查（2026-07-22）：** VPS源码/production provenance仍为`0.2.5`，live timer当时为`enabled/active`，
   forward timer=`disabled/inactive`，legacy cron有效项`0`，live service最近结果`success/0`。arm=`armed`、本金`100 USDT`、
-  最新run仍为`20260722T061346Z`，HALT与未完成live lock均不存在；本地源码版本`0.2.6`仅作为下一次发布候选。
+  最新run仍为`20260722T061346Z`，HALT与未完成live lock均不存在；其后已进入上述0.2.7停盘维护窗口。
 
 - **2026-07-22 owner将100 USDT MiniTrend canary的账户级日损熔断固定为5%，累计试点峰值回撤保持10%。**
   两条线都按冻结的`100 USDT`试点本金计算，即分别约`5 USDT`和`10 USDT`，不会改变Base v0.2的逐币
@@ -77,7 +87,7 @@ VPS生产版本：`0.2.5`（release `e279b966...b95cf`）
   Schema报告，无`llm_input_too_large`或403/502/503/524；market/execution为`ok`，event/strategy/red-team/editor因来源发布时间、
   正文质量和外部成交证据不足主动为`needs_research`，所以外层`incomplete`是研究证据状态，不是链路故障或缺失报告。
 - Dashboard新增独立`intelligence` source/freshness和`#/intelligence`“情报复盘”页；当前为11份业务read model，原子release为
-  11份模型加`publication.json`共12个JSON，静态Draft 2020-12合同为15份。`DailyIntelligenceReport`可映射为
+  11份模型加`publication.json`共12个JSON，静态Draft 2020-12合同为16份。`DailyIntelligenceReport`可映射为
   `NotificationStore`事件；生产通知已改为`OpenClawWeixinProvider`复用腾讯官方`@tencent-weixin/openclaw-weixin 2.4.4`账号，固定
   `ilinkai.weixin.qq.com/ilink/bot/sendmessage`、稳定client ID、严格route、HTTP与腾讯JSON业务响应双层校验、限流/超时和仓库外`0600`凭据边界。失败响应
   必须拒绝非零`ret`，成功响应必须包含正整数`message_id`。WeCom adapter
@@ -2696,10 +2706,10 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    由fill/position账本负责，避免重复记账。`1000 USDT`只作历史research/paper/order-free兼容上界，真钱readiness、arm、
    dispatcher和live journal均要求精确`100 USDT`。
    2026-07-22最终已由owner既有明确授权完成manual arm、`minimal_live` promotion、首次live闭环和recurring幂等复跑；
-   `qount-mini-trend-live.timer`现为`enabled/active`。当前信号全现金，所以没有真实订单或成交；不得为采集样本强制下单。
+   `qount-mini-trend-live.timer`在该阶段为`enabled/active`，现已因0.2.7升级维护停用。当前信号全现金，所以没有真实订单或成交；不得为采集样本强制下单。
    旧X4/C×D cron与forward timer继续关闭，全局2.0%风险档和Funding Veto只能做shadow，不能控制真钱订单。
 
-   当前本地全仓复跑为`1542 OK`，VPS production为`328 OK`。Python compileall、Bash语法、release provenance、
+   该阶段本地全仓复跑为`1542 OK`，VPS production为`328 OK`。Python compileall、Bash语法、release provenance、
    `systemd-analyze verify`和`git diff --check`通过；unit verify只报告无关cloudmonitor旧告警，唯一测试警告仍是既存
    `src/qount/cta_data.py` UTC deprecation warning。
 4. Owner外部建议按 `docs/mini-trend-agent/review.md` 矩阵执行：Coin Metrics latest-vintage链上G0与经济

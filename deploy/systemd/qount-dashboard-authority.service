@@ -25,7 +25,7 @@ Environment=HTTP_PROXY=
 Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 UnsetEnvironment=QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN BINANCE_API_KEY BINANCE_SECRET QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET
-ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/write_authority_bundle.py --repo-root /root/qount --source-root /root/qount/state/mini_trend/forward/latest --authority-root /var/lib/qount/dashboard-authority --runtime-root /var/lib/qount/dashboard-runtime --backup-root /var/lib/qount/dashboard-backups --dashboard-root /var/www/qount/data --lock-path /run/qount-dashboard/publisher.lock
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/write_authority_bundle.py --repo-root /root/qount --source-root /root/qount/state/mini_trend/forward/latest --authority-root /var/lib/qount/dashboard-authority --runtime-root /var/lib/qount/dashboard-runtime --backup-root /var/lib/qount/dashboard-backups --dashboard-root /var/www/qount/data --lock-path /run/qount-dashboard/publisher.lock --notification-store /var/lib/qount/notifications/store.sqlite3
 SuccessExitStatus=75
 RuntimeDirectory=qount-dashboard
 RuntimeDirectoryMode=0700

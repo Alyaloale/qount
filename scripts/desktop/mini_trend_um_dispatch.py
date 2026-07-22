@@ -57,6 +57,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--backup-root")
     parser.add_argument("--dashboard-root")
     parser.add_argument("--authority-lock-path")
+    parser.add_argument("--notification-store")
     parser.add_argument("--halt-path")
     parser.add_argument("--output-path")
     return parser.parse_args(argv)
@@ -83,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             args.backup_root,
             args.dashboard_root,
             args.authority_lock_path,
+            args.notification_store,
         )
         if not all(live_authority_paths):
             raise ValueError(
@@ -154,6 +156,9 @@ def main(argv: list[str] | None = None) -> int:
                     backup_root=Path(args.backup_root).expanduser().resolve(),
                     dashboard_root=Path(args.dashboard_root).expanduser().resolve(),
                     lock_path=Path(args.authority_lock_path).expanduser().resolve(),
+                    notification_store_path=Path(args.notification_store)
+                    .expanduser()
+                    .resolve(),
                 ),
                 captured_at=utc_now().isoformat(),
             )

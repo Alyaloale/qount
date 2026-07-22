@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.6`（已推送，尚未部署）；VPS生产版本：`0.2.5`
+源码版本：`0.2.7`（完整升级候选）；VPS生产版本：`0.2.5`（维护停盘）
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -29,6 +29,8 @@
 - 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
 - X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一生产交易入口是
   `qount-mini-trend-live.timer` 与独立 MiniTrend arm/registry/readiness。
+- 当前维护窗口内`qount-mini-trend-live.timer=disabled/inactive`。先部署0.2.7、迁移canonical通知库、跑无订单周期并复核
+  provenance/readiness五轴/RuntimeLedger/reconciliation；全部通过后才生成新arm和恢复同一个Base timer。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
   `qount-dashboard-publisher.timer`和`qount-daily-intelligence.timer`已获授权并保持`enabled/active`；后者每日`04:30 UTC`抓免费官方feed、
@@ -58,7 +60,7 @@ ssh -o ClearAllForwardings=yes qount-vps \
   `/root/qount/state/mini_trend/forward/runs/20260722T061346Z`，readiness=`2d59b071...49b26`、batch=
   `25924c52...bce38`、ledger=`dbac0f91...3c434`、pre-dispatch reconciliation=`dba39b3c...9f2c7` passed。
   账户`486.15970914 USDT`、TOP3全平、普通/条件挂单0、HALT absent，arm/env均root `0600`。
-- `qount-mini-trend-live.timer`为`enabled/active`；forward timer与legacy cron关闭。首次live artifact
+- 维护前`qount-mini-trend-live.timer`曾为`enabled/active`，当前已停；forward timer与legacy cron关闭。首次live artifact
   `20260722T055437Z/live_dispatch-20260722T055659Z.json`完成`live_intent_locked -> live_completed`，post reconciliation
   `71c34b4d...0a01` passed。因Base权重`0/0/0`，0 market/0 STOP且未尝试exchange mutation；不得强制首单。
   recurring分支已实跑为`duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。

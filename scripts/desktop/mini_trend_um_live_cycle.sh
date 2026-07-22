@@ -16,6 +16,7 @@ AUTHORITY_RUNTIME_ROOT="${QOUNT_DASHBOARD_RUNTIME_ROOT:-/var/lib/qount/dashboard
 AUTHORITY_BACKUP_ROOT="${QOUNT_DASHBOARD_BACKUP_ROOT:-/var/lib/qount/dashboard-backups}"
 DASHBOARD_ROOT="${QOUNT_DASHBOARD_ROOT:-/var/www/qount/data}"
 AUTHORITY_LOCK_PATH="${QOUNT_DASHBOARD_LOCK_PATH:-/run/qount-dashboard/publisher.lock}"
+NOTIFICATION_STORE="${QOUNT_NOTIFICATION_STORE:-/var/lib/qount/notifications/store.sqlite3}"
 LOCK_PATH="$STATE_ROOT/forward-cycle.lock"
 
 is_true() {
@@ -217,6 +218,7 @@ cd "$REPO"
   --backup-root "$AUTHORITY_BACKUP_ROOT" \
   --dashboard-root "$DASHBOARD_ROOT" \
   --authority-lock-path "$AUTHORITY_LOCK_PATH" \
+  --notification-store "$NOTIFICATION_STORE" \
   --halt-path "$STATE_ROOT/HALT" \
   --output-path "$LIVE_DISPATCH_PATH"
 

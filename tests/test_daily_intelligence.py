@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from qount.alpha_agents.llm import AlphaLLMConfig
@@ -371,6 +372,45 @@ class DailyIntelligenceTest(unittest.TestCase):
         self.assertEqual(filled["executed_quantity"], 0.001)
         self.assertEqual(summary["recent_fills"][0]["fee"], 0.1)
         self.assertNotIn("fee_amount", summary["recent_fills"][0])
+        self.assertEqual(summary["execution_evidence_status"], "fills_verified")
+        self.assertTrue(summary["execution_evidence_sufficient"])
+
+    def test_flat_zero_order_cycle_is_no_order_expected_evidence(self) -> None:
+        snapshot = SimpleNamespace(
+            validate=lambda: None,
+            batch_id="a" * 64,
+            source_updated_at="2026-07-21T10:00:00+00:00",
+            position_details=(),
+            orders=(),
+            fills=(),
+            cash_events=(),
+            recoveries=(),
+            unresolved_order_ids=(),
+            nav={
+                "equity": 100.0,
+                "trading_pnl": 0.0,
+                "trading_pnl_cumulative": 0.0,
+                "funding": 0.0,
+                "funding_cumulative": 0.0,
+                "fees": 0.0,
+                "fees_cumulative": 0.0,
+                "transfers": 0.0,
+                "transfers_cumulative": 0.0,
+                "residual": 0.0,
+            },
+            account={
+                "wallet_balance": 100.0,
+                "available_balance": 100.0,
+                "current_drawdown_fraction": 0.0,
+                "peak_drawdown_fraction": 0.0,
+            },
+            reconciliation={"passed": True, "halt_required": False},
+        )
+
+        summary = summarize_trading_history(snapshot)
+
+        self.assertEqual(summary["execution_evidence_status"], "no_order_expected")
+        self.assertTrue(summary["execution_evidence_sufficient"])
 
     def test_daily_systemd_template_has_network_but_no_exchange_credentials(self) -> None:
         root = Path(__file__).resolve().parents[1]

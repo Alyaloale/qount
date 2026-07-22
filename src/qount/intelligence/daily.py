@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
@@ -114,7 +115,13 @@ def _source_evidence(document: OfficialSourceDocument, title: str) -> SourceEvid
         content_type=document.content_type,
         byte_count=document.byte_count,
         source_hash=document.source_hash,
+        body_hash=document.body_hash,
         text_excerpt=document.text_excerpt,
+        published_at=document.published_at,
+        modified_at=document.modified_at,
+        parser_version=document.parser_version,
+        content_quality=document.content_quality,
+        extractor=document.extractor,
     )
 
 
@@ -131,10 +138,60 @@ def _source_context(
         "content_type": source.content_type,
         "byte_count": source.byte_count,
         "source_hash": source.source_hash,
+        "body_hash": source.body_hash,
+        "published_at": source.published_at,
+        "modified_at": source.modified_at,
+        "parser_version": source.parser_version,
+        "content_quality": source.content_quality,
+        "extractor": source.extractor,
     }
     if excerpt_chars > 0:
         value["text_excerpt"] = source.text_excerpt[:excerpt_chars]
     return value
+
+
+def _evidence_summary(
+    sources: Sequence[SourceEvidence],
+    trading_history: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    substantive_count = sum(
+        source.content_quality == "substantive" for source in sources
+    )
+    source_domains = {
+        (urllib.parse.urlparse(source.final_url).hostname or "").lower()
+        for source in sources
+    }
+    execution_status = trading_history.get("execution_evidence_status")
+    history_sufficient = bool(trading_history.get("execution_evidence_sufficient"))
+    gaps: list[str] = []
+    if not sources:
+        gaps.append("no_verified_relevant_sources")
+    elif substantive_count < 2:
+        gaps.append("fewer_than_two_substantive_sources")
+    if len(source_domains) < 2:
+        gaps.append("fewer_than_two_source_domains")
+    if trading_history.get("status") != "available":
+        gaps.append("runtime_ledger_history_unavailable")
+    elif execution_status == "orders_expected_but_missing":
+        gaps.append("orders_expected_but_missing")
+    if substantive_count >= 2 and len(source_domains) >= 2 and history_sufficient:
+        status = "sufficient"
+    elif (
+        any(source.content_quality != "metadata_only" for source in sources)
+        and trading_history.get("status") == "available"
+    ):
+        status = "limited"
+    else:
+        status = "insufficient"
+    return status, {
+        "status": status,
+        "verified_source_count": len(sources),
+        "substantive_source_count": substantive_count,
+        "source_domain_count": len(source_domains),
+        "trading_history_status": trading_history.get("status"),
+        "execution_evidence_status": execution_status,
+        "gaps": gaps,
+    }
 
 
 def _compact_agent_report(report: AgentReport) -> dict[str, Any]:
@@ -168,6 +225,15 @@ def _role_context(
         "report_language": "zh-CN",
         "source_catalog": source_catalog,
         "source_failures": list(source_failures),
+        "source_quality": {
+            "verified_count": len(sources),
+            "substantive_count": sum(
+                source.content_quality == "substantive" for source in sources
+            ),
+            "metadata_only_count": sum(
+                source.content_quality == "metadata_only" for source in sources
+            ),
+        },
         "guardrails": [
             "不得输出订单、目标权重、实盘配置修改或风险豁免。",
             "优化想法必须是带基线和否决测试的可证伪研究建议。",
@@ -292,7 +358,11 @@ def run_daily_intelligence(
             title=source.title,
             url=source.final_url,
             source_type="verified_primary_source",
-            notes=f"sha256={source.source_hash}; observed_at={source.observed_at}",
+            notes=(
+                f"sha256={source.source_hash}; observed_at={source.observed_at}; "
+                f"published_at={source.published_at}; quality={source.content_quality}; "
+                f"parser={source.parser_version}"
+            ),
         )
         for source in sources
     )
@@ -339,12 +409,21 @@ def run_daily_intelligence(
     risks = tuple(
         dict.fromkeys(item for report in reports for item in report.risks)
     )[:12]
-    incomplete = (
-        not sources
-        or any(report.status in {"blocked", "needs_research"} for report in reports)
-        or trading_history["status"] != "available"
+    pipeline_status = (
+        "partial"
+        if source_failures
+        or failed_infrastructure_role is not None
+        or any(report.status == "blocked" for report in reports)
+        else "complete"
     )
-    status = "incomplete" if incomplete else ("attention_required" if risks else "clear")
+    evidence_status, evidence_summary = _evidence_summary(sources, trading_history)
+    status = (
+        "incomplete"
+        if pipeline_status != "complete" or evidence_status != "sufficient"
+        else "attention_required"
+        if risks
+        else "clear"
+    )
     source_hashes = {
         "market_pulse": market_pulse.pulse_hash,
         "trading_history": trading_history["summary_hash"],
@@ -358,6 +437,9 @@ def run_daily_intelligence(
         report_date=_date(created_at),
         created_at=created_at,
         status=status,
+        pipeline_status=pipeline_status,
+        evidence_status=evidence_status,
+        evidence_summary=evidence_summary,
         market_pulse=market_pulse,
         trading_history=trading_history,
         searches=searches,

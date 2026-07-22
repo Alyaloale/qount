@@ -11,10 +11,22 @@
         "payload": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["authority", "status", "gates", "strategies"],
+          "required": ["authority", "status", "axes", "gates", "strategies"],
           "properties": {
             "authority": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/authority" },
             "status": { "enum": ["blocked_phase_b_required", "blocked_runtime_state", "read_model_ready", "stale"] },
+            "axes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["publication_integrity", "observation_state", "operational_state", "trading_authority", "evidence_state"],
+              "properties": {
+                "publication_integrity": { "$ref": "#/$defs/axis" },
+                "observation_state": { "$ref": "#/$defs/axis" },
+                "operational_state": { "$ref": "#/$defs/axis" },
+                "trading_authority": { "$ref": "#/$defs/axis" },
+                "evidence_state": { "$ref": "#/$defs/axis" }
+              }
+            },
             "gates": {
               "type": "array",
               "items": {
@@ -50,5 +62,22 @@
       }
     }
   ],
+  "$defs": {
+    "axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "detail", "impact_scopes"],
+      "properties": {
+        "status": { "enum": ["pass", "fresh", "stale", "healthy", "degraded", "unavailable", "registry_authorized", "disarmed", "blocked", "complete", "incomplete"] },
+        "detail": { "type": "string", "minLength": 1 },
+        "impact_scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["execution", "observation", "intelligence", "delivery"] }
+        }
+      }
+    }
+  },
   "unevaluatedProperties": false
 }

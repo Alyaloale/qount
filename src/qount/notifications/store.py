@@ -154,13 +154,40 @@ class NotificationStore:
         database_path: str | Path,
         *,
         busy_timeout_ms: int = 5_000,
+        read_only: bool = False,
     ) -> None:
         self.database_path = Path(database_path)
         if busy_timeout_ms < 1:
             raise ValueError("notification_busy_timeout_invalid")
         self.busy_timeout_ms = int(busy_timeout_ms)
-        self._prepare_path()
-        self._initialize()
+        self.read_only = bool(read_only)
+        if self.read_only:
+            self._validate_read_only_path()
+        else:
+            self._prepare_path()
+            self._initialize()
+
+    def _validate_read_only_path(self) -> None:
+        parent = self.database_path.parent
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or self.database_path.is_symlink()
+            or not self.database_path.is_file()
+        ):
+            raise NotificationStoreSecurityError(
+                "notification_read_only_database_invalid"
+            )
+        if stat.S_IMODE(os.stat(parent, follow_symlinks=False).st_mode) & 0o077:
+            raise NotificationStoreSecurityError(
+                "notification_state_directory_mode_invalid"
+            )
+        if stat.S_IMODE(
+            os.stat(self.database_path, follow_symlinks=False).st_mode
+        ) != 0o600:
+            raise NotificationStoreSecurityError(
+                "notification_database_mode_invalid"
+            )
 
     def _prepare_path(self) -> None:
         _prepare_private_parent(self.database_path)
@@ -200,24 +227,39 @@ class NotificationStore:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        self._prepare_path()
-        connection = sqlite3.connect(
-            self.database_path,
-            timeout=self.busy_timeout_ms / 1_000.0,
-            isolation_level=None,
-        )
+        if self.read_only:
+            self._validate_read_only_path()
+            connection = sqlite3.connect(
+                self.database_path.resolve().as_uri() + "?mode=ro",
+                timeout=self.busy_timeout_ms / 1_000.0,
+                isolation_level=None,
+                uri=True,
+            )
+        else:
+            self._prepare_path()
+            connection = sqlite3.connect(
+                self.database_path,
+                timeout=self.busy_timeout_ms / 1_000.0,
+                isolation_level=None,
+            )
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
-            connection.execute("PRAGMA synchronous = FULL")
+            if self.read_only:
+                connection.execute("PRAGMA query_only = ON")
+            else:
+                connection.execute("PRAGMA synchronous = FULL")
             yield connection
         finally:
             connection.close()
-            self._secure_runtime_files()
+            if not self.read_only:
+                self._secure_runtime_files()
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
+        if self.read_only:
+            raise NotificationStoreError("notification_store_read_only")
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:

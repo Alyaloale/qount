@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import email.utils
 import hashlib
 import ipaddress
+import json
 import re
 import urllib.parse
 import urllib.request
@@ -15,7 +17,8 @@ from typing import Any, Mapping, Sequence
 from qount.alpha_agents.information_events import DEFAULT_ALLOWED_SOURCE_DOMAINS
 
 
-OFFICIAL_SOURCE_DOCUMENT_VERSION = "official_source_document_v0.1"
+OFFICIAL_SOURCE_DOCUMENT_VERSION = "official_source_document_v0.2"
+OFFICIAL_SOURCE_PARSER_VERSION = "official_source_parser_v0.2"
 DEFAULT_MAX_SOURCE_BYTES = 512_000
 DEFAULT_MAX_LLM_EXCERPT_CHARS = 12_000
 DEFAULT_ALLOWED_GITHUB_REPOSITORIES = (("binance", "binance-public-data"),)
@@ -30,6 +33,10 @@ _ALLOWED_CONTENT_TYPES = frozenset(
     }
 )
 _SPACE = re.compile(r"\s+")
+_MONTH_DATE = re.compile(
+    r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b",
+    re.IGNORECASE,
+)
 
 
 def _utc_timestamp(value: str | None = None) -> str:
@@ -96,22 +103,60 @@ def validate_official_source_url(
 class _VisibleTextParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
+        self._depth = 0
         self._ignored_depth = 0
         self._in_title = False
+        self._captures: dict[str, int] = {}
+        self.capture_parts: dict[str, list[str]] = {}
+        self.meta: dict[str, str] = {}
         self.title_parts: list[str] = []
         self.text_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {name.lower(): (value or "") for name, value in attrs}
+        class_names = set(attributes.get("class", "").split())
+        element_id = attributes.get("id", "")
+        if tag == "meta":
+            key = (attributes.get("property") or attributes.get("name") or "").lower()
+            content = attributes.get("content", "").strip()
+            if key and content:
+                self.meta.setdefault(key, content)
+        capture_names: list[str] = []
+        if element_id == "article":
+            capture_names.append("fed_article")
+        if "node-details-layout__main-region__content" in class_names:
+            capture_names.append("sec_content")
+        if "field--name-body" in class_names:
+            capture_names.append("article_body")
+        if tag == "main" or attributes.get("role") == "main" or element_id in {
+            "content",
+            "main-content",
+        }:
+            capture_names.append("main")
+        if "article__time" in class_names or any(
+            "press-release-lead-in" in value for value in class_names
+        ):
+            capture_names.append("published")
+        if element_id == "lastUpdate" or "date-modified" in class_names:
+            capture_names.append("modified")
+        for name in capture_names:
+            self._captures.setdefault(name, self._depth)
+            self.capture_parts.setdefault(name, [])
         if tag in {"script", "style", "noscript", "svg"}:
             self._ignored_depth += 1
         if tag == "title":
             self._in_title = True
+        self._depth += 1
 
     def handle_endtag(self, tag: str) -> None:
+        self._depth = max(0, self._depth - 1)
         if tag in {"script", "style", "noscript", "svg"} and self._ignored_depth:
             self._ignored_depth -= 1
         if tag == "title":
             self._in_title = False
+        for name, depth in tuple(self._captures.items()):
+            if depth == self._depth:
+                del self._captures[name]
 
     def handle_data(self, data: str) -> None:
         if self._ignored_depth:
@@ -119,6 +164,8 @@ class _VisibleTextParser(HTMLParser):
         if self._in_title:
             self.title_parts.append(data)
         self.text_parts.append(data)
+        for name in self._captures:
+            self.capture_parts[name].append(data)
 
 
 def _decode_source(body: bytes, content_type_header: str) -> str:
@@ -134,16 +181,164 @@ def _decode_source(body: bytes, content_type_header: str) -> str:
         return body.decode("utf-8", errors="replace")
 
 
-def _text_and_title(body: bytes, content_type_header: str) -> tuple[str, str]:
+@dataclass(frozen=True)
+class _ExtractedSource:
+    text: str
+    title: str
+    published_at: str | None
+    modified_at: str | None
+    extractor: str
+
+
+def _source_timestamp(value: object) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        seconds = float(value) / (1000.0 if float(value) > 10_000_000_000 else 1.0)
+        try:
+            return dt.datetime.fromtimestamp(seconds, tz=dt.UTC).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = _SPACE.sub(" ", str(value)).strip()
+    match = _MONTH_DATE.search(text)
+    if match:
+        text = match.group(0)
+    try:
+        parsed = email.utils.parsedate_to_datetime(text)
+    except (TypeError, ValueError):
+        try:
+            parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = dt.datetime.strptime(text, "%B %d, %Y").replace(tzinfo=dt.UTC)
+            except ValueError:
+                return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.UTC)
+    return parsed.astimezone(dt.UTC).isoformat()
+
+
+def _mapping_value(value: Mapping[str, Any], names: Sequence[str]) -> object | None:
+    for name in names:
+        if name in value and value[name] is not None and value[name] != "":
+            return value[name]
+    return None
+
+
+def _extract_binance_json(decoded: str) -> _ExtractedSource:
+    try:
+        payload = json.loads(decoded)
+    except json.JSONDecodeError as exc:
+        raise ValueError("source_json_invalid") from exc
+    if not isinstance(payload, Mapping):
+        raise ValueError("source_json_invalid")
+    data = payload.get("data", payload)
+    if not isinstance(data, Mapping):
+        raise ValueError("source_json_invalid")
+    article = data.get("article", data)
+    if not isinstance(article, Mapping):
+        article = data
+    title_value = _mapping_value(article, ("title", "name", "headline"))
+    body_value = _mapping_value(
+        article,
+        ("body", "content", "articleBody", "description", "summary"),
+    )
+    if body_value is None:
+        raise ValueError("source_json_article_body_missing")
+    body_text = str(body_value)
+    parser = _VisibleTextParser()
+    parser.feed(body_text)
+    text = _SPACE.sub(" ", " ".join(parser.text_parts)).strip()
+    title = _SPACE.sub(" ", str(title_value or "")).strip()
+    return _ExtractedSource(
+        text=text,
+        title=title,
+        published_at=_source_timestamp(
+            _mapping_value(
+                article,
+                ("releaseDate", "publishedAt", "publishDate", "published_at"),
+            )
+        ),
+        modified_at=_source_timestamp(
+            _mapping_value(
+                article,
+                ("updateTime", "modifiedAt", "updatedAt", "modified_at"),
+            )
+        ),
+        extractor="binance_article_json",
+    )
+
+
+def _extract_html(decoded: str, *, hostname: str) -> _ExtractedSource:
+    parser = _VisibleTextParser()
+    parser.feed(decoded)
+    preferred = (
+        ("fed_article", "federal_reserve_article")
+        if hostname.endswith("federalreserve.gov")
+        else ("article_body", "sec_press_release_body")
+        if hostname.endswith("sec.gov")
+        else ("article_body", "html_article_body")
+    )
+    capture_name, extractor = preferred
+    parts = parser.capture_parts.get(capture_name)
+    if not parts and hostname.endswith("sec.gov"):
+        parts = parser.capture_parts.get("sec_content")
+        extractor = "sec_main_content"
+    if not parts:
+        parts = parser.capture_parts.get("main")
+        extractor = "html_main"
+    if not parts:
+        parts = parser.text_parts
+        extractor = "html_visible_fallback"
+    title = parser.meta.get("og:title") or " ".join(parser.title_parts)
+    published_value = (
+        parser.meta.get("article:published_time")
+        or parser.meta.get("date")
+        or " ".join(parser.capture_parts.get("published", []))
+    )
+    modified_value = (
+        parser.meta.get("article:modified_time")
+        or parser.meta.get("last-modified")
+        or " ".join(parser.capture_parts.get("modified", []))
+    )
+    return _ExtractedSource(
+        text=_SPACE.sub(" ", " ".join(parts)).strip(),
+        title=_SPACE.sub(" ", title).strip(),
+        published_at=_source_timestamp(published_value),
+        modified_at=_source_timestamp(modified_value),
+        extractor=extractor,
+    )
+
+
+def _extract_source(
+    body: bytes,
+    content_type_header: str,
+    *,
+    source_url: str,
+) -> _ExtractedSource:
     decoded = _decode_source(body, content_type_header)
     media_type = content_type_header.split(";", 1)[0].strip().lower()
+    hostname = (urllib.parse.urlparse(source_url).hostname or "").lower()
+    if media_type == "application/json" and hostname.endswith("binance.com"):
+        return _extract_binance_json(decoded)
     if media_type == "text/html":
-        parser = _VisibleTextParser()
-        parser.feed(decoded)
-        title = _SPACE.sub(" ", " ".join(parser.title_parts)).strip()
-        text = _SPACE.sub(" ", " ".join(parser.text_parts)).strip()
-        return text, title
-    return _SPACE.sub(" ", decoded).strip(), ""
+        return _extract_html(decoded, hostname=hostname)
+    return _ExtractedSource(
+        text=_SPACE.sub(" ", decoded).strip(),
+        title="",
+        published_at=None,
+        modified_at=None,
+        extractor="plain_text",
+    )
+
+
+def _content_quality(text: str) -> str:
+    words = re.findall(r"\w+", text, flags=re.UNICODE)
+    if len(text) >= 240 and len(words) >= 35:
+        return "substantive"
+    if len(text) >= 60 and len(words) >= 8:
+        return "limited"
+    return "metadata_only"
 
 
 @dataclass(frozen=True)
@@ -155,8 +350,14 @@ class OfficialSourceDocument:
     content_type: str
     byte_count: int
     source_hash: str
+    body_hash: str
     title: str
     text_excerpt: str
+    published_at: str | None
+    modified_at: str | None
+    parser_version: str
+    content_quality: str
+    extractor: str
     body: bytes = field(repr=False)
     schema_version: str = OFFICIAL_SOURCE_DOCUMENT_VERSION
 
@@ -170,7 +371,13 @@ class OfficialSourceDocument:
             "content_type": self.content_type,
             "byte_count": self.byte_count,
             "source_hash": self.source_hash,
+            "body_hash": self.body_hash,
             "title": self.title,
+            "published_at": self.published_at,
+            "modified_at": self.modified_at,
+            "parser_version": self.parser_version,
+            "content_quality": self.content_quality,
+            "extractor": self.extractor,
             "environment_proxy_used": False,
             "orders_allowed": False,
             "paper_or_live_allowed": False,
@@ -208,9 +415,10 @@ def build_official_source_document(
     media_type = content_type_header.split(";", 1)[0].strip().lower()
     if media_type not in _ALLOWED_CONTENT_TYPES:
         raise ValueError(f"source_content_type_not_allowed:{media_type}")
-    text, title = _text_and_title(body, content_type_header)
-    if not text:
+    extracted = _extract_source(body, content_type_header, source_url=final_url)
+    if not extracted.text:
         raise ValueError("source_visible_text_empty")
+    body_hash = hashlib.sha256(body).hexdigest()
     return OfficialSourceDocument(
         source_url=source_url,
         final_url=final_url,
@@ -218,12 +426,18 @@ def build_official_source_document(
         status_code=status_code,
         content_type=media_type,
         byte_count=len(body),
-        source_hash=hashlib.sha256(body).hexdigest(),
-        title=title[:500],
+        source_hash=body_hash,
+        body_hash=body_hash,
+        title=extracted.title[:500],
         # The normalized source text has no surrounding whitespace, but a bounded
         # slice can end on a separator. Preserve the source body/hash while keeping
         # the structured excerpt valid for downstream evidence contracts.
-        text_excerpt=text[:maximum_excerpt_chars].strip(),
+        text_excerpt=extracted.text[:maximum_excerpt_chars].strip(),
+        published_at=extracted.published_at,
+        modified_at=extracted.modified_at,
+        parser_version=OFFICIAL_SOURCE_PARSER_VERSION,
+        content_quality=_content_quality(extracted.text),
+        extractor=extracted.extractor,
         body=body,
     )
 

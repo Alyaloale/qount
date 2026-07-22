@@ -22,6 +22,8 @@ _SUMMARY_FIELDS = {
     "cash_event_count",
     "recoverable_order_count",
     "unresolved_order_count",
+    "execution_evidence_status",
+    "execution_evidence_sufficient",
     "wallet_balance",
     "available_balance",
     "current_equity",
@@ -127,6 +129,17 @@ def validate_trading_history(value: Mapping[str, Any]) -> None:
         value["halt_required"], bool
     ):
         raise ValueError("trading_history_reconciliation_invalid")
+    if value["execution_evidence_status"] not in {
+        "no_order_expected",
+        "orders_expected_but_missing",
+        "fills_verified",
+    } or not isinstance(value["execution_evidence_sufficient"], bool):
+        raise ValueError("trading_history_execution_evidence_invalid")
+    if value["execution_evidence_sufficient"] is not (
+        value["execution_evidence_status"]
+        in {"no_order_expected", "fills_verified"}
+    ):
+        raise ValueError("trading_history_execution_evidence_invalid")
     orders = value["recent_orders"]
     fills = value["recent_fills"]
     if not isinstance(orders, list) or len(orders) > 20:
@@ -193,6 +206,8 @@ def summarize_trading_history(
             "cash_event_count": None,
             "recoverable_order_count": None,
             "unresolved_order_count": None,
+            "execution_evidence_status": None,
+            "execution_evidence_sufficient": None,
             "wallet_balance": None,
             "available_balance": None,
             "current_equity": None,
@@ -243,6 +258,14 @@ def summarize_trading_history(
         }
         for row in snapshot.fills[-20:]
     ]
+    if snapshot.fills:
+        execution_evidence_status = "fills_verified"
+    elif not snapshot.orders and reconciliation["passed"] and not reconciliation[
+        "halt_required"
+    ]:
+        execution_evidence_status = "no_order_expected"
+    else:
+        execution_evidence_status = "orders_expected_but_missing"
     core = {
         "status": "available",
         "source": "runtime_ledger",
@@ -254,6 +277,9 @@ def summarize_trading_history(
         "cash_event_count": len(snapshot.cash_events),
         "recoverable_order_count": len(snapshot.recoveries),
         "unresolved_order_count": len(snapshot.unresolved_order_ids),
+        "execution_evidence_status": execution_evidence_status,
+        "execution_evidence_sufficient": execution_evidence_status
+        in {"no_order_expected", "fills_verified"},
         "wallet_balance": account["wallet_balance"],
         "available_balance": account["available_balance"],
         "current_equity": nav["equity"],

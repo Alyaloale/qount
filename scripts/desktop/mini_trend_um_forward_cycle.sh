@@ -18,6 +18,7 @@ AUTHORITY_RUNTIME_ROOT="${QOUNT_DASHBOARD_RUNTIME_ROOT:-/var/lib/qount/dashboard
 AUTHORITY_BACKUP_ROOT="${QOUNT_DASHBOARD_BACKUP_ROOT:-/var/lib/qount/dashboard-backups}"
 DASHBOARD_ROOT="${QOUNT_DASHBOARD_ROOT:-/var/www/qount/data}"
 AUTHORITY_LOCK_PATH="${QOUNT_DASHBOARD_LOCK_PATH:-/run/qount-dashboard/publisher.lock}"
+NOTIFICATION_STORE="${QOUNT_NOTIFICATION_STORE:-/var/lib/qount/notifications/store.sqlite3}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_DIR="$FORWARD_ROOT/runs/$STAMP"
 LOCK_PATH="$STATE_ROOT/forward-cycle.lock"
@@ -211,6 +212,7 @@ env -u BINANCE_API_KEY -u BINANCE_SECRET \
   --backup-root "$AUTHORITY_BACKUP_ROOT" \
   --dashboard-root "$DASHBOARD_ROOT" \
   --lock-path "$AUTHORITY_LOCK_PATH" \
+  --notification-store "$NOTIFICATION_STORE" \
   --result-path "$AUTHORITY_RESULT_PATH"
 
 # A newly validated decision and the matching standard authority must count in

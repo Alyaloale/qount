@@ -25,6 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--backup-root", type=Path, required=True)
     parser.add_argument("--dashboard-root", type=Path, required=True)
     parser.add_argument("--lock-path", type=Path, required=True)
+    parser.add_argument("--notification-store", type=Path)
     parser.add_argument("--target-stress-loss-fraction", type=float, default=0.01)
     parser.add_argument("--result-path", type=Path)
     return parser
@@ -40,6 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         backup_root=args.backup_root,
         dashboard_root=args.dashboard_root,
         lock_path=args.lock_path,
+        notification_store_path=args.notification_store,
         target_stress_loss_fraction=args.target_stress_loss_fraction,
     )
     try:

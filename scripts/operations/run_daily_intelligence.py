@@ -24,6 +24,7 @@ from qount.notifications import OPENCLAW_WEIXIN_PROVIDER_NAME  # noqa: E402
 from qount.notifications import OpenClawWeixinProvider  # noqa: E402
 from qount.notifications import ProviderTransport  # noqa: E402
 from qount.notifications import RateLimitPolicy  # noqa: E402
+from qount.notifications import synchronize_producer_incidents  # noqa: E402
 from qount.notifications import WECOM_PROVIDER_NAME  # noqa: E402
 from qount.notifications import WeComGroupRobotProvider  # noqa: E402
 from qount.notifications import load_provider_credential  # noqa: E402
@@ -120,12 +121,31 @@ def main(argv: list[str] | None = None) -> int:
         notification_channel = OPENCLAW_WEIXIN_PROVIDER_NAME
     if notification_channel is not None:
         store = NotificationStore(args.notification_store.resolve())
-        store.enqueue(
-            alert_from_daily_intelligence(run.report),
-            recorded_at=now,
-            channels=(notification_channel,),
-            max_attempts=3,
-        )
+        intelligence_alert = alert_from_daily_intelligence(run.report)
+        if intelligence_alert.severity == "INFO":
+            store.enqueue(
+                intelligence_alert,
+                recorded_at=now,
+                channels=(notification_channel,),
+                max_attempts=3,
+            )
+            store.resolve_alert(intelligence_alert.alert_id, resolved_at=now)
+            store.resolve_superseded_alerts(
+                active_alert_ids=(),
+                source_type="intelligence",
+                categories=("daily_intelligence",),
+                resolved_at=now,
+            )
+        else:
+            synchronize_producer_incidents(
+                store,
+                (intelligence_alert,),
+                source_type="intelligence",
+                categories=("daily_intelligence",),
+                observed_at=now,
+                channels=(notification_channel,),
+                max_attempts=3,
+            )
         if args.send_wecom:
             if args.wecom_credential_path is None:
                 raise ValueError("wecom_credential_path_required")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import email.utils
 import hashlib
 import json
 import re
@@ -35,7 +36,33 @@ OFFICIAL_FEED_ENDPOINTS = {
 OFFICIAL_FEED_PROVIDER_NAME = "official_feed_discovery"
 _SITE_QUERY_RE = re.compile(r"(?:^|\s)site:([a-z0-9.-]+)(?:\s|$)", re.IGNORECASE)
 _SPACE_RE = re.compile(r"\s+")
+_WORD_RE = re.compile(r"[a-z0-9]+")
 _BINANCE_ARTICLE_CODE_RE = re.compile(r"^[0-9a-f]{32}$")
+_GENERIC_QUERY_TERMS = frozenset(
+    {
+        "announcement",
+        "com",
+        "current",
+        "gov",
+        "latest",
+        "market",
+        "news",
+        "official",
+        "press",
+        "release",
+        "site",
+    }
+)
+_QUERY_SYNONYMS = {
+    "asset": {"asset", "assets", "crypto", "cryptocurrency", "token"},
+    "crypto": {"asset", "assets", "blockchain", "crypto", "cryptocurrency", "token"},
+    "digital": {"asset", "assets", "blockchain", "crypto", "digital"},
+    "enforcement": {"action", "charges", "enforcement", "penalty", "settlement"},
+    "filing": {"filing", "form", "registration", "statement"},
+    "monetary": {"discount", "federal", "fomc", "funds", "monetary", "rate", "rates"},
+    "policy": {"discount", "fomc", "monetary", "policy", "rate", "rates"},
+}
+_MAX_FEED_AGE = dt.timedelta(days=45)
 
 
 class SearchProviderError(ValueError):
@@ -47,6 +74,13 @@ class SearchResponse:
     evidence: SearchEvidence
     titles: tuple[str, ...]
     raw_body: bytes = field(repr=False)
+
+
+@dataclass(frozen=True)
+class _OfficialFeedRow:
+    title: str
+    url: str
+    published_at: str | None = None
 
 
 class SearchProvider(Protocol):
@@ -165,7 +199,56 @@ def _official_result(
     return normalized_title[:500], normalized_url
 
 
-def _parse_binance_catalog(raw: bytes, *, count: int) -> tuple[tuple[str, str], ...]:
+def _feed_timestamp(value: object) -> str | None:
+    if value is None or value == "":
+        return None
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            seconds = float(value) / (1000.0 if float(value) > 10_000_000_000 else 1.0)
+            return dt.datetime.fromtimestamp(seconds, tz=dt.timezone.utc).isoformat()
+        parsed = email.utils.parsedate_to_datetime(str(value))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        return parsed.astimezone(dt.timezone.utc).isoformat()
+    except (OverflowError, TypeError, ValueError):
+        try:
+            return _utc(str(value))
+        except (TypeError, ValueError):
+            return None
+
+
+def _query_term_groups(query: str, *, domain: str) -> tuple[frozenset[str], ...]:
+    stripped = _SITE_QUERY_RE.sub(" ", query.lower())
+    domain_parts = set(_WORD_RE.findall(domain.lower()))
+    terms = [
+        term
+        for term in _WORD_RE.findall(stripped)
+        if term not in _GENERIC_QUERY_TERMS and term not in domain_parts and len(term) >= 3
+    ]
+    return tuple(
+        frozenset(_QUERY_SYNONYMS.get(term, {term}))
+        for term in dict.fromkeys(terms)
+    )
+
+
+def _feed_row_relevant(
+    row: _OfficialFeedRow,
+    *,
+    term_groups: Sequence[frozenset[str]],
+    searched_at: str,
+) -> bool:
+    searched = dt.datetime.fromisoformat(_utc(searched_at))
+    if row.published_at is not None:
+        published = dt.datetime.fromisoformat(row.published_at)
+        if published > searched + dt.timedelta(days=1) or searched - published > _MAX_FEED_AGE:
+            return False
+    if not term_groups:
+        return True
+    title_terms = set(_WORD_RE.findall(row.title.lower()))
+    return any(title_terms & group for group in term_groups)
+
+
+def _parse_binance_catalog(raw: bytes) -> tuple[_OfficialFeedRow, ...]:
     try:
         payload = json.loads(raw)
         if payload.get("success") is not True or payload.get("code") != "000000":
@@ -177,7 +260,7 @@ def _parse_binance_catalog(raw: bytes, *, count: int) -> tuple[tuple[str, str], 
         raise SearchProviderError("official_feed_response_invalid") from exc
     if not isinstance(rows, list):
         raise SearchProviderError("official_feed_response_invalid")
-    results: list[tuple[str, str]] = []
+    results: list[_OfficialFeedRow] = []
     for row in rows:
         if not isinstance(row, Mapping):
             continue
@@ -193,10 +276,18 @@ def _parse_binance_catalog(raw: bytes, *, count: int) -> tuple[tuple[str, str], 
             title=row.get("title"),
             url=url,
         )
-        if result is not None and result[1] not in {item[1] for item in results}:
-            results.append(result)
-        if len(results) >= count:
-            break
+        if result is not None and result[1] not in {item.url for item in results}:
+            results.append(
+                _OfficialFeedRow(
+                    title=result[0],
+                    url=result[1],
+                    published_at=_feed_timestamp(
+                        row.get("releaseDate")
+                        or row.get("publishedAt")
+                        or row.get("publishDate")
+                    ),
+                )
+            )
     return tuple(results)
 
 
@@ -204,25 +295,28 @@ def _parse_official_rss(
     raw: bytes,
     *,
     domain: str,
-    count: int,
-) -> tuple[tuple[str, str], ...]:
+) -> tuple[_OfficialFeedRow, ...]:
     if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
         raise SearchProviderError("official_feed_xml_declaration_forbidden")
     try:
         root = ET.fromstring(raw)
     except ET.ParseError as exc:
         raise SearchProviderError("official_feed_response_invalid") from exc
-    results: list[tuple[str, str]] = []
+    results: list[_OfficialFeedRow] = []
     for item in root.findall(".//item"):
         result = _official_result(
             domain=domain,
             title=item.findtext("title"),
             url=item.findtext("link"),
         )
-        if result is not None and result[1] not in {row[1] for row in results}:
-            results.append(result)
-        if len(results) >= count:
-            break
+        if result is not None and result[1] not in {row.url for row in results}:
+            results.append(
+                _OfficialFeedRow(
+                    title=result[0],
+                    url=result[1],
+                    published_at=_feed_timestamp(item.findtext("pubDate")),
+                )
+            )
     return tuple(results)
 
 
@@ -281,23 +375,33 @@ class OfficialFeedSearchProvider:
         )
         if content_type not in expected_types:
             raise SearchProviderError("official_feed_content_type_invalid")
-        rows = (
-            _parse_binance_catalog(raw, count=self.count)
+        discovered = (
+            _parse_binance_catalog(raw)
             if parser_name == "binance_catalog"
-            else _parse_official_rss(raw, domain=domain, count=self.count)
+            else _parse_official_rss(raw, domain=domain)
         )
+        term_groups = _query_term_groups(normalized_query, domain=domain)
+        rows = tuple(
+            row
+            for row in discovered
+            if _feed_row_relevant(
+                row,
+                term_groups=term_groups,
+                searched_at=searched_at,
+            )
+        )[: self.count]
         evidence = SearchEvidence(
             query=normalized_query,
             provider=OFFICIAL_FEED_PROVIDER_NAME,
             searched_at=_utc(searched_at),
             result_count=len(rows),
             response_hash=hashlib.sha256(raw).hexdigest(),
-            urls=tuple(url for _, url in rows),
+            urls=tuple(row.url for row in rows),
         )
         evidence.validate()
         return SearchResponse(
             evidence=evidence,
-            titles=tuple(title for title, _ in rows),
+            titles=tuple(row.title for row in rows),
             raw_body=raw,
         )
 

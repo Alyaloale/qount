@@ -2,7 +2,8 @@
 
 更新时间：2026-07-22
 
-状态：源码版本`0.2.6`已推送但尚未部署；VPS当前运行`0.2.5`。多策略部分仍为`research_sandbox`；唯一例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
+状态：源码版本`0.2.7`是完整升级发布候选；VPS仍为`0.2.5`且交易timer在维护期已停。多策略部分仍为`research_sandbox`；
+唯一允许在升级验收后恢复的例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
 `1000 USDT`目标架构，不构成扩容或其它sleeve下单授权。60/10 forward、30 paper days和7 dry days仍是观察项；
 账户、订单、funding、标准authority/RuntimeLedger/对账、HALT和arm继续是每轮硬门。RiskTier与FundingVeto只做shadow。
 
@@ -333,7 +334,7 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
 执行进度（2026-07-22）：
 
 - Phase B/C/D已部署为release `0.2.5`。Base完成manual arm、`minimal_live` promotion、首次live账本闭环和recurring幂等复跑；
-  `qount-mini-trend-live.timer`为`enabled/active`，forward timer和production cron为关闭。当前run
+  live timer在维护前为`enabled/active`，当前因0.2.7升级已停，forward timer和production cron为关闭。当前run
   `/root/qount/state/mini_trend/forward/runs/20260722T061346Z`的readiness为`2d59b071...49b26`，账户全平、0挂单、
   registry=`minimal_live`、HALT absent。首次live目标权重全零，0订单/0成交，但post reconciliation passed。
 

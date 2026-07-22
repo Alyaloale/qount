@@ -89,7 +89,7 @@
             }
           ]
         },
-        "report": { "$ref": "daily-intelligence-v1.schema.json" }
+        "report": { "$ref": "daily-intelligence-v2.schema.json" }
       }
     }
   },

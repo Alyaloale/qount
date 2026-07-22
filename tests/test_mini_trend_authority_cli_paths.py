@@ -31,6 +31,7 @@ def _authority_paths(root: Path) -> dict[str, str]:
         "backup_root": str(root / "backups"),
         "dashboard_root": str(root / "dashboard"),
         "authority_lock_path": str(root / "locks" / "publisher.lock"),
+        "notification_store": str(root / "notifications" / "store.sqlite3"),
     }
 
 
@@ -76,6 +77,8 @@ class MiniTrendAuthorityCliPathsTest(unittest.TestCase):
                 paths["dashboard_root"],
                 "--authority-lock-path",
                 paths["authority_lock_path"],
+                "--notification-store",
+                paths["notification_store"],
             ]
             with (
                 mock.patch.dict(os.environ, {"QOUNT_MINI_TREND_ARM_TOKEN": "secret"}),
@@ -129,6 +132,8 @@ class MiniTrendAuthorityCliPathsTest(unittest.TestCase):
                 paths["dashboard_root"],
                 "--authority-lock-path",
                 paths["authority_lock_path"],
+                "--notification-store",
+                paths["notification_store"],
                 "--output-path",
                 str(output),
             ]

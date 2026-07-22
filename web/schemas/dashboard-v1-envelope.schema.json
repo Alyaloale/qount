@@ -143,12 +143,28 @@
     "freshness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "source_updated_at", "evaluated_at", "stale_at"],
+      "required": ["status", "source_updated_at", "observed_at", "content_updated_at", "evaluated_at", "stale_at", "sources"],
       "properties": {
         "status": { "enum": ["fresh", "stale"] },
         "source_updated_at": { "$ref": "#/$defs/timestamp" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "content_updated_at": { "$ref": "#/$defs/timestamp" },
         "evaluated_at": { "$ref": "#/$defs/timestamp" },
-        "stale_at": { "$ref": "#/$defs/timestamp" }
+        "stale_at": { "$ref": "#/$defs/timestamp" },
+        "sources": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["updated_at", "stale_at", "status"],
+            "properties": {
+              "updated_at": { "$ref": "#/$defs/timestamp" },
+              "stale_at": { "$ref": "#/$defs/timestamp" },
+              "status": { "enum": ["fresh", "stale"] }
+            }
+          }
+        }
       }
     },
     "authority": {

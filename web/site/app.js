@@ -61,6 +61,7 @@ function shortHash(value) {
 }
 
 function formatTime(value) {
+  if (value == null || value === "") return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -140,12 +141,27 @@ function statusText(value) {
     paper: "模拟运行",
     research_only: "仅研究",
     read_model_ready: "读模型就绪",
+    complete: "完整",
+    incomplete: "不完整",
+    sufficient: "充足",
+    limited: "有限",
+    registry_authorized: "注册授权存在",
+    disarmed: "未武装",
+    metadata_only: "仅元数据",
+    substantive: "实质正文",
+    no_order_expected: "无需订单",
+    orders_expected_but_missing: "预期订单缺失",
+    fills_verified: "成交已核验",
+    eligible_for_research_design: "可进入研究设计",
+    blocked_source_capacity: "来源容量阻断",
+    blocked_history_capacity: "历史容量阻断",
+    blocked_source_and_history_capacity: "来源与历史容量阻断",
   })[value] || String(value || "-");
 }
 
 function tone(value) {
-  if (["fresh", "available", "healthy", "clear", "pass", "passed", "FILLED", "RESOLVED", "DELIVERED", "INFO"].includes(value)) return "ok";
-  if (["stale", "unavailable", "halt_required", "block", "blocked", "UNKNOWN", "REJECTED", "DEAD_LETTER", "CRITICAL", "HALT"].includes(value)) return "bad";
+  if (["fresh", "available", "healthy", "clear", "pass", "passed", "complete", "sufficient", "fills_verified", "no_order_expected", "eligible_for_research_design", "FILLED", "RESOLVED", "DELIVERED", "INFO"].includes(value)) return "ok";
+  if (["stale", "unavailable", "halt_required", "block", "blocked", "insufficient", "orders_expected_but_missing", "blocked_source_capacity", "blocked_history_capacity", "blocked_source_and_history_capacity", "UNKNOWN", "REJECTED", "DEAD_LETTER", "CRITICAL", "HALT"].includes(value)) return "bad";
   return "warn";
 }
 
@@ -163,7 +179,37 @@ function traceLink(identifier, label) {
 }
 
 function componentText(value) {
-  return ({ clock: "时钟", disk: "磁盘", service: "服务", backup: "备份" })[value] || String(value || "-");
+  return ({ clock: "时钟", disk: "磁盘", service: "发布服务", backup: "备份", operations: "运行观察" })[value] || String(value || "-");
+}
+
+function sourceText(value) {
+  return ({
+    primary: "主要来源",
+    decision_batch: "决策批次",
+    decision_batch_manifest: "决策批次",
+    strategy_registry: "策略注册表",
+    runtime_ledger: "运行账本",
+    notification_store: "通知库",
+    notification_monitor: "通知监测",
+    daily_brief: "确定性日报",
+    daily_intelligence: "每日情报",
+    system_health: "系统观察",
+    ops_observer: "Ops Observer",
+  })[value] || String(value || "-");
+}
+
+function axisText(value) {
+  return ({
+    publication_integrity: "发布完整性",
+    observation_state: "观测状态",
+    operational_state: "运行状态",
+    trading_authority: "交易权限",
+    evidence_state: "证据状态",
+  })[value] || String(value || "-");
+}
+
+function scopeText(value) {
+  return ({ execution: "执行", observation: "观测", intelligence: "情报", delivery: "投递" })[value] || String(value || "-");
 }
 
 function traceTypeText(value) {
@@ -265,6 +311,21 @@ function validateModel(model, type, publication) {
 
 function unavailableBlock(title, detail) {
   return `<div class="unavailable-block"><span class="unavailable-mark" aria-hidden="true">!</span><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></div>`;
+}
+
+function renderFreshnessDetail() {
+  const { route } = routeInfo();
+  const model = modelForRoute(route);
+  const target = $("freshness-detail");
+  if (!model || !model.freshness) {
+    target.hidden = true;
+    target.innerHTML = "";
+    return;
+  }
+  const freshness = model.freshness;
+  const sources = Object.entries(freshness.sources || {});
+  target.innerHTML = `<div class="freshness-overview"><div><span>模块观测</span><strong>${escapeHtml(formatTime(freshness.observed_at))}</strong></div><div><span>内容变化</span><strong>${escapeHtml(formatTime(freshness.content_updated_at))}</strong></div><div><span>本轮评估</span><strong>${escapeHtml(formatTime(freshness.evaluated_at))}</strong></div></div><div class="freshness-sources">${sources.map(([name, row]) => `<article><div><strong>${escapeHtml(sourceText(name))}</strong>${pill(row.status)}</div><small>更新 ${escapeHtml(formatTime(row.updated_at))}</small><small>到期 ${escapeHtml(formatTime(row.stale_at))}</small></article>`).join("")}</div>`;
+  target.hidden = false;
 }
 
 function renderLive() {
@@ -421,7 +482,9 @@ function renderRisk() {
 
 function renderReadiness() {
   const payload = state.models.readiness.payload;
+  const axes = Object.entries(payload.axes);
   $("view-readiness").innerHTML = `<div class="readiness-head"><div><span>读模型就绪状态</span><strong>${escapeHtml(statusText(payload.status))}</strong></div>${pill(payload.status)}</div>
+    <section class="axis-band">${axes.map(([name, axis]) => `<article><header><strong>${escapeHtml(axisText(name))}</strong>${pill(axis.status)}</header><p>${escapeHtml(axis.detail)}</p><small>${axis.impact_scopes.map(scopeText).map(escapeHtml).join(" / ")}</small></article>`).join("")}</section>
     <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>运行检查项</h2><p>所有订单权限保持关闭</p></div></header><div class="gate-list">${payload.gates.map((gate) => `<div class="gate-row"><span class="gate-signal ${tone(gate.status)}"></span><div><strong>${escapeHtml(gate.gate)}</strong><small>${escapeHtml(gate.detail)}</small></div>${pill(gate.status)}</div>`).join("")}</div></section>
     <section class="panel"><header class="panel-head"><div><h2>策略就绪状态</h2><p>${payload.strategies.length} 个策略</p></div></header><div class="gate-list">${payload.strategies.map((row) => `<div class="gate-row"><span class="gate-signal ${row.current_batch_decision_present ? "ok" : "warn"}"></span><div><strong>${escapeHtml(row.strategy_id)} v${escapeHtml(row.strategy_version)}</strong><small>${escapeHtml(statusText(row.promotion_status))} / 所有者授权${row.owner_authorization_present ? "已存在" : "缺失"}</small></div>${pill(row.live_orders_allowed ? "pass" : "block")}</div>`).join("")}</div></section></div>`;
 }
@@ -431,13 +494,16 @@ function healthMetric(row) {
   if (row.component === "clock") return metrics.drift_seconds == null ? "时钟偏差观测不可用" : `时钟偏差 ${metrics.drift_seconds} 秒`;
   if (row.component === "disk") return metrics.free_bytes == null || metrics.total_bytes == null ? "磁盘容量观测不可用" : `可用 ${formatMoney(metrics.free_bytes / 1000000000)} GB / 总计 ${formatMoney(metrics.total_bytes / 1000000000)} GB`;
   if (row.component === "service") return `${metrics.service_name} / 状态 ${metrics.active_state}`;
-  return metrics.last_success_at ? `最近成功 ${formatTime(metrics.last_success_at)} / 距今 ${metrics.age_seconds} 秒` : "没有成功备份记录";
+  if (row.component === "backup") return metrics.last_success_at ? `最近成功 ${formatTime(metrics.last_success_at)} / 距今 ${metrics.age_seconds} 秒` : "没有成功备份记录";
+  return Object.entries(metrics.scope_status || {}).map(([scope, status]) => `${scopeText(scope)} ${statusText(status)}`).join(" / ");
 }
 
 function renderSystem() {
   const payload = state.models.system.payload;
   const ledger = payload.ledger.status === "available" ? payload.ledger.values : null;
   const health = payload.health.status === "available" ? payload.health.values : null;
+  const baseHealth = health ? health.observations.filter((row) => row.component !== "operations") : [];
+  const operations = health ? health.observations.find((row) => row.component === "operations") : null;
   $("view-system").innerHTML = `
     <div class="metrics metrics-four">
       ${metric("系统状态", statusText(payload.summary.status), `${payload.summary.reason_codes.length} 个原因码`, tone(payload.summary.status) === "ok" ? "good" : tone(payload.summary.status) === "bad" ? "bad" : "accent")}
@@ -445,7 +511,8 @@ function renderSystem() {
       ${metric("审计行数", ledger ? String(ledger.audit_row_count) : "-", ledger ? shortHash(ledger.audit_last_hash) : "", "")}
       ${metric("健康观测", health ? String(health.observations.length) : "0", health ? statusText(health.status) : "缺失", health ? (health.status === "healthy" ? "good" : "bad") : "bad")}
     </div>
-    ${health ? `<section class="health-band">${health.observations.map((row) => `<article><header><strong>${escapeHtml(componentText(row.component))}</strong>${pill(row.status)}</header><p>${escapeHtml(healthMetric(row))}</p><small>${escapeHtml(formatTime(row.observed_at))} / ${escapeHtml(shortHash(row.observation_hash))}</small></article>`).join("")}</section>` : unavailableBlock("系统健康观测缺失", "时钟、磁盘、服务和备份尚未由生产发布器提供。")}
+    ${health ? `<section class="health-band">${baseHealth.map((row) => `<article><header><strong>${escapeHtml(componentText(row.component))}</strong>${pill(row.status)}</header><p>${escapeHtml(healthMetric(row))}</p><small>${escapeHtml(formatTime(row.observed_at))} / ${escapeHtml(shortHash(row.observation_hash))}</small></article>`).join("")}</section>` : unavailableBlock("系统健康观测缺失", "时钟、磁盘、服务和备份尚未由生产发布器提供。")}
+    ${operations ? `<section class="panel full-panel"><header class="panel-head"><div><h2>Ops Observer</h2><p>${Object.entries(operations.metrics.scope_status).map(([scope, status]) => `${scopeText(scope)} ${statusText(status)}`).join(" / ")}</p></div>${pill(operations.status)}</header><div class="table-wrap"><table><thead><tr><th>检查项</th><th>状态</th><th>影响域</th><th>阻断执行</th><th>观测值</th><th>结论</th></tr></thead><tbody>${operations.metrics.checks.map((check) => `<tr><td><strong>${escapeHtml(check.check_id)}</strong></td><td>${pill(check.status)}</td><td>${check.impact_scopes.map(scopeText).map(escapeHtml).join(" / ")}</td><td>${check.blocks_execution ? pill("block") : pill("pass")}</td><td class="mono">${escapeHtml(check.observed_value)}</td><td><small>${escapeHtml(check.detail)}</small></td></tr>`).join("")}</tbody></table></div></section>` : ""}
     <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>账本完整性</h2><p>SQLite 快照 / JSONL 审计链</p></div><span class="mono">${escapeHtml(shortHash(ledger && ledger.snapshot_hash))}</span></header>${ledger ? `<dl class="fact-list"><div><dt>快照完整性</dt><dd>${pill(ledger.integrity_status === "verified" ? "pass" : "block")}</dd></div><div><dt>审计链</dt><dd>${pill(ledger.audit_chain_status === "verified" ? "pass" : "block")}</dd></div><div><dt>三方对账</dt><dd>${pill(ledger.reconciliation_passed ? "pass" : "block")}</dd></div><div><dt>可恢复订单</dt><dd>${ledger.recoverable_order_count}</dd></div><div><dt>恢复报告</dt><dd>${ledger.recovery_report_count}</dd></div><div><dt>来源更新时间</dt><dd>${escapeHtml(formatTime(ledger.source_updated_at))}</dd></div></dl>` : unavailableBlock("账本不可用", "没有可验证账本快照。")}</section>
       <section class="panel"><header class="panel-head"><div><h2>原因码</h2><p>显式运行结论</p></div>${pill(payload.summary.status)}</header><div class="code-list">${payload.summary.reason_codes.map((reason) => `<code>${escapeHtml(reason)}</code>`).join("") || `<span class="empty-cell">无异常理由</span>`}${payload.summary.unavailable_fields.map((field) => `<code class="muted-code">缺失:${escapeHtml(field)}</code>`).join("")}</div></section></div>`;
 }
@@ -457,8 +524,13 @@ function renderAlerts() {
     return;
   }
   const summary = payload.summary;
-  $("view-alerts").innerHTML = `<div class="metrics metrics-four">${metric("待处理事件", String(summary.open_alert_count), `审计行 ${summary.audit_row_count}`, summary.open_alert_count ? "bad" : "good")}${metric("严重事件", String(summary.severity_counts.CRITICAL), `停机事件 ${summary.severity_counts.HALT}`, summary.severity_counts.CRITICAL || summary.severity_counts.HALT ? "bad" : "good")}${metric("等待投递", String(summary.delivery_state_counts.PENDING + summary.delivery_state_counts.RETRY_WAIT), `等待重试 ${summary.delivery_state_counts.RETRY_WAIT}`, "")}${metric("投递失败", String(summary.delivery_state_counts.DEAD_LETTER), `已投递 ${summary.delivery_state_counts.DELIVERED}`, summary.delivery_state_counts.DEAD_LETTER ? "bad" : "good")}</div>
-    <section class="panel full-panel"><header class="panel-head"><div><h2>事件列表</h2><p>事件状态与投递</p></div><span class="mono">${escapeHtml(shortHash(summary.audit_last_hash))}</span></header><div class="incident-list">${payload.alerts.map((row) => `<article><div class="incident-status">${pill(row.severity)}${pill(row.status)}</div><div><strong>${escapeHtml(row.title)}</strong><p>${escapeHtml(row.summary)}</p><small>${escapeHtml(formatTime(row.occurred_at))} / ${escapeHtml(row.category)} / ${traceLink(row.trace_id || row.source_id)}</small></div><div class="delivery-list">${row.deliveries.map((delivery) => `<span>${escapeHtml(delivery.channel)} ${pill(delivery.status)} <small>${delivery.attempt_count}/${delivery.max_attempts}</small></span>`).join("") || "未配置投递通道"}</div></article>`).join("") || `<div class="empty-cell">无告警</div>`}</div></section>`;
+  const openAlerts = payload.alerts.filter((row) => row.status === "OPEN");
+  const resolvedAlerts = payload.alerts.filter((row) => row.status === "RESOLVED");
+  const incidentRows = (rows, empty) => rows.map((row) => `<article><div class="incident-status">${pill(row.severity)}${pill(row.status)}</div><div><strong>${escapeHtml(row.title)}</strong><p>${escapeHtml(row.summary)}</p><small>${escapeHtml(formatTime(row.occurred_at))} / ${escapeHtml(row.category)} / ${traceLink(row.trace_id || row.source_id)}</small></div><div class="delivery-list">${row.deliveries.map((delivery) => `<span>${escapeHtml(delivery.channel)} ${pill(delivery.status)} <small>${delivery.attempt_count}/${delivery.max_attempts}</small></span>`).join("") || "未配置投递通道"}</div></article>`).join("") || `<div class="empty-cell">${escapeHtml(empty)}</div>`;
+  const deliveryRows = payload.alerts.flatMap((row) => row.deliveries.map((delivery) => ({ alert: row, delivery })));
+  $("view-alerts").innerHTML = `<div class="metrics metrics-four">${metric("当前待处理", String(summary.open_alert_count), `严重 ${summary.severity_counts.CRITICAL} / 停机 ${summary.severity_counts.HALT}`, summary.open_alert_count ? "bad" : "good")}${metric("已解决历史", String(summary.resolved_alert_count), `历史严重 ${summary.historical_severity_counts.CRITICAL} / 停机 ${summary.historical_severity_counts.HALT}`, "")}${metric("等待投递", String(summary.delivery_state_counts.PENDING + summary.delivery_state_counts.RETRY_WAIT), `等待重试 ${summary.delivery_state_counts.RETRY_WAIT}`, "")}${metric("投递失败", String(summary.delivery_state_counts.DEAD_LETTER), `已投递 ${summary.delivery_state_counts.DELIVERED}`, summary.delivery_state_counts.DEAD_LETTER ? "bad" : "good")}</div>
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>当前事件</h2><p>OPEN</p></div><span>${openAlerts.length}</span></header><div class="incident-list">${incidentRows(openAlerts, "当前无待处理事件")}</div></section><section class="panel"><header class="panel-head"><div><h2>已解决历史</h2><p>RESOLVED</p></div><span>${resolvedAlerts.length}</span></header><div class="incident-list compact-incidents">${incidentRows(resolvedAlerts, "暂无已解决历史")}</div></section></div>
+    <section class="panel full-panel"><header class="panel-head"><div><h2>投递审计</h2><p>Outbox / ${escapeHtml(formatTime(summary.content_updated_at))}</p></div><span class="mono">${escapeHtml(shortHash(summary.audit_last_hash))}</span></header><div class="table-wrap"><table><thead><tr><th>事件</th><th>通道</th><th>状态</th><th>尝试</th><th>最近尝试</th><th>结果</th></tr></thead><tbody>${deliveryRows.map(({ alert, delivery }) => `<tr><td><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(shortHash(alert.alert_id))}</small></td><td>${escapeHtml(delivery.channel)}</td><td>${pill(delivery.status)}</td><td>${delivery.attempt_count}/${delivery.max_attempts}</td><td>${escapeHtml(formatTime(delivery.last_attempt_at))}</td><td><small>${escapeHtml(delivery.last_error || (delivery.delivered_at ? `已投递 ${formatTime(delivery.delivered_at)}` : "等待"))}</small></td></tr>`).join("") || `<tr><td colspan="6" class="empty-cell">无投递任务</td></tr>`}</tbody></table></div></section>`;
 }
 
 function renderReports() {
@@ -484,15 +556,16 @@ function renderIntelligence() {
   const report = payload.report;
   const history = report.trading_history;
   const symbols = report.market_pulse.symbols;
+  const evidence = report.evidence_summary;
   $("view-intelligence").innerHTML = `<div class="metrics metrics-four">
-      ${metric("报告状态", statusText(report.status), report.report_date, report.status === "clear" ? "good" : "bad")}
-      ${metric("验证来源", String(report.sources.length), `${report.searches.length} 个搜索查询`, report.sources.length ? "good" : "bad")}
-      ${metric("研究建议", String(report.research_proposals.length), "仅进入研究队列", "accent")}
-      ${metric("交易历史", history.status === "available" ? "已接入" : "不可用", history.status === "available" ? `${history.fill_count} 笔成交` : "缺少账本", history.status === "available" ? "good" : "bad")}
+      ${metric("Pipeline", statusText(report.pipeline_status), report.report_date, tone(report.pipeline_status) === "ok" ? "good" : "bad")}
+      ${metric("证据状态", statusText(report.evidence_status), `${evidence.substantive_source_count}/${evidence.verified_source_count} 份实质正文`, tone(report.evidence_status) === "ok" ? "good" : "bad")}
+      ${metric("研究建议", String(report.research_proposals.length), "G0 容量先行", "accent")}
+      ${metric("执行证据", statusText(history.execution_evidence_status || "unavailable"), history.status === "available" ? `${history.order_count} 订单 / ${history.fill_count} 成交` : "缺少账本", history.execution_evidence_sufficient ? "good" : "bad")}
     </div>
     <section class="market-strip">${symbols.map((row) => `<article><span>${escapeHtml(row.symbol)}</span><strong>${escapeHtml(formatMoney(row.last_price))}</strong><small class="${Number(row.change_24h_pct) >= 0 ? "positive" : "negative"}">${escapeHtml(formatPercent(Number(row.change_24h_pct) / 100))} / funding ${escapeHtml(formatPercent(row.funding_rate))}</small></article>`).join("")}</section>
-    <section class="panel full-panel"><header class="panel-head"><div><h2>综合结论</h2><p>${escapeHtml(report.llm.model)} / ${escapeHtml(formatTime(report.created_at))}</p></div><span class="mono">${escapeHtml(shortHash(report.report_hash))}</span></header><div class="intelligence-summary"><p>${escapeHtml(report.executive_summary)}</p><div class="split-layout"><div><h3>影响判断</h3><div class="code-list">${report.observed_impacts.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无已验证影响结论</span>`}</div></div><div><h3>研究建议</h3><div class="code-list">${report.research_proposals.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无新研究建议</span>`}</div></div></div></div></section>
-    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>Agent 复核链</h2><p>固定角色与状态</p></div><span>${report.agent_reports.length}</span></header><div class="agent-list">${report.agent_reports.map((row) => `<article><div>${pill(row.status)}<strong>${escapeHtml(row.role_id)}</strong></div><p>${escapeHtml(row.summary)}</p></article>`).join("")}</div></section><section class="panel"><header class="panel-head"><div><h2>来源证据</h2><p>原文 hash 与观测时间</p></div><span>${report.sources.length}</span></header><div class="source-list">${report.sources.map((row) => `<article><strong>${escapeHtml(row.title || row.final_url)}</strong><small>${escapeHtml(formatTime(row.observed_at))} / ${escapeHtml(shortHash(row.source_hash))}</small><p>${escapeHtml(row.final_url)}</p></article>`).join("") || `<div class="empty-cell">无可验证来源</div>`}</div></section></div>`;
+    <section class="panel full-panel"><header class="panel-head"><div><h2>综合结论</h2><p>${escapeHtml(report.llm.model)} / ${escapeHtml(formatTime(report.created_at))}</p></div><span class="mono">${escapeHtml(shortHash(report.report_hash))}</span></header><div class="intelligence-summary"><p>${escapeHtml(report.executive_summary)}</p><div class="conclusion-grid"><div><h3>已观测事实</h3><div class="code-list">${report.observed_impacts.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无已验证事实</span>`}</div></div><div><h3>证据缺口</h3><div class="code-list">${evidence.gaps.map((item) => `<code class="muted-code">${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无合同缺口</span>`}</div></div><div><h3>假设边界</h3><div class="code-list">${report.risk_notes.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无新增假设</span>`}</div></div><div><h3>研究建议</h3><div class="proposal-list">${report.research_proposals.map((item) => `<article><div><strong>${escapeHtml(item.hypothesis)}</strong>${pill(item.g0_status)}</div><small>来源 ${escapeHtml(statusText(item.source_capacity))} / 历史 ${escapeHtml(statusText(item.history_capacity))} / ${escapeHtml(item.holdout_role)}</small></article>`).join("") || `<span class="empty-cell">无新研究建议</span>`}</div></div></div></div></section>
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>Agent 复核链</h2><p>固定角色与状态</p></div><span>${report.agent_reports.length}</span></header><div class="agent-list">${report.agent_reports.map((row) => `<article><div>${pill(row.status)}<strong>${escapeHtml(row.role_id)}</strong></div><p>${escapeHtml(row.summary)}</p></article>`).join("")}</div></section><section class="panel"><header class="panel-head"><div><h2>来源证据</h2><p>正文质量与三类时间</p></div><span>${report.sources.length}</span></header><div class="source-list">${report.sources.map((row) => `<article><div class="source-title"><strong>${escapeHtml(row.title || row.final_url)}</strong>${pill(row.content_quality)}</div><small>发布 ${escapeHtml(formatTime(row.published_at))} / 修改 ${escapeHtml(formatTime(row.modified_at))} / 观测 ${escapeHtml(formatTime(row.observed_at))}</small><small>${escapeHtml(row.parser_version)} / ${escapeHtml(row.extractor)} / ${escapeHtml(shortHash(row.body_hash))}</small><p>${escapeHtml(row.final_url)}</p></article>`).join("") || `<div class="empty-cell">无可验证来源</div>`}</div></section></div>`;
 }
 
 function renderAll() {
@@ -541,6 +614,7 @@ function showRoute() {
   $("page-subtitle").textContent = ROUTES[route][2];
   document.body.classList.remove("nav-open");
   if (route === "decisions" && state.status === "ready") renderDecisions();
+  renderFreshnessDetail();
   renderStatus();
 }
 

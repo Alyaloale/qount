@@ -9,7 +9,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from qount.contracts import canonical_hash
 from qount.contracts.trace import aware_datetime
@@ -17,6 +17,7 @@ from qount.notifications import SystemHealthSnapshot
 from qount.notifications import collect_system_health
 from qount.operations.backups import BackupError
 from qount.operations.backups import read_latest_dashboard_backup
+from qount.operations.release_provenance import verify_release_provenance
 
 
 _SERVICE_STATES = {"active", "inactive", "failed"}
@@ -25,6 +26,51 @@ _OFFSET_SCALE = {None: 0.000001, "us": 0.000001, "ms": 0.001, "s": 1.0}
 DEFAULT_ALLOWED_SERVICE_NAMES = (
     "qount-dashboard-publisher.timer",
     "caddy.service",
+)
+_OPS_SERVICE_POLICIES = (
+    ("caddy", "caddy.service", "active", ("observation",), False),
+    (
+        "daily_intelligence",
+        "qount-daily-intelligence.timer",
+        "active",
+        ("intelligence",),
+        False,
+    ),
+    (
+        "dashboard_publisher",
+        "qount-dashboard-publisher.timer",
+        "active",
+        ("observation",),
+        False,
+    ),
+    (
+        "mini_trend_forward",
+        "qount-mini-trend-forward.timer",
+        "inactive",
+        ("execution",),
+        True,
+    ),
+    (
+        "mini_trend_live",
+        "qount-mini-trend-live.timer",
+        "either",
+        ("execution",),
+        True,
+    ),
+    (
+        "mini_trend_live_service",
+        "qount-mini-trend-live.service",
+        "either",
+        ("execution",),
+        True,
+    ),
+    (
+        "openclaw",
+        "openclaw-gateway.service",
+        "active",
+        ("delivery",),
+        False,
+    ),
 )
 
 
@@ -67,6 +113,9 @@ class HealthProbeConfig:
     service_name: str
     allowed_service_names: tuple[str, ...]
     backup_root: Path
+    repo_root: Path | None = None
+    state_root: Path | None = None
+    operations_enabled: bool = False
     clock_warning_seconds: float = 0.5
     clock_unavailable_seconds: float = 5.0
     disk_warning_fraction: float = 0.10
@@ -83,8 +132,16 @@ class HealthProbeConfig:
             or not self.service_name
             or self.service_name not in self.allowed_service_names
             or len(set(self.allowed_service_names)) != len(self.allowed_service_names)
+            or not isinstance(self.operations_enabled, bool)
         ):
             raise HealthProbeError("health_probe_configuration_invalid")
+        if self.operations_enabled and (
+            self.repo_root is None
+            or self.state_root is None
+            or not self.repo_root.is_absolute()
+            or not self.state_root.is_absolute()
+        ):
+            raise HealthProbeError("health_probe_operations_configuration_invalid")
         if (
             not math.isfinite(self.clock_warning_seconds)
             or not math.isfinite(self.clock_unavailable_seconds)
@@ -425,6 +482,187 @@ def probe_backup(
     )
 
 
+def _ops_check(
+    *,
+    check_id: str,
+    status: str,
+    detail: str,
+    impact_scopes: tuple[str, ...],
+    blocks_execution: bool,
+    observed_value: object,
+) -> dict[str, object]:
+    return {
+        "check_id": check_id,
+        "status": status,
+        "detail": detail,
+        "impact_scopes": tuple(sorted(impact_scopes)),
+        "blocks_execution": blocks_execution,
+        "observed_value": observed_value,
+    }
+
+
+def probe_operations(
+    config: HealthProbeConfig,
+    runner: CommandRunner,
+) -> dict[str, object]:
+    """Observe production services and guards without mutating runtime state."""
+
+    source_id = _source_id(
+        "operations",
+        {
+            "repo_root": str(config.repo_root),
+            "state_root": str(config.state_root),
+            "enabled": config.operations_enabled,
+        },
+    )
+    if not config.operations_enabled:
+        checks = [
+            _ops_check(
+                check_id="observer_contract",
+                status="pass",
+                detail="operations_probe_not_requested",
+                impact_scopes=(
+                    "delivery",
+                    "execution",
+                    "intelligence",
+                    "observation",
+                ),
+                blocks_execution=False,
+                observed_value=False,
+            )
+        ]
+    else:
+        checks: list[dict[str, object]] = []
+        for check_id, unit, expected, scopes, blocks_execution in _OPS_SERVICE_POLICIES:
+            argv = (
+                "systemctl",
+                "show",
+                unit,
+                "--property=ActiveState",
+                "--value",
+                "--no-pager",
+            )
+            try:
+                result = runner(argv)
+                state = result.stdout.strip().lower()
+            except (OSError, subprocess.SubprocessError):
+                result = CommandResult(1, "", "probe_failed")
+                state = "unknown"
+            valid_state = result.returncode == 0 and state in _SERVICE_STATES
+            expected_state = expected == "either" or state == expected
+            if not valid_state or state == "failed":
+                status = "block" if blocks_execution else "unavailable"
+                detail = f"service_state_unavailable:{unit}"
+            elif expected_state:
+                status = "pass"
+                detail = f"service_state_expected:{unit}:{state}"
+            else:
+                status = "block" if blocks_execution else "warn"
+                detail = f"service_state_unexpected:{unit}:{state}"
+            checks.append(
+                _ops_check(
+                    check_id=f"service:{check_id}",
+                    status=status,
+                    detail=detail,
+                    impact_scopes=scopes,
+                    blocks_execution=blocks_execution,
+                    observed_value=state,
+                )
+            )
+
+        assert config.state_root is not None
+        assert config.repo_root is not None
+        halt_present = (config.state_root / "HALT").exists()
+        checks.append(
+            _ops_check(
+                check_id="trading:halt",
+                status="block" if halt_present else "pass",
+                detail="halt_present" if halt_present else "halt_absent",
+                impact_scopes=("execution",),
+                blocks_execution=True,
+                observed_value=halt_present,
+            )
+        )
+        arm_present = (
+            config.state_root / "arm" / "manual-final-arm.json"
+        ).is_file()
+        checks.append(
+            _ops_check(
+                check_id="trading:manual_arm",
+                status="pass",
+                detail="arm_present" if arm_present else "arm_absent_disarmed",
+                impact_scopes=("execution",),
+                blocks_execution=False,
+                observed_value=arm_present,
+            )
+        )
+        provenance_path = config.repo_root / ".qount-release-provenance.json"
+        try:
+            import json
+
+            provenance = json.loads(provenance_path.read_text(encoding="ascii"))
+            verified = verify_release_provenance(config.repo_root, provenance)
+            provenance_value = str(verified["provenance_hash"])
+            provenance_status = "pass"
+            provenance_detail = "release_provenance_verified"
+        except (OSError, TypeError, ValueError):
+            provenance_value = None
+            provenance_status = "block"
+            provenance_detail = "release_provenance_unavailable"
+        checks.append(
+            _ops_check(
+                check_id="release:provenance",
+                status=provenance_status,
+                detail=provenance_detail,
+                impact_scopes=("execution", "observation"),
+                blocks_execution=True,
+                observed_value=provenance_value,
+            )
+        )
+
+    checks.sort(key=lambda row: str(row["check_id"]))
+    scope_status: dict[str, str] = {}
+    for scope in ("delivery", "execution", "intelligence", "observation"):
+        scoped = [row for row in checks if scope in row["impact_scopes"]]
+        scope_status[scope] = (
+            "unavailable"
+            if any(
+                row["status"] in {"block", "unavailable"}
+                for row in scoped
+            )
+            else "degraded"
+            if any(row["status"] == "warn" for row in scoped)
+            else "pass"
+        )
+    status = (
+        "unavailable"
+        if any(
+            row["blocks_execution"]
+            and row["status"] in {"block", "unavailable"}
+            for row in checks
+        )
+        else "degraded"
+        if any(row["status"] != "pass" for row in checks)
+        else "healthy"
+    )
+    detail_codes = tuple(
+        f"ops_{str(row['check_id']).replace(':', '_')}_{row['status']}"
+        for row in checks
+        if row["status"] != "pass"
+    )
+    evidence: dict[str, Any] = {
+        "checks": checks,
+        "scope_status": scope_status,
+    }
+    return _measurement(
+        status=status,
+        detail_codes=detail_codes,
+        metrics=evidence,
+        source_id=source_id,
+        source_hash=canonical_hash(evidence),
+    )
+
+
 def collect_os_system_health(
     config: HealthProbeConfig,
     *,
@@ -441,6 +679,7 @@ def collect_os_system_health(
         "disk": probe_disk(config, actual.disk_usage),
         "service": probe_service(config, actual.command_runner),
         "backup": probe_backup(config, observed_at=observed_at),
+        "operations": probe_operations(config, actual.command_runner),
     }
     return collect_system_health(
         measurements,
@@ -459,5 +698,6 @@ __all__ = [
     "probe_backup",
     "probe_clock",
     "probe_disk",
+    "probe_operations",
     "probe_service",
 ]

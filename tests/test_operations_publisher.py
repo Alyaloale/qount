@@ -54,11 +54,13 @@ def _dependencies() -> HealthProbeDependencies:
 def _config(root: Path) -> PublisherConfig:
     root = root.resolve()
     return PublisherConfig(
+        repo_root=ROOT,
         authority_root=root / "authority",
         dashboard_root=root / "dashboard",
         backup_root=root / "backups",
         lock_path=root / "locks" / "publisher.lock",
         disk_path=root / "dashboard",
+        operations_enabled=False,
         retain_previous_releases=2,
         retain_previous_backups=2,
     )

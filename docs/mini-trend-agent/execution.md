@@ -139,7 +139,7 @@ dispatch执行flatten后halt且不得自动恢复；两者均按冻结的100 USD
 未知余额/仓位、非TOP3或short仓位、错误模式、重复决策、缺价格/funding journal均直接halt。
 
 历史VPS审计结果曾显示cron和qount交易进程关闭、旧通用live guard关闭；这段证据不覆盖当前状态。当前生产读取必须以VPS
-`0.2.5` provenance和`qount-mini-trend-live.timer`为准。已加入每日
+`0.2.5` provenance和VPS只读状态为准；当前timer因0.2.7升级维护已停。已加入每日
 append-only JSONL，记录权益、钱包、双权重、订单意图/结果、funding/费用、执行状态和risk flags；row/chain
 hash不闭合或重复决策日时拒绝追加。启动顺序固定为：
 
@@ -154,8 +154,8 @@ hash不闭合或重复决策日时拒绝追加。启动顺序固定为：
 7. 再次只读预检并生成标准authority后，向owner展示readiness/batch/ledger/reconciliation hash；只有owner单独确认后才
    生成manual arm并原子提升registry为`minimal_live`。
 
-最新已验证状态：VPS release=`0.2.5`，固定`100 USDT` Base已`armed/minimal_live`；live timer=`enabled/active`，forward timer与
-legacy cron关闭。最新run为`20260722T061346Z`，首次live全现金、0 market/0 STOP、post-dispatch reconciliation通过；recurring
+最新运行证据：VPS release=`0.2.5`，固定`100 USDT` Base曾`armed/minimal_live`；当前live timer因升级维护为
+`disabled/inactive`，forward timer与legacy cron关闭。最新run为`20260722T061346Z`，首次live全现金、0 market/0 STOP、post-dispatch reconciliation通过；recurring
 分支为`duplicate_dry_noop`。真实fill/fee/slippage/STOP/UNKNOWN恢复样本仍未采集，禁止扩容或恢复旧策略。
 
 ## Phase 2：paper forward

@@ -183,18 +183,42 @@ def _freshness(
     source_updated_at: str,
     evaluated_at: str,
     stale_after_seconds: int,
+    observed_at: str | None = None,
+    content_updated_at: str | None = None,
+    sources: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
-    stale_at = _iso_after(source_updated_at, stale_after_seconds)
+    observed_at = observed_at or source_updated_at
+    content_updated_at = content_updated_at or source_updated_at
+    source_times = dict(sources or {"primary": source_updated_at})
+    source_states = {
+        name: {
+            "updated_at": updated_at,
+            "stale_at": _iso_after(updated_at, stale_after_seconds),
+            "status": (
+                "stale"
+                if aware_datetime(evaluated_at)
+                >= aware_datetime(_iso_after(updated_at, stale_after_seconds))
+                else "fresh"
+            ),
+        }
+        for name, updated_at in sorted(source_times.items())
+    }
+    stale_at = min(
+        str(value["stale_at"]) for value in source_states.values()
+    )
     status = (
         "stale"
-        if aware_datetime(evaluated_at) >= aware_datetime(stale_at)
+        if any(value["status"] == "stale" for value in source_states.values())
         else "fresh"
     )
     return {
         "status": status,
         "source_updated_at": source_updated_at,
+        "observed_at": observed_at,
+        "content_updated_at": content_updated_at,
         "evaluated_at": evaluated_at,
         "stale_at": stale_at,
+        "sources": source_states,
     }
 
 
@@ -339,25 +363,85 @@ class DashboardReadModel:
         freshness = _mapping(self.freshness, name="dashboard_freshness")
         _exact_keys(
             freshness,
-            {"status", "source_updated_at", "evaluated_at", "stale_at"},
+            {
+                "status",
+                "source_updated_at",
+                "observed_at",
+                "content_updated_at",
+                "evaluated_at",
+                "stale_at",
+                "sources",
+            },
             name="dashboard_freshness",
         )
         if freshness["status"] not in {"fresh", "stale"}:
             raise DashboardReadModelError("dashboard_freshness_status_invalid")
         try:
             source_updated = aware_datetime(str(freshness["source_updated_at"]))
+            observed = aware_datetime(str(freshness["observed_at"]))
+            content_updated = aware_datetime(
+                str(freshness["content_updated_at"])
+            )
             evaluated = aware_datetime(str(freshness["evaluated_at"]))
             stale_at = aware_datetime(str(freshness["stale_at"]))
         except (AttributeError, TypeError, ValueError) as exc:
             raise DashboardReadModelError("dashboard_freshness_time_invalid") from exc
-        if generated > evaluated or source_updated > generated:
+        if (
+            generated > evaluated
+            or observed > generated
+            or source_updated > observed
+            or content_updated > observed
+        ):
             raise DashboardReadModelError("dashboard_freshness_time_order_invalid")
-        expected_stale_at = source_updated + timedelta(
-            seconds=self.stale_after_seconds
+        source_rows = _mapping(
+            freshness["sources"], name="dashboard_freshness_sources"
+        )
+        if not source_rows:
+            raise DashboardReadModelError("dashboard_freshness_sources_invalid")
+        normalized_rows: dict[str, Mapping[str, object]] = {}
+        for name, raw in source_rows.items():
+            if not isinstance(name, str) or not name:
+                raise DashboardReadModelError(
+                    "dashboard_freshness_source_name_invalid"
+                )
+            row = _mapping(raw, name="dashboard_freshness_source")
+            _exact_keys(
+                row,
+                {"updated_at", "stale_at", "status"},
+                name="dashboard_freshness_source",
+            )
+            try:
+                updated = aware_datetime(str(row["updated_at"]))
+                row_stale_at = aware_datetime(str(row["stale_at"]))
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise DashboardReadModelError(
+                    "dashboard_freshness_source_time_invalid"
+                ) from exc
+            if updated > observed or row_stale_at != updated + timedelta(
+                seconds=self.stale_after_seconds
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_freshness_source_time_invalid"
+                )
+            expected_row_status = (
+                "stale" if evaluated >= row_stale_at else "fresh"
+            )
+            if row["status"] != expected_row_status:
+                raise DashboardReadModelError(
+                    "dashboard_freshness_source_status_invalid"
+                )
+            normalized_rows[name] = row
+        expected_stale_at = min(
+            aware_datetime(str(row["stale_at"]))
+            for row in normalized_rows.values()
         )
         if stale_at != expected_stale_at:
             raise DashboardReadModelError("dashboard_stale_at_invalid")
-        expected_status = "stale" if evaluated >= stale_at else "fresh"
+        expected_status = (
+            "stale"
+            if any(row["status"] == "stale" for row in normalized_rows.values())
+            else "fresh"
+        )
         if freshness["status"] != expected_status:
             raise DashboardReadModelError("dashboard_freshness_status_mismatch")
         _validate_payload(self.read_model_type, self.payload)
@@ -480,7 +564,7 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
             "trace",
         },
         "risk": {"authority", "decision", "runtime"},
-        "readiness": {"authority", "status", "gates", "strategies"},
+        "readiness": {"authority", "status", "axes", "gates", "strategies"},
         "system": {"authority", "summary", "ledger", "health"},
         "alerts": {"authority", "summary", "alerts"},
         "reports": {"authority", "summary", "brief"},
@@ -752,6 +836,51 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
             raise DashboardReadModelError("dashboard_readiness_status_invalid")
         gates = value["gates"]
         strategies = value["strategies"]
+        axes = _mapping(value["axes"], name="dashboard_readiness_axes")
+        expected_axes = {
+            "publication_integrity",
+            "observation_state",
+            "operational_state",
+            "trading_authority",
+            "evidence_state",
+        }
+        if set(axes) != expected_axes:
+            raise DashboardReadModelError("dashboard_readiness_axes_invalid")
+        allowed_axis_statuses = {
+            "pass",
+            "fresh",
+            "stale",
+            "healthy",
+            "degraded",
+            "unavailable",
+            "registry_authorized",
+            "disarmed",
+            "blocked",
+            "complete",
+            "incomplete",
+        }
+        for name, axis_value in axes.items():
+            axis = _mapping(axis_value, name=f"dashboard_readiness_axis:{name}")
+            _exact_keys(
+                axis,
+                {"status", "detail", "impact_scopes"},
+                name=f"dashboard_readiness_axis:{name}",
+            )
+            if (
+                axis["status"] not in allowed_axis_statuses
+                or not isinstance(axis["detail"], str)
+                or not axis["detail"]
+                or not isinstance(axis["impact_scopes"], list)
+                or not axis["impact_scopes"]
+                or any(
+                    scope
+                    not in {"execution", "observation", "intelligence", "delivery"}
+                    for scope in axis["impact_scopes"]
+                )
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_readiness_axis_invalid"
+                )
         if not isinstance(gates, list) or not isinstance(strategies, list):
             raise DashboardReadModelError("dashboard_readiness_rows_invalid")
         expected_gates = {
@@ -1599,7 +1728,7 @@ def _validate_system_payload(value: Mapping[str, object]) -> None:
     else:
         raise DashboardReadModelError("dashboard_system_health_status_invalid")
     expected_unavailable = (
-        ["backup", "clock", "disk", "service"]
+        ["backup", "clock", "disk", "operations", "service"]
         if health_snapshot is None
         else []
     )
@@ -1692,8 +1821,12 @@ def _validate_alerts_payload(value: Mapping[str, object]) -> None:
         {
             "status",
             "open_alert_count",
+            "resolved_alert_count",
             "severity_counts",
+            "historical_severity_counts",
             "delivery_state_counts",
+            "monitoring_observed_at",
+            "content_updated_at",
             "audit_last_hash",
             "audit_row_count",
         },
@@ -1707,8 +1840,12 @@ def _validate_alerts_payload(value: Mapping[str, object]) -> None:
         if summary != {
             "status": "unavailable_until_phase_c_notification_store",
             "open_alert_count": None,
+            "resolved_alert_count": None,
             "severity_counts": None,
+            "historical_severity_counts": None,
             "delivery_state_counts": None,
+            "monitoring_observed_at": None,
+            "content_updated_at": None,
             "audit_last_hash": None,
             "audit_row_count": None,
         } or alerts:
@@ -1718,16 +1855,38 @@ def _validate_alerts_payload(value: Mapping[str, object]) -> None:
         return
     if summary["status"] != "available":
         raise DashboardReadModelError("dashboard_alerts_status_invalid")
-    if set(_mapping(
-        summary["severity_counts"], name="dashboard_alert_severity_counts"
-    )) != set(ALERT_SEVERITIES) or set(_mapping(
-        summary["delivery_state_counts"],
-        name="dashboard_alert_delivery_counts",
-    )) != set(DELIVERY_STATES):
+    if (
+        set(
+            _mapping(
+                summary["severity_counts"],
+                name="dashboard_alert_severity_counts",
+            )
+        )
+        != set(ALERT_SEVERITIES)
+        or set(
+            _mapping(
+                summary["historical_severity_counts"],
+                name="dashboard_alert_historical_severity_counts",
+            )
+        )
+        != set(ALERT_SEVERITIES)
+        or set(
+            _mapping(
+                summary["delivery_state_counts"],
+                name="dashboard_alert_delivery_counts",
+            )
+        )
+        != set(DELIVERY_STATES)
+    ):
         raise DashboardReadModelError("dashboard_alert_counts_invalid")
     severity_counts = dict(summary["severity_counts"])
+    historical_severity_counts = dict(summary["historical_severity_counts"])
     delivery_counts = dict(summary["delivery_state_counts"])
-    for counts in (severity_counts, delivery_counts):
+    for counts in (
+        severity_counts,
+        historical_severity_counts,
+        delivery_counts,
+    ):
         if any(
             not isinstance(count, int)
             or isinstance(count, bool)
@@ -1739,13 +1898,27 @@ def _validate_alerts_payload(value: Mapping[str, object]) -> None:
         not isinstance(summary["open_alert_count"], int)
         or isinstance(summary["open_alert_count"], bool)
         or summary["open_alert_count"] < 0
+        or not isinstance(summary["resolved_alert_count"], int)
+        or isinstance(summary["resolved_alert_count"], bool)
+        or summary["resolved_alert_count"] < 0
         or not isinstance(summary["audit_row_count"], int)
         or isinstance(summary["audit_row_count"], bool)
-        or summary["audit_row_count"] < 1
+        or summary["audit_row_count"] < 0
         or not is_sha256(summary["audit_last_hash"])
     ):
         raise DashboardReadModelError("dashboard_alert_summary_invalid")
+    try:
+        aware_datetime(str(summary["monitoring_observed_at"]))
+        if summary["content_updated_at"] is not None:
+            aware_datetime(str(summary["content_updated_at"]))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise DashboardReadModelError(
+            "dashboard_alert_observation_time_invalid"
+        ) from exc
     observed_severity = {severity: 0 for severity in ALERT_SEVERITIES}
+    observed_historical_severity = {
+        severity: 0 for severity in ALERT_SEVERITIES
+    }
     observed_delivery = {status: 0 for status in DELIVERY_STATES}
     open_count = 0
     alert_order: list[tuple[str, str]] = []
@@ -1793,7 +1966,8 @@ def _validate_alerts_payload(value: Mapping[str, object]) -> None:
             raise DashboardReadModelError("dashboard_alert_state_hash_invalid")
         if row["status"] == "OPEN":
             open_count += 1
-        observed_severity[event.severity] += 1
+            observed_severity[event.severity] += 1
+        observed_historical_severity[event.severity] += 1
         deliveries = row["deliveries"]
         if not isinstance(deliveries, list):
             raise DashboardReadModelError("dashboard_alert_deliveries_invalid")
@@ -1898,7 +2072,9 @@ def _validate_alerts_payload(value: Mapping[str, object]) -> None:
         raise DashboardReadModelError("dashboard_alert_order_invalid")
     if (
         open_count != summary["open_alert_count"]
+        or len(alerts) - open_count != summary["resolved_alert_count"]
         or observed_severity != severity_counts
+        or observed_historical_severity != historical_severity_counts
         or observed_delivery != delivery_counts
     ):
         raise DashboardReadModelError("dashboard_alert_counts_mismatch")
@@ -2769,7 +2945,7 @@ def _system_payload(
     system_health: SystemHealthSnapshot | None,
 ) -> dict[str, object]:
     unavailable_fields = (
-        ["backup", "clock", "disk", "service"]
+        ["backup", "clock", "disk", "operations", "service"]
         if system_health is None
         else []
     )
@@ -2928,6 +3104,7 @@ def _readiness_payload(
     *,
     stale: bool,
     ledger_snapshot: RuntimeLedgerSnapshot | None,
+    system_health: SystemHealthSnapshot | None,
 ) -> dict[str, object]:
     intent_ids = {intent.strategy_id for intent in batch.intents}
     gates = [
@@ -3021,6 +3198,63 @@ def _readiness_payload(
         }
         for entry in registry.entries
     ]
+    runtime_blocked = bool(
+        ledger_snapshot is not None
+        and (
+            ledger_snapshot.unresolved_order_ids
+            or not ledger_snapshot.reconciliation["passed"]
+            or ledger_snapshot.reconciliation["halt_required"]
+            or not ledger_snapshot.nav["passed"]
+        )
+    )
+    registry_authorized = any(
+        entry.promotion_status in {"minimal_live", "scaled_live"}
+        and entry.owner_authorization_hash is not None
+        for entry in registry.entries
+    )
+    if ledger_snapshot is None:
+        evidence_status = "unavailable"
+        evidence_detail = "runtime_ledger_snapshot_not_supplied"
+    elif ledger_snapshot.fills:
+        evidence_status = "complete"
+        evidence_detail = "fills_verified"
+    elif not batch.plan.orders and not ledger_snapshot.orders:
+        evidence_status = "complete"
+        evidence_detail = "no_order_expected"
+    else:
+        evidence_status = "incomplete"
+        evidence_detail = "orders_expected_but_missing"
+    operational_status = (
+        "unavailable"
+        if system_health is None or system_health.status == "unavailable"
+        else "degraded"
+        if system_health.status == "degraded"
+        else "healthy"
+    )
+    operations_row = (
+        next(
+            (
+                row
+                for row in system_health.observations
+                if row["component"] == "operations"
+            ),
+            None,
+        )
+        if system_health is not None
+        else None
+    )
+    execution_operations_blocked = bool(
+        operations_row is not None
+        and operations_row["metrics"]["scope_status"]["execution"]
+        == "unavailable"
+    )
+    trading_status = (
+        "blocked"
+        if stale or runtime_blocked or execution_operations_blocked
+        else "registry_authorized"
+        if registry_authorized
+        else "disarmed"
+    )
     return {
         "authority": _authority(ledger_snapshot),
         "status": (
@@ -3035,6 +3269,52 @@ def _readiness_payload(
             or not ledger_snapshot.nav["passed"]
             else "read_model_ready"
         ),
+        "axes": {
+            "publication_integrity": {
+                "status": "pass",
+                "detail": "verified_sources_and_read_model_hashes",
+                "impact_scopes": ["observation"],
+            },
+            "observation_state": {
+                "status": "stale" if stale else "fresh",
+                "detail": (
+                    "one_or_more_required_sources_stale"
+                    if stale
+                    else "required_sources_within_freshness_windows"
+                ),
+                "impact_scopes": ["observation", "execution"],
+            },
+            "operational_state": {
+                "status": operational_status,
+                "detail": (
+                    "ops_observer_not_available"
+                    if system_health is None
+                    else f"ops_observer_{system_health.status}"
+                ),
+                "impact_scopes": [
+                    "execution",
+                    "observation",
+                    "intelligence",
+                    "delivery",
+                ],
+            },
+            "trading_authority": {
+                "status": trading_status,
+                "detail": (
+                    "runtime_or_freshness_gate_blocked"
+                    if trading_status == "blocked"
+                    else "registry_owner_authorization_present_dashboard_read_only"
+                    if trading_status == "registry_authorized"
+                    else "no_live_registry_authority_dashboard_read_only"
+                ),
+                "impact_scopes": ["execution"],
+            },
+            "evidence_state": {
+                "status": evidence_status,
+                "detail": evidence_detail,
+                "impact_scopes": ["execution", "observation"],
+            },
+        },
         "gates": gates,
         "strategies": strategies,
     }
@@ -3051,8 +3331,12 @@ def _alerts_payload(
             "summary": {
                 "status": "unavailable_until_phase_c_notification_store",
                 "open_alert_count": None,
+                "resolved_alert_count": None,
                 "severity_counts": None,
+                "historical_severity_counts": None,
                 "delivery_state_counts": None,
+                "monitoring_observed_at": None,
+                "content_updated_at": None,
                 "audit_last_hash": None,
                 "audit_row_count": None,
             },
@@ -3063,8 +3347,14 @@ def _alerts_payload(
         "summary": {
             "status": "available",
             "open_alert_count": snapshot.open_alert_count,
+            "resolved_alert_count": snapshot.resolved_alert_count,
             "severity_counts": dict(snapshot.severity_counts),
+            "historical_severity_counts": dict(
+                snapshot.historical_severity_counts
+            ),
             "delivery_state_counts": dict(snapshot.delivery_state_counts),
+            "monitoring_observed_at": snapshot.observed_at,
+            "content_updated_at": snapshot.content_updated_at,
             "audit_last_hash": snapshot.audit_last_hash,
             "audit_row_count": snapshot.audit_row_count,
         },
@@ -3266,24 +3556,10 @@ class DashboardReadModelSet:
             raise DashboardReadModelError("dashboard_read_model_set_types_invalid")
         for model in models:
             model.validate()
-        core_models = tuple(
-            model
-            for model in models
-            if model.read_model_type
-            not in {"system", "alerts", "reports", "intelligence"}
-        )
-        for name in (
-            "generated_at",
-            "data_cutoff",
-            "source_hashes",
-            "stale_after_seconds",
-            "freshness",
-        ):
-            values = [getattr(model, name) for model in core_models]
-            if any(value != values[0] for value in values[1:]):
-                raise DashboardReadModelError(
-                    f"dashboard_read_model_set_{name}_mismatch"
-                )
+        if any(model.generated_at != models[0].generated_at for model in models[1:]):
+            raise DashboardReadModelError(
+                "dashboard_read_model_set_generated_at_mismatch"
+            )
         if self.system.generated_at != self.overview.generated_at:
             raise DashboardReadModelError(
                 "dashboard_read_model_set_generation_mismatch"
@@ -3311,6 +3587,7 @@ def build_dashboard_v1(
     stale_after_seconds: int = 900,
     ledger_snapshot: RuntimeLedgerSnapshot | None = None,
     notification_snapshot: NotificationSnapshot | None = None,
+    daily_brief_notification_snapshot: NotificationSnapshot | None = None,
     alert_stale_after_seconds: int | None = None,
     daily_brief: DailyBrief | None = None,
     report_stale_after_seconds: int | None = None,
@@ -3379,7 +3656,7 @@ def build_dashboard_v1(
                 batch,
                 registry,
                 ledger_snapshot,
-                notification_snapshot,
+                daily_brief_notification_snapshot or notification_snapshot,
             )
         except DailyBriefError as exc:
             raise DashboardReadModelError(
@@ -3452,15 +3729,16 @@ def build_dashboard_v1(
     try:
         generated = aware_datetime(generated_at)
         evaluated = aware_datetime(evaluated_at)
-        source_times = (
-            aware_datetime(batch.manifest.created_at),
-            aware_datetime(registry.created_at),
-            *(
-                (aware_datetime(ledger_snapshot.source_updated_at),)
-                if ledger_snapshot is not None
-                else ()
-            ),
+        source_times_by_name = (
+            {
+                "runtime_ledger": aware_datetime(
+                    ledger_snapshot.source_updated_at
+                )
+            }
+            if ledger_snapshot is not None
+            else {"decision_batch": aware_datetime(batch.manifest.created_at)}
         )
+        source_times = tuple(source_times_by_name.values())
         notification_source_time = (
             aware_datetime(notification_snapshot.source_updated_at)
             if notification_snapshot is not None
@@ -3522,6 +3800,12 @@ def build_dashboard_v1(
         source_updated_at=source_updated_at,
         evaluated_at=evaluated_at,
         stale_after_seconds=stale_after_seconds,
+        observed_at=generated_at,
+        content_updated_at=source_updated_at,
+        sources={
+            name: value.isoformat()
+            for name, value in source_times_by_name.items()
+        },
     )
     source_hashes = {
         "decision_batch_manifest": batch.manifest.manifest_hash,
@@ -3539,6 +3823,20 @@ def build_dashboard_v1(
         "stale_after_seconds": stale_after_seconds,
         "freshness": freshness,
     }
+    decision_source_updated_at = aware_datetime(
+        batch.manifest.created_at
+    ).isoformat()
+    decision_common = {
+        **common,
+        "freshness": _freshness(
+            source_updated_at=decision_source_updated_at,
+            evaluated_at=evaluated_at,
+            stale_after_seconds=stale_after_seconds,
+            observed_at=generated_at,
+            content_updated_at=decision_source_updated_at,
+            sources={"decision_batch": decision_source_updated_at},
+        ),
+    }
     if notification_snapshot is None:
         alerts_common = common
     else:
@@ -3553,6 +3851,14 @@ def build_dashboard_v1(
                 source_updated_at=notification_snapshot.source_updated_at,
                 evaluated_at=evaluated_at,
                 stale_after_seconds=alert_stale_after_seconds,
+                observed_at=notification_snapshot.observed_at,
+                content_updated_at=(
+                    notification_snapshot.content_updated_at
+                    or notification_snapshot.observed_at
+                ),
+                sources={
+                    "notification_monitor": notification_snapshot.observed_at
+                },
             ),
         }
     if daily_brief is None:
@@ -3567,6 +3873,9 @@ def build_dashboard_v1(
                 source_updated_at=daily_brief.source_updated_at,
                 evaluated_at=evaluated_at,
                 stale_after_seconds=report_stale_after_seconds,
+                observed_at=generated_at,
+                content_updated_at=daily_brief.source_updated_at,
+                sources={"daily_brief": daily_brief.source_updated_at},
             ),
         }
     if daily_intelligence is None:
@@ -3583,6 +3892,9 @@ def build_dashboard_v1(
                 source_updated_at=daily_intelligence.created_at,
                 evaluated_at=evaluated_at,
                 stale_after_seconds=intelligence_stale_after_seconds,
+                observed_at=generated_at,
+                content_updated_at=daily_intelligence.created_at,
+                sources={"daily_intelligence": daily_intelligence.created_at},
             ),
         }
     if system_health is None:
@@ -3600,6 +3912,18 @@ def build_dashboard_v1(
                 source_updated_at=system_health.source_updated_at,
                 evaluated_at=evaluated_at,
                 stale_after_seconds=system_stale_after_seconds,
+                observed_at=system_health.captured_at,
+                content_updated_at=system_health.source_updated_at,
+                sources={
+                    "ops_observer": system_health.source_updated_at,
+                    **(
+                        {
+                            "runtime_ledger": ledger_snapshot.source_updated_at
+                        }
+                        if ledger_snapshot is not None
+                        else {}
+                    ),
+                },
             ),
         }
     models = DashboardReadModelSet(
@@ -3621,12 +3945,12 @@ def build_dashboard_v1(
         strategies=DashboardReadModel.create(
             read_model_type="strategies",
             payload=_strategy_payload(batch, registry, ledger_snapshot),
-            **common,
+            **decision_common,
         ),
         decisions=DashboardReadModel.create(
             read_model_type="decisions",
             payload=_decisions_payload(batch, ledger_snapshot),
-            **common,
+            **decision_common,
         ),
         risk=DashboardReadModel.create(
             read_model_type="risk",
@@ -3640,6 +3964,7 @@ def build_dashboard_v1(
                 registry,
                 stale=freshness["status"] == "stale",
                 ledger_snapshot=ledger_snapshot,
+                system_health=system_health,
             ),
             **common,
         ),

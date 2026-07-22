@@ -34,12 +34,16 @@
         "summary": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["status", "open_alert_count", "severity_counts", "delivery_state_counts", "audit_last_hash", "audit_row_count"],
+          "required": ["status", "open_alert_count", "resolved_alert_count", "severity_counts", "historical_severity_counts", "delivery_state_counts", "monitoring_observed_at", "content_updated_at", "audit_last_hash", "audit_row_count"],
           "properties": {
             "status": { "const": "unavailable_until_phase_c_notification_store" },
             "open_alert_count": { "type": "null" },
+            "resolved_alert_count": { "type": "null" },
             "severity_counts": { "type": "null" },
+            "historical_severity_counts": { "type": "null" },
             "delivery_state_counts": { "type": "null" },
+            "monitoring_observed_at": { "type": "null" },
+            "content_updated_at": { "type": "null" },
             "audit_last_hash": { "type": "null" },
             "audit_row_count": { "type": "null" }
           }
@@ -61,14 +65,23 @@
         "summary": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["status", "open_alert_count", "severity_counts", "delivery_state_counts", "audit_last_hash", "audit_row_count"],
+          "required": ["status", "open_alert_count", "resolved_alert_count", "severity_counts", "historical_severity_counts", "delivery_state_counts", "monitoring_observed_at", "content_updated_at", "audit_last_hash", "audit_row_count"],
           "properties": {
             "status": { "const": "available" },
             "open_alert_count": { "type": "integer", "minimum": 0 },
+            "resolved_alert_count": { "type": "integer", "minimum": 0 },
             "severity_counts": { "$ref": "#/$defs/severity_counts" },
+            "historical_severity_counts": { "$ref": "#/$defs/severity_counts" },
             "delivery_state_counts": { "$ref": "#/$defs/delivery_counts" },
+            "monitoring_observed_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+            "content_updated_at": {
+              "oneOf": [
+                { "type": "null" },
+                { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }
+              ]
+            },
             "audit_last_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
-            "audit_row_count": { "type": "integer", "minimum": 1 }
+            "audit_row_count": { "type": "integer", "minimum": 0 }
           }
         },
         "alerts": {

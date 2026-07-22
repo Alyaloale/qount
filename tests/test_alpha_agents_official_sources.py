@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import unittest
 from unittest.mock import patch
 
@@ -57,6 +58,7 @@ class OfficialSourceTests(unittest.TestCase):
             observed_at="2026-07-19T10:00:00+00:00",
         )
         self.assertEqual(document.source_hash, hashlib.sha256(body).hexdigest())
+        self.assertEqual(document.body_hash, document.source_hash)
         self.assertEqual(document.title, "Official Notice")
         self.assertNotIn("ignore", document.text_excerpt)
         context = official_source_llm_context(document)
@@ -64,6 +66,74 @@ class OfficialSourceTests(unittest.TestCase):
         self.assertFalse(context["environment_proxy_used"])
         self.assertFalse(context["llm_may_claim_web_search"])
         self.assertNotIn("body", document.to_metadata())
+        self.assertEqual(document.parser_version, "official_source_parser_v0.2")
+
+    def test_binance_json_extracts_article_body_and_dates(self) -> None:
+        body = json.dumps(
+            {
+                "data": {
+                    "title": "Binance product update",
+                    "body": "<p>The exchange will add a product with eligibility and risk terms.</p>"
+                    "<p>Users should review the complete schedule and regional restrictions.</p>",
+                    "releaseDate": 1784678400000,
+                    "updateTime": 1784682000000,
+                }
+            }
+        ).encode()
+        url = (
+            "https://www.binance.com/bapi/composite/v1/public/cms/article/"
+            "detail/query?articleCode=" + "a" * 32
+        )
+        document = build_official_source_document(
+            source_url=url,
+            final_url=url,
+            body=body,
+            content_type_header="application/json",
+            observed_at="2026-07-22T04:00:00+00:00",
+        )
+
+        self.assertEqual(document.title, "Binance product update")
+        self.assertIn("regional restrictions", document.text_excerpt)
+        self.assertEqual(document.extractor, "binance_article_json")
+        self.assertIsNotNone(document.published_at)
+        self.assertIsNotNone(document.modified_at)
+        self.assertEqual(document.content_quality, "limited")
+
+    def test_fed_and_sec_extract_scoped_body_without_navigation(self) -> None:
+        fixtures = (
+            (
+                "https://www.federalreserve.gov/newsevents/pressreleases/example.htm",
+                b"<html><head><meta property='og:title' content='Fed release'></head>"
+                b"<body><nav>Navigation only</nav><div id='article'>"
+                b"<p class='article__time'>July 14, 2026</p>"
+                b"<p>The Board released substantive discount-rate meeting details for depository institutions and explained the distinction from the federal funds target process.</p>"
+                b"<div id='lastUpdate'>Last Update: July 15, 2026</div></div></body></html>",
+                "federal_reserve_article",
+            ),
+            (
+                "https://www.sec.gov/newsroom/press-releases/example",
+                b"<html><head><meta property='og:title' content='SEC release'></head>"
+                b"<body><nav>Navigation only</nav><main id='main-content'>"
+                b"<div class='field press-release-lead-in'>Washington D.C., July 16, 2026</div>"
+                b"<div class='field field--name-body'>The Commission proposed a detailed rule with scope, transition conditions, and a sixty-day public comment period for affected market participants.</div>"
+                b"<div class='date-modified'>Last Reviewed or Updated: July 17, 2026</div>"
+                b"</main></body></html>",
+                "sec_press_release_body",
+            ),
+        )
+        for url, body, extractor in fixtures:
+            with self.subTest(url=url):
+                document = build_official_source_document(
+                    source_url=url,
+                    final_url=url,
+                    body=body,
+                    content_type_header="text/html",
+                    observed_at="2026-07-22T04:00:00+00:00",
+                )
+                self.assertNotIn("Navigation only", document.text_excerpt)
+                self.assertEqual(document.extractor, extractor)
+                self.assertIsNotNone(document.published_at)
+                self.assertIsNotNone(document.modified_at)
 
     def test_non_https_credentials_and_unknown_domains_are_rejected(self) -> None:
         errors = validate_official_source_url(

@@ -77,6 +77,29 @@ def _healthy_snapshot(observed_at: str) -> SystemHealthSnapshot:
             "active_state": "active",
         },
         "backup": {"last_success_at": observed_at, "age_seconds": 0},
+        "operations": {
+            "checks": [
+                {
+                    "check_id": "observer_contract",
+                    "status": "pass",
+                    "detail": "fixture_healthy",
+                    "impact_scopes": (
+                        "delivery",
+                        "execution",
+                        "intelligence",
+                        "observation",
+                    ),
+                    "blocks_execution": False,
+                    "observed_value": True,
+                }
+            ],
+            "scope_status": {
+                "delivery": "pass",
+                "execution": "pass",
+                "intelligence": "pass",
+                "observation": "pass",
+            },
+        },
     }
     observations = tuple(
         SystemComponentObservation.create(
@@ -90,7 +113,7 @@ def _healthy_snapshot(observed_at: str) -> SystemHealthSnapshot:
                 {"healthy_source_hash": component, "observed_at": observed_at}
             ),
         )
-        for component in ("clock", "disk", "service", "backup")
+        for component in ("clock", "disk", "service", "backup", "operations")
     )
     return SystemHealthSnapshot.create(observations, captured_at=observed_at)
 
@@ -409,7 +432,7 @@ class AuthorityWriterTest(unittest.TestCase):
             )
             updated.daily_brief.validate()
 
-    def test_manual_arm_can_recapture_healthy_notification_for_same_batch(self) -> None:
+    def test_manual_arm_recaptures_quiet_monitoring_without_synthetic_alert(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _source_run(root, blocked=False)
@@ -475,27 +498,12 @@ class AuthorityWriterTest(unittest.TestCase):
 
             self.assertEqual(promoted.status, "written")
             self.assertEqual(updated.registry.entries[0].promotion_status, "minimal_live")
-            authority_alerts = [
-                alert
-                for alert in updated.notification_snapshot.alerts
-                if alert["title"] == "Order-free authority bundle assembled"
-            ]
-            self.assertEqual(len(authority_alerts), 2)
+            self.assertEqual(updated.notification_snapshot.alerts, ())
+            self.assertEqual(updated.notification_snapshot.open_alert_count, 0)
+            self.assertEqual(updated.notification_snapshot.audit_row_count, 0)
             self.assertEqual(
-                {alert["status"] for alert in authority_alerts},
-                {"OPEN", "RESOLVED"},
-            )
-            self.assertIn(
-                bundle.batch.manifest.batch_id,
-                authority_alerts[-1]["dedupe_key"],
-            )
-            self.assertIn(
-                updated.system_health.snapshot_hash,
-                next(
-                    alert["dedupe_key"]
-                    for alert in authority_alerts
-                    if alert["status"] == "OPEN"
-                ),
+                updated.notification_snapshot.observed_at,
+                "2026-08-02T00:12:00+00:00",
             )
 
     def test_next_order_free_batch_preserves_matching_minimal_live_authority(self) -> None:

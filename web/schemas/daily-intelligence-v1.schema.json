@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://qount.alyaloale.com/schemas/daily-intelligence-v1.schema.json",
-  "title": "qount read-only DailyIntelligenceReport v1",
+  "title": "Historical qount read-only DailyIntelligenceReport v1",
+  "$comment": "Compatibility schema for archived v1 reports only. New reports and consumers must use daily-intelligence-v2.schema.json.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "report_id", "report_date", "created_at", "status", "market_pulse", "trading_history", "searches", "sources", "agent_reports", "executive_summary", "observed_impacts", "research_proposals", "risk_notes", "source_hashes", "llm", "orders_allowed", "live_changes_allowed", "report_hash"],

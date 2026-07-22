@@ -134,7 +134,13 @@ def _daily_intelligence() -> DailyIntelligenceReport:
         content_type="text/html",
         byte_count=12,
         source_hash="d" * 64,
+        body_hash="d" * 64,
         text_excerpt="Official notice",
+        published_at="2026-07-20T00:00:00+00:00",
+        modified_at=None,
+        parser_version="official_source_parser_v0.2",
+        content_quality="limited",
+        extractor="html_main",
     )
     reports = tuple(
         AgentReport(
@@ -151,6 +157,17 @@ def _daily_intelligence() -> DailyIntelligenceReport:
         report_date="2026-07-20",
         created_at="2026-07-20T00:06:25+00:00",
         status="incomplete",
+        pipeline_status="complete",
+        evidence_status="insufficient",
+        evidence_summary={
+            "status": "insufficient",
+            "verified_source_count": 1,
+            "substantive_source_count": 0,
+            "source_domain_count": 1,
+            "trading_history_status": "unavailable",
+            "execution_evidence_status": None,
+            "gaps": ["runtime_ledger_history_unavailable"],
+        },
         market_pulse=pulse,
         trading_history=history,
         searches=(search,),
@@ -459,6 +476,7 @@ class DashboardReadModelTest(unittest.TestCase):
             "daily-brief-v1.schema.json",
             "dashboard-v1-reports.schema.json",
             "daily-intelligence-v1.schema.json",
+            "daily-intelligence-v2.schema.json",
             "dashboard-v1-intelligence.schema.json",
             "dashboard-v1-publication.schema.json",
         )
@@ -584,7 +602,7 @@ class DashboardReadModelTest(unittest.TestCase):
             format_checker=FormatChecker(),
         ).validate(publication.as_dict())
         Draft202012Validator(
-            schemas["daily-intelligence-v1.schema.json"],
+            schemas["daily-intelligence-v2.schema.json"],
             registry=registry,
             format_checker=FormatChecker(),
         ).validate(report.as_dict())

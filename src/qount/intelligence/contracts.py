@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -17,8 +18,10 @@ from qount.contracts import trace_id
 from qount.contracts.trace import aware_datetime
 
 
-DAILY_INTELLIGENCE_SCHEMA_VERSION = 1
+DAILY_INTELLIGENCE_SCHEMA_VERSION = 2
 DAILY_INTELLIGENCE_STATUSES = ("clear", "attention_required", "incomplete")
+DAILY_INTELLIGENCE_PIPELINE_STATUSES = ("complete", "partial", "failed")
+DAILY_INTELLIGENCE_EVIDENCE_STATUSES = ("sufficient", "limited", "insufficient")
 DAILY_INTELLIGENCE_ROLES = (
     "market_analyst",
     "event_analyst",
@@ -124,7 +127,13 @@ class SourceEvidence:
     content_type: str
     byte_count: int
     source_hash: str
+    body_hash: str
     text_excerpt: str
+    published_at: str | None
+    modified_at: str | None
+    parser_version: str
+    content_quality: str
+    extractor: str
 
     def validate(self) -> None:
         _text(self.title or "untitled", name="source_title", maximum=500)
@@ -144,7 +153,19 @@ class SourceEvidence:
             raise IntelligenceContractError("source_byte_count_invalid")
         if not is_sha256(self.source_hash):
             raise IntelligenceContractError("source_hash_invalid")
+        if self.body_hash != self.source_hash:
+            raise IntelligenceContractError("source_body_hash_invalid")
         _text(self.text_excerpt, name="source_excerpt", maximum=12_000)
+        for name, value in (
+            ("published_at", self.published_at),
+            ("modified_at", self.modified_at),
+        ):
+            if value is not None:
+                _timestamp(value, name=f"source_{name}")
+        _text(self.parser_version, name="source_parser_version", maximum=80)
+        _text(self.extractor, name="source_extractor", maximum=80)
+        if self.content_quality not in {"substantive", "limited", "metadata_only"}:
+            raise IntelligenceContractError("source_content_quality_invalid")
 
     def as_dict(self) -> dict[str, Any]:
         self.validate()
@@ -156,7 +177,13 @@ class SourceEvidence:
             "content_type": self.content_type,
             "byte_count": self.byte_count,
             "source_hash": self.source_hash,
+            "body_hash": self.body_hash,
             "text_excerpt": self.text_excerpt,
+            "published_at": self.published_at,
+            "modified_at": self.modified_at,
+            "parser_version": self.parser_version,
+            "content_quality": self.content_quality,
+            "extractor": self.extractor,
         }
 
 
@@ -246,12 +273,185 @@ class MarketPulse:
 
 
 @dataclass(frozen=True)
+class ResearchProposal:
+    proposal_id: str
+    hypothesis: str
+    baseline_contract: str
+    kill_test_contract: str
+    cost_contract: tuple[str, ...]
+    holdout_role: str
+    source_capacity: str
+    history_capacity: str
+    g0_status: str
+    orders_allowed: bool
+    live_changes_allowed: bool
+    proposal_hash: str
+
+    @classmethod
+    def create(
+        cls,
+        hypothesis: str,
+        *,
+        source_capacity: str,
+        history_capacity: str,
+    ) -> "ResearchProposal":
+        if source_capacity not in {"sufficient", "limited", "blocked"}:
+            raise IntelligenceContractError("proposal_source_capacity_invalid")
+        if history_capacity not in {"sufficient", "limited", "blocked"}:
+            raise IntelligenceContractError("proposal_history_capacity_invalid")
+        if source_capacity == "blocked" and history_capacity == "blocked":
+            g0_status = "blocked_source_and_history_capacity"
+        elif source_capacity == "blocked":
+            g0_status = "blocked_source_capacity"
+        elif history_capacity != "sufficient":
+            g0_status = "blocked_history_capacity"
+        else:
+            g0_status = "eligible_for_research_design"
+        core = {
+            "hypothesis": _text(
+                hypothesis, name="proposal_hypothesis", maximum=1_000
+            ),
+            "baseline_contract": "simple_market_and_no_news_baselines_required",
+            "kill_test_contract": "permutation_time_shift_random_label_and_event_window_deletion",
+            "cost_contract": [
+                "fees",
+                "spread",
+                "slippage",
+                "funding",
+                "liquidity_discount",
+            ],
+            "holdout_role": "discovery_design_only_until_frozen_holdout",
+            "source_capacity": source_capacity,
+            "history_capacity": history_capacity,
+            "g0_status": g0_status,
+            "orders_allowed": False,
+            "live_changes_allowed": False,
+        }
+        proposal_hash = canonical_hash(core)
+        proposal = cls(
+            proposal_id=trace_id(
+                "research_proposal", {"proposal_hash": proposal_hash}
+            ),
+            hypothesis=core["hypothesis"],
+            baseline_contract=core["baseline_contract"],
+            kill_test_contract=core["kill_test_contract"],
+            cost_contract=tuple(core["cost_contract"]),
+            holdout_role=core["holdout_role"],
+            source_capacity=core["source_capacity"],
+            history_capacity=core["history_capacity"],
+            g0_status=core["g0_status"],
+            orders_allowed=False,
+            live_changes_allowed=False,
+            proposal_hash=proposal_hash,
+        )
+        proposal.validate()
+        return proposal
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "ResearchProposal":
+        expected = set(cls.__dataclass_fields__)
+        if not isinstance(value, Mapping) or set(value) != expected:
+            raise IntelligenceContractError("proposal_fields_invalid")
+        proposal = cls(
+            proposal_id=value["proposal_id"],
+            hypothesis=value["hypothesis"],
+            baseline_contract=value["baseline_contract"],
+            kill_test_contract=value["kill_test_contract"],
+            cost_contract=tuple(value["cost_contract"]),
+            holdout_role=value["holdout_role"],
+            source_capacity=value["source_capacity"],
+            history_capacity=value["history_capacity"],
+            g0_status=value["g0_status"],
+            orders_allowed=value["orders_allowed"],
+            live_changes_allowed=value["live_changes_allowed"],
+            proposal_hash=value["proposal_hash"],
+        )
+        proposal.validate()
+        return proposal
+
+    def validate(self) -> None:
+        _text(self.hypothesis, name="proposal_hypothesis", maximum=1_000)
+        _text(self.baseline_contract, name="proposal_baseline", maximum=200)
+        _text(self.kill_test_contract, name="proposal_kill_test", maximum=200)
+        _text(self.holdout_role, name="proposal_holdout", maximum=160)
+        if (
+            self.source_capacity not in {"sufficient", "limited", "blocked"}
+            or self.history_capacity not in {"sufficient", "limited", "blocked"}
+            or self.g0_status
+            not in {
+                "blocked_source_and_history_capacity",
+                "blocked_source_capacity",
+                "blocked_history_capacity",
+                "eligible_for_research_design",
+            }
+            or not self.cost_contract
+            or any(
+                not isinstance(item, str) or not item for item in self.cost_contract
+            )
+            or self.orders_allowed
+            or self.live_changes_allowed
+        ):
+            raise IntelligenceContractError("proposal_contract_invalid")
+        core = self.as_dict()
+        proposal_id = core.pop("proposal_id")
+        proposal_hash = core.pop("proposal_hash")
+        if proposal_hash != canonical_hash(core) or proposal_id != trace_id(
+            "research_proposal", {"proposal_hash": proposal_hash}
+        ):
+            raise IntelligenceContractError("proposal_hash_invalid")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "proposal_id": self.proposal_id,
+            "hypothesis": self.hypothesis,
+            "baseline_contract": self.baseline_contract,
+            "kill_test_contract": self.kill_test_contract,
+            "cost_contract": list(self.cost_contract),
+            "holdout_role": self.holdout_role,
+            "source_capacity": self.source_capacity,
+            "history_capacity": self.history_capacity,
+            "g0_status": self.g0_status,
+            "orders_allowed": self.orders_allowed,
+            "live_changes_allowed": self.live_changes_allowed,
+            "proposal_hash": self.proposal_hash,
+        }
+
+
+def _research_capacities(
+    sources: Sequence[SourceEvidence],
+    trading_history: Mapping[str, Any],
+) -> tuple[str, str]:
+    substantive = [source for source in sources if source.content_quality == "substantive"]
+    domains = {
+        (urllib.parse.urlparse(source.final_url).hostname or "").lower()
+        for source in substantive
+    }
+    if len(substantive) >= 2 and len(domains) >= 2:
+        source_capacity = "sufficient"
+    elif any(source.content_quality != "metadata_only" for source in sources):
+        source_capacity = "limited"
+    else:
+        source_capacity = "blocked"
+    execution_status = trading_history.get("execution_evidence_status")
+    if trading_history.get("status") != "available" or execution_status == "orders_expected_but_missing":
+        history_capacity = "blocked"
+    else:
+        # A current ledger snapshot can prove an order-free or filled cycle, but it
+        # is not a historical event window or an independent strategy holdout.
+        history_capacity = "limited"
+    return source_capacity, history_capacity
+
+
+@dataclass(frozen=True)
 class DailyIntelligenceReport:
     schema_version: int
     report_id: str
     report_date: str
     created_at: str
     status: str
+    pipeline_status: str
+    evidence_status: str
+    evidence_summary: Mapping[str, Any]
     market_pulse: Mapping[str, Any]
     trading_history: Mapping[str, Any]
     searches: tuple[Mapping[str, Any], ...]
@@ -259,7 +459,7 @@ class DailyIntelligenceReport:
     agent_reports: tuple[Mapping[str, Any], ...]
     executive_summary: str
     observed_impacts: tuple[str, ...]
-    research_proposals: tuple[str, ...]
+    research_proposals: tuple[Mapping[str, Any], ...]
     risk_notes: tuple[str, ...]
     source_hashes: Mapping[str, str]
     llm: Mapping[str, Any]
@@ -274,6 +474,9 @@ class DailyIntelligenceReport:
         report_date: str,
         created_at: str,
         status: str,
+        pipeline_status: str,
+        evidence_status: str,
+        evidence_summary: Mapping[str, Any],
         market_pulse: MarketPulse,
         trading_history: Mapping[str, Any],
         searches: Sequence[SearchEvidence],
@@ -286,11 +489,25 @@ class DailyIntelligenceReport:
         source_hashes: Mapping[str, str],
         llm: Mapping[str, Any],
     ) -> "DailyIntelligenceReport":
+        source_capacity, history_capacity = _research_capacities(
+            sources, trading_history
+        )
+        structured_proposals = [
+            ResearchProposal.create(
+                proposal,
+                source_capacity=source_capacity,
+                history_capacity=history_capacity,
+            ).as_dict()
+            for proposal in research_proposals
+        ]
         core = {
             "schema_version": DAILY_INTELLIGENCE_SCHEMA_VERSION,
             "report_date": report_date,
             "created_at": _timestamp(created_at, name="intelligence_created_at"),
             "status": status,
+            "pipeline_status": pipeline_status,
+            "evidence_status": evidence_status,
+            "evidence_summary": dict(evidence_summary),
             "market_pulse": market_pulse.as_dict(),
             "trading_history": dict(trading_history),
             "searches": [row.as_dict() for row in searches],
@@ -298,7 +515,7 @@ class DailyIntelligenceReport:
             "agent_reports": [_json_native(row.to_dict()) for row in agent_reports],
             "executive_summary": executive_summary,
             "observed_impacts": list(observed_impacts),
-            "research_proposals": list(research_proposals),
+            "research_proposals": structured_proposals,
             "risk_notes": list(risk_notes),
             "source_hashes": dict(sorted(source_hashes.items())),
             "llm": dict(llm),
@@ -311,6 +528,9 @@ class DailyIntelligenceReport:
             report_date=core["report_date"],
             created_at=core["created_at"],
             status=core["status"],
+            pipeline_status=core["pipeline_status"],
+            evidence_status=core["evidence_status"],
+            evidence_summary=dict(core["evidence_summary"]),
             market_pulse=dict(core["market_pulse"]),
             trading_history=dict(core["trading_history"]),
             searches=tuple(dict(row) for row in core["searches"]),
@@ -318,7 +538,7 @@ class DailyIntelligenceReport:
             agent_reports=tuple(dict(row) for row in core["agent_reports"]),
             executive_summary=core["executive_summary"],
             observed_impacts=tuple(core["observed_impacts"]),
-            research_proposals=tuple(core["research_proposals"]),
+            research_proposals=tuple(dict(row) for row in core["research_proposals"]),
             risk_notes=tuple(core["risk_notes"]),
             source_hashes=dict(core["source_hashes"]),
             llm=dict(core["llm"]),
@@ -344,16 +564,60 @@ class DailyIntelligenceReport:
             raise IntelligenceContractError("intelligence_report_date_mismatch")
         if self.status not in DAILY_INTELLIGENCE_STATUSES:
             raise IntelligenceContractError("intelligence_status_invalid")
-        _text(self.executive_summary, name="intelligence_summary", maximum=2_000)
-        for name, values in (
-            ("impacts", self.observed_impacts),
-            ("proposals", self.research_proposals),
-            ("risks", self.risk_notes),
+        if self.pipeline_status not in DAILY_INTELLIGENCE_PIPELINE_STATUSES:
+            raise IntelligenceContractError("intelligence_pipeline_status_invalid")
+        if self.evidence_status not in DAILY_INTELLIGENCE_EVIDENCE_STATUSES:
+            raise IntelligenceContractError("intelligence_evidence_status_invalid")
+        evidence_summary = self.evidence_summary
+        expected_evidence_fields = {
+            "status",
+            "verified_source_count",
+            "substantive_source_count",
+            "source_domain_count",
+            "trading_history_status",
+            "execution_evidence_status",
+            "gaps",
+        }
+        if (
+            not isinstance(evidence_summary, Mapping)
+            or set(evidence_summary) != expected_evidence_fields
+            or evidence_summary["status"] != self.evidence_status
+            or any(
+                not isinstance(evidence_summary[name], int)
+                or isinstance(evidence_summary[name], bool)
+                or evidence_summary[name] < 0
+                for name in (
+                    "verified_source_count",
+                    "substantive_source_count",
+                    "source_domain_count",
+                )
+            )
+            or evidence_summary["trading_history_status"]
+            not in {"available", "unavailable"}
+            or evidence_summary["execution_evidence_status"]
+            not in {
+                None,
+                "no_order_expected",
+                "orders_expected_but_missing",
+                "fills_verified",
+            }
+            or not isinstance(evidence_summary["gaps"], list)
+            or any(
+                not isinstance(gap, str) or not gap
+                for gap in evidence_summary["gaps"]
+            )
         ):
+            raise IntelligenceContractError("intelligence_evidence_summary_invalid")
+        _text(self.executive_summary, name="intelligence_summary", maximum=2_000)
+        for name, values in (("impacts", self.observed_impacts), ("risks", self.risk_notes)):
             if len(values) > 12:
                 raise IntelligenceContractError(f"intelligence_{name}_invalid")
             for item in values:
                 _text(item, name=f"intelligence_{name}_item", maximum=1_000)
+        if len(self.research_proposals) > 12:
+            raise IntelligenceContractError("intelligence_proposals_invalid")
+        for proposal in self.research_proposals:
+            ResearchProposal.from_dict(proposal)
         if self.orders_allowed or self.live_changes_allowed:
             raise IntelligenceContractError("intelligence_authority_invalid")
         if not self.source_hashes or any(
@@ -425,7 +689,13 @@ class DailyIntelligenceReport:
                     content_type=row["content_type"],
                     byte_count=row["byte_count"],
                     source_hash=row["source_hash"],
+                    body_hash=row["body_hash"],
                     text_excerpt=row["text_excerpt"],
+                    published_at=row["published_at"],
+                    modified_at=row["modified_at"],
+                    parser_version=row["parser_version"],
+                    content_quality=row["content_quality"],
+                    extractor=row["extractor"],
                 )
                 for row in self.sources
                 if set(row)
@@ -437,7 +707,13 @@ class DailyIntelligenceReport:
                     "content_type",
                     "byte_count",
                     "source_hash",
+                    "body_hash",
                     "text_excerpt",
+                    "published_at",
+                    "modified_at",
+                    "parser_version",
+                    "content_quality",
+                    "extractor",
                 }
             )
             if len(sources) != len(self.sources):
@@ -499,6 +775,26 @@ class DailyIntelligenceReport:
             raise IntelligenceContractError(
                 "intelligence_nested_contract_invalid"
             ) from exc
+        source_domains = {
+            (urllib.parse.urlparse(source.final_url).hostname or "").lower()
+            for source in sources
+        }
+        expected_evidence_counts = {
+            "verified_source_count": len(sources),
+            "substantive_source_count": sum(
+                source.content_quality == "substantive" for source in sources
+            ),
+            "source_domain_count": len(source_domains),
+            "trading_history_status": self.trading_history["status"],
+            "execution_evidence_status": self.trading_history[
+                "execution_evidence_status"
+            ],
+        }
+        if any(
+            self.evidence_summary[name] != value
+            for name, value in expected_evidence_counts.items()
+        ):
+            raise IntelligenceContractError("intelligence_evidence_summary_mismatch")
         expected_source_hashes = {
             "market_pulse": pulse.pulse_hash,
             "trading_history": self.trading_history["summary_hash"],
@@ -530,6 +826,9 @@ class DailyIntelligenceReport:
             "report_date": self.report_date,
             "created_at": self.created_at,
             "status": self.status,
+            "pipeline_status": self.pipeline_status,
+            "evidence_status": self.evidence_status,
+            "evidence_summary": dict(self.evidence_summary),
             "market_pulse": dict(self.market_pulse),
             "trading_history": dict(self.trading_history),
             "searches": [dict(row) for row in self.searches],
@@ -537,7 +836,7 @@ class DailyIntelligenceReport:
             "agent_reports": [dict(row) for row in self.agent_reports],
             "executive_summary": self.executive_summary,
             "observed_impacts": list(self.observed_impacts),
-            "research_proposals": list(self.research_proposals),
+            "research_proposals": [dict(row) for row in self.research_proposals],
             "risk_notes": list(self.risk_notes),
             "source_hashes": dict(self.source_hashes),
             "llm": dict(self.llm),
@@ -556,6 +855,9 @@ def daily_intelligence_from_dict(value: Mapping[str, Any]) -> DailyIntelligenceR
         "report_date",
         "created_at",
         "status",
+        "pipeline_status",
+        "evidence_status",
+        "evidence_summary",
         "market_pulse",
         "trading_history",
         "searches",
@@ -579,6 +881,9 @@ def daily_intelligence_from_dict(value: Mapping[str, Any]) -> DailyIntelligenceR
         report_date=value["report_date"],
         created_at=value["created_at"],
         status=value["status"],
+        pipeline_status=value["pipeline_status"],
+        evidence_status=value["evidence_status"],
+        evidence_summary=dict(value["evidence_summary"]),
         market_pulse=dict(value["market_pulse"]),
         trading_history=dict(value["trading_history"]),
         searches=tuple(dict(row) for row in value["searches"]),
@@ -586,7 +891,7 @@ def daily_intelligence_from_dict(value: Mapping[str, Any]) -> DailyIntelligenceR
         agent_reports=tuple(dict(row) for row in value["agent_reports"]),
         executive_summary=value["executive_summary"],
         observed_impacts=tuple(value["observed_impacts"]),
-        research_proposals=tuple(value["research_proposals"]),
+        research_proposals=tuple(dict(row) for row in value["research_proposals"]),
         risk_notes=tuple(value["risk_notes"]),
         source_hashes=dict(value["source_hashes"]),
         llm=dict(value["llm"]),

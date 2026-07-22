@@ -31,7 +31,6 @@ from qount.ledger import RuntimeLedger
 from qount.ledger import build_runtime_ledger_snapshot
 from qount.ledger import build_verified_legacy_dispatch_batch
 from qount.ledger import reconcile_three_way
-from qount.notifications import AlertEvent
 from qount.notifications import NotificationStore
 from qount.notifications import SystemHealthObservation
 from qount.notifications import alerts_from_runtime_ledger_snapshot
@@ -87,6 +86,7 @@ class AuthorityWriterConfig:
     backup_root: Path
     dashboard_root: Path
     lock_path: Path
+    notification_store_path: Path | None = None
     target_stress_loss_fraction: float = 0.01
     service_name: str = "qount-dashboard-publisher.timer"
 
@@ -99,6 +99,11 @@ class AuthorityWriterConfig:
             self.backup_root,
             self.dashboard_root,
             self.lock_path,
+            *(
+                (self.notification_store_path,)
+                if self.notification_store_path is not None
+                else ()
+            ),
         )
         if any(not isinstance(path, Path) or not path.is_absolute() for path in paths):
             raise AuthorityWriterError("authority_writer_absolute_paths_required")
@@ -460,6 +465,9 @@ def _health(
             service_name=config.service_name,
             allowed_service_names=DEFAULT_ALLOWED_SERVICE_NAMES,
             backup_root=config.backup_root,
+            repo_root=config.repo_root,
+            state_root=config.repo_root / "state" / "mini_trend",
+            operations_enabled=True,
         ),
         observed_at=captured_at,
         captured_at=captured_at,
@@ -489,28 +497,6 @@ def _notification_snapshot(
             trace_id_value=str(row["observation_id"]),
         )
         alerts.extend(alerts_from_system_health(observation))
-    if not alerts:
-        source_id = canonical_hash({"batch_id": batch.manifest.batch_id, "health": health.snapshot_hash})
-        alerts.append(
-            AlertEvent.create(
-                severity="INFO",
-                category="system_health",
-                title="Order-free authority bundle assembled",
-                summary="All standard sources were assembled without execution authority.",
-                occurred_at=captured_at,
-                source_type="system",
-                source_id=source_id,
-                source_hash=health.snapshot_hash,
-                # This is an immutable observation, not a mutable incident.  A
-                # repeated publication can keep the batch while recapturing
-                # health, so its dedupe identity must bind both source inputs.
-                dedupe_key=(
-                    f"system:authority_bundle:{batch.manifest.batch_id}:"
-                    f"{health.snapshot_hash}"
-                ),
-                trace_id_value=batch.manifest.batch_id,
-            )
-        )
     categories = {}
     for alert in alerts:
         categories.setdefault(alert.source_type, []).append(alert)
@@ -534,6 +520,14 @@ def _notification_snapshot(
             observed_at=captured_at,
         )
     return build_notification_snapshot(store, captured_at=captured_at)
+
+
+def _notification_path(config: AuthorityWriterConfig) -> Path:
+    return (
+        config.notification_store_path
+        if config.notification_store_path is not None
+        else config.runtime_root / "notifications.sqlite3"
+    )
 
 
 def _write_json(path: Path, value: Mapping[str, Any]) -> None:
@@ -807,7 +801,7 @@ def write_order_free_authority_bundle(
                 batch,
                 ledger_snapshot,
                 health,
-                notification_path=config.runtime_root / "notifications.sqlite3",
+                notification_path=_notification_path(config),
                 captured_at=captured_at,
             )
             brief = build_daily_brief(
@@ -908,7 +902,7 @@ def refresh_authority_bundle_from_runtime(
             current.batch,
             ledger_snapshot,
             health,
-            notification_path=config.runtime_root / "notifications.sqlite3",
+            notification_path=_notification_path(config),
             captured_at=captured_at,
         )
         brief = build_daily_brief(
@@ -1034,7 +1028,7 @@ def authorize_minimal_live_authority_bundle(
             current.batch,
             ledger_snapshot,
             health,
-            notification_path=config.runtime_root / "notifications.sqlite3",
+            notification_path=_notification_path(config),
             captured_at=captured_at,
         )
         brief = build_daily_brief(

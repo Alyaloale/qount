@@ -16,6 +16,7 @@ from qount.notifications import NotificationStore
 from qount.notifications import NotificationStoreConflictError
 from qount.notifications import NotificationStoreError
 from qount.notifications import build_notification_snapshot
+from qount.notifications.migration import replay_verified_notification_store
 
 
 OCCURRED_AT = "2026-07-20T00:10:00+00:00"
@@ -93,6 +94,68 @@ class NotificationStoreTest(unittest.TestCase):
                     connection.execute("SELECT COUNT(*) FROM notification_audit").fetchone()[0],
                     2,
                 )
+
+    def test_read_only_store_verifies_without_accepting_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = self._store(Path(temporary))
+            store.enqueue(_alert(), recorded_at=RECORDED_AT)
+            observer = NotificationStore(store.database_path, read_only=True)
+
+            self.assertEqual(
+                set(observer.verified_rows()["events"]), {_alert().alert_id}
+            )
+            with self.assertRaisesRegex(
+                NotificationStoreError, "notification_store_read_only"
+            ):
+                observer.enqueue(_alert(), recorded_at=RECORDED_AT)
+
+    def test_verified_migration_skips_synthetic_info_and_resolves_info(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = NotificationStore(root / "source" / "store.sqlite3")
+            target = NotificationStore(root / "target" / "store.sqlite3")
+            source.enqueue(_alert(), recorded_at=RECORDED_AT)
+            synthetic = AlertEvent.create(
+                severity="INFO",
+                category="system_health",
+                title="Order-free authority bundle assembled",
+                summary="All standard sources were assembled without execution authority.",
+                occurred_at=OCCURRED_AT,
+                source_type="system",
+                source_id=_hash("synthetic-source"),
+                source_hash=_hash("synthetic-payload"),
+                dedupe_key="system:authority_bundle:fixture",
+            )
+            source.enqueue(synthetic, recorded_at=RECORDED_AT)
+            existing_info = AlertEvent.create(
+                severity="INFO",
+                category="architecture_verification",
+                title="Architecture verified",
+                summary="The one-time verification completed.",
+                occurred_at=OCCURRED_AT,
+                source_type="system",
+                source_id=_hash("existing-info-source"),
+                source_hash=_hash("existing-info-payload"),
+                dedupe_key="architecture:verified",
+            )
+            target.enqueue(existing_info, recorded_at=RECORDED_AT)
+
+            result = replay_verified_notification_store(
+                source.database_path,
+                target.database_path,
+                imported_at="2026-07-20T00:20:00+00:00",
+            )
+            snapshot = build_notification_snapshot(
+                target, captured_at="2026-07-20T00:20:00+00:00"
+            )
+
+            self.assertIn(synthetic.alert_id, result["skipped_synthetic_alert_ids"])
+            self.assertNotIn(
+                synthetic.alert_id, {row["alert_id"] for row in snapshot.alerts}
+            )
+            self.assertEqual(snapshot.open_alert_count, 1)
+            self.assertEqual(snapshot.severity_counts["HALT"], 1)
+            self.assertEqual(snapshot.severity_counts["INFO"], 0)
 
     def test_same_identity_with_changed_content_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -224,7 +287,10 @@ class NotificationStoreTest(unittest.TestCase):
             )
             self.assertEqual(snapshot.open_alert_count, 0)
             self.assertEqual(snapshot.alerts[0]["status"], "RESOLVED")
-            self.assertEqual(snapshot.severity_counts["CRITICAL"], 1)
+            self.assertEqual(snapshot.severity_counts["CRITICAL"], 0)
+            self.assertEqual(
+                snapshot.historical_severity_counts["CRITICAL"], 1
+            )
 
     def test_database_tamper_fails_snapshot_verification(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

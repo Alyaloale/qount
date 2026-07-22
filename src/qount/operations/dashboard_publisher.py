@@ -23,6 +23,8 @@ from qount.contracts import canonical_hash
 from qount.contracts import is_sha256
 from qount.contracts.trace import aware_datetime
 from qount.intelligence import read_latest_daily_intelligence
+from qount.notifications import NotificationStore
+from qount.notifications import build_notification_snapshot
 from qount.operations.backups import BackupRecord
 from qount.operations.backups import BackupRetentionResult
 from qount.operations.backups import RestoreDrillResult
@@ -51,12 +53,15 @@ class DashboardPublisherBusyError(DashboardPublisherError):
 
 @dataclass(frozen=True)
 class PublisherConfig:
+    repo_root: Path
     authority_root: Path
     dashboard_root: Path
     backup_root: Path
     lock_path: Path
     disk_path: Path
     intelligence_root: Path | None = None
+    notification_store_path: Path | None = None
+    operations_enabled: bool = True
     service_name: str = "qount-dashboard-publisher.timer"
     allowed_service_names: tuple[str, ...] = DEFAULT_ALLOWED_SERVICE_NAMES
     retain_previous_releases: int = 4
@@ -68,6 +73,7 @@ class PublisherConfig:
 
     def validate(self) -> None:
         paths = (
+            self.repo_root,
             self.authority_root,
             self.dashboard_root,
             self.backup_root,
@@ -79,6 +85,11 @@ class PublisherConfig:
         if self.intelligence_root is not None and not self.intelligence_root.is_absolute():
             raise DashboardPublisherError("publisher_absolute_paths_required")
         if (
+            self.notification_store_path is not None
+            and not self.notification_store_path.is_absolute()
+        ):
+            raise DashboardPublisherError("publisher_absolute_paths_required")
+        if (
             self.service_name not in self.allowed_service_names
             or len(set(self.allowed_service_names)) != len(self.allowed_service_names)
             or not isinstance(self.retain_previous_releases, int)
@@ -87,6 +98,7 @@ class PublisherConfig:
             or not isinstance(self.retain_previous_backups, int)
             or isinstance(self.retain_previous_backups, bool)
             or self.retain_previous_backups < 1
+            or not isinstance(self.operations_enabled, bool)
         ):
             raise DashboardPublisherError("publisher_configuration_invalid")
         for value in (
@@ -367,6 +379,17 @@ def run_dashboard_publisher(
     with single_writer_lock(config.lock_path):
         _prepare_output_paths(config)
         bundle = read_vps_authority_bundle(config.authority_root)
+        notification_snapshot = (
+            build_notification_snapshot(
+                NotificationStore(
+                    config.notification_store_path,
+                    read_only=True,
+                ),
+                captured_at=completed_at,
+            )
+            if config.notification_store_path is not None
+            else bundle.notification_snapshot
+        )
         intelligence = (
             read_latest_daily_intelligence(config.intelligence_root)
             if config.intelligence_root is not None
@@ -379,6 +402,9 @@ def run_dashboard_publisher(
                 service_name=config.service_name,
                 allowed_service_names=config.allowed_service_names,
                 backup_root=config.backup_root,
+                repo_root=config.repo_root,
+                state_root=config.repo_root / "state" / "mini_trend",
+                operations_enabled=config.operations_enabled,
             ),
             observed_at=completed_at,
             captured_at=completed_at,
@@ -391,7 +417,8 @@ def run_dashboard_publisher(
             evaluated_at=completed_at,
             stale_after_seconds=config.stale_after_seconds,
             ledger_snapshot=bundle.ledger_snapshot,
-            notification_snapshot=bundle.notification_snapshot,
+            notification_snapshot=notification_snapshot,
+            daily_brief_notification_snapshot=bundle.notification_snapshot,
             alert_stale_after_seconds=config.alert_stale_after_seconds,
             daily_brief=bundle.daily_brief,
             report_stale_after_seconds=config.report_stale_after_seconds,
@@ -438,12 +465,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Publish verified Dashboard v1 read models without execution authority."
     )
+    parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--authority-root", type=Path, required=True)
     parser.add_argument("--dashboard-root", type=Path, required=True)
     parser.add_argument("--backup-root", type=Path, required=True)
     parser.add_argument("--lock-path", type=Path, required=True)
     parser.add_argument("--disk-path", type=Path, required=True)
     parser.add_argument("--intelligence-root", type=Path)
+    parser.add_argument("--notification-store", type=Path)
     parser.add_argument(
         "--service-name",
         choices=DEFAULT_ALLOWED_SERVICE_NAMES,
@@ -461,12 +490,14 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     config = PublisherConfig(
+        repo_root=args.repo_root,
         authority_root=args.authority_root,
         dashboard_root=args.dashboard_root,
         backup_root=args.backup_root,
         lock_path=args.lock_path,
         disk_path=args.disk_path,
         intelligence_root=args.intelligence_root,
+        notification_store_path=args.notification_store,
         service_name=args.service_name,
         retain_previous_releases=args.retain_previous_releases,
         retain_previous_backups=args.retain_previous_backups,

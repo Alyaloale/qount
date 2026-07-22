@@ -5,6 +5,8 @@ from .archive import IntelligenceArchiveRecord
 from .archive import archive_daily_intelligence
 from .archive import read_latest_daily_intelligence
 from .contracts import DAILY_INTELLIGENCE_ROLES
+from .contracts import DAILY_INTELLIGENCE_EVIDENCE_STATUSES
+from .contracts import DAILY_INTELLIGENCE_PIPELINE_STATUSES
 from .contracts import DAILY_INTELLIGENCE_SCHEMA_VERSION
 from .contracts import DAILY_INTELLIGENCE_STATUSES
 from .contracts import DailyIntelligenceReport
@@ -12,6 +14,7 @@ from .contracts import IntelligenceContractError
 from .contracts import MarketPulse
 from .contracts import SearchEvidence
 from .contracts import SourceEvidence
+from .contracts import ResearchProposal
 from .contracts import daily_intelligence_from_dict
 from .daily import DAILY_ROLES
 from .daily import DEFAULT_DAILY_SEARCH_QUERIES
@@ -32,6 +35,8 @@ from .search import StaticSearchProvider
 
 __all__ = [
     "DAILY_INTELLIGENCE_ROLES",
+    "DAILY_INTELLIGENCE_EVIDENCE_STATUSES",
+    "DAILY_INTELLIGENCE_PIPELINE_STATUSES",
     "DAILY_INTELLIGENCE_SCHEMA_VERSION",
     "DAILY_INTELLIGENCE_STATUSES",
     "DAILY_ROLES",
@@ -47,6 +52,7 @@ __all__ = [
     "MarketPulseFetch",
     "MarketPulseError",
     "OfficialFeedSearchProvider",
+    "ResearchProposal",
     "SearchEvidence",
     "SearchProviderError",
     "SourceEvidence",

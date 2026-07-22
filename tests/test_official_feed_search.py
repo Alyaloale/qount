@@ -106,11 +106,16 @@ class OfficialFeedSearchProviderTest(unittest.TestCase):
             ),
         )
         for query, endpoint, domain in fixtures:
+            titles = (
+                ("Monetary policy rate release", "Second policy statement")
+                if domain == "federalreserve.gov"
+                else ("Digital asset enforcement action", "Second crypto filing")
+            )
             body = (
                 "<?xml version='1.0'?><rss><channel>"
-                f"<item><title>  Current   release </title><link>https://www.{domain}/news/current</link></item>"
+                f"<item><title>{titles[0]}</title><link>https://www.{domain}/news/current</link></item>"
                 "<item><title>Injected</title><link>https://example.com/not-official</link></item>"
-                f"<item><title>Second</title><link>https://www.{domain}/news/second</link></item>"
+                f"<item><title>{titles[1]}</title><link>https://www.{domain}/news/second</link></item>"
                 "</channel></rss>"
             ).encode()
             opener = _Opener(
@@ -122,8 +127,35 @@ class OfficialFeedSearchProviderTest(unittest.TestCase):
                 result = provider.search(query, searched_at=SEARCHED_AT)
 
             self.assertEqual(result.evidence.result_count, 2)
-            self.assertEqual(result.titles, ("Current release", "Second"))
+            self.assertEqual(result.titles, titles)
             self.assertTrue(all(domain in url for url in result.evidence.urls))
+
+    def test_feed_filters_off_topic_and_out_of_window_rows(self) -> None:
+        endpoint = "https://www.sec.gov/news/pressreleases.rss"
+        body = (
+            "<?xml version='1.0'?><rss><channel>"
+            "<item><title>Digital asset enforcement action</title>"
+            "<link>https://www.sec.gov/news/current</link>"
+            "<pubDate>Tue, 21 Jul 2026 12:00:00 GMT</pubDate></item>"
+            "<item><title>Municipal adviser FAQ</title>"
+            "<link>https://www.sec.gov/news/off-topic</link>"
+            "<pubDate>Tue, 21 Jul 2026 12:00:00 GMT</pubDate></item>"
+            "<item><title>Crypto filing from old archive</title>"
+            "<link>https://www.sec.gov/news/old</link>"
+            "<pubDate>Tue, 01 Jan 2024 12:00:00 GMT</pubDate></item>"
+            "</channel></rss>"
+        ).encode()
+        result = OfficialFeedSearchProvider(
+            count=5,
+            opener=_Opener(
+                _Response(body=body, url=endpoint, content_type="application/rss+xml")
+            ),
+        ).search(
+            "site:sec.gov latest crypto digital asset enforcement filing",
+            searched_at="2026-07-22T00:00:00+00:00",
+        )
+
+        self.assertEqual(result.titles, ("Digital asset enforcement action",))
 
     def test_unknown_query_redirect_and_xml_entity_fail_closed(self) -> None:
         endpoint = "https://www.federalreserve.gov/feeds/press_all.xml"

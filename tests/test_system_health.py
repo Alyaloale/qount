@@ -34,6 +34,29 @@ def _health_snapshot(
             "last_success_at": "2026-07-20T00:00:00+00:00",
             "age_seconds": 425,
         },
+        "operations": {
+            "checks": [
+                {
+                    "check_id": "observer_contract",
+                    "status": "pass",
+                    "detail": "fixture_healthy",
+                    "impact_scopes": [
+                        "delivery",
+                        "execution",
+                        "intelligence",
+                        "observation",
+                    ],
+                    "blocks_execution": False,
+                    "observed_value": True,
+                }
+            ],
+            "scope_status": {
+                "delivery": "pass",
+                "execution": "pass",
+                "intelligence": "pass",
+                "observation": "pass",
+            },
+        },
     }
     observations = []
     for component in SYSTEM_COMPONENTS:
@@ -41,6 +64,16 @@ def _health_snapshot(
         component_metrics = dict(metrics[component])
         if component == "service" and status != "healthy":
             component_metrics["active_state"] = "failed"
+        if component == "operations" and status != "healthy":
+            component_metrics["checks"][0]["status"] = (
+                "warn" if status == "degraded" else "block"
+            )
+            component_metrics["checks"][0]["blocks_execution"] = (
+                status == "unavailable"
+            )
+            component_metrics["scope_status"]["execution"] = (
+                "degraded" if status == "degraded" else "unavailable"
+            )
         observations.append(
             SystemComponentObservation.create(
                 component=component,
