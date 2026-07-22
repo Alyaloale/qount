@@ -597,6 +597,48 @@ class MiniTrendPilotDispatcherTest(unittest.TestCase):
         self.assertEqual(evidence["dry_run_days"], 1)
         self.assertEqual(tampered["dry_run_schema_error_count"], 1)
 
+    def test_completed_live_decision_allows_dry_refresh_but_blocks_live_replay(self) -> None:
+        rules = _rules()
+        decision_id = _projection(rules)["decision"]["decision_id"]
+        summary = {
+            "executed_decision_ids": [decision_id],
+            "locked_live_decision_ids": [],
+        }
+        sources = {
+            "preflight": "p",
+            "projection": "x",
+            "readiness": "r",
+            "exchange_rules": "e",
+        }
+        dry = build_pilot_dispatch_plan(
+            _preflight(),
+            _projection(rules),
+            _readiness(),
+            rules,
+            _snapshot(),
+            source_hashes=sources,
+            journal_summary=summary,
+        )
+        live = build_pilot_dispatch_plan(
+            _preflight(),
+            _projection(rules),
+            _readiness(),
+            rules,
+            _snapshot(),
+            mode="live",
+            source_hashes=sources,
+            journal_summary=summary,
+        )
+
+        self.assertEqual(dry["diagnostics"]["verdict"], "dry_dispatch_ready")
+        self.assertNotIn(
+            "decision_already_executed", dry["diagnostics"]["blockers"]
+        )
+        self.assertEqual(live["diagnostics"]["verdict"], "blocked_dispatch")
+        self.assertIn(
+            "decision_already_executed", live["diagnostics"]["blockers"]
+        )
+
     def test_live_execution_uses_close_position_stop_and_reconciles(self) -> None:
         plan = _plan(mode="live", switch=True)
         self.assertEqual(plan["diagnostics"]["verdict"], "blocked_dispatch")

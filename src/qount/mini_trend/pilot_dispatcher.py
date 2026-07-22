@@ -1062,7 +1062,11 @@ def build_pilot_dispatch_plan(
             }
         )
 
-    if decision_id in set(summary.get("executed_decision_ids") or []):
+    # A recurring order-free refresh must be able to republish inputs for an
+    # already completed live decision.  Live mode still blocks any replay.
+    if mode == "live" and decision_id in set(
+        summary.get("executed_decision_ids") or []
+    ):
         blockers.append("decision_already_executed")
     if decision_id in set(summary.get("locked_live_decision_ids") or []):
         blockers.append("decision_has_unresolved_live_intent")
