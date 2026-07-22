@@ -2,9 +2,9 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.11`（独立freshness最终修复发布候选）
+源码版本：`0.2.12`（live oneshot自检循环修复并完成生产验收）
 
-VPS生产版本：`0.2.10`（release `a5305ae...577116`，升级维护中，live timer已停）
+VPS生产版本：`0.2.12`（production provenance已验证，live timer已恢复）
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -15,9 +15,28 @@ VPS生产版本：`0.2.10`（release `a5305ae...577116`，升级维护中，live
 [alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-22 0.2.11统一freshness默认值待验收，VPS继续保持停盘维护。** `0.2.10`已证明system只绑定
+- **2026-07-22 0.2.12已完成全套恢复验收。** `0.2.11`实机live cycle暴露一个自检循环：live oneshot运行期间
+  `qount-mini-trend-live.service`的正常`activating`态被health probe误判为execution block，导致刷新后的readiness只剩
+  `system_health_ready`失败。`0.2.12`将systemd `activating/deactivating`纳入合法过渡态，仍保持forward timer
+  `activating`为阻断，并新增正反两条回归；本地全仓`1553 OK`，VPS production`335 OK`。
+  最新order-free/live run为`/root/qount/state/mini_trend/forward/runs/20260722T102023Z`，
+  readiness=`f4dfbb8247abcfab09a421b86ed9329a9ae03608dc0c3f8640ce1c9c2edddca0`，authority batch=`65c8a64f...ba4750`，
+  RuntimeLedger=`efddab4c...02a3ee`，pre-dispatch reconciliation=`64fd12f...6934114`，均passed。
+  账户可用余额`486.15970914 USDT`、TOP3全平、普通/条件挂单0、unresolved order 0、HALT absent、one-way/isolated 1x通过；
+  registry=`minimal_live`，新arm=`qmt-arm-9f10c9487f998bb6b586`，文件与env均root `0600`，旧两个arm已按原SHA-256归档且旧token未备份。
+  live service最近结果`success/0`，dispatch为`duplicate_decision_noop`，目标权重`BTC/ETH/BNB=0/0/0`，0 market/0 stop、
+  `exchange_mutation_attempted=false`、无`live_dispatch`，不得为制造样本强制下单。
+  Dashboard最新publication=`f8d9c840...6152`；system、overview、positions、orders、readiness、strategies、alerts和intelligence均fresh，
+  system窗口`180s`，ledger类窗口`15min`。最终health四个scope全pass；open alert仅1条日报证据不足WARNING，CRITICAL/HALT均0，dead-letter 0，
+  该WARNING不阻断Base live。
+
+- **2026-07-22 freshness/readiness架构修复已固化。** system顶层只绑定`ops_observer`并使用180秒窗口；RuntimeLedger的15分钟窗口继续独立作用于
+  overview/positions/orders/readiness。旧schema或损坏日报只使intelligence unavailable，不阻断其它read model；通知SQLite只读文件与WAL sidecar
+  权限边界已验证。live service自身运行态由health probe视为合法过渡态，避免未来新decision被错误挡住。
+
+- **2026-07-22 0.2.11统一freshness默认值（已被0.2.12包含）。** `0.2.10`已证明system只绑定
   `ops_observer`并为fresh，但CLI仍硬编码旧120秒、覆盖dataclass的180秒。`0.2.11`用单一常量同时驱动配置与CLI，
-  并增加解析级回归；其余行为不变。
+  并增加解析级回归；`0.2.12`在此基础上修复live oneshot自检循环。
 
 - **2026-07-22 0.2.10独立freshness最终修复已部署验证，后续默认值统一仍保持停盘维护。** `0.2.9`已部署，publisher与
   v2日报均成功；order-free周期最终blocker 0，账户`486.15970914 USDT`、TOP3全平、0订单/成交，dry dispatcher
@@ -2728,7 +2747,7 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    由fill/position账本负责，避免重复记账。`1000 USDT`只作历史research/paper/order-free兼容上界，真钱readiness、arm、
    dispatcher和live journal均要求精确`100 USDT`。
    2026-07-22最终已由owner既有明确授权完成manual arm、`minimal_live` promotion、首次live闭环和recurring幂等复跑；
-   `qount-mini-trend-live.timer`在该阶段为`enabled/active`，现已因0.2.7升级维护停用。当前信号全现金，所以没有真实订单或成交；不得为采集样本强制下单。
+   `qount-mini-trend-live.timer`现为`enabled/active`，forward timer和production cron保持关闭。当前信号全现金，所以没有真实订单或成交；不得为采集样本强制下单。
    旧X4/C×D cron与forward timer继续关闭，全局2.0%风险档和Funding Veto只能做shadow，不能控制真钱订单。
 
    该阶段本地全仓复跑为`1542 OK`，VPS production为`328 OK`。Python compileall、Bash语法、release provenance、
@@ -2763,7 +2782,7 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
 
 硬边界：
 
-- 不在缺少最终hash确认和manual arm时开live。
+- 不在缺少最终hash确认和manual arm时开live；当前arm、authority和账户安全门均已通过。
 - 不自动启用forward timer；order-free B/C/D演练只允许手工一次性执行。
 - 不把 `discovery_pool` 窗口当 validation。
 - 不放宽 broad `range_noise` / `short_rebound_fail`。

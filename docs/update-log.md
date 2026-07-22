@@ -8,6 +8,27 @@
 
 ## 2026-07-22
 
+## 2026-07-22
+
+### 0.2.12 live oneshot health self-check 修复与生产恢复
+
+- `0.2.11`首轮真实live service揭示health probe的自检循环：`qount-mini-trend-live.service`在`Type=oneshot`执行期间为
+  `ActiveState=activating`，但旧probe只接受`active/inactive/failed`，导致authority health `unavailable`、readiness
+  `system_health_ready`失败。修复将`activating/deactivating`作为合法过渡态；明确要求`qount-mini-trend-forward.timer=inactive`
+  的策略不变，并新增live通过/forward阻断回归。
+- 版本`0.2.12`代码修复commit=`063b59d...9753a`，本地全仓`1553/1553 OK`，VPS production`335/335 OK`；同步后现场release
+  provenance通过，未恢复旧X4/C×D、forward timer或production cron。
+- 按owner授权归档旧arm并删除旧env token；新arm=`qmt-arm-9f10c9487f998bb6b586`，固定`100 USDT`，registry原子提升为`minimal_live`。
+  私有只读preflight再次确认余额`486.15970914 USDT`、TOP3全平、普通/条件挂单0、one-way、isolated 1x、HALT absent、unresolved order 0。
+- 最终order-free/live run=`/root/qount/state/mini_trend/forward/runs/20260722T102023Z`，readiness hash
+  `f4dfbb8247abcfab09a421b86ed9329a9ae03608dc0c3f8640ce1c9c2edddca0`，authority batch=`65c8a64f...ba4750`，RuntimeLedger
+  `efddab4c...02a3ee`，pre-dispatch reconciliation=`64fd12f...6934114`；readiness 0 blocker，system health四 scope全pass。
+- 首轮受控live service最终为`success/0`和`duplicate_decision_noop`，决策权重`0/0/0`，0 market/0 stop、无`live_dispatch`、
+  `exchange_mutation_attempted=false`；不得强制下单以制造fill/fee样本。随后开启`qount-mini-trend-live.timer=enabled/active`，
+  `qount-mini-trend-forward.timer=disabled/inactive`。
+- publisher最终publication=`f8d9c840...6152`；system窗口`180s`，RuntimeLedger类read model窗口`15min`，主read model均fresh。
+  alert summary为open 1 WARNING（日报证据不足）、CRITICAL/HALT 0、dead-letter 0；该WARNING是研究提醒而非execution故障。
+
 ### 0.2.11 publisher CLI/config freshness default parity
 
 - `0.2.10`生产发布证明system freshness已只绑定`ops_observer`，但实机read model仍显示120秒窗口；根因是publisher CLI
@@ -6567,9 +6588,11 @@ src/qount/artifacts.py
 
 ## 当前下一步
 
-1. 保持MiniTrend timer、全部live switch和旧交易cron关闭，不自动生成manual arm。
-2. 由owner核对并明确确认本次readiness、authority batch/manifest、RuntimeLedger snapshot和reconciliation四类最终hash。
-3. 只有收到该次确认后，才生成一次性manual arm并把同一authority registry原子提升为`minimal_live`；生成后仍须重新只读核对
-   账户、0未管理仓位/挂单和四类hash，任何漂移都作废arm。
-4. 第一笔100 USDT canary订单必须单独执行、观察成交trade/fee、保护单ACK、post-dispatch账本/NAV/三方对账和Dashboard authority；
-   任一证据缺失进入`UNKNOWN + HALT`，不得重发或继续后续订单。
+1. 保持publisher与Daily Intelligence timer为`enabled/active`，MiniTrend live timer为`enabled/active`，forward timer、legacy live
+   switch与production cron继续关闭；publisher只刷新系统健康、release、备份和Dashboard，不查询交易所。
+2. 等待自然非零信号，不为采集fill/fee/STOP样本强制下单。每个live周期仍必须重新通过私有preflight、funding完整、无未管理仓位/挂单、
+   authority、RuntimeLedger、三方对账和UNKNOWN/HALT门；readiness观察项不因缺少日历样本而人为填充。
+3. 真实首单必须同时取得exchange order、逐笔trade/fee、保护单ACK、post-dispatch NAV/账本/三方对账和Dashboard authority；任一证据缺失
+   进入`UNKNOWN + HALT`，不得重发或继续后续订单。当前Base仍固定`100 USDT`，RiskTier/FundingVeto和其它sleeve不获得订单权。
+4. 当前唯一open alert是日报证据不足的`WARNING`，不是execution故障；继续补正文、事件窗、历史行情和逐笔账本证据，不能由标题或单点行情
+   推导公告因果、策略Alpha或盈利结论。

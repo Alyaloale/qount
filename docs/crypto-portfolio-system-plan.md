@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-状态：源码版本`0.2.7`是完整升级发布候选；VPS仍为`0.2.5`且交易timer在维护期已停。多策略部分仍为`research_sandbox`；
+状态：源码与VPS生产版本`0.2.12`已完成完整升级验收；多策略部分仍为`research_sandbox`；
 唯一允许在升级验收后恢复的例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
 `1000 USDT`目标架构，不构成扩容或其它sleeve下单授权。60/10 forward、30 paper days和7 dry days仍是观察项；
 账户、订单、funding、标准authority/RuntimeLedger/对账、HALT和arm继续是每轮硬门。RiskTier与FundingVeto只做shadow。
@@ -332,6 +332,17 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
    旧交易cron不恢复。
 
 执行进度（2026-07-22）：
+
+- `0.2.12`修复了live oneshot执行期间health probe把自身`activating`态误判为execution block的自检循环，并用正反回归保留
+  forward timer阻断。Mac全仓`1553 OK`、VPS production`335 OK`。最终run
+  `/root/qount/state/mini_trend/forward/runs/20260722T102023Z`的readiness为`f4dfbb82...ddca0`、authority batch
+  `65c8a64f...ba4750`、RuntimeLedger `efddab4c...02a3ee`、pre-dispatch reconciliation `64fd12f...6934114`，均passed；
+  system health、ledger、account、registry与Dashboard对账通过。
+- owner授权的固定`100 USDT` arm已按新release重建，registry=`minimal_live`，live timer=`enabled/active`，forward timer和production
+  cron继续关闭。余额`486.15970914 USDT`，TOP3全平、0挂单、HALT absent、unresolved order 0、one-way/isolated 1x；受控live cycle为
+  全现金`duplicate_decision_noop`，0 market/0 stop、无交易所写操作。60/10 forward、30 paper、7 dry仍为非阻断观察项，不得为制造样本下单。
+- Dashboard publisher最终system freshness为`fresh`且窗口`180s`，RuntimeLedger类模块窗口`15min`；open alert仅日报证据不足WARNING，CRITICAL/HALT 0，
+  dead-letter 0。日报仍是research-only，不进入策略、订单或风险override。
 
 - Phase B/C/D已部署为release `0.2.5`。Base完成manual arm、`minimal_live` promotion、首次live账本闭环和recurring幂等复跑；
   live timer在维护前为`enabled/active`，当前因0.2.7升级已停，forward timer和production cron为关闭。当前run
