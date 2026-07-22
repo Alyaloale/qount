@@ -2,9 +2,9 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.7`（完整升级发布候选，已通过本地验证）
+源码版本：`0.2.8`（WAL publisher 沙箱修复发布候选）
 
-VPS生产版本：`0.2.5`（release `e279b966...b95cf`，升级维护中，live timer已停）
+VPS生产版本：`0.2.7`（release `e84c414...3775cf`，升级维护中，live timer已停）
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -15,7 +15,14 @@ VPS生产版本：`0.2.5`（release `e279b966...b95cf`，升级维护中，live 
 [alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-22 0.2.7完整升级候选已通过本地发布门，VPS仍保持停盘维护。** 本次统一了逐模块freshness、
+- **2026-07-22 0.2.8 publisher WAL沙箱修复待验收，VPS继续保持停盘维护。** `0.2.7`已部署并完成通知库
+  verified replay、无订单周期和production回归；随后发现 publisher 的整个通知目录只读时，SQLite WAL 读者无法创建
+  `-wal/-shm`，导致 `unable to open database file`。重现实验证明仅放开sidecar目录、保持`store.sqlite3`文件级只读，
+  同时应用层`mode=ro + query_only`即可读取且数据库hash不变。publisher timer现为`disabled/inactive`以避免重试；
+  Daily Intelligence为`enabled/active`，MiniTrend live为`disabled/inactive`。`0.2.8`必须经本地、VPS production、
+  publisher oneshot和新的无订单周期验收后，才重新生成arm并恢复同一Base 100 USDT timer。
+
+- **2026-07-22 0.2.7完整升级已通过本地发布门并部署到VPS，随后保持停盘维护。** 本次统一了逐模块freshness、
   NotificationSnapshot v2、当前/历史告警严重度、空告警库、canonical通知库、Daily Intelligence v2正文证据与
   结构化研究建议、readiness五轴和Ops Observer。Dashboard分别显示观测时间、内容变化时间、本轮评估时间和每个来源
   的到期状态；通知/微信/日报故障只影响对应observation/intelligence/delivery域，不会被错误解释为execution异常。

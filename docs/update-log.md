@@ -8,6 +8,18 @@
 
 ## 2026-07-22
 
+### 0.2.8 publisher SQLite WAL sandbox repair
+
+- `0.2.7`部署、通知库verified replay与无订单闭环后，publisher首次在`ProtectSystem=strict`和整个
+  `/var/lib/qount/notifications`只读挂载下失败：`NotificationStore.verified_rows()`读取WAL数据库时SQLite无法打开
+  `-wal/-shm`，报`sqlite3.OperationalError: unable to open database file`。这不是通知库损坏、账户异常或交易执行故障。
+- 生产形态对照使用临时`0700/0600` WAL数据库复现：整个目录只读时读取失败；仅目录可写、
+  `store.sqlite3`文件级只读时`NotificationStore(read_only=True)`成功，且应用仍强制SQLite`mode=ro`和
+  `PRAGMA query_only`。canonical数据库SHA-256在实验前后不变。publisher timer已主动停为`disabled/inactive`，防止重复失败；
+  Daily Intelligence保持运行，MiniTrend live继续停盘。
+- `0.2.8`将publisher unit改为仅允许通知WAL sidecar目录写入，并将canonical数据库单独只读挂载；回归测试锁定两条
+  systemd路径和应用层只读约束。该补丁不授予publisher通知写入、交易所网络、订单权限或任何live开关。
+
 ### 0.2.7 observability, readiness and intelligence architecture upgrade
 
 - 维护窗口开始前只读确认USD-M钱包`486.15970914 USDT`、TOP3全平、普通挂单0、one-way和isolated 1x；随后

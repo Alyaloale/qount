@@ -42,7 +42,11 @@ PrivateNetwork=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadOnlyPaths=-/var/lib/qount/intelligence
-ReadOnlyPaths=/var/lib/qount/notifications
+# A SQLite WAL reader needs to create or update only its -wal/-shm sidecars.
+# The canonical database remains a file-level read-only mount and the process
+# opens it with SQLite mode=ro plus PRAGMA query_only.
+ReadWritePaths=/var/lib/qount/notifications
+ReadOnlyPaths=/var/lib/qount/notifications/store.sqlite3
 ReadWritePaths=/var/www/qount/data
 ReadWritePaths=/var/lib/qount/dashboard-backups
 ReadWritePaths=-/run/chrony

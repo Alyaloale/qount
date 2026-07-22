@@ -378,6 +378,10 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", service)
         self.assertIn("PrivateNetwork=true", service)
         self.assertIn("ProtectSystem=strict", service)
+        self.assertIn("ReadWritePaths=/var/lib/qount/notifications", service)
+        self.assertIn(
+            "ReadOnlyPaths=/var/lib/qount/notifications/store.sqlite3", service
+        )
         self.assertIn("ReadWritePaths=/var/www/qount/data", service)
         self.assertIn("ReadWritePaths=-/run/chrony", service)
         self.assertIn("CapabilityBoundingSet=CAP_DAC_OVERRIDE", service)
@@ -386,6 +390,7 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertNotIn("EnvironmentFile=", service)
         self.assertIn("qount.operations.dashboard_publisher", service)
         self.assertIn("--retain-previous-backups 60", service)
+        self.assertIn("mode=ro plus PRAGMA query_only", service)
         self.assertIn("Unit=qount-dashboard-publisher.service", timer)
 
 
