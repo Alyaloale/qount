@@ -2,9 +2,9 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.10`（独立freshness最终修复发布候选）
+源码版本：`0.2.11`（独立freshness最终修复发布候选）
 
-VPS生产版本：`0.2.9`（release `41cd42f...ef99c5`，升级维护中，live timer已停）
+VPS生产版本：`0.2.10`（release `a5305ae...577116`，升级维护中，live timer已停）
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -15,7 +15,11 @@ VPS生产版本：`0.2.9`（release `41cd42f...ef99c5`，升级维护中，live 
 [alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-22 0.2.10独立freshness最终修复待验收，VPS继续保持停盘维护。** `0.2.9`已部署，publisher与
+- **2026-07-22 0.2.11统一freshness默认值待验收，VPS继续保持停盘维护。** `0.2.10`已证明system只绑定
+  `ops_observer`并为fresh，但CLI仍硬编码旧120秒、覆盖dataclass的180秒。`0.2.11`用单一常量同时驱动配置与CLI，
+  并增加解析级回归；其余行为不变。
+
+- **2026-07-22 0.2.10独立freshness最终修复已部署验证，后续默认值统一仍保持停盘维护。** `0.2.9`已部署，publisher与
   v2日报均成功；order-free周期最终blocker 0，账户`486.15970914 USDT`、TOP3全平、0订单/成交，dry dispatcher
   `duplicate_dry_noop`且未尝试交易所变更。随后确认 system read model把RuntimeLedger错误套用Ops Observer的120秒阈值，
   会在两分钟调度边界自报stale。`0.2.10`将system顶层freshness只绑定Ops Observer，并把其窗口设为180秒；账户、仓位、

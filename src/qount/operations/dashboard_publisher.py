@@ -53,6 +53,9 @@ class DashboardPublisherBusyError(DashboardPublisherError):
     """Raised when another publisher owns the non-blocking writer lock."""
 
 
+DEFAULT_SYSTEM_STALE_AFTER_SECONDS = 180
+
+
 @dataclass(frozen=True)
 class PublisherConfig:
     repo_root: Path
@@ -71,7 +74,7 @@ class PublisherConfig:
     stale_after_seconds: int = 900
     alert_stale_after_seconds: int = 300
     report_stale_after_seconds: int = 90_000
-    system_stale_after_seconds: int = 180
+    system_stale_after_seconds: int = DEFAULT_SYSTEM_STALE_AFTER_SECONDS
 
     def validate(self) -> None:
         paths = (
@@ -494,7 +497,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--stale-after-seconds", type=int, default=900)
     parser.add_argument("--alert-stale-after-seconds", type=int, default=300)
     parser.add_argument("--report-stale-after-seconds", type=int, default=90_000)
-    parser.add_argument("--system-stale-after-seconds", type=int, default=120)
+    parser.add_argument(
+        "--system-stale-after-seconds",
+        type=int,
+        default=DEFAULT_SYSTEM_STALE_AFTER_SECONDS,
+    )
     return parser
 
 

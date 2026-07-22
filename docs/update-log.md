@@ -8,6 +8,13 @@
 
 ## 2026-07-22
 
+### 0.2.11 publisher CLI/config freshness default parity
+
+- `0.2.10`生产发布证明system freshness已只绑定`ops_observer`，但实机read model仍显示120秒窗口；根因是publisher CLI
+  参数默认值仍硬编码120，覆盖了`PublisherConfig`的180。
+- 新增单一`DEFAULT_SYSTEM_STALE_AFTER_SECONDS=180`，配置对象和CLI均引用同一值；解析级回归锁定两者相等。
+  这不改变RuntimeLedger 15分钟窗口、情报36小时窗口或告警5分钟窗口。
+
 ### 0.2.10 per-source freshness boundary correction
 
 - `0.2.9`部署后，publisher、v2日报、通知与order-free authority均成功，但system read model仍把

@@ -15,7 +15,9 @@ from qount.operations.backups import BackupError
 from qount.operations.backups import read_latest_dashboard_backup
 from qount.operations.backups import verify_dashboard_restore_drill
 from qount.operations.dashboard_publisher import DashboardPublisherBusyError
+from qount.operations.dashboard_publisher import DEFAULT_SYSTEM_STALE_AFTER_SECONDS
 from qount.operations.dashboard_publisher import PublisherConfig
+from qount.operations.dashboard_publisher import _parser
 from qount.operations.dashboard_publisher import run_dashboard_publisher
 from qount.operations.dashboard_publisher import single_writer_lock
 from qount.operations.health_probes import CommandResult
@@ -184,6 +186,37 @@ class OperationsHealthProbeTest(unittest.TestCase):
 
 
 class DashboardPublisherOperationsTest(unittest.TestCase):
+    def test_cli_uses_the_same_system_freshness_default_as_config(self) -> None:
+        args = _parser().parse_args(
+            [
+                "--repo-root",
+                "/tmp/repo",
+                "--authority-root",
+                "/tmp/authority",
+                "--dashboard-root",
+                "/tmp/dashboard",
+                "--backup-root",
+                "/tmp/backups",
+                "--lock-path",
+                "/tmp/publisher.lock",
+                "--disk-path",
+                "/tmp/dashboard",
+            ]
+        )
+
+        self.assertEqual(DEFAULT_SYSTEM_STALE_AFTER_SECONDS, 180)
+        self.assertEqual(
+            args.system_stale_after_seconds,
+            PublisherConfig(
+                repo_root=args.repo_root,
+                authority_root=args.authority_root,
+                dashboard_root=args.dashboard_root,
+                backup_root=args.backup_root,
+                lock_path=args.lock_path,
+                disk_path=args.disk_path,
+            ).system_stale_after_seconds,
+        )
+
     def test_module_cli_loads_without_runpy_warning(self) -> None:
         completed = subprocess.run(
             [
