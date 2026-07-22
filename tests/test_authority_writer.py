@@ -26,6 +26,8 @@ from qount.operations.authority_writer import refresh_authority_bundle_from_runt
 from qount.operations.authority_writer import write_order_free_authority_bundle
 from qount.operations.health_probes import CommandResult
 from qount.operations.health_probes import HealthProbeDependencies
+from qount.notifications import SystemComponentObservation
+from qount.notifications import SystemHealthSnapshot
 from qount.ledger import RuntimeLedger
 from qount.risk import legacy_dispatch_plan_hash
 from qount.reporting import read_vps_authority_bundle
@@ -64,6 +66,33 @@ def _fake_health() -> HealthProbeDependencies:
         free = 90_000_000_000
 
     return HealthProbeDependencies(command_runner=command, disk_usage=lambda _: Usage())
+
+
+def _healthy_snapshot(observed_at: str) -> SystemHealthSnapshot:
+    metrics = {
+        "clock": {"drift_seconds": 0.0},
+        "disk": {"free_bytes": 90_000_000_000, "total_bytes": 100_000_000_000},
+        "service": {
+            "service_name": "qount-dashboard-publisher.timer",
+            "active_state": "active",
+        },
+        "backup": {"last_success_at": observed_at, "age_seconds": 0},
+    }
+    observations = tuple(
+        SystemComponentObservation.create(
+            component=component,
+            status="healthy",
+            observed_at=observed_at,
+            detail_codes=(),
+            metrics=metrics[component],
+            source_id=canonical_hash({"healthy_source_id": component}),
+            source_hash=canonical_hash(
+                {"healthy_source_hash": component, "observed_at": observed_at}
+            ),
+        )
+        for component in ("clock", "disk", "service", "backup")
+    )
+    return SystemHealthSnapshot.create(observations, captured_at=observed_at)
 
 
 def _source_run(root: Path, *, blocked: bool) -> tuple[Path, dict[str, str]]:
@@ -379,6 +408,95 @@ class AuthorityWriterTest(unittest.TestCase):
                 dt.datetime.fromisoformat(updated.batch.manifest.created_at),
             )
             updated.daily_brief.validate()
+
+    def test_manual_arm_can_recapture_healthy_notification_for_same_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _source_run(root, blocked=False)
+            config = AuthorityWriterConfig(
+                repo_root=Path(__file__).parents[1],
+                source_root=root / "state/mini_trend/forward/latest",
+                authority_root=root / "authority",
+                runtime_root=root / "runtime",
+                backup_root=root / "backups",
+                dashboard_root=root / "dashboard",
+                lock_path=root / "lock/publisher.lock",
+            )
+            first_health = _healthy_snapshot("2026-08-02T00:10:00+00:00")
+            second_health = _healthy_snapshot("2026-08-02T00:12:00+00:00")
+            with mock.patch(
+                "qount.operations.authority_writer._health",
+                side_effect=(first_health, second_health),
+            ):
+                write_order_free_authority_bundle(
+                    config,
+                    captured_at="2026-08-02T00:10:00+00:00",
+                )
+                bundle = read_vps_authority_bundle(root / "authority")
+                readiness = _readiness()
+                readiness["evidence"] = {
+                    **readiness["evidence"],
+                    "authority_batch_id": bundle.batch.manifest.batch_id,
+                    "runtime_ledger_snapshot_hash": bundle.ledger_snapshot.snapshot_hash,
+                    "pre_dispatch_reconciliation_hash": bundle.ledger_snapshot.reconciliation[
+                        "report_hash"
+                    ],
+                }
+                readiness["readiness_hash"] = canonical_hash(
+                    {
+                        "contract_hash": readiness["contract"]["contract_hash"],
+                        "request": {
+                            key: readiness["request"].get(key)
+                            for key in (
+                                "owner_requested_one_month_live",
+                                "capital_usdt",
+                                "start_date",
+                                "duration_days",
+                            )
+                        },
+                        "evidence": readiness["evidence"],
+                        "gates": readiness["gates"],
+                        "observations": readiness["observations"],
+                    }
+                )
+                arm = build_manual_arm(
+                    readiness,
+                    readiness_artifact_sha256="f" * 64,
+                    confirmed_readiness_hash=readiness["readiness_hash"],
+                    arm_token="test-arm-token-long",
+                )
+                promoted = authorize_minimal_live_authority_bundle(
+                    config,
+                    arm=arm,
+                    arm_artifact_hash="a" * 64,
+                    captured_at="2026-08-02T00:12:00+00:00",
+                )
+            updated = read_vps_authority_bundle(root / "authority")
+
+            self.assertEqual(promoted.status, "written")
+            self.assertEqual(updated.registry.entries[0].promotion_status, "minimal_live")
+            authority_alerts = [
+                alert
+                for alert in updated.notification_snapshot.alerts
+                if alert["title"] == "Order-free authority bundle assembled"
+            ]
+            self.assertEqual(len(authority_alerts), 2)
+            self.assertEqual(
+                {alert["status"] for alert in authority_alerts},
+                {"OPEN", "RESOLVED"},
+            )
+            self.assertIn(
+                bundle.batch.manifest.batch_id,
+                authority_alerts[-1]["dedupe_key"],
+            )
+            self.assertIn(
+                updated.system_health.snapshot_hash,
+                next(
+                    alert["dedupe_key"]
+                    for alert in authority_alerts
+                    if alert["status"] == "OPEN"
+                ),
+            )
 
     def test_next_order_free_batch_preserves_matching_minimal_live_authority(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

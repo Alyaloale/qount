@@ -501,7 +501,13 @@ def _notification_snapshot(
                 source_type="system",
                 source_id=source_id,
                 source_hash=health.snapshot_hash,
-                dedupe_key=f"system:authority_bundle:{batch.manifest.batch_id}",
+                # This is an immutable observation, not a mutable incident.  A
+                # repeated publication can keep the batch while recapturing
+                # health, so its dedupe identity must bind both source inputs.
+                dedupe_key=(
+                    f"system:authority_bundle:{batch.manifest.batch_id}:"
+                    f"{health.snapshot_hash}"
+                ),
                 trace_id_value=batch.manifest.batch_id,
             )
         )
