@@ -19,6 +19,8 @@ from qount.mini_trend.futures_regime_overlay_report import summarize_risk_stages
 from qount.mini_trend.futures_regime_stop_latch import StopLatchedRegimeSelector
 from qount.mini_trend.futures_regime_stop_latch_report import max_drawdown_interval
 from qount.mini_trend.futures_regime_stop_latch_report import summarize_latch_activity
+from qount.mini_trend.regime_adaptation_ablation import _benchmark_returns
+from qount.mini_trend.regime_adaptation_ablation import _beta_residual
 from qount.models import utc_now
 from qount.rv.stats import returns_from_curve, sharpe
 from qount.settings import Settings
@@ -175,6 +177,17 @@ def _window_report(
     control = _metrics(control_result)
     reference = _metrics(reference_result)
     candidate = _metrics(candidate_result, funding_activity)
+    benchmark = _benchmark_returns(control_result.equity, bars, source["funding"])
+    for metrics, result in (
+        (control, control_result),
+        (reference, reference_result),
+        (candidate, candidate_result),
+    ):
+        returns = [float(row["net_return"]) for row in result.equity]
+        metrics["beta_residual"] = {
+            name: _beta_residual(returns, values)
+            for name, values in benchmark.items()
+        }
     return {
         "label": spec["label"],
         "expected_window": {"start": spec["start"], "end": spec["end"]},

@@ -14,6 +14,7 @@ from qount.mini_trend.futures_funding_veto import STRONG_BULL_FUNDING_VETO
 from qount.mini_trend.futures_funding_veto import FundingVetoRegimeSelector
 from qount.mini_trend.futures_funding_veto import build_funding_veto_preregistration
 from qount.mini_trend.futures_funding_veto_report import _event_audit
+from qount.mini_trend.futures_funding_veto_report import _window_report
 from qount.mini_trend.futures_recovery_backtest import VariantResult
 from qount.mini_trend.futures_regime_stop_latch import FUTURES_REGIME_STOP_LATCH_PROTOCOL
 from qount.mini_trend.futures_regime_stop_latch import STRONG_BULL_BOOSTED
@@ -197,6 +198,27 @@ class MiniTrendFuturesFundingVetoTest(unittest.TestCase):
         audit = _event_audit(result, result, {"events": []})
         self.assertEqual(audit["event_count"], 0)
         self.assertEqual(audit["median_direct_delta_percentage_points"], 0.0)
+
+    def test_historical_window_reports_btc_and_top3_beta_residuals(self) -> None:
+        bars = _bars()
+        series = _series()
+        rules = {row["symbol"]: row for row in _rules()["rules"]}
+        report = _window_report(
+            {"bars": bars, "funding": _funding(0.0001)},
+            {
+                "label": "fixture",
+                "start": series[200].date,
+                "end": series[-1].date,
+            },
+            rules,
+        )
+        for key in ("control", "reference_stop_latch", "candidate"):
+            residual = report[key]["beta_residual"]
+            self.assertEqual(set(residual), {"btc_1x", "top3_equal_weight_1x"})
+            self.assertEqual(
+                set(residual["btc_1x"]),
+                {"beta", "residual_sum_pct", "residual_compound_pct"},
+            )
 
 
 if __name__ == "__main__":

@@ -271,7 +271,12 @@ def summarize_trading_history(
         "source": "runtime_ledger",
         "batch_id": snapshot.batch_id,
         "source_updated_at": snapshot.source_updated_at,
-        "position_count": len(snapshot.position_details),
+        # The ledger stores one position row per tracked symbol, including
+        # zero-quantity rows. Report the number of active (non-zero) positions
+        # so an all-cash cycle is not narrated as holding every symbol.
+        "position_count": sum(
+            float(row["quantity"]) != 0.0 for row in snapshot.position_details
+        ),
         "order_count": len(snapshot.orders),
         "fill_count": len(snapshot.fills),
         "cash_event_count": len(snapshot.cash_events),

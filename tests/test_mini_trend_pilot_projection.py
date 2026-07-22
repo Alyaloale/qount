@@ -76,6 +76,23 @@ class MiniTrendPilotProjectionTest(unittest.TestCase):
         )
         self.assertIsNone(report["decision"])
 
+    def test_production_projection_rejects_an_older_latest_bar(self) -> None:
+        report = build_latest_pilot_projection(
+            _bars(201),
+            _funding(201),
+            _rules(),
+            expected_latest_date="2026-07-20",
+        )
+        self.assertEqual(
+            report["diagnostics"]["verdict"],
+            "await_latest_completed_pilot_bar",
+        )
+        self.assertIn(
+            "latest_completed_bar_not_available",
+            report["diagnostics"]["blockers"],
+        )
+        self.assertIsNone(report["decision"])
+
     def test_projects_first_latest_decision_without_an_outcome(self) -> None:
         report = build_latest_pilot_projection(
             _bars(201), _funding(201), _rules()

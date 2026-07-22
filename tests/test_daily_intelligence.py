@@ -412,6 +412,47 @@ class DailyIntelligenceTest(unittest.TestCase):
         self.assertEqual(summary["execution_evidence_status"], "no_order_expected")
         self.assertTrue(summary["execution_evidence_sufficient"])
 
+    def test_history_position_count_excludes_zero_quantity_symbol_rows(self) -> None:
+        snapshot = SimpleNamespace(
+            validate=lambda: None,
+            batch_id="b" * 64,
+            source_updated_at="2026-07-21T10:00:00+00:00",
+            position_details=(
+                {"quantity": 0.0},
+                {"quantity": 0.25},
+                {"quantity": -0.5},
+                {"quantity": 0.0},
+            ),
+            orders=(),
+            fills=(),
+            cash_events=(),
+            recoveries=(),
+            unresolved_order_ids=(),
+            nav={
+                "equity": 100.0,
+                "trading_pnl": 0.0,
+                "trading_pnl_cumulative": 0.0,
+                "funding": 0.0,
+                "funding_cumulative": 0.0,
+                "fees": 0.0,
+                "fees_cumulative": 0.0,
+                "transfers": 0.0,
+                "transfers_cumulative": 0.0,
+                "residual": 0.0,
+            },
+            account={
+                "wallet_balance": 100.0,
+                "available_balance": 100.0,
+                "current_drawdown_fraction": 0.0,
+                "peak_drawdown_fraction": 0.0,
+            },
+            reconciliation={"passed": True, "halt_required": False},
+        )
+
+        summary = summarize_trading_history(snapshot)
+
+        self.assertEqual(summary["position_count"], 2)
+
     def test_daily_systemd_template_has_network_but_no_exchange_credentials(self) -> None:
         root = Path(__file__).resolve().parents[1]
         service = (root / "deploy/systemd/qount-daily-intelligence.service").read_text()

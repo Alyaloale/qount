@@ -113,6 +113,16 @@ class AlphaAgentsTest(unittest.TestCase):
         self.assertIn("arm live", hits)
         self.assertIn("market buy", hits)
 
+    def test_forbidden_output_scanner_blocks_direct_chinese_trade_language(self) -> None:
+        hits = find_forbidden_output(
+            "建议立即下单并提高杠杆，直接买入 BTCUSDT、直接开空 ETHUSDT，随后开启交易。"
+        )
+        self.assertIn("立即下单", hits)
+        self.assertIn("提高杠杆", hits)
+        self.assertIn("直接买入", hits)
+        self.assertIn("直接开空", hits)
+        self.assertIn("开启交易", hits)
+
     def test_report_validator_checks_status_and_boundaries(self) -> None:
         errors = validate_agent_report(
             AgentReport(

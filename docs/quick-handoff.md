@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-源码与VPS生产版本：`0.2.12`（live oneshot health self-check修复后已验收）
+源码候选：`0.2.13`（最近已完成日线硬门和LLM复盘边界修复，尚未部署）；VPS生产版本：`0.2.12`
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -42,9 +42,10 @@
   authority，只访问官方公开源、relay和个人微信；不要把它与MiniTrend live timer混淆。个人微信凭据只保留
   `account_id/base_url/recipient/token`，最新context token从`/root/.openclaw/openclaw-weixin/accounts`动态读取；unit依赖
   `openclaw-gateway.service`并只读挂载该目录。不要重新复制静态context token到Qount凭据。
-- 2026-07-22最新日报ID为`24defae6...6adc`、report hash为`f4d90e84...63a94`，3份feed、8份详情、2份行情和六角色请求均已归档；
-  Dashboard `intelligence`为`available`，微信任务为`DELIVERED/SUCCEEDED`。外层`incomplete`来自四个角色的`needs_research`证据判断，
-  不是运行故障。检查命令：
+- 2026-07-22最新日报ID为`38985fe5...50d5fc`、report hash为`d42c851d...9e68`，3份feed、7份详情、2份行情和六角色请求均已归档；
+  Dashboard `intelligence`为`fresh/attention_required`，微信任务为`DELIVERED/SUCCEEDED`。`pipeline=complete`但策略/红队/总编因事件窗口、
+  成交样本和历史容量不足返回`needs_research`；5个研究提案均为`g0_status=blocked_history_capacity`，不是交易信号。
+  检查命令：
 
 ```bash
 ssh -o ClearAllForwardings=yes qount-vps \

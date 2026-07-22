@@ -8,6 +8,58 @@
 
 ## 2026-07-22
 
+### 0.2.13 本地实盘数据时点硬门与 LLM 复盘边界修复（未部署）
+
+- 只读复核发现VPS公开日线补数缺少`2026-07-21`的BTC/ETH/BNB三个ZIP；旧投影仍可从缓存生成`2026-07-20`决策。
+  `0.2.13`在生产投影入口要求`expected_latest_date=UTC今天-1天`，缺失时返回`await_latest_completed_pilot_bar`；live dispatcher再独立检查
+  `decision_date`和`decision_available_after`，即使有人手工构造新artifact也不能把旧日线送到交易所。
+- `summarize_trading_history`把`position_count`改为非零数量计数，正负方向均计。当前VPS账本三行TOP3数量均为`0.0`，因此复盘应写活动仓位`0`，不再把跟踪行数误报为持仓数。
+- Alpha Agent validator新增中文直接`下单/买入/卖出/开仓/加仓/减仓/平仓/做多/做空/杠杆/实盘/交易开关/目标权重/仓位`指令扫描；报告仍固定研究旁路，禁止订单、目标权重和风险override。
+- 版本升至`0.2.13`；聚焦回归`37/37 OK`，加入availability正反边界后全仓`1558/1558 OK`，compileall、
+  `git diff --check`、文档版本冲突扫描和密钥模式扫描通过。未同步VPS，未重启timer，未调用下单接口。
+- 最新VPS日报`38985fe5...50d5fc`（hash=`d42c851d...9e68`）pipeline complete/evidence sufficient/status attention_required；7份官方来源和冻结账本已归档，5个研究提案全部`g0_status=blocked_history_capacity`，微信业务回执为`DELIVERED/SUCCEEDED`。它不能证明策略盈利或授权实盘改参。
+- 初次只读检查确认唯一Ubuntu和`alyaloale`用户可用，但WSL代码目录已不存在且`/mnt/e`未挂载；重新连接后虽可读顶层，
+  Windows仍报告`HealthStatus=Warning/OperationalStatus=Full Repair Needed`，存储查询会拖住WSL命令。该阶段精确终止挂起进程并
+  fail closed，没有强行研究、下载数据或以Mac/VPS缓存替代canonical数据；随后在WSL ext4重建代码和独立`.venv`，关键源码hash匹配。
+- Owner确认WSL无其它任务并授权恢复后，先关闭WSL，再把`E:\qount_data`备份到全新目录
+  `D:\qount_data-recovery-20260722T120000Z`。`robocopy`返回码`1`，`FAILED=0`、`Mismatch=0`；源/目标均为
+  `14,214 files/34,096,177,913 bytes`，逐文件SHA-256 manifest自身hash均为
+  `a31da6afbf707dbc3201bc985780090b16f1db967cc554d303484deec56b9339`。`chkdsk E: /f`成功且报告`0 KB` bad sectors，
+  卷最终`Healthy/OK`、dirty bit未设置。修复后全树再次逐文件读取，与修复前manifest相比missing/extra/content mismatch均为`0`；
+  审计位于`D:\qount_data-recovery-20260722T120000Z.post-chkdsk-audit.json`，恢复备份不得删除。
+- WSL重新挂载`/mnt/e`为可写`9p`，外置盘约`954G`、已用`34G`，ext4 scratch可用约`894G`，marker和`state`链接正常。
+  Python `3.12.3`、NumPy `2.4.6`、scikit-learn `1.9.0`可用；可选LightGBM因缺`libgomp.so.1`不可导入，本轮冻结复跑不依赖它。
+  storage topology、pilot projection/dispatcher、Daily Intelligence和Alpha Agents聚焦回归`40/40 OK`。这只恢复研究计算资格，
+  没有部署`0.2.13`、重启VPS、调用私有API或改变订单/生产开关。
+
+### WSL修复后冻结Funding Veto重放与beta residual补齐
+
+- WSL专属输入/shadow回归`11/11 OK`、Funding Veto审计回归`20/20 OK`。公开Binance Vision TOP3日线从
+  `2026-07-17`补到`2026-07-21`，archive unavailable=0；cache为`105 files/84,368 bytes`、content hash
+  `30fab795588a33d27052886edba21bc36fb8321b13f6ef0a57b4621f3ea866da`。刷新artifact为
+  `artifacts/experiments/20260722T123145Z-um-shadow-input-refresh-post-recovery/`。
+- WSL直连`fapi.binance.com`及`fapi1..4`全部超时，`data-api.binance.vision/fapi/v1/fundingRate`返回404；当月
+  funding完整symbol仍`0/3`。最新冻结回放
+  `artifacts/experiments/20260722T123559Z-um-funding-veto-shadow-forward-post-recovery/`返回
+  `last_common_date=2026-07-21`、`evaluation_bars=0`、`strategy_results_evaluated=false`、
+  `await_complete_shadow_inputs`。未填0、未访问私有API、未借用VPS或LLM数据。
+- Funding Veto主历史报告补入已存在的BTC 1x/TOP3等权1x beta residual，只增加只读指标，不改变策略、参数、
+  收益或trial；新增回归后Mac/WSL相关测试`8/8`、`17/17 OK`。冻结历史复跑artifact
+  `artifacts/experiments/20260722T124533Z-um-funding-veto-frozen-beta-residual-rerun/`保持
+  `+88.9503928%/Sharpe 0.96523468/maxDD 18.10512106%`，交易成本`34.00361607 USDT`、funding PnL
+  `-43.42373169 USDT`。TOP3等权1x beta/复合残差为`0.14702785/+55.41108512%`；剔除新增字段及非确定元数据后，
+  新旧规范化SHA-256同为`d4bec779c2387668c1838169cfd2fe98398ff9a51c1396adc94201fd93e00d91`。
+- 原预登记20日循环块、5000路径Bootstrap在
+  `artifacts/experiments/20260722T124742Z-um-funding-veto-frozen-bootstrap-rerun/`逐字段重现：收益/Sharpe/更低
+  maxDD胜率`58.90%/86.82%/75.72%`，收益/Sharpe/DD增量中位数
+  `+0.46293455pp/+0.01910168/-0.22626954pp`；新旧规范化SHA-256同为
+  `6c00d310eb3c66c6ea8564d6b193c2645a3e2179784212b3dabc6c36ebef1c81`。
+- 新增dataset/refresh/shadow/beta/bootstrap五份manifest均从外置盘重算回读一致；环境锁
+  `environments/wsl/20260722T124742Z-qount-funding-veto-frozen-rerun.json`的manifest/code bundle hash为
+  `5054dc53...0a3d`/`afc51389...d1ae`。最终JSON stage到ext4后解析成功，marker保护scratch已清空。
+  Mac全仓`1559/1559 OK`，compileall和`git diff --check`通过。全部仍为`consumed_historical_discovery_pool`、
+  trial增量0；Base继续唯一真钱策略，Funding Veto继续shadow-only，VPS `0.2.12`和全部生产状态未改变。
+
 ### 0.2.12 live oneshot health self-check 修复与生产恢复
 
 - `0.2.11`首轮真实live service揭示health probe的自检循环：`qount-mini-trend-live.service`在`Type=oneshot`执行期间为

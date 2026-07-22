@@ -6,7 +6,8 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前源码与VPS生产版本为 `0.2.12`（修复live oneshot自检循环并完成生产验收）；
+当前源码候选为 `0.2.13`（增加最近已完成日线硬门、修复LLM flat仓位计数和中文越权扫描，并补Funding Veto beta残差报告）；VPS生产版本仍为
+`0.2.12`（修复live oneshot自检循环并完成生产验收）；
 `qount-mini-trend-live.timer` 已恢复 `enabled/active`。唯一获得真钱权限的连续策略是
 `MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
 effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。
@@ -80,9 +81,13 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
     让已同步权重再次发散，未来必须做双状态shadow forward，不能只记事件或当前仓位
   - 双状态shadow-forward v0.2已在任何新结果前冻结：`2026-07-19`起，200根历史仅作信号warmup，两路径均从
     400 USDT全现金启动，逐日保存双权益/收益组件/执行状态与链式哈希；只评估价格连续且决策日/持有日TOP3
-    funding各至少3次结算的完整前缀，缺失结算不得按0成本计收益。WSL历史artifact把外置盘缓存补到
-    `2026-07-17`；当前VPS order-free周期已直连补到`2026-07-18`且funding `3/3`完整，但前向起点
-    `2026-07-19`尚无完成bar，仍为0根forward、无journal和`await_shadow_forward_data`。未填0、未使用苏菲家宽代理
+    funding各至少3次结算的完整前缀，缺失结算不得按0成本计收益。修复后WSL已把外置盘公开日线补到
+    `2026-07-21`，但当月funding公开REST仍`0/3`完整；最新冻结回放为0根evaluation、无journal和
+    `await_complete_shadow_inputs`。未填0、未使用苏菲家宽代理，也未借用VPS数据冒充research canonical
+  - 同一冻结历史报告在WSL精确复跑且新增BTC/TOP3 beta residual：Funding Veto为
+    `+88.95%/Sharpe 0.965/maxDD 18.11%`，对TOP3等权1x的beta `0.1470`、复合残差`+55.41%`；旧字段规范化
+    hash完全一致。5000路径20日块Bootstrap也逐字段重现，但收益胜率仅`58.90%`、增量中位数`+0.463pp`。
+    这仍是已消费历史discovery，不增加trial，不改变Base真钱控制或Funding Veto shadow-only身份
   - 个人`research_sandbox`已用已有TOP3日线完成1765行因果ML数据集和2023-2026年度扩展Walk-Forward。
     Logistic/HGB/LightGBM/XGBoost概率均输常数先验；因果前向HMM仅有弱校准优势，平均Brier uplift
     `+0.013493`、3/4折为正，但硬分类严重偏向range/bull。固定的先验收缩、HMM状态增广和50/50融合均未

@@ -95,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
         funding,
         _load_object(args.exchange_rules_path),
         protocol=PilotPaperProtocol(capital_usdt=args.capital_usdt),
+        expected_latest_date=(
+            dt.datetime.now(dt.UTC).date() - dt.timedelta(days=1)
+        ).isoformat(),
     )
     artifact = write_latest_pilot_projection_artifact(
         Settings.from_env(), payload, explicit_path=args.output_path

@@ -5,8 +5,16 @@
 这份文档定义跨主机职责、权威数据位置、WSL计算流程和清理规则。策略结论仍以
 [current.md](current.md)为准，生产运行仍以VPS为准。
 
-本文后续实验路径和300 USDT/旧paper artifact均为存储历史；VPS当前仍保留`0.2.5`，但MiniTrend Base
-100 USDT timer因`0.2.7`升级维护已停，`0.2.7`尚未部署。
+本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前源码候选为`0.2.13`且尚未部署；VPS生产仍为
+`0.2.12`，MiniTrend Base固定100 USDT，live timer为`enabled/active`，forward timer为`disabled/inactive`。
+2026-07-22外置`E:`已完成保护性备份、文件系统修复和修复后逐文件校验。全新备份目录
+`D:\qount_data-recovery-20260722T120000Z`含`14,214`个文件、`34,096,177,913` bytes，源/目标SHA-256
+manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功复制新文件，`FAILED=0`、`Mismatch=0`。
+`chkdsk E: /f`报告未发现文件系统问题且`0 KB` bad sectors，卷最终为`Healthy/OK`、dirty bit未设置。修复后再次逐文件
+读取`E:\qount_data`，文件数、字节数、路径和SHA-256相对修复前manifest均为零差异；审计位于
+`D:\qount_data-recovery-20260722T120000Z.post-chkdsk-audit.json`。`/mnt/e`已恢复为可写`9p`挂载，WSL ext4代码、
+`qount 0.2.13`环境、scratch marker和`state`链接均正常，大型研究可以重新按本文件的stage/compute/publish流程运行。
+`D:`恢复备份和两份canonical manifest必须保留，不能作为scratch清理。
 
 ## 1. 当前职责
 
@@ -15,7 +23,7 @@
 | Mac | `/Users/alyaloale/Code/qount` | 研究设计、代码主仓、git、文档、轻量测试和任务编排 | 全量行情、训练集、模型批次、历史artifact |
 | Windows外置盘 | `E:\qount_data`；WSL见`/mnt/e/qount_data` | 大数据、不可变输入、最终artifact、环境锁和节点备份的存储真相 | `.env`、API密钥、活跃SQLite、venv |
 | WSL | `/home/alyaloale/Code/qount`；7945HX 32线程、RTX 4060 8GB | 大型CPU特征工程、表格模型、HMM、GPU训练和权威复跑 | 完成后的大数据副本、长期artifact、生产状态 |
-| VPS | `/root/qount` | `0.2.5`冻结runtime（交易维护停盘）、dashboard和最小runtime state；待部署`0.2.7` | 研究缓存、历史训练集、批量artifact |
+| VPS | `/root/qount` | `0.2.12` MiniTrend Base 100 USDT minimal-live、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
 | 临时云GPU | disposable | 仅在4060显存或吞吐实测不足时临时训练 | 唯一数据副本、生产密钥、live state |
 
 WSL是正式计算节点，但不是实盘生产真相。Mac和WSL不要求每次全仓镜像；WSL基础计算接口变化时才显式
@@ -80,6 +88,17 @@ UM双状态shadow的公开输入现集中在`datasets/binance_um_shadow/v1/`，�
 `654926e5...383b`/`c1f91959...2828`。最新环境锁`environments/wsl/20260718T081243Z-qount-compute.json`
 的manifest/code bundle hash为`03be436e...7823`/`ff78f5e8...bbc6`。当月funding公开REST直连不可达，
 未生成伪快照；代理只允许由仓库外环境变量提供，URL/token不进入数据集或artifact。
+
+磁盘修复后的追加刷新把同一cache推进到`2026-07-21`，为`105 files/84,368 bytes`，manifest content hash
+`30fab795...66da`；输入刷新与冻结shadow artifact分别位于
+`artifacts/experiments/20260722T123145Z-um-shadow-input-refresh-post-recovery/`和
+`20260722T123559Z-um-funding-veto-shadow-forward-post-recovery/`，manifest content hash为
+`3e9c315b...1aaa`/`0ae2cc8d...0265`。当月funding仍0/3完整，shadow未读取收益。
+冻结历史beta残差复跑与5000路径Bootstrap位于`20260722T124533Z-um-funding-veto-frozen-beta-residual-rerun/`
+和`20260722T124742Z-um-funding-veto-frozen-bootstrap-rerun/`，manifest content hash为
+`0e384cf7...f6e6`/`9e5c8159...43d4`；环境锁
+`environments/wsl/20260722T124742Z-qount-funding-veto-frozen-rerun.json`的manifest/code bundle hash为
+`5054dc53...0a3d`/`afc51389...d1ae`。上述manifest均已从外置盘重算回读，最终JSON已stage到ext4解析后清理scratch。
 
 300 USDT一个月UM试点的最终readiness artifact位于
 `artifacts/experiments/20260718T100615Z-um-live-pilot-readiness-v04/`，manifest content hash为

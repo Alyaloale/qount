@@ -136,9 +136,35 @@ case "$RUN_DIR" in
     ;;
 esac
 
+if [[ ! -f "$RUN_DIR/latest_projection.json" ]]; then
+  printf '%s\n' "mini_trend_live_cycle=blocked_missing_artifact:latest_projection.json" >&2
+  exit 85
+fi
+projection_verdict="$("$PYTHON" - "$RUN_DIR/latest_projection.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print((payload.get("diagnostics") or {}).get("verdict") or "")
+PY
+)"
+case "$projection_verdict" in
+  await_latest_completed_pilot_bar)
+    printf 'mini_trend_live_cycle=await_latest_completed_pilot_bar\nrun_dir=%s\n' \
+      "$RUN_DIR"
+    exit 0
+    ;;
+  latest_causal_decision_projected) ;;
+  *)
+    printf 'mini_trend_live_cycle=blocked_projection_verdict:%s\n' \
+      "$projection_verdict" >&2
+    exit 85
+    ;;
+esac
+
 for name in \
   account_preflight.json \
-  latest_projection.json \
   live_readiness.json \
   exchange_rules.json \
   authority_result.json

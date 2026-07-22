@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -79,6 +80,7 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
         self.assertIn("blocked_legacy_live_switch", cycle)
         self.assertIn("executed_count", cycle)
         self.assertIn("duplicate_decision_noop", cycle)
+        self.assertIn("await_latest_completed_pilot_bar", cycle)
         self.assertIn("blocked_unresolved_live_intent", cycle)
         self.assertNotIn("x4_live", cycle)
         self.assertNotIn("cxd_live", cycle)
@@ -115,6 +117,77 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 77)
         self.assertIn("blocked_live_switch", result.stdout)
+
+    def test_live_cycle_treats_missing_latest_bar_as_order_free_wait(self) -> None:
+        cycle = ROOT / "scripts" / "desktop" / "mini_trend_um_live_cycle.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            state = root / "state"
+            run = state / "forward" / "runs" / "20260722T120000Z"
+            arm = state / "arm" / "manual-final-arm.json"
+            live_env = root / "config" / "mini-trend-live.env"
+            fake_bin = root / "bin"
+            run.mkdir(parents=True)
+            arm.parent.mkdir(parents=True)
+            live_env.parent.mkdir(parents=True)
+            fake_bin.mkdir()
+            fake_stat = fake_bin / "stat"
+            fake_stat.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = '%a:%u' ]; then\n"
+                "  printf '600:%s\\n' \"$(id -u)\"\n"
+                "else\n"
+                "  printf '700\\n'\n"
+                "fi\n",
+                encoding="ascii",
+            )
+            fake_stat.chmod(0o700)
+            fake_flock = fake_bin / "flock"
+            fake_flock.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
+            fake_flock.chmod(0o700)
+            (state / "forward" / "latest").symlink_to(
+                Path("runs") / run.name, target_is_directory=True
+            )
+            (run / "latest_projection.json").write_text(
+                json.dumps(
+                    {
+                        "diagnostics": {
+                            "verdict": "await_latest_completed_pilot_bar"
+                        },
+                        "decision": None,
+                    }
+                )
+                + "\n",
+                encoding="ascii",
+            )
+            arm.write_text('{"arm_id":"test-arm"}\n', encoding="ascii")
+            arm.chmod(0o600)
+            live_env.write_text("# test-only\n", encoding="ascii")
+            live_env.chmod(0o600)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "QOUNT_PROJECT_ROOT": str(ROOT),
+                    "QOUNT_PYTHON_BIN": str(ROOT / ".venv" / "bin" / "python"),
+                    "QOUNT_MINI_TREND_STATE_ROOT": str(state),
+                    "QOUNT_MINI_TREND_ARM_PATH": str(arm),
+                    "QOUNT_MINI_TREND_LIVE_ENV_PATH": str(live_env),
+                    "QOUNT_MINI_TREND_LIVE_ENABLE": "true",
+                    "QOUNT_MINI_TREND_LIVE_CONFIRMATION": "test-arm",
+                    "QOUNT_MINI_TREND_ARM_TOKEN": "test-token",
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                }
+            )
+            result = subprocess.run(
+                ["/bin/bash", str(cycle)],
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("await_latest_completed_pilot_bar", result.stdout)
+        self.assertNotIn("blocked_missing_decision", result.stdout)
 
     def test_manual_or_live_enabled_run_is_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

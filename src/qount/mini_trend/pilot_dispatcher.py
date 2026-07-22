@@ -846,6 +846,21 @@ def build_pilot_dispatch_plan(
         report["diagnostics"]["verdict"] = "await_dispatch_decision"
         return _finalize_plan(report)
     report["decision"] = dict(decision)
+    if mode == "live":
+        # Artifact creation time is not market-data freshness. A newly written
+        # projection can still be based on an older cached daily bar after a
+        # public-data refresh misses the latest archive. Never route that stale
+        # decision to the exchange.
+        expected_decision_date = (
+            freshness_observed_at.date() - dt.timedelta(days=1)
+        ).isoformat()
+        if decision.get("decision_date") != expected_decision_date:
+            blockers.append("live_decision_date_not_latest_completed_bar")
+        available_after = _utc_timestamp(decision.get("decision_available_after"))
+        if available_after is None:
+            blockers.append("live_decision_available_after_invalid")
+        elif available_after > freshness_observed_at:
+            blockers.append("live_decision_not_yet_available")
     decision_id = str(decision.get("decision_id") or "")
     if not decision_id:
         blockers.append("decision_id_missing")

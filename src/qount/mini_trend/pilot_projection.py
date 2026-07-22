@@ -88,6 +88,7 @@ def build_latest_pilot_projection(
     rules_artifact: Mapping[str, Any],
     *,
     protocol: PilotPaperProtocol | None = None,
+    expected_latest_date: str | None = None,
 ) -> dict[str, Any]:
     protocol = protocol or PILOT_PAPER_PROTOCOL
     rules, rules_hash = selected_um_rules(rules_artifact)
@@ -136,6 +137,19 @@ def build_latest_pilot_projection(
     if not dates or latest_date < protocol.paper_start_date:
         report["diagnostics"]["blockers"] = ["paper_start_bar_not_available"]
         return report
+
+    if expected_latest_date is not None:
+        try:
+            expected_date = dt.date.fromisoformat(expected_latest_date)
+        except ValueError as exc:
+            raise ValueError("expected_latest_date_invalid") from exc
+        report["data"]["expected_latest_date"] = expected_date.isoformat()
+        if latest_date != expected_date:
+            report["diagnostics"]["blockers"] = [
+                "latest_completed_bar_not_available"
+            ]
+            report["diagnostics"]["verdict"] = "await_latest_completed_pilot_bar"
+            return report
 
     start_index = next(
         index

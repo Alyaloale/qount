@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import tempfile
 import unittest
@@ -526,6 +527,100 @@ class MiniTrendPilotDispatcherTest(unittest.TestCase):
         self.assertIn(
             "live_source_stale:projection", report["diagnostics"]["blockers"]
         )
+
+    def test_live_rejects_projection_from_an_older_completed_bar(self) -> None:
+        rules = _rules()
+        readiness = _readiness()
+        projection = _projection(rules)
+        now = utc_now().astimezone(dt.UTC)
+        decision = dict(projection["decision"])
+        decision["decision_date"] = (now.date() - dt.timedelta(days=2)).isoformat()
+        decision["decision_available_after"] = (
+            now - dt.timedelta(days=1)
+        ).isoformat()
+        decision_core = {
+            key: value for key, value in decision.items() if key != "decision_id"
+        }
+        decision["decision_id"] = canonical_hash(
+            {
+                "live_pilot_contract_hash": LIVE_PILOT_CONTRACT.contract_hash,
+                "decision": decision_core,
+            }
+        )
+        projection["decision"] = decision
+        rules["created_at"] = now.isoformat()
+        report = build_pilot_dispatch_plan(
+            _preflight(),
+            projection,
+            readiness,
+            rules,
+            _snapshot(),
+            mode="live",
+            source_hashes={
+                "preflight": "p",
+                "projection": "x",
+                "readiness": "r",
+                "exchange_rules": "e",
+            },
+        )
+        self.assertIn(
+            "live_decision_date_not_latest_completed_bar",
+            report["diagnostics"]["blockers"],
+        )
+
+    def test_live_rejects_invalid_or_future_decision_availability(self) -> None:
+        now = utc_now().astimezone(dt.UTC)
+        for available_after, expected_blocker in (
+            ("not-a-time", "live_decision_available_after_invalid"),
+            (
+                (now + dt.timedelta(hours=1)).isoformat(),
+                "live_decision_not_yet_available",
+            ),
+        ):
+            with self.subTest(available_after=available_after):
+                rules = _rules()
+                readiness = _readiness()
+                projection = _projection(rules)
+                decision = dict(projection["decision"])
+                decision["decision_date"] = (
+                    now.date() - dt.timedelta(days=1)
+                ).isoformat()
+                decision["decision_available_after"] = available_after
+                decision_core = {
+                    key: value
+                    for key, value in decision.items()
+                    if key != "decision_id"
+                }
+                decision["decision_id"] = canonical_hash(
+                    {
+                        "live_pilot_contract_hash": (
+                            LIVE_PILOT_CONTRACT.contract_hash
+                        ),
+                        "decision": decision_core,
+                    }
+                )
+                projection["decision"] = decision
+                rules["created_at"] = now.isoformat()
+
+                report = build_pilot_dispatch_plan(
+                    _preflight(),
+                    projection,
+                    readiness,
+                    rules,
+                    _snapshot(),
+                    mode="live",
+                    source_hashes={
+                        "preflight": "p",
+                        "projection": "x",
+                        "readiness": "r",
+                        "exchange_rules": "e",
+                    },
+                )
+
+                self.assertIn(
+                    expected_blocker,
+                    report["diagnostics"]["blockers"],
+                )
 
     def test_daily_loss_flattens_the_next_dispatch(self) -> None:
         rules = _rules()

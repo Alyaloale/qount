@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.12`（live oneshot自检循环修复并完成生产验收）
+源码版本：`0.2.13`（本地候选：最近已完成日线硬门、LLM flat仓位计数、中文越权扫描和Funding Veto beta残差报告；尚未部署）
 
 VPS生产版本：`0.2.12`（production provenance已验证，live timer已恢复）
 
@@ -14,6 +14,44 @@ VPS生产版本：`0.2.12`（production provenance已验证，live timer已恢�
 [crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，Alpha Agents研究层看
 [alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
+
+- **2026-07-22 0.2.13本地安全修复已完成，VPS仍保持0.2.12不变。** 只读复核发现VPS公开日线补数缺少`2026-07-21`的BTC/ETH/BNB
+  三个ZIP；旧投影仍可从缓存生成`2026-07-20`决策，artifact虽新但市场数据已过期。`0.2.13`把生产投影和live dispatcher都改为
+  要求决策日等于最近已完成UTC日线且`decision_available_after`已到，缺数据只返回`await_latest_completed_pilot_bar`并阻断订单。
+  同批修复LLM账本摘要：只把非零数量（正负方向均计）计为持仓，避免flat账户三行零仓位被复盘为“3个持仓”；并补上中文直接
+  下单/买卖/开加减平仓/做多做空/杠杆/实盘与交易开关/目标权重/仓位越权扫描。
+  本地全仓当前`1559/1559 OK`，`diff --check`、compileall和密钥扫描通过。该候选尚未同步VPS、未重启服务、未改变账户或订单。
+  当前VPS周期仍为`duplicate_decision_noop`，0 market/0 stop、`exchange_mutation_attempted=false`；修复前后均没有真实成交样本。
+
+- **2026-07-22最新只读日报已更新为`38985fe5...50d5fc`。** 报告hash=`d42c851d...9e68`，pipeline=`complete`、evidence=`sufficient`、
+  status=`attention_required`；7份一手来源、3份行情、冻结RuntimeLedger均已归档，6个角色完成，策略/红队/总编因缺少事件窗口、
+  独立成交和历史容量返回`needs_research`。5个ResearchProposal的`g0_status=blocked_history_capacity`，全部
+  `orders_allowed=false/live_changes_allowed=false`，不能作为信号、参数或盈利证据。微信通知job=`94dd8f...5c5d9`为
+  `DELIVERED/SUCCEEDED`；这只证明业务回执，不代表研究结论有效。
+
+- **2026-07-22外置盘已完成保护性恢复并重新开放确定性研究。** 在确认WSL无其它任务后先关闭WSL，把
+  `E:\qount_data`完整备份到全新目录`D:\qount_data-recovery-20260722T120000Z`：`robocopy`返回码`1`，
+  `FAILED=0`、`Mismatch=0`，源/目标均为`14,214`个文件、`34,096,177,913` bytes，两份逐文件SHA-256 manifest
+  自身hash同为`a31da6af...b9339`。随后`chkdsk E: /f`成功，未发现文件系统问题、`0 KB` bad sectors；卷最终
+  `HealthStatus=Healthy`、`OperationalStatus=OK`且dirty bit未设置。修复后再次对`E:\qount_data`全树逐文件读取，
+  缺失、新增、长度和内容hash差异均为`0`，审计为
+  `D:\qount_data-recovery-20260722T120000Z.post-chkdsk-audit.json`。WSL `/mnt/e`已恢复可写挂载，scratch/state拓扑正常；
+  核心研究依赖可用，可选LightGBM因系统缺`libgomp.so.1`暂不可导入且不参与当前冻结复跑。存储、pilot projection/dispatcher、
+  Daily Intelligence和Alpha Agents聚焦回归`40/40 OK`。`D:`恢复备份必须保留；后续只按外置盘canonical输入和WSL ext4
+  scratch推进，LLM的5个G0阻断提案仍不能替代费用、funding、滑点、beta residual、回撤、区块Bootstrap和时间顺序holdout证据。
+
+- **2026-07-22修复后WSL冻结复跑确认Funding Veto历史候选可重现，但真正前向仍为0根。** 公开UM日线缓存从
+  `2026-07-17`推进到`2026-07-21`，为`105 files/84,368 bytes`、content hash=`30fab795...66da`；归档缺失为0。
+  但WSL到`fapi.binance.com`及四个官方备选USD-M域均超时，`data-api.binance.vision`不提供该futures endpoint，
+  当月funding仍为`0/3`完整。冻结双状态回放因此严格返回`await_complete_shadow_inputs`、`evaluation_bars=0`、
+  `strategy_results_evaluated=false`，没有收益或journal，不得填0或借用VPS/LLM结果。
+  同一已消费历史合同在WSL离线精确复跑：Funding Veto全窗收益/Sharpe/maxDD为
+  `+88.950393%/0.965235/18.105121%`，交易成本`34.003616 USDT`、funding PnL `-43.423732 USDT`、平均/最大gross
+  `0.216925/0.903255`；对BTC 1x和TOP3等权1x的beta/复合残差分别为`0.151612/+59.459570%`和
+  `0.147028/+55.411085%`。剔除新增beta字段及时间/路径元数据后，新旧报告规范化hash同为`d4bec779...00d91`。
+  固定20日块、5000路径Bootstrap也精确重现，收益/Sharpe/更低回撤胜率`58.90%/86.82%/75.72%`，收益增量中位数
+  只有`+0.462935pp`；规范化hash同为`6c00d310...f1c81`。这些仍是`consumed_historical_discovery_pool`，trial不增加，
+  Base v0.2继续是唯一真钱策略，Funding Veto继续shadow-only；下一有效证据只能来自补齐官方funding后的原冻结时间顺序前向。
 
 - **2026-07-22 0.2.12已完成全套恢复验收。** `0.2.11`实机live cycle暴露一个自检循环：live oneshot运行期间
   `qount-mini-trend-live.service`的正常`activating`态被health probe误判为execution block，导致刷新后的readiness只剩
@@ -498,7 +536,7 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
 2026-07-18 preregistered paired 20-day circular block bootstrap retained the historical funding-veto candidate conditionally: across 5,000 paired paths, probabilities of higher terminal return, higher Sharpe, and lower maxDD versus Stop-Latch were 58.90%, 86.82%, and 75.72%. This is realized-path sensitivity evidence, not signal-path resimulation or OOS; base v0.2 remains selected and paper/live remain closed.
 2026-07-18 exact six-group Shapley attribution supported the historical cost-veto mechanism: funding savings contributed +0.443pp of the +0.536pp terminal uplift, price exposure +0.097pp, and trading cost -0.004pp. However, +1.842pp on the 17 veto dates was offset by -1.306pp downstream across 696 divergent non-event bars, so full state-path replay is mandatory for any future validation.
 2026-07-18 execution-state decay audit found 696 divergent state bars in 18 spells: all divergence involved target weights, while trail highs, cooldowns, and latch state never split. Every veto first resynchronized after 14-56 days (median 46), but only the final event achieved stable resynchronization before the next boundary, after 324 days; equity/deadband can re-diverge after an apparent sync.
-2026-07-18 future-only dual-state shadow monitoring v0.2 was preregistered before any eligible result: Stop-Latch and Funding Veto both start from 400 USDT cash on 2026-07-19 after 200 signal-only warmup bars, with separate equity/state hashes and an append chain. Only the contiguous prefix with complete prices and at least three TOP3 funding settlements per decision/holding day may be evaluated; missing funding is never zero-filled. The WSL/external refresh advanced the common UM cache through 2026-07-17, but that is still before the frozen start, so evaluation bars remain 0 and verdict is await_shadow_forward_data. Current-month public funding REST is unreachable directly from WSL (0/3 symbols); no zero fill or Sophie home proxy was used.
+2026-07-22 future-only dual-state shadow monitoring v0.2 remains frozen: Stop-Latch and Funding Veto both start from 400 USDT cash on 2026-07-19 after 200 signal-only warmup bars, with separate equity/state hashes and an append chain. The WSL/external refresh now has complete TOP3 daily bars through 2026-07-21, but current-month public funding REST remains unreachable directly from WSL (0/3 symbols). The latest offline report therefore has evaluation_bars=0, strategy_results_evaluated=false, and verdict await_complete_shadow_inputs; missing funding was not zero-filled and no Sophie home proxy was used.
 2026-07-18 owner superseded the one-month pilot contract with exact 300 USDT capital, no account-level daily loss stop, and a 10% cumulative pilot drawdown halt. TOP3 UM long/cash, 1x isolated, one-way, gross<=1, 3xATR symbol stops, three completed-bar cooldown and 35% deadband remain fixed. Base v0.2 remains the live control; the 2.0% global risk tier is now the primary profit shadow and Funding Veto the secondary shadow.
 2026-07-18 the 300 USDT consumed-history comparison found Base/Risk2/Stop-Latch/Funding-Veto returns of +63.19%/+92.68%/+73.43%/+75.71%. Risk2 led return with nearly unchanged Sharpe versus Base, but had 21.89% full-window maxDD, lost 2.87% in 2025-2026, and breached the 10% line in 1/59 non-overlapping 30-day pilots. It is a forward priority, not live permission.
 2026-07-18 VPS public routing and current TOP3 filters passed after the exchange session stopped inheriting the broken environment proxy. The stored key still returns Binance -2015, so permissions, balance, positions, one-way, open orders and 1x isolated state remain unknown. The legacy live guard was disarmed; independent read-only preflight and pure dry-plan artifacts fail closed with zero order intents. No order endpoint was called and cron remains disabled.

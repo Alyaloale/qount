@@ -158,6 +158,14 @@ Daily Intelligence v2额外要求：`pipeline_status`只说明抓取/解析/角�
 `no_order_expected`；只有计划了订单却没有exchange order/trade/fee证据时才是`orders_expected_but_missing`，不得用0订单制造假告警，
 也不得把0订单说成已验证成交能力。
 
+2026-07-22最新生产日报为`38985fe5...50d5fc`，report hash=`d42c851d...9e68`。它完成7份一手来源、TOP3行情、
+冻结RuntimeLedger和六角色链，外层为`pipeline=complete/evidence=sufficient/status=attention_required`；这里的`sufficient`只表示本次
+日报有足够材料形成受限复盘，不表示策略、成交或盈利证据充分。报告正确拒绝从单点24小时行情和公告推导因果Alpha，也明确0订单、
+0成交不能验证成本或执行质量。5个结构化提案全部为`g0_status=blocked_history_capacity`、`orders_allowed=false`、
+`live_changes_allowed=false`，不得自动创建数据下载、回测、paper或live任务。旧生成端把三个零数量symbol行误记为`position_count=3`，
+导致execution/editor误述“3个持仓”；本地`0.2.13`已改为按非零数量（含正负方向）计活动仓位。中文越权扫描也扩展到下单、买卖、
+开/加/减/平仓、做多/做空、杠杆、实盘/交易开关、目标权重和仓位动作；该修复尚未部署VPS。
+
 个人微信provider复用腾讯官方OpenClaw插件账号和recipient，固定官方host/path/header，并以NotificationStore delivery key派生稳定client ID。
 生产凭据只保存`account_id/base_url/recipient/token`；每次发送前从OpenClaw accounts目录按account和recipient读取最新context token，避免手机
 入站刷新后Qount副本漂移。动态目录和文件必须满足绝对路径、无symlink、owner和`0600`等安全合同，缺失或无效时失败关闭；静态context token只允许
@@ -1431,10 +1439,20 @@ exchangeInfo、funding、真实 min-notional 和 OOS 统计。
 投票阈值。
 
 本轮随后没有新增第144个策略trial，而是修复真正前向所需的数据链路：新增WSL公开UM输入刷新层，把下载与
-冻结shadow回放物理隔离。外置盘canonical缓存已从共同日`2026-06-18`推进到`2026-07-17`，但双状态合同从
-`2026-07-19`才启动，故仍0根、未读取收益。Binance Vision归档直连完整，当前月funding REST直连0/3可达；
-刷新器逐日要求每币至少3次结算，空响应和缺日均fail closed。下一步不是继续扫历史参数，而是通过仓库外
-良心云标准代理配置补公开funding，等待首个完整decision/outcome pair后原样追加双状态journal。
+冻结shadow回放物理隔离。2026-07-22磁盘修复后，外置盘canonical日线已推进到`2026-07-21`，共
+`105 files/84,368 bytes`、content hash=`30fab795...66da`；Binance Vision归档缺失为0。但当前月funding REST
+从WSL到五个官方USD-M域仍全部超时，`data-api.binance.vision`对该endpoint返回404，完整度仍为0/3。
+冻结双状态合同从`2026-07-19`启动，但因funding不完整仍0根evaluation、未读取收益、无journal，verdict
+`await_complete_shadow_inputs`。空响应和缺日继续fail closed，不能从VPS、LLM或0填充替代canonical输入。
+
+为确认恢复后证据链可重放，同一冻结历史合同在WSL离线复跑，trial增量保持0。旧报告字段规范化hash同为
+`d4bec779...00d91`；Funding Veto全窗`+88.950393%/Sharpe 0.965235/maxDD 18.105121%`，交易成本
+`34.003616 USDT`、funding PnL `-43.423732 USDT`。新增只读beta残差后，对BTC 1x与TOP3等权1x的beta/复合
+残差分别为`0.151612/+59.459570%`、`0.147028/+55.411085%`。原预登记5000路径、20日循环区块Bootstrap也
+精确重现，规范化hash=`6c00d310...f1c81`，三项胜率仍为`58.90%/86.82%/75.72%`，终值收益增量中位数仅
+`+0.462935pp`。这些全部是`consumed_historical_discovery_pool`，不提升Funding Veto层级。下一步不是继续扫
+历史参数，而是通过仓库外良心云标准代理配置或未来不可变官方月包补funding，等待首个完整decision/outcome
+pair后原样追加双状态journal。
 
 Owner随后提出一个月小资金实盘。该目标进入`paper_live`治理而不是新增历史trial：真钱策略只允许Base v0.2，
 全局2.0%风险档与Funding Veto只做shadow；资金固定300 USDT、1x逐仓、gross<=1、无账户单日止损、10%试点
@@ -1530,7 +1548,8 @@ rows推断“无事件”。artifact `20260719T065611Z-equity-mapping-source-cap
 v0.1 已经能组织角色和任务，但 report contract 仍偏软。下一轮必须补：
 
 - 扩展 `AgentReport` validator，进一步强制 source 绑定和 artifact 引用。
-- 扩展 forbidden output scanner，覆盖更多中英文越界交易动作。
+- 继续按新报告语料扩展 forbidden output scanner；2026-07-22已补下单、买卖、开/加/减/平仓、做多/做空、
+  杠杆、实盘/交易开关、目标权重和仓位动作，仍需防范间接或变体指令。
 - artifact 绑定：每个 quant 结论必须带 data hash、code version、config hash、trial count、
   `holdout_role`。
 - `PromotionJudge` 可继续扩展到读取真实 backtest/model artifacts，而不是只读聚合 metrics JSON。

@@ -141,6 +141,32 @@ CAPITAL_USDT="$("$PYTHON" -c 'import json,sys; p=json.load(open(sys.argv[1])); v
   --capital-usdt "$CAPITAL_USDT" \
   --output-path "$PROJECTION_PATH"
 
+projection_verdict="$("$PYTHON" - "$PROJECTION_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print((payload.get("diagnostics") or {}).get("verdict") or "")
+PY
+)"
+case "$projection_verdict" in
+  await_latest_completed_pilot_bar)
+    # Preserve the diagnostic run, but do not publish incomplete authority or
+    # pass an absent decision to either dispatcher.
+    ln -sfn "runs/$STAMP" "$FORWARD_ROOT/latest"
+    printf 'mini_trend_forward_cycle=await_latest_completed_pilot_bar\nrun_dir=%s\n' \
+      "$RUN_DIR"
+    exit 0
+    ;;
+  latest_causal_decision_projected) ;;
+  *)
+    printf 'mini_trend_forward_cycle=blocked_projection_verdict:%s\n' \
+      "$projection_verdict" >&2
+    exit 79
+    ;;
+esac
+
 readiness_args=(
   --owner-requested \
   --capital-usdt "$CAPITAL_USDT" \
