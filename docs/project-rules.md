@@ -1,6 +1,6 @@
 # qount 项目规则与文档分类
 
-更新时间：2026-07-18
+更新时间：2026-07-22
 
 这份文档定义项目级规则、文档分类、研究线隔离和代码整理纪律。它不替代
 [current.md](current.md)：`current.md` 仍是当前事实、生产状态和下一步的入口。
@@ -43,8 +43,9 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | 记录链 | `update-log.md` | 每批有意义执行的结果、artifact、验证 | 代码、运行、规则或跨线结论变化 |
 | 线 A legacy | `profit-*.md`, `optimization-plan.md`, `cta-r-value-gate-plan.md` | 旧 `qount.main` / ETH-only / CTA-R 研究 | 仅追溯或 owner 授权重启 |
 | 线 B GRID | `grid-binance-*.md` | 网格实验线 | 本线 changelog；不污染 current，除非影响全局 |
-| 线 C RV | `rv-c-plan.md` | 相对价值 carry 线 | 本线 live/carry 事实变化或风控变化 |
-| 线 D X4 / CxD | `crypto-x4-plan.md`, `x4-live-position-management.md` | 当前加密趋势 / 组合实盘线 | VPS production、risk、sizing、execution 变化 |
+| MiniTrend Base | `current.md`, `crypto-portfolio-system-plan.md`, `mini-trend-agent/*.md` | 当前唯一100 USDT minimal-live线 | VPS production、risk、sizing、execution 变化 |
+| 线 C RV | `rv-c-plan.md` | 相对价值 carry legacy线 | 仅追溯或owner授权重启 |
+| 线 D X4 / CxD | `crypto-x4-plan.md`, `x4-live-position-management.md` | 旧加密趋势 / 组合实盘线 | 仅追溯或owner授权重启 |
 | 重启线 L1/L3/L4/L6 | `l*-*.md` | 已证伪、固化或暂停的结构性重启线 | 只在 owner 授权重启或修正结论时更新 |
 | A股 ETF 20 日 | `ashare-etf-month-plan.md` | 主题状态、固定组合月度研究、收盘触发 | 数据、状态合同、风险上限或 evidence gate 变化 |
 | 重构蓝图 | `rebuild-plan.md` | CTA-R / A股系统化思路 | 蓝图变化；不得覆盖当前生产事实 |
@@ -60,8 +61,9 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | --- | --- | --- | --- |
 | A legacy `qount.main` / ETH-only | research-only / live disabled | `current.md`, `profit-*.md` | `src/qount/*.py` legacy core |
 | B GRID | archived / falsified | `grid-binance-*.md` | `src/qount/grid/`, `scripts/research/grid_b_*.py` |
-| C RV-C | carry 组件已接入 CxD，但当前 carry 默认暂停 | `rv-c-plan.md` | `src/qount/rv/`, `scripts/desktop/rv_live.py` |
-| D X4 / CxD | VPS production | `crypto-x4-plan.md`, `x4-live-position-management.md` | `src/qount/x4/`, `scripts/desktop/*x4*`, `scripts/desktop/cxd_*` |
+| MiniTrend Base v0.2 | `minimal_live`，固定100 USDT，唯一真钱策略 | `current.md`, `crypto-portfolio-system-plan.md`, `mini-trend-agent/*.md` | `src/qount/mini_trend/`, `scripts/desktop/mini_trend_um_*` |
+| C RV-C | research-only / carry disabled | `rv-c-plan.md` | `src/qount/rv/`, `scripts/desktop/rv_live.py` |
+| D X4 / CxD | legacy / live disabled | `crypto-x4-plan.md`, `x4-live-position-management.md` | `src/qount/x4/`, `scripts/desktop/*x4*`, `scripts/desktop/cxd_*` |
 | L1 / L3 / L4 / L6 | frozen / falsified / lessons retained | 对应 `l*-plan.md` | `src/qount/l*_*.py`, `scripts/research/l*_*.py` |
 | A股 ETF 20 日 | frozen / owner-deprioritized / discovery blocked | `ashare-etf-month-plan.md` | `src/qount/ashare_etf_month.py`, `scripts/research/ashare_etf_month.py` |
 | CTA-R rebuild | blueprint / guarded | `rebuild-plan.md`, `cta-r-value-gate-plan.md` | `src/qount/cta_*.py`, `scripts/research/cta_*.py` |

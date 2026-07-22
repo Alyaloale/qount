@@ -6,6 +6,12 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
+当前生产版本为 `0.2.5`（VPS release commit `e279b966...b95cf`）。唯一获得真钱权限的连续策略是
+`MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
+effective gross `<=1`；RiskTier和FundingVeto只做shadow。`qount-mini-trend-live.timer`现为
+`enabled/active`，旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。首次live cycle因冻结信号
+为全现金而完成0订单账本闭环，不代表系统未启动，也不得强制制造首单。
+
 ## 主机职责
 
 当前权威分工如下，详细路径、ExFAT边界和迁移门见
@@ -27,7 +33,7 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
   - 不跑实盘执行器
 - `VPS`
   - 唯一实盘 / 模拟盘生产节点：`qount-vps:/root/qount`（SSH别名或仓库外`QOUNT_VPS_HOST`）
-  - 跑加密 X4 / C×D live、paper forward、dashboard 发布
+  - 跑唯一的MiniTrend Base 100 USDT minimal-live周期、order-free refresh和dashboard发布；旧X4/C×D已停
   - Alpha S3 当前走 Mac 历史公开数据研究；冻结 trade-flow v1 的 ETH anchor 过 Q1/4 月历史 OOS，但
     BTC/BNB/SOL 复制全败，后续预注册的 flow/price absorption 与 premium dislocation 三币 discovery
     也均为 0/3 通过；固定的 depth + premium + price Logistic residual-trend 模型 March OOS 为 0/3，
@@ -127,14 +133,14 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
     projection、当前账户/普通单/条件单对账、dry dispatcher和artifact-bound readiness；2026-07-20按安全要求已执行
     `systemctl disable --now`，当前为`disabled/inactive`。MiniTrend专用dispatcher已实现
     决策ID幂等、client order ID、append-only row/chain hash、`STOP_MARKET closePosition`、成交后仓位/保护单回读、
-    10%回撤flatten+halt和独立manual arm。最新run
+    当时的10%回撤flatten+halt和独立manual arm。最新run
     `/root/qount/state/mini_trend/forward/runs/20260719T091232Z`通过独立systemd runtime证明；dispatcher因尚无首个完成bar
     返回`await_dispatch_decision`，0单、0 dry day、`exchange_mutation_attempted=false`。当时readiness显示5个新数据累积缺口，
     `live_orders_allowed=false`
   - 2026-07-21 owner要求直接推进Phase B/C/D，60 forward pairs、10 active bars、30 paper days、7 dry days均降为
     非阻断观察指标。标准batch/RuntimeLedger/三方对账已接入dispatcher；market fill必须有exchange order和逐笔trade/fee证据，
     超时进入UNKNOWN+HALT且不重发。观察项也纳入readiness hash防篡改，但不进入blocker。Binance短窗口cash ledger
-    只接受原始有符号`income`和明确的funding/commission/transfer白名单，未知账变直接HALT。当前arm/timer/live switch仍关闭，0真实订单
+    只接受原始有符号`income`和明确的funding/commission/transfer白名单，未知账变直接HALT。该阶段arm/timer/live switch仍关闭，0真实订单
   - 同日B/C/D已同步VPS并完成一次systemd order-free闭环：run `20260721T063854Z`最终readiness为
     `ready_for_manual_final_arm`、blocker 0，但`live_orders_allowed=false`；账户全平、普通/条件挂单0、dispatcher 0 market/stop intent且
     `exchange_mutation_attempted=false`。forward/active/paper/dry观察为`0/0/0/1`，funding完整；registry仍为`research`，manual arm为0，
@@ -186,7 +192,8 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
 - A股 ETF 20 日 research-only 状态判别、Tushare/公开复权数据和固定组合证据门（当前冻结保留）
 - VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher timer为`enabled/active`，
   每轮验证authority、健康、恢复演练，并保留当前+4个release及latest+60个备份。authority oneshot保持`static/inactive`，
-  MiniTrend forward timer和production cron保持关闭，`live_orders_allowed=false`
+  MiniTrend live timer为`enabled/active`，forward timer和production cron保持关闭；订单权限只存在于独立0600 arm/env与
+  `minimal_live` registry同时有效的MiniTrend service内
 
 ## 初始化
 
@@ -433,18 +440,18 @@ ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json
 - 独立研究线：`docs/grid-binance-*.md`(线 B)、[docs/rv-c-plan.md](docs/rv-c-plan.md)(线 C)、
   [docs/crypto-x4-plan.md](docs/crypto-x4-plan.md)(线 D)、`docs/l*-plan.md`(L1/L3/L4/L6)。
 
-当前基线：旧 line A `qount.main` 仍 research-only / live disabled；加密 X4 / C×D 的
-live和paper forward生产真相仍只能从 VPS `/root/qount` 读取，但当前生产 crontab 已停。Dashboard静态前端已部署，
+当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一真钱运行链为VPS `/root/qount` 上固定100 USDT的
+MiniTrend Base minimal-live。Dashboard静态前端已部署，
 served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
 publisher timer现为`enabled/active`，只读完整batch/registry/ledger/notification/health/brief，每两分钟刷新系统健康、release、
-备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单，
-但authority已按15分钟规则标记stale，不能当当前实时账户。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
+备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单；
+recurring readiness为`ready_for_manual_final_arm`且registry为`minimal_live`。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
 在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持
-`static/inactive`，MiniTrend forward timer、production cron、订单和live开关均关闭；publisher不查询交易所，
-`live_orders_allowed=false`。只读日报生产默认使用Binance公告API、Federal Reserve RSS和SEC RSS，不需要Brave；六角色中文Responses经
+`static/inactive`，MiniTrend forward timer和production cron关闭，live timer每日运行；publisher不查询交易所，也不授予订单权。
+只读日报生产默认使用Binance公告API、Federal Reserve RSS和SEC RSS，不需要Brave；六角色中文Responses经
 内网normalizer完成真实E2E并保存3份feed、8份详情和2份行情，个人微信投递为`DELIVERED/SUCCEEDED`。Dashboard
 `intelligence`现发布真实报告且source hash为`f4d90e84...63a94`；日报timer为`enabled/active`，每日`04:30 UTC`运行。报告外层
-`incomplete`来自证据不足的`needs_research`，不是基础设施失败。交易timer、production cron、订单和live开关仍关闭。
+`incomplete`来自证据不足的`needs_research`，不是基础设施失败。除MiniTrend Base live timer外，其它交易timer和production cron仍关闭。
 Mac
 `/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
 `--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL

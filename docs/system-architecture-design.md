@@ -1,10 +1,10 @@
 # qount 个人量化交易系统架构设计
 
-版本：`v1.0`
+版本：`v1.1`
 
-更新时间：`2026-07-21`
+更新时间：`2026-07-22`
 
-状态：目标架构与渐进迁移合同。本文不构成充值、下单、策略晋级或实盘授权。
+状态：目标架构与渐进迁移合同；单策略Base minimal-live已落地。本文本身不构成新的充值、扩容或策略晋级授权。
 
 ## 0. 文档定位
 
@@ -13,7 +13,7 @@
 - 当前 Mac、Windows 外置盘、WSL、VPS 和 `qount.alyaloale.com` 的真实分工；
 - 已有 Base、组合治理、MiniTrend dispatcher、研究 agents 和旧 X4/CxD 代码的复用边界；
 - 数据、策略、组合、风险、执行、账本、对账、通知、Dashboard 和 LLM 的目标接口；
-- 从当前 order-free Base runtime 迁移到可恢复、可解释的最小实盘系统的顺序；
+- 从当前 Base minimal-live 提升到可恢复、可解释的单策略 Level 3，再扩展多策略的顺序；
 - 未来多策略扩展和持续优化必须遵守的治理规则。
 
 本文不替代：
@@ -56,7 +56,7 @@ WSL /home/alyaloale/Code/qount
   7945HX/RTX 4060研究计算、特征、回测、ML、Bootstrap
 
 VPS /root/qount
-  production truth、order-free forward/paper/dry、未来执行、journal、dashboard发布
+  production truth、Base 100 USDT minimal-live、order-free refresh、journal、dashboard发布
 
 qount.alyaloale.com
   Caddy + Basic Auth保护的只读静态监控站
@@ -67,7 +67,7 @@ qount.alyaloale.com
 
 ### 2.2 当前生产能力
 
-当前 VPS 已有 MiniTrend Base 的独立 order-free 日线周期：
+当前 VPS 已有 MiniTrend Base 的独立日线minimal-live周期：
 
 ```text
 runtime proof
@@ -78,7 +78,8 @@ runtime proof
   -> causal projection
   -> readiness
   -> dry dispatcher
-  -> final readiness
+  -> final readiness / manual arm / minimal-live registry
+  -> live dispatcher / post-dispatch ledger reconciliation
 ```
 
 已存在的可复用生产能力：
@@ -90,11 +91,11 @@ runtime proof
 - Binance `STOP_MARKET closePosition` 保护计划；
 - append-only row hash / chain hash journal；
 - 成交后仓位和保护单对账；
-- 10%试点峰值回撤时 flatten-then-halt；
+- 5%试点单日损失或10%试点峰值回撤时 flatten-then-halt；
 - 独立 manual arm、live switch 和 confirmation 三重授权。
 
-当前仍是 `live_orders_allowed=false`，这些能力属于已部署工程和 order-free 证据，不等于
-已有实盘成交证据。
+`qount-mini-trend-live.timer`现为`enabled/active`。首次live cycle已写完整锁定、完成、账本和post-dispatch对账，
+但Base信号为全现金，实际0订单、0成交；因此系统已获得minimal-live运行证据，尚未获得真实fill/fee/slippage/STOP触发证据。
 
 ### 2.3 当前代码问题
 
@@ -107,9 +108,9 @@ runtime proof
 | `x4/`、`rv/`、C×D 和旧 cron 仍在仓库 | 容易把 legacy 状态或执行器误接回生产 |
 | 入口分散在大量 `scripts/research` 和 `scripts/desktop` | 业务逻辑容易继续进入脚本，难以复用和测试 |
 | 多策略 `StrategyIntent` 和 allocator 只在本机代码 | 目标组合架构尚未进入 VPS 生产运行链 |
-| Dashboard v1 read-model链和publisher已在VPS用真实order-free authority运行；authority按独立freshness变stale，真实transport仍未接 | 不能把publisher健康刷新误当账户/决策刷新，也不能用本地fixture或旧JSON洗新 |
-| 旧顶层`Notifier`与新`notifications/`并存 | 接入真实transport前必须收敛producer、凭据、限流和投递责任边界 |
-| 本机 worktree 有大量未提交文件 | 当前实现尚未形成可复现的干净 production release |
+| Dashboard v1 read-model链和publisher已在VPS运行；个人微信通知transport已接入，但publisher本身仍严格只读 | 不能把publisher健康刷新误当账户/决策刷新，也不能用本地fixture或旧JSON洗新 |
+| 旧顶层`Notifier`与新`notifications/`并存 | 继续扩展transport前必须保持producer、凭据、限流和投递责任边界隔离 |
+| production release已绑定commit、source tree和逐文件hash；Mac可继续有未同步文档或研究改动 | 任意生产代码/config变化都必须重新发布、order-free readiness并轮换arm，不能沿用旧provenance |
 
 ### 2.4 当前成熟度
 
@@ -118,12 +119,12 @@ runtime proof
 | 研究治理 | Level 2-3 | hash、trial、历史/forward角色已较完整 |
 | 策略研究 | Level 2 | Base稳定，其他sleeve多为research/shadow/blocked |
 | order-free运行 | Level 2 | systemd、preflight、paper、dry、readiness已部署 |
-| 执行代码 | Level 2 | 幂等、保护单、对账代码已存在，但没有live证据 |
-| 内部账本 | 本地Level 2 / production Level 1 | SQLite WAL、event/cash/NAV/outbox基础已本地实现；legacy运行链尚未迁移 |
+| 执行代码 | Level 2-3 | 首次live与recurring幂等周期已验证；真实有单成交路径仍只有模拟/故障测试证据 |
+| 内部账本 | production Level 2 | SQLite WAL、event/cash/NAV、post-dispatch reconciliation已接入MiniTrend live |
 | 恢复机制 | 本地Level 2 / production Level 1-2 | UNKNOWN/client-ID恢复合同和故障重放已本地实现；尚无真实交易所接入证据 |
 | Dashboard | 本地Level 2 / production Level 2 | v1十页已接ledger v3、四项健康和trace；VPS publisher每两分钟发布真实order-free authority，账户/决策stale与系统健康fresh独立显示 |
 | 通知与日报 | 本地Level 2 / production Level 2 | 分级事件、WAL outbox、重试、审计、确定性DailyBrief和六角色DailyIntelligence已实现；个人微信真实投递与每日scheduler已接入，交易权限保持隔离 |
-| 实盘证据 | Level 0 | Base尚未manual arm，没有新系统live成交样本 |
+| 实盘证据 | Level 1 | Base已manual arm并运行live；当前全现金，尚无真实成交样本 |
 
 下一里程碑是把单策略系统提升到 Level 3，而不是先增加更多实盘策略。
 
@@ -1291,18 +1292,19 @@ production publisher评审结论：本地已具备只读VPS artifact importer、
 原子发布、当前+4个release保留、逐文件备份、latest+60个backup保留和临时恢复演练；`qount-dashboard-publisher.timer`已在
 authority完整且路径审计`enable_authorized=true`后受控启用。publisher只能读取完整batch/registry/ledger/notification/health/brief，
 不得直接查询交易所、读取legacy state JSON或复制测试release；每轮只刷新OS健康、release和备份，不改变authority source time。
-authority writer另有`static/inactive` oneshot unit并与publisher共享lock；最后一次成功writer来自flat/0挂单、完全order-free run，
-但账户/决策authority已按15分钟规则变stale。要恢复fresh必须重新获得具体私有API/order-free周期授权，不能提高阈值或复制旧数据。
+authority writer另有`static/inactive` oneshot unit并与publisher共享lock；live cycle会在授权环境内刷新flat/仓位/挂单和
+order-free authority。publisher保留source time，authority在每次周期后按15分钟规则自然变stale，不能通过提高阈值或复制旧数据洗新。
 
 ### Phase D：Base最小实盘审查
 
 目标：以固定`100 USDT` canary完成Base最小实盘审查，不等待日历观察指标自然累积。
 
-状态：**Phase B/C/D工程链已部署并通过一次order-free闭环，真钱订单仍关闭**。Owner在2026-07-21明确授权跳过约两个月等待，
+状态：**Phase B/C/D工程链已部署，Base 100 USDT minimal-live已启用**。Owner在2026-07-21/22明确授权跳过约两个月等待，
 `60 forward pairs / 10 active bars / 30 paper days / 7 dry decision days`降为非阻断观察指标。它们继续出现在
 readiness与Dashboard中，用于解释样本成熟度，并纳入readiness hash防篡改，但不再决定`ready_for_manual_final_arm`。
-VPS run `/root/qount/state/mini_trend/forward/runs/20260721T063854Z`已得到`ready_for_manual_final_arm`、blocker 0；
-readiness/batch+manifest/ledger/reconciliation hash均已冻结，但`live_orders_allowed=false`、registry为`research`、arm为0。
+当前recurring run `/root/qount/state/mini_trend/forward/runs/20260722T061346Z`为`ready_for_manual_final_arm`、blocker 0，
+registry为`minimal_live`，live timer为`enabled/active`。首次live因目标权重全零而没有订单，但journal与post-dispatch
+reconciliation均完成；recurring重复decision已验证为order-free refresh后幂等no-op。
 
 前置：
 
@@ -1313,12 +1315,13 @@ readiness/batch+manifest/ledger/reconciliation hash均已冻结，但`live_order
 - 0 unmanaged/UNKNOWN/unreconciled position；
 - rollback和恢复演练通过；
 - 当前account/preflight、标准authority batch、RuntimeLedger snapshot和pre-dispatch reconciliation全部匹配；
-- owner为具体readiness hash签发manual arm；arm artifact同时成为`minimal_live` promotion evidence和owner authorization，
-  live switch、confirmation和token仍须同时匹配。首笔订单前必须重新展示这些最终hash供owner确认。
+- owner已为具体readiness hash签发manual arm；arm artifact同时成为`minimal_live` promotion evidence和owner authorization，
+  live switch、confirmation和token仍须同时匹配。后续只有arm失效、release/config变化、HALT恢复或风险增加才需要新的owner授权；
+  不得因为首个非零信号出现而临时改变合同。
 
-操作边界：部署和order-free演练不创建arm，不打开`QOUNT_MINI_TREND_LIVE_ENABLE`，不启用MiniTrend timer，不恢复旧X4/CxD
-cron。registry在order-free阶段保持`research`；只有显式arm命令原子写入arm并把同一authority提升为`minimal_live`。任意
-UNKNOWN、对账失败或HALT会把registry风险预算归零并发布`halted`。
+操作边界：当前arm只授权冻结的Base/100 USDT/30天窗口，不授权扩容或其它sleeve。不得恢复旧X4/CxD cron或forward timer；
+任意code/config/release变化必须重新order-free readiness并轮换arm。任意UNKNOWN、对账失败或HALT会停止风险增加并发布
+`halted`；恢复必须重新审计和owner authorization。
 
 验收：一个月试点期间每个订单、仓位、PnL和异常都可解释。盈利是观察结果，不是放宽工程门的理由。
 

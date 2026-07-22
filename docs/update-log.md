@@ -8,6 +8,40 @@
 
 ## 2026-07-22
 
+### MiniTrend Base 100 USDT minimal-live enabled and recurring path closed
+
+- Owner再次确认昨夜已批准的精确合同：`MiniTrend-UM-Base-v0.2`、固定`100 USDT`、Binance USD-M TOP3、
+  long/cash、one-way、isolated 1x、effective gross `<=1`；RiskTier与FundingVeto只做shadow，不恢复X4/C×D/carry/多策略。
+- 新增独立`qount-mini-trend-live.service/.timer`与`mini_trend_um_live_cycle.sh`。首次dispatch绑定arm原始readiness；
+  后续周期强制先在全部live开关关闭的环境执行order-free refresh，再按decision ID幂等处理。arm/env要求非symlink、root `0600`；
+  HALT、legacy live switch、unresolved live intent、权限或freshness异常全部fail closed。回滚脚本已覆盖新unit。
+- `0.2.2`初版live架构本地`1538 OK`、VPS`324 OK`。真实arm暴露CLI对`forward/latest`调用`.resolve()`，导致
+  `authority_source_selector_must_be_symlink`；`0.2.3`同时修复arm与post-dispatch authority调用点，并让authority refresh错误使
+  service返回失败。本地`1540 OK`、VPS`326 OK`。
+- 第二次arm暴露健康路径INFO事件使用“固定batch dedupe + 变化health source”的不可变身份冲突；`0.2.4`把dedupe绑定
+  batch和health snapshot，旧事件由incident sync resolve、新事件open。本地`1541 OK`、VPS`327 OK`。
+- 首次`0.2.4` arm/promotion成功，readiness=`0025c165...b57ef`，registry=`minimal_live`。首次live artifact
+  `/root/qount/state/mini_trend/forward/runs/20260722T055437Z/live_dispatch-20260722T055659Z.json`，SHA-256
+  `b13782b6f9d8a5a9d2093009cb8b71eebaca0aac9e40d320a5ec8b495b4db81a`。Base权重`0/0/0`，0 market/0 STOP、
+  `exchange_mutation_attempted=false`；journal写入`live_intent_locked/live_completed`，最终chain
+  `658d2f20...c1db`，post-dispatch reconciliation=`71c34b4d...0a01` passed，authority=`5b4433e1...f99a`。
+- 手工演练后续周期又暴露已执行live decision会让dry plan阻断、forward writer返回75。timer立即disable，0订单、无HALT、
+  无unresolved lock。`0.2.5`仅让`decision_already_executed`阻断live replay，dry仍走既有`duplicate_dry_noop`；本地
+  `1542 OK`、VPS`328 OK`。最终部署commit=`e279b9664135a5936973afb4e92478d0714b95cf`、source tree=
+  `42681594c8d77c9043d34e6d37ad5ca1a7c853b71e92868613e60672e008eb38`。
+- code hash变化后authority正确回到`research`。旧`0.2.4` arm artifact以0600归档，旧live env token删除且不可恢复；
+  新arm绑定`0.2.5` readiness。最终recurring run `/root/qount/state/mini_trend/forward/runs/20260722T061346Z`：
+  readiness=`2d59b0716df9721370d025f90fce762186d71b7ddeffb8e92a0108b50bc49b26`、batch=
+  `25924c5274d8f53c923ef2d7d2328bdf72deaa1d335b0515c7fbbc350debce38`、ledger=
+  `dbac0f9141c89eeb4fdc50deb85e428e69c1210b1ce83665ed0657299e13c434`、pre-reconciliation=
+  `dba39b3ce5b8eb43e2a96505d715fc6aacf6ad718be7bcdf87e2e0c1be79f2c7` passed。recurring service实际返回
+  `duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
+- 最终生产状态：`qount-mini-trend-live.timer=enabled/active`，forward timer=`disabled/inactive`，legacy cron有效项0，
+  HALT不存在，arm/env root `0600`，registry=`minimal_live`；账户可用余额`486.15970914 USDT`，TOP3全平、普通/条件挂单0。
+  当前尚无真实fill/fee/slippage/STOP/UNKNOWN恢复样本，禁止扩容、强制首单或开放其它sleeve。
+- 当前事实面已同步更新README、current、quick handoff、系统架构、组合计划和项目规则；同日0.2.1/Phase B-C-D旧状态明确标为
+  历史阶段。该docs-only变更不重新同步VPS，避免改变已验证的`0.2.5` release provenance和现有arm绑定。
+
 ### MiniTrend 100 USDT canary risk calibration and release gates
 
 - Owner明确否决2%账户日损门，认为它对小额加密日线趋势试点过严。当前合同改为按冻结的100 USDT试点本金计算：

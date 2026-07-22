@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-当前版本：`0.2.0`
+当前版本：`0.2.5`
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -36,12 +36,12 @@
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
   `qount-dashboard-publisher.timer`和`qount-daily-intelligence.timer`已获授权并保持`enabled/active`；后者每日`04:30 UTC`抓免费官方feed、
-  运行六角色中文LLM、不可覆盖归档并发送个人微信。不得恢复live/paper cron、MiniTrend forward
-  或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
+  运行六角色中文LLM、不可覆盖归档并发送个人微信。唯一交易timer是已授权的`qount-mini-trend-live.timer`；不得恢复
+  live/paper cron、MiniTrend forward timer、X4/C×D或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
-- 2026-07-20 `qount-mini-trend-forward.timer`已纠正并保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
+- `qount-mini-trend-forward.timer`保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
   publisher只读发布既有authority、系统健康和备份，不访问交易所、不刷新账户。Daily Intelligence unit显式移除Binance私钥和全部live
-  authority，只访问官方公开源、relay和个人微信；不要把它与交易timer混淆，也不要恢复MiniTrend timer。个人微信凭据只保留
+  authority，只访问官方公开源、relay和个人微信；不要把它与MiniTrend live timer混淆。个人微信凭据只保留
   `account_id/base_url/recipient/token`，最新context token从`/root/.openclaw/openclaw-weixin/accounts`动态读取；unit依赖
   `openclaw-gateway.service`并只读挂载该目录。不要重新复制静态context token到Qount凭据。
 - 2026-07-22最新日报ID为`24defae6...6adc`、report hash为`f4d90e84...63a94`，3份feed、8份详情、2份行情和六角色请求均已归档；
@@ -57,22 +57,16 @@ ssh -o ClearAllForwardings=yes qount-vps \
 - 最新动态会话验证job为`6d51a764...4324`，状态`DELIVERED/SUCCEEDED`；生产NotificationStore为5 event/job/attempt、20行audit chain。
   旧代码回滚目录为`/root/qount-notify-backup.rl6QL6`，其中不含凭据。不得用该代码回滚覆盖当前四字段凭据；若必须回滚provider，需同时恢复
   相容凭据合同并重新执行真实通知验证。
-- 2026-07-21 owner授权固定`100 USDT` canary并直接推进B/C/D。readiness中的60/10 forward、30 paper days和7 dry days
-  只作观察并纳入readiness hash防篡改，不再阻断manual-arm readiness；账户/仓位/订单、funding/schema、标准batch/ledger/
-  三方对账、UNKNOWN停机和owner最终hash确认仍阻断。`1000 USDT`仅是历史/order-free兼容上界，真钱四层强制100。
-  VPS成功order-free run为`/root/qount/state/mini_trend/forward/runs/20260721T063854Z`；最终readiness为
-  `ready_for_manual_final_arm`且blocker 0，但`live_orders_allowed=false`。四项最终证据为readiness
-  `8496f70e...ad2a87`、batch/manifest `70d1b38b...6ff0a49` / `1520b6af...e2ec3`、ledger
-  `70184860...575fb`、reconciliation `9971ca5f...22d96` passed。观察值为`0/0/0/1`且funding完整。
-  当前未创建arm、registry仍为`research`、未开启live switch/timer、未发真实订单。Mac全仓`1497 OK`；VPS
-  production/B-C-D/post-fix为`303/59/21 OK`。
-- 2026-07-22的当前VPS run取代上述旧run作为arm判断来源：`/root/qount/state/mini_trend/forward/runs/20260721T174354Z`。
-  0.2.1 release provenance已验证（commit=`9144e362...1c27b`、source tree=`70ee1078...60020`），VPS生产回归`307 OK`；
-  readiness=`ready_for_manual_final_arm`、hash=`8087c1d8...43fba`，authority batch=`98bd95b6...3d094`，ledger snapshot=
-  `dc5b979c...b096f`，pre-dispatch reconciliation=`03303187...1e74c`且passed。账户可用余额为`486.15970914 USDT`、
-  TOP3/普通单/条件单均0，完整funding；观察值forward/active/paper/dry=`1/0/1/1`。Base当前决策权重为`0/0/0`，
-  所以dry为0 market/0 stop且未创建arm或发订单；不得为获得成交证据强制下单。MiniTrend timer仍`disabled/inactive`，
-  HALT不存在，registry仍`research`。真实fee/slippage/STOP/UNKNOWN恢复数据尚不存在，不能扩容。
+- 2026-07-22固定`100 USDT` MiniTrend Base已完成manual arm并进入`minimal_live`。VPS release为`0.2.5`、
+  commit=`e279b966...b95cf`、source tree=`42681594...8eb38`；当前run
+  `/root/qount/state/mini_trend/forward/runs/20260722T061346Z`，readiness=`2d59b071...49b26`、batch=
+  `25924c52...bce38`、ledger=`dbac0f91...3c434`、pre-dispatch reconciliation=`dba39b3c...9f2c7` passed。
+  账户`486.15970914 USDT`、TOP3全平、普通/条件挂单0、HALT absent，arm/env均root `0600`。
+- `qount-mini-trend-live.timer`为`enabled/active`；forward timer与legacy cron关闭。首次live artifact
+  `20260722T055437Z/live_dispatch-20260722T055659Z.json`完成`live_intent_locked -> live_completed`，post reconciliation
+  `71c34b4d...0a01` passed。因Base权重`0/0/0`，0 market/0 STOP且未尝试exchange mutation；不得强制首单。
+  recurring分支已实跑为`duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
+  真实fill/fee/slippage/STOP/UNKNOWN恢复样本仍为0，禁止扩到1000 USDT或增加其它live sleeve。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
@@ -162,7 +156,7 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
 `backup_state=verified_snapshot`、`enable_authorized=true`，audit hash为
 `0dcabe64e648b358f9a280806f23d6eb8d64a6c0df303a2799107d9c4c7bcf1f`。publisher timer现已受控启用；它只读完整真实
 batch/registry/ledger/notification/health/brief、OS健康和备份，不查询交易所、不授权订单。transport发送仍需独立授权；不得复制
-fixture/legacy JSON、恢复production crontab、MiniTrend forward timer或打开订单/live开关。
+fixture/legacy JSON、恢复production crontab、MiniTrend forward timer或绕过当前arm/registry/readiness门。
 
 authority writer只读接入命令（仅在重新获得具体私有API/order-free周期授权并生成新run后执行）：
 
@@ -249,15 +243,12 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
   tests.test_dispatch_contract_adapters
 ```
 
-当前读法：Phase B/C/D dispatcher现已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
-`SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。manual-arm动作会把同一hash绑定的registry
-原子提升为`minimal_live`，但当前未运行该动作。本轮operations/health/publisher/authority/system-health历史边界聚焦为`29 OK`，
-Mac全仓历史读数`1488 OK`，VPS默认production profile历史读数为
-`299 OK`；更早的Phase B/C与边界`71 OK`、legacy adapter
-`37 OK`等读数保留历史语境。更早的完整Phase A/B/C
-`101 OK`等批次读数保留在`current.md`和`update-log.md`，不覆盖其历史语境。`ledger/store.py`、legacy dry replay、冻结snapshot adapter、notification
-outbox/producers、incident sync、DailyBrief和Dashboard v1合同仍未接入订单路径、producer scheduler或真实webhook；publisher只读既有
-标准source且`live_orders_allowed=false`。不要用fixture创建生产DB/read model，也不要据此打开live。
+当前读法：Phase B/C/D dispatcher已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
+`SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。manual arm已执行并把同一hash绑定的registry
+提升为`minimal_live`；当前release回归为Mac全仓`1542 OK`、VPS production `328 OK`。更早的`29/1488/299/71/37/101 OK`
+等读数只保留历史语境，不覆盖当前release。NotificationStore、incident sync、DailyBrief、Daily Intelligence、个人微信transport和
+Dashboard v1均已在生产运行，但都不能直接赋予订单权；publisher只读标准source，不查询交易所。不要用fixture创建生产DB/read model，
+不要手工洗新authority，也不要绕过arm/registry/readiness打开其它策略。
 最新read-model QA使用Playwright 1.60 + Chromium 1223，桌面`1440x1000`和移动`390x844`检查Live、Positions到Decisions点击追踪、
 System四项健康、移动菜单和缺release页面；无控制台异常、页面级横向溢出、重叠或裁切。生产release来自VPS authority writer，
 不是测试fixture。

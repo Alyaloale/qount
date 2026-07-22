@@ -1,11 +1,10 @@
 # qount 加密多策略组合系统计划
 
-更新时间：2026-07-21
+更新时间：2026-07-22
 
-状态：`research_sandbox`。本文件记录 owner 计划投入 `1000 USDT` 后的目标架构、策略合同和推进顺序；它不构成
-充值、下单或实盘授权。Owner已要求直接推进Phase B/C/D，本次真钱canary严格固定为`100 USDT`；60/10 forward、
-30 paper days和7 dry days只作防篡改观察项，不再阻断readiness。MiniTrend timer、manual arm和live switch仍关闭，
-当前未发送真实订单；账户、订单、funding、标准authority/RuntimeLedger/对账和owner最终hash确认仍是硬门。
+状态：多策略部分仍为`research_sandbox`；唯一例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
+`1000 USDT`目标架构，不构成扩容或其它sleeve下单授权。60/10 forward、30 paper days和7 dry days仍是观察项；
+账户、订单、funding、标准authority/RuntimeLedger/对账、HALT和arm继续是每轮硬门。RiskTier与FundingVeto只做shadow。
 
 本文负责策略sleeve、研究合同和晋级顺序。跨策略通用的运行架构、账本/对账、故障恢复、通知、Dashboard和LLM
 边界以 [system-architecture-design.md](system-architecture-design.md) 为主设计，避免在策略计划中重复维护第二套
@@ -146,7 +145,7 @@ virtual NAV或shadow execution。
 
 - `long/cash`、one-way、逐仓、无carry、无short、无杠杆增益、组合effective gross `<=1.0`。
 - Base沿用35% deadband、3xATR逐币吊灯和3根完成日线冷却。
-- 账户不设单日止损；试点从权益峰值回撤10%时flatten+halt，恢复必须人工审计。
+- 当前100 USDT试点按冻结本金设置5%账户级单日损失线，并保留权益峰值回撤10%累计线；任一触发都flatten+halt，恢复必须人工审计。
 - 新事件单次模型化最大亏损目标不超过账户的0.25%；若最小名义价值或跳空使其不可满足，只能shadow。
 - LiquidTrend单币目标不超过25%，同一动态相关簇最多2个仓位；相关簇限制不影响Base控制组的历史合同。
 
@@ -327,27 +326,27 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
 1. 生成LiquidTrend10 G0容量artifact：10币日线、funding、quote-volume、相关矩阵、有效广度和1000 USDT过滤器。
 2. 建立Equity Mapping跨场所symbol contract，下一版补真实premarket锚和公司行动日历。
 3. 为LLM事件层实现schema/validator/fixture，不接交易或权重。
-4. Binance生产端已接受owner指定的现有Key并通过私有只读预检；2026-07-21 owner要求固定100 USDT并直接推进B/C/D。
-   forward/paper/dry日历值继续观察但不阻断；manual final arm、当前标准authority、账本/对账和账户安全门仍阻断订单，
+4. Binance生产端已接受owner指定的现有Key并通过私有只读预检；2026-07-21/22 owner要求固定100 USDT并直接推进B/C/D与minimal-live。
+   forward/paper/dry日历值继续观察但不阻断；有效arm、当前标准authority、账本/对账和账户安全门仍阻断每轮订单，
    旧交易cron不恢复。
 
-执行进度（2026-07-21）：
+执行进度（2026-07-22）：
 
-- Phase B/C/D代码已同步VPS，`qount-mini-trend-forward.service`经`systemd-analyze verify`并手工运行一次oneshot；timer继续
-  `disabled/inactive`。成功run `/root/qount/state/mini_trend/forward/runs/20260721T063854Z`闭合标准authority、RuntimeLedger和
-  pre-dispatch reconciliation，最终readiness为`ready_for_manual_final_arm`、blocker 0，但`live_orders_allowed=false`。
-  账户全平、普通/条件单0、dry dispatcher 0 intent且未尝试mutation。观察值`0/0/0/1`不阻断；registry仍为`research`，arm为0。
+- Phase B/C/D已部署为release `0.2.5`。Base完成manual arm、`minimal_live` promotion、首次live账本闭环和recurring幂等复跑；
+  `qount-mini-trend-live.timer`为`enabled/active`，forward timer和production cron为关闭。当前run
+  `/root/qount/state/mini_trend/forward/runs/20260722T061346Z`的readiness为`2d59b071...49b26`，账户全平、0挂单、
+  registry=`minimal_live`、HALT absent。首次live目标权重全零，0订单/0成交，但post reconciliation passed。
 
-- Base生产前置service已部署到VPS，可在明确授权时手工刷新TOP3公开rules/bar/funding，运行只读preflight、幂等paper journal、
+- Base生产前置service已部署到VPS，由live cycle先刷新TOP3公开rules/bar/funding，再运行只读preflight、幂等paper journal、
   latest causal projection、当前账户/普通单/条件单快照、dry dispatcher、独立runtime proof和fail-closed readiness；
   `qount-mini-trend-forward.timer`保持`disabled/inactive`。2026-07-21只读审计显示可用余额`486.15970914 USDT`，仅用于验证
   至少覆盖本次固定`100 USDT` canary；owner接受现有VPS-only key和Spot/Margin权限，Reading/Futures/IP限制/提现关闭及
   TOP3 one-way/isolated 1x/全平/0挂单均通过。
 - MiniTrend dispatcher已实现源hash与决策hash绑定、确定性client ID、重复决策锁、append-only row/chain journal、
-  exchange-native `STOP_MARKET closePosition`、成交后仓位/保护单对账、10%回撤flatten+halt和独立manual arm。
-  最新run `/root/qount/state/mini_trend/forward/runs/20260719T091232Z`的systemd runtime proof通过；因首个冻结完成bar
-  尚未出现，dry为`await_dispatch_decision`、0 journal/0订单。60/10 forward、30天paper、7天dry已降为非阻断观察项；
-  当前继续要求完整funding journal、authority/RuntimeLedger/对账和manual final arm，`live_orders_allowed=false`。
+  exchange-native `STOP_MARKET closePosition`、成交后仓位/保护单对账、5%日损/10%累计回撤flatten+halt和独立manual arm。
+  当前recurring路径已验证order-free refresh、dry duplicate no-op和live decision幂等no-op。60/10 forward、30天paper、7天dry
+  是非阻断观察项；完整funding journal、authority/RuntimeLedger/对账和有效arm继续作为每轮硬门。这些门只授权Base 100 USDT，
+  不会让RiskTier、FundingVeto或其它sleeve获得订单权。
 - 任务1已完成v0.2 G0 artifact。1777个BTC参考日中10币共同1772日，覆盖`99.7186%`；10币Funding经交易所
   结算时间最近分钟规范化后覆盖全部通过，最低单币日成交额中位数约`225.47m USDT`。原始毫秒时间戳会把
   相邻两天错误分成2/4次结算，已由回归测试修复，不做0填充。
