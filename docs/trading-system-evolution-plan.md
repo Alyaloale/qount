@@ -629,11 +629,23 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
 - 0 成交期间 `ExecutionAttributionReport` 保持 `unavailable`，不填模拟 slippage/latency。
 - 30 批次退出门（§9.1）从 VPS 首次 shadow 运行开始计数。
 
-### 13.6 下一步
+### 13.6 首次 VPS 只读验证（batch #1）
 
-1. 同步代码到 VPS（`scripts/sync-to-vps.sh`）。
-2. 手动运行 `phase_b_readonly_run.py` 验证管道。
-3. 在每个日线 live cycle 后手动运行，开始积累 30 批次。
-4. 30 批次无无法解释 diff 后，Phase B 退出门通过。
-5. 可选：建 `qount-phase-b-readonly.timer`（需 owner 对新 timer 的单独授权）。
-6. Dashboard 只读状态（`phase_b_observability` read model）作为后续工作。
+2026-07-23 在 VPS 首次运行 `phase_b_readonly_run.py --mode all`，结果：
+
+- **Shadow accountant**：`has_blocking_diff=false`、`unknown_income_count=0`。9 个 diff 字段全部 pass/warn
+  （3 position quantity pass + equity pass + realized/funding/commission/transfer pass + unrealized warn）。
+  24h 查询窗口、initial_equity 从 primary snapshot 获取。
+- **Venue snapshot**：`compatibility=pass`、`blockers=[]`。exchangeInfo 845 symbols、changelog hash 首次记录。
+- **HALT observer**：`event_count=0`。无 HALT 文件、无 UNKNOWN 订单、无 reconciliation 问题。
+- 归档落 `state/phase_b/shadow_accounting/runs/20260722T170922Z/`、`state/phase_b/venue_snapshots/`。
+- 未修改 dispatcher/订单/HALT 文件/timer/arm/registry。生产状态 `0.2.13` 不变。
+
+30 批次退出门开始计数（batch #1/30）。
+
+### 13.7 下一步
+
+1. 在每个日线 live cycle 后手动运行 `phase_b_readonly_run.py`，积累剩余 29 批次。
+2. 30 批次无无法解释 diff 后，Phase B 退出门通过。
+3. 可选：建 `qount-phase-b-readonly.timer`（需 owner 对新 timer 的单独授权）。
+4. Dashboard 只读状态（`phase_b_observability` read model）作为后续工作。

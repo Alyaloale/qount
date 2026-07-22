@@ -16,13 +16,12 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 [research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-23 Phase B（只读生产并行）管道建设完成。** owner 已授权 VPS 只读并行。Phase A 的纯函数"数学引擎"扩展为
+- **2026-07-23 Phase B（只读生产并行）管道建设完成并完成首次 VPS 只读验证(batch #1/30)。** owner 已授权 VPS 只读并行。Phase A 的纯函数"数学引擎"扩展为
   "管道"层：shadow accountant 抓取器(`fetch.py`)+归档器(`archive.py`)+编排层(`orchestrator.py`)+主账本独立提取器
   (`primary_snapshot/extract.py`)+HALT 旁路观测(`halt/observer.py`)+venue snapshot 抓取器(`venue/fetch.py`+`orchestrator.py`)+
   统一脚本入口(`scripts/operations/phase_b_readonly_run.py`)。新增1个独立包(`primary_snapshot/`)、6个源文件、5个测试文件、61条新测试；
-  Mac全仓`1783/1783 OK`，现有golden hash不变。Import boundary新增`primary_snapshot`不导入`ledger.store`规则；`shadow_accounting`/
-  `venue`/`halt`的boundary模块列表扩展。全部只读、不改dispatcher/订单/HALT文件；生产状态`0.2.13`不变。初期手动SSH触发，
-  30批次退出门从VPS首次运行开始计数。
+  Mac全仓`1783/1783 OK`，现有golden hash不变。VPS首次运行结果：shadow diff=0 block(9字段全pass/warn)、
+  venue compatibility=pass、halt=0 events；未修改dispatcher/订单/HALT文件。30批次退出门已开始计数。
 
 - **2026-07-23 Phase A（架构演进合同与离线认证）已全部完成。** 按trading-system-evolution-plan.md §9 Phase A交付7项：Certification
   合同(CertificationPlan/Run/Event/Result)、ExecutionAttributionReport、HALT三层分类(operational/strategy/portfolio bypass observer)、
