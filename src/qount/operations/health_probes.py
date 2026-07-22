@@ -20,7 +20,13 @@ from qount.operations.backups import read_latest_dashboard_backup
 from qount.operations.release_provenance import verify_release_provenance
 
 
-_SERVICE_STATES = {"active", "inactive", "failed"}
+_SERVICE_STATES = {
+    "active",
+    "activating",
+    "deactivating",
+    "inactive",
+    "failed",
+}
 _OFFSET_RE = re.compile(r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(us|ms|s)?$")
 _OFFSET_SCALE = {None: 0.000001, "us": 0.000001, "ms": 0.001, "s": 1.0}
 DEFAULT_ALLOWED_SERVICE_NAMES = (

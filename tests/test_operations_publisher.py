@@ -25,6 +25,7 @@ from qount.operations.health_probes import HealthProbeConfig
 from qount.operations.health_probes import HealthProbeDependencies
 from qount.operations.health_probes import collect_os_system_health
 from qount.operations.health_probes import probe_clock
+from qount.operations.health_probes import probe_operations
 from qount.reporting import read_dashboard_v1
 from tests.test_authority_importer import _publish_authority_bundle
 
@@ -69,6 +70,99 @@ def _config(root: Path) -> PublisherConfig:
 
 
 class OperationsHealthProbeTest(unittest.TestCase):
+    def test_live_oneshot_activating_is_a_valid_execution_state(self) -> None:
+        def operations_runner(argv: tuple[str, ...]) -> CommandResult:
+            unit = argv[2]
+            states = {
+                "qount-mini-trend-forward.timer": "inactive",
+                "qount-mini-trend-live.timer": "inactive",
+                "qount-mini-trend-live.service": "activating",
+            }
+            return CommandResult(0, states.get(unit, "active") + "\n")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root = root / "state"
+            state_root.mkdir()
+            (root / ".qount-release-provenance.json").write_text(
+                "{}\n", encoding="ascii"
+            )
+            with patch(
+                "qount.operations.health_probes.verify_release_provenance",
+                return_value={"provenance_hash": "a" * 64},
+            ):
+                measurement = probe_operations(
+                    HealthProbeConfig(
+                        disk_path=root,
+                        service_name="qount-dashboard-publisher.timer",
+                        allowed_service_names=(
+                            "qount-dashboard-publisher.timer",
+                        ),
+                        backup_root=root,
+                        repo_root=root,
+                        state_root=state_root,
+                        operations_enabled=True,
+                    ),
+                    operations_runner,
+                )
+
+        checks = {
+            row["check_id"]: row for row in measurement["metrics"]["checks"]
+        }
+        live_service = checks["service:mini_trend_live_service"]
+        self.assertEqual(measurement["status"], "healthy")
+        self.assertEqual(measurement["metrics"]["scope_status"]["execution"], "pass")
+        self.assertEqual(live_service["status"], "pass")
+        self.assertEqual(live_service["observed_value"], "activating")
+
+    def test_forward_timer_activating_remains_an_execution_blocker(self) -> None:
+        def operations_runner(argv: tuple[str, ...]) -> CommandResult:
+            unit = argv[2]
+            states = {
+                "qount-mini-trend-forward.timer": "activating",
+                "qount-mini-trend-live.timer": "inactive",
+                "qount-mini-trend-live.service": "inactive",
+            }
+            return CommandResult(0, states.get(unit, "active") + "\n")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root = root / "state"
+            state_root.mkdir()
+            (root / ".qount-release-provenance.json").write_text(
+                "{}\n", encoding="ascii"
+            )
+            with patch(
+                "qount.operations.health_probes.verify_release_provenance",
+                return_value={"provenance_hash": "a" * 64},
+            ):
+                measurement = probe_operations(
+                    HealthProbeConfig(
+                        disk_path=root,
+                        service_name="qount-dashboard-publisher.timer",
+                        allowed_service_names=(
+                            "qount-dashboard-publisher.timer",
+                        ),
+                        backup_root=root,
+                        repo_root=root,
+                        state_root=state_root,
+                        operations_enabled=True,
+                    ),
+                    operations_runner,
+                )
+
+        checks = {
+            row["check_id"]: row for row in measurement["metrics"]["checks"]
+        }
+        forward_timer = checks["service:mini_trend_forward"]
+        self.assertEqual(measurement["status"], "unavailable")
+        self.assertEqual(
+            measurement["metrics"]["scope_status"]["execution"],
+            "unavailable",
+        )
+        self.assertEqual(forward_timer["status"], "block")
+        self.assertEqual(forward_timer["observed_value"], "activating")
+
     def test_real_probe_adapter_binds_raw_sources_and_missing_backup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
