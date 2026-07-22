@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 
@@ -256,3 +256,93 @@ class Settings:
             path.mkdir(parents=True, exist_ok=True)
         self.hourly_model_path.parent.mkdir(parents=True, exist_ok=True)
         self.setup_model_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+PRODUCTION_CRITICAL_FIELDS = frozenset(
+    {
+        "live_enable",
+        "live_confirmation",
+        "binance_api_key",
+        "binance_api_secret",
+        "contract_leverage",
+        "contract_margin_mode",
+        "mode",
+        "market_type",
+    }
+)
+
+RESEARCH_ONLY_FIELDS = frozenset(
+    {
+        "research_shadow_candidate_tags",
+        "hourly_model_enable",
+        "hourly_model_path",
+        "setup_model_enable",
+        "setup_model_path",
+        "candidate_trend_timeframe",
+    }
+)
+
+
+@dataclass(frozen=True)
+class ResearchSettings:
+    """Research-only settings that must not override production fields.
+
+    Research profile can only produce research objects.  Production
+    fields like live_enable, leverage, margin mode, and API keys
+    are never present here and cannot be silently overridden via
+    dataclasses.replace.
+    """
+
+    research_shadow_candidate_tags: tuple[str, ...]
+    hourly_model_enable: bool
+    hourly_model_path: Path
+    setup_model_enable: bool
+    setup_model_path: Path
+    candidate_trend_timeframe: str | None
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> "ResearchSettings":
+        return cls(
+            research_shadow_candidate_tags=settings.research_shadow_candidate_tags,
+            hourly_model_enable=settings.hourly_model_enable,
+            hourly_model_path=settings.hourly_model_path,
+            setup_model_enable=settings.setup_model_enable,
+            setup_model_path=settings.setup_model_path,
+            candidate_trend_timeframe=settings.candidate_trend_timeframe,
+        )
+
+
+def validate_no_production_override(
+    settings: Settings,
+    **overrides: object,
+) -> tuple[str, ...]:
+    """Validate that dataclasses.replace won't override production-critical fields.
+
+    Returns error strings for any production-critical field in overrides.
+    Empty tuple means the replacement is safe for research use.
+    """
+    errors: list[str] = []
+    for field_name in overrides:
+        if field_name in PRODUCTION_CRITICAL_FIELDS:
+            errors.append(
+                f"production_field_override_forbidden:{field_name}"
+            )
+    return tuple(errors)
+
+
+def safe_research_replace(
+    settings: Settings,
+    **overrides: object,
+) -> Settings:
+    """Like dataclasses.replace but rejects production-critical field overrides.
+
+    Raises ValueError if any production-critical field is in overrides.
+    """
+    from dataclasses import replace as _replace
+
+    errors = validate_no_production_override(settings, **overrides)
+    if errors:
+        raise ValueError(
+            f"settings_replace_blocked:{','.join(errors)}"
+        )
+    return _replace(settings, **overrides)

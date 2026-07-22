@@ -1,6 +1,6 @@
 # qount 当前状态
 
-更新时间：2026-07-22
+更新时间：2026-07-23
 
 源码与VPS生产版本：`0.2.13`，commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`，
 source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
@@ -11,8 +11,31 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 [holdout.md](holdout.md)，长证据链看 [update-log.md](update-log.md)。当前系统工程主设计看
 [system-architecture-design.md](system-architecture-design.md)，100 USDT Base与未来组合合同看
 [crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，Alpha Agents研究层看
-[alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
+[alpha-agent-plan.md](alpha-agent-plan.md)，生产控制面演进看
+[trading-system-evolution-plan.md](trading-system-evolution-plan.md)，研究与文献情报路线看
+[research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
+
+- **2026-07-23 Phase B（只读生产并行）管道建设完成。** owner 已授权 VPS 只读并行。Phase A 的纯函数"数学引擎"扩展为
+  "管道"层：shadow accountant 抓取器(`fetch.py`)+归档器(`archive.py`)+编排层(`orchestrator.py`)+主账本独立提取器
+  (`primary_snapshot/extract.py`)+HALT 旁路观测(`halt/observer.py`)+venue snapshot 抓取器(`venue/fetch.py`+`orchestrator.py`)+
+  统一脚本入口(`scripts/operations/phase_b_readonly_run.py`)。新增1个独立包(`primary_snapshot/`)、6个源文件、5个测试文件、61条新测试；
+  Mac全仓`1783/1783 OK`，现有golden hash不变。Import boundary新增`primary_snapshot`不导入`ledger.store`规则；`shadow_accounting`/
+  `venue`/`halt`的boundary模块列表扩展。全部只读、不改dispatcher/订单/HALT文件；生产状态`0.2.13`不变。初期手动SSH触发，
+  30批次退出门从VPS首次运行开始计数。
+
+- **2026-07-23 Phase A（架构演进合同与离线认证）已全部完成。** 按trading-system-evolution-plan.md §9 Phase A交付7项：Certification
+  合同(CertificationPlan/Run/Event/Result)、ExecutionAttributionReport、HALT三层分类(operational/strategy/portfolio bypass observer)、
+  VenueCapabilitySnapshot+changelog diff、独立shadow accountant(重建positions/NAV+diff)、本地venue gateway故障注入器(ACK loss/
+  partial fill/crash恢复)、import boundary测试+Settings/ResearchSettings类型隔离。新增4个独立顶层包(`certification/`、`halt/`、
+  `venue/`、`shadow_accounting/`)、18个源文件、7个测试文件、161条新测试；Mac全仓`1722/1722 OK`，现有golden hash不变。
+  全部离线、`orders_authorized=false`、未访问VPS/私有API/交易所/订单接口；生产状态`0.2.13`不变。
+
+- **2026-07-23 owner要求形成生产架构优化和研究推进两份新路线。** 架构路线接受独立execution certification、
+  shadow accountant、Operational/Strategy/Portfolio三层HALT和venue capability provenance，但只授权设计与离线验证；
+  真实最小认证仍需逐次owner授权。研究路线现把edge储备重认证列为高优先级：C×D只作历史组合数学候选，CTA-R只作跨资产
+  selection-free重新认证候选，随后才是多速度趋势、执行经济学和条件性新family；旧X4/C×D/RV-C/CTA-R结果不继承promotion资格，
+  carry/short/杠杆/VRP仍关闭，唯一真钱策略和生产状态不变。
 
 - **2026-07-22 0.2.13已完成VPS部署与受控生产验收。** 最近已完成UTC日线硬门、LLM flat仓位计数和中文越权扫描之外，
   部署探针还发现并修复了`latest_date`字符串与`datetime.date`比较，以及live wrapper按历史completed状态错误刷新当前arm绑定两个问题。

@@ -1,6 +1,6 @@
 # qount 项目规则与文档分类
 
-更新时间：2026-07-22
+更新时间：2026-07-23
 
 这份文档定义项目级规则、文档分类、研究线隔离和代码整理纪律。它不替代
 [current.md](current.md)：`current.md` 仍是当前事实、生产状态和下一步的入口。
@@ -51,6 +51,7 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | A股 ETF 20 日 | `ashare-etf-month-plan.md` | 主题状态、固定组合月度研究、收盘触发 | 数据、状态合同、风险上限或 evidence gate 变化 |
 | 重构蓝图 | `rebuild-plan.md` | CTA-R / A股系统化思路 | 蓝图变化；不得覆盖当前生产事实 |
 | Alpha Agents | `alpha-agent-plan.md` | 多 agent 研究组织、资料搜集、量化接入骨架 | 角色、任务、source book、agent 边界变化 |
+| 系统演进 / 研究路线 | `trading-system-evolution-plan.md`, `research-advancement-roadmap.md` | 跨线生产控制面演进、全局实验治理和情报来源路线 | owner方向、架构阶段门、跨线研究优先级变化；不得直接改变任一线promotion/live状态 |
 
 新增文档前先判断是否能放进现有分类。新策略计划文件只有在 owner 明确授权新研究线时创建。
 

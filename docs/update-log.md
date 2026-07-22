@@ -1,10 +1,65 @@
 # qount 更新记录
 
-更新时间：2026-07-22
+更新时间：2026-07-23
 
 这份文档只记录近期关键变更、验证结果和当前读法。当前策略结论以
 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
+
+## 2026-07-23
+
+### Phase A 架构演进合同与离线认证完成
+
+- 按trading-system-evolution-plan.md §9 Phase A交付全部7项，完成标准满足：全部离线、`orders_authorized=false`、不需要VPS或私有API。
+  新增4个独立顶层包、18个源文件(3375行)、7个测试文件(2031行)、161条新测试；Mac全仓`1722/1722 OK`，现有golden hash不变。
+  生产状态`0.2.13`不变，未修改timer/arm/registry/cron/live开关。
+
+- **WP-1 Certification合同**：`src/qount/certification/contracts.py`定义CertificationPlan/Run/Event/Result四个frozen dataclass，
+  全部`orders_authorized=False`/`strategy_id=None`/`batch_type="venue_certification"`/`pnl_attribution="operational_certification_cost"`/
+  `portfolio_nav="excluded"`；`completed`只在12个必需artifact成员齐全+零仓位证明时为True。注册到`persistence/codec.py`的
+  `_TYPE_BY_CLASS`/`_payload`/`_decode_payload`。42条测试覆盖round-trip/tamper/duplicate-key/unknown-field/golden-hash。
+- **WP-7 ExecutionAttributionReport**：`src/qount/certification/attribution.py`，无真实fill时所有数值字段=`"unavailable"`、
+  `attribution_source="unavailable"`；`create_real_fill`拒绝字符串和回测常数。12条测试。
+- **WP-2 HALT三层分类**：`src/qount/halt/`包含HaltEvent合同(operational/strategy/portfolio × venue/execution_plane/
+  single_strategy_version/full_account)、`classify_from_halt_reason`映射8个现有HALT reason到三层分类、`classify_from_runtime_state`
+  从UNKNOWN/对账/数据质量生成事件、bypass router读取HALT文件但不修改。恢复流程`validate_recovery_flow`验证UNKNOWN闭合→双会计diff→
+  recovery report→owner auth→resume顺序。35条测试。
+- **WP-3 VenueCapabilitySnapshot**：`src/qount/venue/`包含VenueCapabilitySnapshot(exchange_info_schema_hash/symbol_rules_hash/
+  position_mode/margin_mode/leverage/compatibility=pass|review_required|blocked)和ChangelogDiff。`build_venue_capability_snapshot`
+  纯函数从exchange_info dict构建快照，对比previous_snapshot检测schema/rules/changelog变化→review_required。21条测试。
+- **WP-4 Shadow accountant**：`src/qount/shadow_accounting/`独立重建positions(long-only平均成本)、NAV(恒等式
+  `equity=initial+realized+unrealized+funding-commission+transfer`)、cash events(unknown incomeType→HALT候选)、
+  coverage window(缺口检测)、与主账本逐字段diff(pass/warn/block)。不导入`qount.execution`/`qount.mini_trend.pilot_dispatcher`/
+  `qount.ledger.store`/`qount.ledger.reconciliation`。20条测试含golden rebuild。
+- **WP-5 Gateway故障注入器**：`src/qount/certification/gateway.py`内存模拟交易所，`fault_injection.py`定义10种故障类型
+  (ack_loss/rest_timeout/partial_fill/crash_at_submitting/crash_at_acknowledged/crash_at_partial/ws_reorder/ws_duplicate/
+  ws_disconnect/duplicate_client_id)，`replay.py`崩溃恢复(查询不替代UNKNOWN、REST snapshot覆盖WS gap)。
+  16条测试覆盖§3.4验收矩阵。
+- **WP-6 Import boundary + Settings split**：`tests/test_architecture_boundaries.py`新增4组AST boundary测试(shadow_accounting/
+  certification_gateway/venue/halt)，`src/qount/settings.py`新增`ResearchSettings`frozen dataclass、`PRODUCTION_CRITICAL_FIELDS`
+  集合、`safe_research_replace()`函数阻止`dataclasses.replace`覆盖`live_enable`/`contract_leverage`/`binance_api_key`等生产字段。
+  15条测试(4 boundary + 11 settings isolation)。
+- Codec注册9个新artifact类型(certification_plan/run/event/result、halt_event、venue_capability_snapshot、venue_changelog_diff、
+  execution_attribution_report)到现有`persistence/codec.py`的`_TYPE_BY_CLASS`/`_object_id`/`_payload`/`_decode_payload`，
+  复用`_exact_fields`/`_verify_reconstruction`/`_strict_object` tamper检测。现有`test_immutable_contract_artifacts.py` golden hash
+  `7bb07f55...2968`不变。
+- 本批未访问VPS、私有API、交易所、订单接口；未修改timer、arm、registry、cron或live开关；未改变Base v0.2唯一真钱策略权限。
+
+### 生产架构优化与研究情报路线冻结
+
+- 新增`trading-system-evolution-plan.md`，把外部建议分流为独立execution certification lane、独立shadow accountant、
+  三层HALT、venue capability provenance、生产import边界和多sleeve接入前置门。真实最小认证明确要求新的逐次owner授权；
+  不为制造执行样本强制Base下单，不复用Base arm，不把认证成本计入策略PnL。
+- 新增`research-advancement-roadmap.md`，定义GlobalExperimentRecord、LiteratureRecord、source trust、LLM旁路角色、
+  每周论文/研报发现和多速度趋势/point-in-time universe/危机状态/ML元任务的条件路线。旧X4/C×D/RV-C/CTA-R只作
+  legacy或consumed evidence，不改写为当前已认证edge；carry、short、杠杆和VRP仍未获授权。
+- 根据owner后续edge储备分析，路线文档升级为`v0.3`：先重新认证C×D组合假设和CTA-R跨资产selection-free候选，再推进多速度趋势、
+  maker/post-only执行经济学、风险预算和条件性VRP；新增ExecutionAttributionReport、T-D/T-F技术债、TWAP/VWAP容量门和候选组合
+  重认证顺序；最终复核又补充`CandidateRevalidationRecord`、C×D/CTA-R最小退出门和架构Phase A-E依赖/回退矩阵。该优先级变化只更新
+  研究/架构合同，不改变当前Base唯一真钱权限、carry/no-short约束或任何paper/live开关。
+- 只读探测确认Binance USD-M changelog当前经HTTP 202重定向到英文页面，arXiv q-fin.TR RSS、Crossref、OpenAlex、
+  Fed RSS和SEC RSS为HTTP 200；测试的NBER RSS返回403、BIS RSS路径返回404，因此路线不虚构这两条RSS，改用metadata发现后回到官方原文。
+- 本批只改文档和导航，没有修改代码、VPS、timer、arm、registry、账户、订单或生产artifact。
 
 ## 2026-07-22
 

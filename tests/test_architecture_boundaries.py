@@ -97,6 +97,74 @@ FORBIDDEN_PERSISTENCE_IMPORTS = (
     "qount.notifier",
     "qount.settings",
 )
+SHADOW_ACCOUNTING_MODULES = (
+    "src/qount/shadow_accounting/contracts.py",
+    "src/qount/shadow_accounting/rebuild.py",
+    "src/qount/shadow_accounting/diff.py",
+    "src/qount/shadow_accounting/fetch.py",
+    "src/qount/shadow_accounting/archive.py",
+    "src/qount/shadow_accounting/orchestrator.py",
+)
+FORBIDDEN_SHADOW_IMPORTS = (
+    "qount.execution",
+    "qount.mini_trend.pilot_dispatcher",
+    "qount.ledger.store",
+    "qount.ledger.reconciliation",
+    "ccxt",
+    "qount.exchange_utils",
+    "qount.executor",
+)
+CERTIFICATION_GATEWAY_MODULES = (
+    "src/qount/certification/gateway.py",
+    "src/qount/certification/fault_injection.py",
+    "src/qount/certification/replay.py",
+)
+FORBIDDEN_GATEWAY_IMPORTS = (
+    "qount.mini_trend.pilot_dispatcher",
+    "qount.executor",
+    "ccxt",
+    "qount.exchange_utils",
+)
+VENUE_MODULES = (
+    "src/qount/venue/contracts.py",
+    "src/qount/venue/snapshot.py",
+    "src/qount/venue/changelog.py",
+    "src/qount/venue/fetch.py",
+    "src/qount/venue/orchestrator.py",
+)
+FORBIDDEN_VENUE_IMPORTS = (
+    "qount.execution",
+    "qount.executor",
+    "qount.mini_trend.pilot_dispatcher",
+    "ccxt",
+    "qount.exchange_utils",
+)
+HALT_MODULES = (
+    "src/qount/halt/contracts.py",
+    "src/qount/halt/classifier.py",
+    "src/qount/halt/router.py",
+    "src/qount/halt/observer.py",
+)
+FORBIDDEN_HALT_IMPORTS = (
+    "qount.execution",
+    "qount.executor",
+    "qount.settings",
+    "ccxt",
+    "qount.exchange_utils",
+)
+PRIMARY_SNAPSHOT_MODULES = (
+    "src/qount/primary_snapshot/__init__.py",
+    "src/qount/primary_snapshot/extract.py",
+)
+FORBIDDEN_PRIMARY_SNAPSHOT_IMPORTS = (
+    "qount.ledger.store",
+    "qount.ledger.reconciliation",
+    "qount.execution",
+    "qount.executor",
+    "qount.mini_trend.pilot_dispatcher",
+    "ccxt",
+    "qount.exchange_utils",
+)
 
 
 def _intent(
@@ -340,6 +408,60 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(
             result["allocation_hash"],
             "8c2f5dfd30a3142c18b3e968b9a54bd221cae822950d2656be2b19c48a3055d5",
+        )
+
+    def _assert_no_forbidden_imports(
+        self,
+        relative_paths: tuple[str, ...],
+        forbidden: tuple[str, ...],
+    ) -> None:
+        for relative_path in relative_paths:
+            tree = ast.parse(
+                (ROOT / relative_path).read_text(encoding="utf-8")
+            )
+            imported_modules: list[str] = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported_modules.extend(
+                        alias.name for alias in node.names
+                    )
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported_modules.append(node.module)
+            violations = [
+                imported
+                for imported in imported_modules
+                if any(
+                    imported == value
+                    or imported.startswith(f"{value}.")
+                    for value in forbidden
+                )
+            ]
+            with self.subTest(module=relative_path):
+                self.assertEqual(violations, [])
+
+    def test_shadow_accounting_does_not_import_execution_or_ledger(self) -> None:
+        self._assert_no_forbidden_imports(
+            SHADOW_ACCOUNTING_MODULES, FORBIDDEN_SHADOW_IMPORTS
+        )
+
+    def test_certification_gateway_does_not_import_live_runtime(self) -> None:
+        self._assert_no_forbidden_imports(
+            CERTIFICATION_GATEWAY_MODULES, FORBIDDEN_GATEWAY_IMPORTS
+        )
+
+    def test_venue_modules_do_not_import_execution_or_dispatcher(self) -> None:
+        self._assert_no_forbidden_imports(
+            VENUE_MODULES, FORBIDDEN_VENUE_IMPORTS
+        )
+
+    def test_halt_modules_do_not_import_execution_or_settings(self) -> None:
+        self._assert_no_forbidden_imports(
+            HALT_MODULES, FORBIDDEN_HALT_IMPORTS
+        )
+
+    def test_primary_snapshot_does_not_import_ledger_or_execution(self) -> None:
+        self._assert_no_forbidden_imports(
+            PRIMARY_SNAPSHOT_MODULES, FORBIDDEN_PRIMARY_SNAPSHOT_IMPORTS
         )
 
 

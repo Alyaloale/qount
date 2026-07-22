@@ -437,6 +437,10 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 - 执行记录：[docs/update-log.md](docs/update-log.md)，记录近期 artifact、验证结果和读法。
 - 多智能体研究层：[docs/alpha-agent-plan.md](docs/alpha-agent-plan.md)，定义 Alpha Agents
   research-only 角色、任务、source book、relay-station ChatGPT接入和后续量化接入边界。
+- 生产控制面演进：[docs/trading-system-evolution-plan.md](docs/trading-system-evolution-plan.md)，定义独立执行认证、
+  shadow accountant、分层HALT、venue capability provenance和多sleeve接入前置门。
+- 研究与情报路线：[docs/research-advancement-roadmap.md](docs/research-advancement-roadmap.md)，定义全局实验账本、
+  文献/研报来源、LLM旁路、多速度趋势及后续候选的阶段门。
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 
 当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一可运行的真钱链为VPS `/root/qount` 上固定100 USDT的

@@ -6,6 +6,12 @@ import hashlib
 import json
 from typing import Any, Mapping, Sequence, TypeVar
 
+from qount.certification.contracts import CERTIFICATION_SCHEMA_VERSION as CERTIFICATION_CODEC_SCHEMA_VERSION
+from qount.certification.contracts import CertificationEvent
+from qount.certification.contracts import CertificationPlan
+from qount.certification.contracts import CertificationResult
+from qount.certification.contracts import CertificationRun
+from qount.certification.attribution import ExecutionAttributionReport
 from qount.contracts import ArtifactReference
 from qount.contracts import DecisionBatchManifest
 from qount.contracts import MarketSnapshot
@@ -19,6 +25,9 @@ from qount.contracts import is_sha256
 from qount.governance.registry import DeploymentManifest
 from qount.governance.registry import StrategyRegistration
 from qount.governance.registry import StrategyRegistry
+from qount.halt.contracts import HaltEvent
+from qount.venue.contracts import ChangelogDiff
+from qount.venue.contracts import VenueCapabilitySnapshot
 
 
 ARTIFACT_SCHEMA_VERSION = 1
@@ -40,6 +49,14 @@ _TYPE_BY_CLASS = {
     StrategyRegistry: "strategy_registry",
     DeploymentManifest: "deployment_manifest",
     DecisionBatchManifest: "decision_batch_manifest",
+    CertificationPlan: "certification_plan",
+    CertificationRun: "certification_run",
+    CertificationEvent: "certification_event",
+    CertificationResult: "certification_result",
+    HaltEvent: "halt_event",
+    VenueCapabilitySnapshot: "venue_capability_snapshot",
+    ChangelogDiff: "venue_changelog_diff",
+    ExecutionAttributionReport: "execution_attribution_report",
 }
 _ArtifactObject = TypeVar("_ArtifactObject")
 
@@ -114,6 +131,14 @@ def _object_id(value: object) -> str:
         StrategyRegistry: "strategy_registry_id",
         DeploymentManifest: "deployment_manifest_id",
         DecisionBatchManifest: "decision_batch_manifest_id",
+        CertificationPlan: "plan_id",
+        CertificationRun: "run_id",
+        CertificationEvent: "event_id",
+        CertificationResult: "result_id",
+        HaltEvent: "event_id",
+        VenueCapabilitySnapshot: "snapshot_id",
+        ChangelogDiff: "diff_id",
+        ExecutionAttributionReport: "report_id",
     }
     object_id = getattr(value, fields[type(value)])
     if not is_sha256(object_id):
@@ -326,6 +351,147 @@ def _payload(value: object) -> dict[str, Any]:
             "rollback_target": value.rollback_target,
             "orders_authorized": value.orders_authorized,
             "manifest_hash": value.manifest_hash,
+        }
+    if isinstance(value, CertificationPlan):
+        return {
+            "schema_version": value.schema_version,
+            "plan_id": value.plan_id,
+            "certification_type": value.certification_type,
+            "venue_semantic": value.venue_semantic,
+            "symbol": value.symbol,
+            "action": value.action,
+            "max_notional": value.max_notional,
+            "max_fee": value.max_fee,
+            "max_holding_time_seconds": value.max_holding_time_seconds,
+            "owner_authorization_hash": value.owner_authorization_hash,
+            "arm_token_hash": value.arm_token_hash,
+            "expires_at": value.expires_at,
+            "preflight_snapshot_hash": value.preflight_snapshot_hash,
+            "venue_capability_snapshot_hash": value.venue_capability_snapshot_hash,
+            "zero_position_plan": value.zero_position_plan,
+            "failure_handling_path": value.failure_handling_path,
+            "certification_status": value.certification_status,
+            "batch_type": value.batch_type,
+            "pnl_attribution": value.pnl_attribution,
+            "strategy_id": value.strategy_id,
+            "portfolio_nav": value.portfolio_nav,
+            "orders_authorized": value.orders_authorized,
+            "plan_hash": value.plan_hash,
+        }
+    if isinstance(value, CertificationRun):
+        return {
+            "schema_version": value.schema_version,
+            "run_id": value.run_id,
+            "plan_id": value.plan_id,
+            "certification_type": value.certification_type,
+            "started_at": value.started_at,
+            "completed_at": value.completed_at,
+            "status": value.status,
+            "orders_authorized": value.orders_authorized,
+            "run_hash": value.run_hash,
+        }
+    if isinstance(value, CertificationEvent):
+        return {
+            "schema_version": value.schema_version,
+            "event_id": value.event_id,
+            "run_id": value.run_id,
+            "event_type": value.event_type,
+            "client_order_id": value.client_order_id,
+            "exchange_order_id": value.exchange_order_id,
+            "timestamp": value.timestamp,
+            "observed_state": value.observed_state,
+            "raw_response_hash": value.raw_response_hash,
+            "source": value.source,
+            "event_hash": value.event_hash,
+        }
+    if isinstance(value, CertificationResult):
+        return {
+            "schema_version": value.schema_version,
+            "result_id": value.result_id,
+            "run_id": value.run_id,
+            "artifact_members": [
+                _artifact_reference_payload(ref)
+                for ref in value.artifact_members
+            ],
+            "final_zero_position_proof_hash": value.final_zero_position_proof_hash,
+            "reconciliation_diff_hash": value.reconciliation_diff_hash,
+            "operational_cost_hash": value.operational_cost_hash,
+            "final_position_is_zero": value.final_position_is_zero,
+            "completed": value.completed,
+            "result_hash": value.result_hash,
+        }
+    if isinstance(value, HaltEvent):
+        return {
+            "schema_version": value.schema_version,
+            "event_id": value.event_id,
+            "halt_type": value.halt_type,
+            "scope": value.scope,
+            "reason": value.reason,
+            "severity": value.severity,
+            "evidence_hash": value.evidence_hash,
+            "recommended_action": value.recommended_action,
+            "recommended_scope": value.recommended_scope,
+            "bypass_mode": value.bypass_mode,
+            "source_halt_reason": value.source_halt_reason,
+            "unknown_unresolved": value.unknown_unresolved,
+            "risk_increase_frozen": value.risk_increase_frozen,
+            "recovery_requires_owner_auth": value.recovery_requires_owner_auth,
+            "recovery_requires_dual_diff": value.recovery_requires_dual_diff,
+            "created_at": value.created_at,
+            "event_hash": value.event_hash,
+        }
+    if isinstance(value, VenueCapabilitySnapshot):
+        return {
+            "schema_version": value.schema_version,
+            "snapshot_id": value.snapshot_id,
+            "venue": value.venue,
+            "observed_at": value.observed_at,
+            "server_time_offset_ms": value.server_time_offset_ms,
+            "exchange_info_schema_hash": value.exchange_info_schema_hash,
+            "symbol_rules_hash": value.symbol_rules_hash,
+            "position_mode": value.position_mode,
+            "margin_mode": value.margin_mode,
+            "leverage": value.leverage,
+            "order_endpoint_contract_hashes": dict(
+                value.order_endpoint_contract_hashes
+            ),
+            "algo_endpoint_contract_hashes": dict(
+                value.algo_endpoint_contract_hashes
+            ),
+            "order_capabilities": dict(value.order_capabilities),
+            "conditional_algo_capabilities": dict(
+                value.conditional_algo_capabilities
+            ),
+            "query_retention_assumptions": dict(
+                value.query_retention_assumptions
+            ),
+            "websocket_assumptions": dict(value.websocket_assumptions),
+            "rest_recovery_assumptions": dict(
+                value.rest_recovery_assumptions
+            ),
+            "changelog_last_reviewed_at": value.changelog_last_reviewed_at,
+            "changelog_source_hash": value.changelog_source_hash,
+            "compatibility": value.compatibility,
+            "blockers": list(value.blockers),
+            "snapshot_hash": value.snapshot_hash,
+        }
+    if isinstance(value, ChangelogDiff):
+        return {
+            "schema_version": value.schema_version,
+            "diff_id": value.diff_id,
+            "venue": value.venue,
+            "previous_source_hash": value.previous_source_hash,
+            "current_source_hash": value.current_source_hash,
+            "previous_observed_at": value.previous_observed_at,
+            "current_observed_at": value.current_observed_at,
+            "text_changed": value.text_changed,
+            "review_required": value.review_required,
+            "diff_hash": value.diff_hash,
+        }
+    if isinstance(value, ExecutionAttributionReport):
+        return value._core() | {
+            "report_id": value.report_id,
+            "report_hash": value.report_hash,
         }
     raise ArtifactCodecError(f"artifact_type_unsupported:{type(value).__name__}")
 
@@ -877,6 +1043,390 @@ def _decode_payload(artifact_type: str, payload: Mapping[str, Any]) -> object:
         if errors:
             raise ArtifactCodecError(
                 f"deployment_manifest_invalid:{','.join(errors)}"
+            )
+    elif artifact_type == "certification_plan":
+        expected = {
+            "schema_version",
+            "plan_id",
+            "certification_type",
+            "venue_semantic",
+            "symbol",
+            "action",
+            "max_notional",
+            "max_fee",
+            "max_holding_time_seconds",
+            "owner_authorization_hash",
+            "arm_token_hash",
+            "expires_at",
+            "preflight_snapshot_hash",
+            "venue_capability_snapshot_hash",
+            "zero_position_plan",
+            "failure_handling_path",
+            "certification_status",
+            "batch_type",
+            "pnl_attribution",
+            "strategy_id",
+            "portfolio_nav",
+            "orders_authorized",
+            "plan_hash",
+        }
+        _exact_fields(payload, expected, name="certification_plan_payload")
+        value = CertificationPlan(
+            schema_version=payload["schema_version"],
+            plan_id=payload["plan_id"],
+            certification_type=payload["certification_type"],
+            venue_semantic=payload["venue_semantic"],
+            symbol=payload["symbol"],
+            action=payload["action"],
+            max_notional=payload["max_notional"],
+            max_fee=payload["max_fee"],
+            max_holding_time_seconds=payload["max_holding_time_seconds"],
+            owner_authorization_hash=payload["owner_authorization_hash"],
+            arm_token_hash=payload["arm_token_hash"],
+            expires_at=payload["expires_at"],
+            preflight_snapshot_hash=payload["preflight_snapshot_hash"],
+            venue_capability_snapshot_hash=payload[
+                "venue_capability_snapshot_hash"
+            ],
+            zero_position_plan=payload["zero_position_plan"],
+            failure_handling_path=payload["failure_handling_path"],
+            certification_status=payload["certification_status"],
+            batch_type=payload["batch_type"],
+            pnl_attribution=payload["pnl_attribution"],
+            strategy_id=payload["strategy_id"],
+            portfolio_nav=payload["portfolio_nav"],
+            orders_authorized=payload["orders_authorized"],
+            plan_hash=payload["plan_hash"],
+        )
+    elif artifact_type == "certification_run":
+        expected = {
+            "schema_version",
+            "run_id",
+            "plan_id",
+            "certification_type",
+            "started_at",
+            "completed_at",
+            "status",
+            "orders_authorized",
+            "run_hash",
+        }
+        _exact_fields(payload, expected, name="certification_run_payload")
+        value = CertificationRun(
+            schema_version=payload["schema_version"],
+            run_id=payload["run_id"],
+            plan_id=payload["plan_id"],
+            certification_type=payload["certification_type"],
+            started_at=payload["started_at"],
+            completed_at=payload["completed_at"],
+            status=payload["status"],
+            orders_authorized=payload["orders_authorized"],
+            run_hash=payload["run_hash"],
+        )
+    elif artifact_type == "certification_event":
+        expected = {
+            "schema_version",
+            "event_id",
+            "run_id",
+            "event_type",
+            "client_order_id",
+            "exchange_order_id",
+            "timestamp",
+            "observed_state",
+            "raw_response_hash",
+            "source",
+            "event_hash",
+        }
+        _exact_fields(payload, expected, name="certification_event_payload")
+        value = CertificationEvent(
+            schema_version=payload["schema_version"],
+            event_id=payload["event_id"],
+            run_id=payload["run_id"],
+            event_type=payload["event_type"],
+            client_order_id=payload["client_order_id"],
+            exchange_order_id=payload["exchange_order_id"],
+            timestamp=payload["timestamp"],
+            observed_state=payload["observed_state"],
+            raw_response_hash=payload["raw_response_hash"],
+            source=payload["source"],
+            event_hash=payload["event_hash"],
+        )
+    elif artifact_type == "certification_result":
+        expected = {
+            "schema_version",
+            "result_id",
+            "run_id",
+            "artifact_members",
+            "final_zero_position_proof_hash",
+            "reconciliation_diff_hash",
+            "operational_cost_hash",
+            "final_position_is_zero",
+            "completed",
+            "result_hash",
+        }
+        _exact_fields(payload, expected, name="certification_result_payload")
+        member_refs = tuple(
+            _decode_artifact_reference(
+                _mapping(item, name=f"certification_result_member:{index}"),
+                name=f"certification_result_member:{index}",
+            )
+            for index, item in enumerate(
+                _sequence(
+                    payload["artifact_members"],
+                    name="certification_result_artifact_members",
+                )
+            )
+        )
+        value = CertificationResult(
+            schema_version=payload["schema_version"],
+            result_id=payload["result_id"],
+            run_id=payload["run_id"],
+            artifact_members=member_refs,
+            final_zero_position_proof_hash=payload[
+                "final_zero_position_proof_hash"
+            ],
+            reconciliation_diff_hash=payload["reconciliation_diff_hash"],
+            operational_cost_hash=payload["operational_cost_hash"],
+            final_position_is_zero=payload["final_position_is_zero"],
+            completed=payload["completed"],
+            result_hash=payload["result_hash"],
+        )
+    elif artifact_type == "halt_event":
+        expected = {
+            "schema_version",
+            "event_id",
+            "halt_type",
+            "scope",
+            "reason",
+            "severity",
+            "evidence_hash",
+            "recommended_action",
+            "recommended_scope",
+            "bypass_mode",
+            "source_halt_reason",
+            "unknown_unresolved",
+            "risk_increase_frozen",
+            "recovery_requires_owner_auth",
+            "recovery_requires_dual_diff",
+            "created_at",
+            "event_hash",
+        }
+        _exact_fields(payload, expected, name="halt_event_payload")
+        value = HaltEvent(
+            schema_version=payload["schema_version"],
+            event_id=payload["event_id"],
+            halt_type=payload["halt_type"],
+            scope=payload["scope"],
+            reason=payload["reason"],
+            severity=payload["severity"],
+            evidence_hash=payload["evidence_hash"],
+            recommended_action=payload["recommended_action"],
+            recommended_scope=payload["recommended_scope"],
+            bypass_mode=payload["bypass_mode"],
+            source_halt_reason=payload["source_halt_reason"],
+            unknown_unresolved=payload["unknown_unresolved"],
+            risk_increase_frozen=payload["risk_increase_frozen"],
+            recovery_requires_owner_auth=payload[
+                "recovery_requires_owner_auth"
+            ],
+            recovery_requires_dual_diff=payload[
+                "recovery_requires_dual_diff"
+            ],
+            created_at=payload["created_at"],
+            event_hash=payload["event_hash"],
+        )
+    elif artifact_type == "venue_capability_snapshot":
+        expected = {
+            "schema_version",
+            "snapshot_id",
+            "venue",
+            "observed_at",
+            "server_time_offset_ms",
+            "exchange_info_schema_hash",
+            "symbol_rules_hash",
+            "position_mode",
+            "margin_mode",
+            "leverage",
+            "order_endpoint_contract_hashes",
+            "algo_endpoint_contract_hashes",
+            "order_capabilities",
+            "conditional_algo_capabilities",
+            "query_retention_assumptions",
+            "websocket_assumptions",
+            "rest_recovery_assumptions",
+            "changelog_last_reviewed_at",
+            "changelog_source_hash",
+            "compatibility",
+            "blockers",
+            "snapshot_hash",
+        }
+        _exact_fields(
+            payload, expected, name="venue_capability_snapshot_payload"
+        )
+        value = VenueCapabilitySnapshot(
+            schema_version=payload["schema_version"],
+            snapshot_id=payload["snapshot_id"],
+            venue=payload["venue"],
+            observed_at=payload["observed_at"],
+            server_time_offset_ms=payload["server_time_offset_ms"],
+            exchange_info_schema_hash=payload[
+                "exchange_info_schema_hash"
+            ],
+            symbol_rules_hash=payload["symbol_rules_hash"],
+            position_mode=payload["position_mode"],
+            margin_mode=payload["margin_mode"],
+            leverage=payload["leverage"],
+            order_endpoint_contract_hashes=_mapping(
+                payload["order_endpoint_contract_hashes"],
+                name="venue_order_endpoint_hashes",
+            ),
+            algo_endpoint_contract_hashes=_mapping(
+                payload["algo_endpoint_contract_hashes"],
+                name="venue_algo_endpoint_hashes",
+            ),
+            order_capabilities=_mapping(
+                payload["order_capabilities"],
+                name="venue_order_capabilities",
+            ),
+            conditional_algo_capabilities=_mapping(
+                payload["conditional_algo_capabilities"],
+                name="venue_conditional_algo_capabilities",
+            ),
+            query_retention_assumptions=_mapping(
+                payload["query_retention_assumptions"],
+                name="venue_query_retention",
+            ),
+            websocket_assumptions=_mapping(
+                payload["websocket_assumptions"],
+                name="venue_websocket_assumptions",
+            ),
+            rest_recovery_assumptions=_mapping(
+                payload["rest_recovery_assumptions"],
+                name="venue_rest_recovery",
+            ),
+            changelog_last_reviewed_at=payload[
+                "changelog_last_reviewed_at"
+            ],
+            changelog_source_hash=payload["changelog_source_hash"],
+            compatibility=payload["compatibility"],
+            blockers=tuple(
+                _sequence(payload["blockers"], name="venue_blockers")
+            ),
+            snapshot_hash=payload["snapshot_hash"],
+        )
+    elif artifact_type == "venue_changelog_diff":
+        expected = {
+            "schema_version",
+            "diff_id",
+            "venue",
+            "previous_source_hash",
+            "current_source_hash",
+            "previous_observed_at",
+            "current_observed_at",
+            "text_changed",
+            "review_required",
+            "diff_hash",
+        }
+        _exact_fields(
+            payload, expected, name="venue_changelog_diff_payload"
+        )
+        value = ChangelogDiff(
+            schema_version=payload["schema_version"],
+            diff_id=payload["diff_id"],
+            venue=payload["venue"],
+            previous_source_hash=payload["previous_source_hash"],
+            current_source_hash=payload["current_source_hash"],
+            previous_observed_at=payload["previous_observed_at"],
+            current_observed_at=payload["current_observed_at"],
+            text_changed=payload["text_changed"],
+            review_required=payload["review_required"],
+            diff_hash=payload["diff_hash"],
+        )
+    elif artifact_type == "execution_attribution_report":
+        expected = {
+            "schema_version",
+            "run_id",
+            "attribution_source",
+            "decision_to_submit_ms",
+            "submit_to_ack_ms",
+            "ack_to_fill_ms",
+            "planned_vs_filled_qty",
+            "partial_fill_count",
+            "cancel_replace_count",
+            "arrival_mid",
+            "bid_ask_spread",
+            "fill_vwap",
+            "adverse_slippage",
+            "maker_or_taker",
+            "fee",
+            "funding",
+            "unfilled_exposure_time",
+            "protection_order_latency",
+            "stop_gap",
+            "attribution_source_hash",
+            "report_id",
+            "report_hash",
+        }
+        _exact_fields(
+            payload, expected, name="execution_attribution_report_payload"
+        )
+        source = payload["attribution_source"]
+        if source == "unavailable":
+            value = ExecutionAttributionReport(
+                schema_version=payload["schema_version"],
+                report_id=payload["report_id"],
+                run_id=payload["run_id"],
+                attribution_source=source,
+                decision_to_submit_ms=payload["decision_to_submit_ms"],
+                submit_to_ack_ms=payload["submit_to_ack_ms"],
+                ack_to_fill_ms=payload["ack_to_fill_ms"],
+                planned_vs_filled_qty=payload["planned_vs_filled_qty"],
+                partial_fill_count=payload["partial_fill_count"],
+                cancel_replace_count=payload["cancel_replace_count"],
+                arrival_mid=payload["arrival_mid"],
+                bid_ask_spread=payload["bid_ask_spread"],
+                fill_vwap=payload["fill_vwap"],
+                adverse_slippage=payload["adverse_slippage"],
+                maker_or_taker=payload["maker_or_taker"],
+                fee=payload["fee"],
+                funding=payload["funding"],
+                unfilled_exposure_time=payload["unfilled_exposure_time"],
+                protection_order_latency=payload[
+                    "protection_order_latency"
+                ],
+                stop_gap=payload["stop_gap"],
+                attribution_source_hash=payload[
+                    "attribution_source_hash"
+                ],
+                report_hash=payload["report_hash"],
+            )
+        else:
+            value = ExecutionAttributionReport(
+                schema_version=payload["schema_version"],
+                report_id=payload["report_id"],
+                run_id=payload["run_id"],
+                attribution_source=source,
+                decision_to_submit_ms=payload["decision_to_submit_ms"],
+                submit_to_ack_ms=payload["submit_to_ack_ms"],
+                ack_to_fill_ms=payload["ack_to_fill_ms"],
+                planned_vs_filled_qty=payload["planned_vs_filled_qty"],
+                partial_fill_count=payload["partial_fill_count"],
+                cancel_replace_count=payload["cancel_replace_count"],
+                arrival_mid=payload["arrival_mid"],
+                bid_ask_spread=payload["bid_ask_spread"],
+                fill_vwap=payload["fill_vwap"],
+                adverse_slippage=payload["adverse_slippage"],
+                maker_or_taker=payload["maker_or_taker"],
+                fee=payload["fee"],
+                funding=payload["funding"],
+                unfilled_exposure_time=payload["unfilled_exposure_time"],
+                protection_order_latency=payload[
+                    "protection_order_latency"
+                ],
+                stop_gap=payload["stop_gap"],
+                attribution_source_hash=payload[
+                    "attribution_source_hash"
+                ],
+                report_hash=payload["report_hash"],
             )
     else:
         raise ArtifactCodecError(f"artifact_type_unknown:{artifact_type}")

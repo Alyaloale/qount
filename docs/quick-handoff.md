@@ -1,6 +1,6 @@
 # qount 快速接手手册
 
-更新时间：2026-07-22
+更新时间：2026-07-23
 
 源码与VPS生产版本：`0.2.13`，commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`，
 production provenance=`8141d31a...f205`
@@ -18,6 +18,8 @@ production provenance=`8141d31a...f205`
 - [quick-handoff.md](quick-handoff.md)：接手命令和运维坑点。
 - [update-log.md](update-log.md)：近期 artifact、验证结果、读法。
 - [alpha-agent-plan.md](alpha-agent-plan.md)：Alpha Agents research-only 架构、Strategy V0 和 S3 collector。
+- [trading-system-evolution-plan.md](trading-system-evolution-plan.md)：生产控制面优化、执行认证、独立会计和分层HALT路线。
+- [research-advancement-roadmap.md](research-advancement-roadmap.md)：研究优先级、全局实验账本和文献情报扩展路线。
 - [archive/README.md](archive/README.md)：旧研究线、legacy 运行手册和历史计划索引；不作为当前生产入口。
 
 ## 第一原则
@@ -212,6 +214,38 @@ private API、手工补文件、复制fixture或恢复forward timer。authority 
   launchd卸载；`com.qount.ctar-daily`是独立研究任务，仍保留。
 - WSL 的 `7907` 代理、`.env`、`qount-runner.timer` 只属于历史 line A 运维链路。
 
+## Phase B 只读并行
+
+Phase B（只读生产并行）管道已建成，初期手动 SSH 触发。全部只读，不改 dispatcher/订单/HALT 文件。
+归档落 `state/phase_b/`。
+
+```bash
+ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
+  scripts/operations/phase_b_readonly_run.py \
+  --mode all \
+  --symbols BTCUSDT ETHUSDT BNBUSDT \
+  --runtime-ledger-path /root/qount/state/mini_trend/forward/latest/runtime.sqlite3 \
+  --halt-path /root/qount/state/mini_trend/HALT \
+  --state-dir /root/qount/state/phase_b \
+  --live-cycle-completed-at 2026-07-23T00:00:00+00:00'
+```
+
+`--mode` 可选 `shadow`/`venue`/`halt`/`all`。30 批次退出门从 VPS 首次运行开始计数。
+当前 0 成交期间 shadow 只验证空状态一致性；真实重建能力要等首笔成交。
+不建新 systemd timer，待 30 批次验证后另获 owner 授权。
+
+Phase B 本地测试：
+
+```bash
+./.venv/bin/python -m unittest \
+  tests.test_shadow_fetch \
+  tests.test_shadow_archive \
+  tests.test_shadow_orchestrator \
+  tests.test_primary_snapshot_extract \
+  tests.test_halt_observer \
+  tests.test_venue_fetch
+```
+
 ## 本地与 VPS 验证
 
 本地测试：
@@ -241,6 +275,21 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
   tests.test_mini_trend_backtest \
   tests.test_mini_trend_pilot_dispatcher \
   tests.test_dispatch_contract_adapters
+```
+
+Phase A 架构演进合同与离线认证验证：
+
+```bash
+./.venv/bin/python -m unittest \
+  tests.test_certification_contracts \
+  tests.test_halt_classification \
+  tests.test_venue_capability \
+  tests.test_execution_attribution \
+  tests.test_shadow_accountant \
+  tests.test_certification_gateway \
+  tests.test_settings_isolation \
+  tests.test_architecture_boundaries \
+  tests.test_immutable_contract_artifacts
 ```
 
 当前读法：Phase B/C/D dispatcher已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
@@ -803,6 +852,7 @@ python -m qount.main walk-forward \
 - 线 D X4 / C×D：`src/qount/x4/`、`scripts/desktop/*x4*`、`scripts/desktop/cxd_*`
 - 重启线 L1/L3/L4/L6：`src/qount/l*_*.py`、`scripts/research/l*_*.py`
 - Alpha Agents / S3 collector：`src/qount/alpha_agents/`、`scripts/research/alpha_agent_*.py`
+- Phase A 架构演进：`src/qount/certification/`、`src/qount/halt/`、`src/qount/venue/`、`src/qount/shadow_accounting/`
 - 主测试：`tests/test_strategy_optimization.py`
 - 交易所边界测试：`tests/test_exchange_throttling.py`
 
