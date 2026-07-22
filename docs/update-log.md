@@ -8,6 +8,10 @@
 
 ## 2026-07-22
 
+### Source package version bumped to 0.2.6
+
+- `pyproject.toml`从`0.2.5`升至`0.2.6`，作为下一次源码发布版本；当前VPS仍运行已验证的`0.2.5` release，未执行同步、部署或任何交易路径变更。
+
 ### MiniTrend Base 100 USDT minimal-live enabled and recurring path closed
 
 - Owner再次确认昨夜已批准的精确合同：`MiniTrend-UM-Base-v0.2`、固定`100 USDT`、Binance USD-M TOP3、
