@@ -127,12 +127,11 @@ def _run_shadow(
 
     primary_snapshot = extract_primary_snapshot(runtime_ledger_path)
     current_equity = _get_account_equity(exchange)
-    initial_equity = float(
-        primary_snapshot.get("nav", {}).get("equity") or current_equity
-    )
+    primary_equity = primary_snapshot.get("nav", {}).get("equity")
+    initial_equity = float(primary_equity) if primary_equity is not None else current_equity
 
     now_ms = int(time.time() * 1000)
-    lookback_ms = 7 * 24 * 60 * 60 * 1000
+    lookback_ms = 24 * 60 * 60 * 1000
     start_ms = now_ms - lookback_ms
 
     adapter = CcxtShadowExchangeAdapter(exchange)
@@ -235,6 +234,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+
+    os.environ.setdefault("QOUNT_EXCHANGE_BYPASS_PROXY", "true")
+    os.environ.setdefault("http_proxy", "")
+    os.environ.setdefault("https_proxy", "")
+    os.environ.setdefault("all_proxy", "")
 
     settings = Settings.from_env()
     exchange = build_exchange(settings, private=True)
