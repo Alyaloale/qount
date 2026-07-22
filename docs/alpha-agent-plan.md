@@ -164,7 +164,9 @@ Daily Intelligence v2额外要求：`pipeline_status`只说明抓取/解析/角�
 0成交不能验证成本或执行质量。5个结构化提案全部为`g0_status=blocked_history_capacity`、`orders_allowed=false`、
 `live_changes_allowed=false`，不得自动创建数据下载、回测、paper或live任务。旧生成端把三个零数量symbol行误记为`position_count=3`，
 导致execution/editor误述“3个持仓”；本地`0.2.13`已改为按非零数量（含正负方向）计活动仓位。中文越权扫描也扩展到下单、买卖、
-开/加/减/平仓、做多/做空、杠杆、实盘/交易开关、目标权重和仓位动作；该修复尚未部署VPS。
+开/加/减/平仓、做多/做空、杠杆、实盘/交易开关、目标权重和仓位动作。`0.2.13/89be296`现已部署VPS；隔离、无通知复跑
+确认`position_count=0`、旧误报文本0条，5个proposal仍全部`g0_status=blocked_history_capacity`且禁止订单/live修改。
+旧正式日报保留其部署前历史内容，不原地重写。
 
 个人微信provider复用腾讯官方OpenClaw插件账号和recipient，固定官方host/path/header，并以NotificationStore delivery key派生稳定client ID。
 生产凭据只保存`account_id/base_url/recipient/token`；每次发送前从OpenClaw accounts目录按account和recipient读取最新context token，避免手机
@@ -1444,6 +1446,15 @@ exchangeInfo、funding、真实 min-notional 和 OOS 统计。
 从WSL到五个官方USD-M域仍全部超时，`data-api.binance.vision`对该endpoint返回404，完整度仍为0/3。
 冻结双状态合同从`2026-07-19`启动，但因funding不完整仍0根evaluation、未读取收益、无journal，verdict
 `await_complete_shadow_inputs`。空响应和缺日继续fail closed，不能从VPS、LLM或0填充替代canonical输入。
+
+随后按owner授权启用仓库外良心云标准代理。首次隔离core沿用了到期的2026-06测试副本并在TLS阶段失败；最终从
+当前良心云profile结构化派生47个真实节点，排除3个流量/到期伪节点，保留独立`17907`端口与随机认证，主Clash未改。
+TCP、标准HTTPS与Binance funding公共接口均返回200后，同一refresh合同补得BTC/ETH/BNB各64次结算、完整度`3/3`，
+108 files、0 unavailable，dataset manifest=`b6f6aab8...ca05`。冻结v0.2 preregistration、Base、state-decay、
+50% veto阈值和成本合同均未改；离线回放得到`2026-07-19->20`、`2026-07-20->21`两个完整pair，verdict=
+`collect_shadow_forward`。两路径仍为`bear_cash`、0 active bar/0 order/0收益/0回撤，funding coverage和journal coverage
+均为1.0，但还缺60个完整pair、每路径10 active bar和至少1次veto。它只把真正前向从“无输入”推进到“开始收集”，
+不支持参数调整、盈利结论、promotion、paper或live。
 
 为确认恢复后证据链可重放，同一冻结历史合同在WSL离线复跑，trial增量保持0。旧报告字段规范化hash同为
 `d4bec779...00d91`；Funding Veto全窗`+88.950393%/Sharpe 0.965235/maxDD 18.105121%`，交易成本

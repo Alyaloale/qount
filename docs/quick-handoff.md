@@ -2,7 +2,8 @@
 
 更新时间：2026-07-22
 
-源码候选：`0.2.13`（最近已完成日线硬门和LLM复盘边界修复，尚未部署）；VPS生产版本：`0.2.12`
+源码与VPS生产版本：`0.2.13`，commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`，
+production provenance=`8141d31a...f205`
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -29,7 +30,7 @@
 - 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
 - X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一生产交易入口是
   `qount-mini-trend-live.timer` 与独立 MiniTrend arm/registry/readiness。
-- 当前`qount-mini-trend-live.timer=enabled/active`，`qount-mini-trend-forward.timer=disabled/inactive`。`0.2.12`已完成
+- 当前`qount-mini-trend-live.timer=enabled/active`，`qount-mini-trend-forward.timer=disabled/inactive`。`0.2.13`已完成
   provenance/readiness五轴/RuntimeLedger/reconciliation与publisher验收；不要恢复旧X4/C×D、forward timer或production cron。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
@@ -56,14 +57,15 @@ ssh -o ClearAllForwardings=yes qount-vps \
 - 最新动态会话验证job为`6d51a764...4324`，状态`DELIVERED/SUCCEEDED`；生产NotificationStore为5 event/job/attempt、20行audit chain。
   旧代码回滚目录为`/root/qount-notify-backup.rl6QL6`，其中不含凭据。不得用该代码回滚覆盖当前四字段凭据；若必须回滚provider，需同时恢复
   相容凭据合同并重新执行真实通知验证。
-- 2026-07-22固定`100 USDT` MiniTrend Base已完成manual arm并进入`minimal_live`。VPS release为`0.2.12`；当前run
-  `/root/qount/state/mini_trend/forward/runs/20260722T102023Z`，readiness=`f4dfbb82...ddca0`、batch=
-  `65c8a64f...ba4750`、ledger=`efddab4c...02a3ee`、pre-dispatch reconciliation=`64fd12f...6934114` passed。
+- 2026-07-22固定`100 USDT` MiniTrend Base已完成manual arm并进入`minimal_live`。VPS release为`0.2.13`；当前run
+  `/root/qount/state/mini_trend/forward/runs/20260722T133356Z`，readiness=`b25442fe...68fd`、batch=
+  `092c95f9...a1f2`，最终live artifact SHA=`ae8cdc96...0900`，live与标准reconciliation passed。
   账户`486.15970914 USDT`、TOP3全平、普通/条件挂单0、HALT absent，arm/env均root `0600`。
 - `qount-mini-trend-live.timer`现为`enabled/active`；forward timer与legacy cron关闭。历史首次live artifact
   `20260722T055437Z/live_dispatch-20260722T055659Z.json`完成`live_intent_locked -> live_completed`，post reconciliation
   `71c34b4d...0a01` passed。因Base权重`0/0/0`，0 market/0 STOP且未尝试exchange mutation；不得强制首单。
-  recurring分支已实跑为`duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
+  当前`0.2.13`受控artifact为`completed`且`exchange_mutation_attempted=false`；历史recurring分支也已实跑为
+  `duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
   真实fill/fee/slippage/STOP/UNKNOWN恢复样本仍为0，禁止扩到1000 USDT或增加其它live sleeve。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
@@ -243,7 +245,7 @@ PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
 
 当前读法：Phase B/C/D dispatcher已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
 `SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。manual arm已执行并把同一hash绑定的registry
-提升为`minimal_live`；当前release回归为Mac全仓`1542 OK`、VPS production `328 OK`。更早的`29/1488/299/71/37/101 OK`
+提升为`minimal_live`；当前`0.2.13` release回归为Mac全仓`1561 OK`、VPS production `338 OK`。更早的`1542/328/29/1488/299/71/37/101 OK`
 等读数只保留历史语境，不覆盖当前release。NotificationStore、incident sync、DailyBrief、Daily Intelligence、个人微信transport和
 Dashboard v1均已在生产运行，但都不能直接赋予订单权；publisher只读标准source，不查询交易所。不要用fixture创建生产DB/read model，
 不要手工洗新authority，也不要绕过arm/registry/readiness打开其它策略。
@@ -807,7 +809,8 @@ python -m qount.main walk-forward \
 ## 当前禁止事项
 
 - 不把 `QOUNT_LIVE_ENABLE` 改成 `true`。
-- 不安装production crontab，不enable任何qount systemd timer，不运行订单或真实notification transport。
+- 不安装production crontab，不enable新的qount systemd timer，不手工强制订单或真实notification transport；已授权的
+  publisher、Daily Intelligence和MiniTrend live timer保持现状。
 - 不在 WSL 启动或 enable `qount-runner.timer`。
 - 不把旧 `wf-*` 窗口当 validation。
 - 不把 2026-06-01..2026-06-04 已看过窗口当新的 promotion 验证。
@@ -851,4 +854,6 @@ forward/cron；账户authority由已授权live cycle刷新并按15分钟规则�
    S-CARRY 现金流。
 5. MiniTrend Base 的 `minimal_live` 只维持固定100 USDT合同；不因首个非零信号扩大本金或启用其它sleeve。
    RiskTier、FundingVeto和所有旧研究线继续shadow/research-only。
-6. 首个真实fill、fee/slippage、原生STOP和UNKNOWN恢复样本仍未出现；在这些证据补齐前不扩容、不恢复旧入口。
+6. Funding Veto冻结shadow已有2个完整pair，但两路径均全现金、0 active/0收益且尚无veto；继续按原合同追加，
+   不改50%阈值、不把`collect_shadow_forward`解释为盈利或晋级。
+7. 首个真实fill、fee/slippage、原生STOP和UNKNOWN恢复样本仍未出现；在这些证据补齐前不扩容、不恢复旧入口。

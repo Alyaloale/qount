@@ -6,13 +6,15 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前源码候选为 `0.2.13`（增加最近已完成日线硬门、修复LLM flat仓位计数和中文越权扫描，并补Funding Veto beta残差报告）；VPS生产版本仍为
-`0.2.12`（修复live oneshot自检循环并完成生产验收）；
+当前源码与VPS生产版本均为 `0.2.13`，production commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`、
+provenance=`8141d31a...f205`。该版本增加最近已完成日线硬门，修复LLM flat仓位计数、中文越权扫描、
+latest-date类型比较和当前decision arm绑定，并补Funding Veto beta残差报告；
 `qount-mini-trend-live.timer` 已恢复 `enabled/active`。唯一获得真钱权限的连续策略是
 `MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
 effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。
-`0.2.12` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账均已验收。最新live cycle因冻结信号为全现金而完成
-`duplicate_decision_noop`，0 market/0 stop、无交易所变更；这不是未启动，也不得强制制造首单。
+`0.2.13` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账均已验收。最终受控live artifact
+状态为`completed`，冻结信号仍为全现金，0 market/0 stop、`exchange_mutation_attempted=false`，live与标准
+reconciliation均passed；这不是未启动，也不得强制制造首单。
 
 ## 主机职责
 
@@ -81,9 +83,10 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
     让已同步权重再次发散，未来必须做双状态shadow forward，不能只记事件或当前仓位
   - 双状态shadow-forward v0.2已在任何新结果前冻结：`2026-07-19`起，200根历史仅作信号warmup，两路径均从
     400 USDT全现金启动，逐日保存双权益/收益组件/执行状态与链式哈希；只评估价格连续且决策日/持有日TOP3
-    funding各至少3次结算的完整前缀，缺失结算不得按0成本计收益。修复后WSL已把外置盘公开日线补到
-    `2026-07-21`，但当月funding公开REST仍`0/3`完整；最新冻结回放为0根evaluation、无journal和
-    `await_complete_shadow_inputs`。未填0、未使用苏菲家宽代理，也未借用VPS数据冒充research canonical
+    funding各至少3次结算的完整前缀，缺失结算不得按0成本计收益。WSL通过仓库外owner-approved良心云隔离
+    代理补齐TOP3各64次当月funding结算，完整度`3/3`；外置盘日线到`2026-07-21`，冻结回放现有2个完整pair、
+    verdict=`collect_shadow_forward`。两路径仍为`bear_cash`、0 active bar/0 order/0收益/0回撤，尚无veto事件；
+    这只证明输入与日志闭环开始工作，不是盈利或晋级证据。未填0、未使用苏菲家宽代理，也未借用VPS数据
   - 同一冻结历史报告在WSL精确复跑且新增BTC/TOP3 beta residual：Funding Veto为
     `+88.95%/Sharpe 0.965/maxDD 18.11%`，对TOP3等权1x的beta `0.1470`、复合残差`+55.41%`；旧字段规范化
     hash完全一致。5000路径20日块Bootstrap也逐字段重现，但收益胜率仅`58.90%`、增量中位数`+0.463pp`。
@@ -445,9 +448,11 @@ recurring readiness已通过且registry为`minimal_live`。NotificationStore已�
 在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持
 `static/inactive`，MiniTrend forward timer和production cron保持关闭；live timer为`enabled/active`，publisher不查询交易所，也不授予订单权。
 只读日报生产默认使用Binance公告API、Federal Reserve RSS和SEC RSS，不需要Brave；六角色中文Responses经
-内网normalizer完成真实E2E并保存3份feed、8份详情和2份行情，个人微信投递为`DELIVERED/SUCCEEDED`。Dashboard
-`intelligence`现发布真实报告且source hash为`f4d90e84...63a94`；日报timer为`enabled/active`，每日`04:30 UTC`运行。报告外层
-`incomplete`来自证据不足的`needs_research`，不是基础设施失败。当前仅允许MiniTrend Base live timer运行，其它交易timer和production cron继续关闭。
+内网normalizer完成真实E2E。当前正式report=`38985fe5...50d5fc`、hash=`d42c851d...9e68`，保存3份feed、
+7份详情和2份行情，个人微信投递为`DELIVERED/SUCCEEDED`。Dashboard intelligence为`fresh/attention_required`；
+日报timer为`enabled/active`，每日`04:30 UTC`运行。旧报告的flat持仓误报已由0.2.13隔离复跑验证消失；
+`attention_required`仍表示研究证据/执行样本不足，不是基础设施失败或盈利信号。当前仅允许MiniTrend Base live timer运行，
+其它交易timer和production cron继续关闭。
 Mac
 `/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
 `--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL

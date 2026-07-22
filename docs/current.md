@@ -2,9 +2,8 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.13`（本地候选：最近已完成日线硬门、LLM flat仓位计数、中文越权扫描和Funding Veto beta残差报告；尚未部署）
-
-VPS生产版本：`0.2.12`（production provenance已验证，live timer已恢复）
+源码与VPS生产版本：`0.2.13`，commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`，
+source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -15,19 +14,22 @@ VPS生产版本：`0.2.12`（production provenance已验证，live timer已恢�
 [alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-22 0.2.13本地安全修复已完成，VPS仍保持0.2.12不变。** 只读复核发现VPS公开日线补数缺少`2026-07-21`的BTC/ETH/BNB
-  三个ZIP；旧投影仍可从缓存生成`2026-07-20`决策，artifact虽新但市场数据已过期。`0.2.13`把生产投影和live dispatcher都改为
-  要求决策日等于最近已完成UTC日线且`decision_available_after`已到，缺数据只返回`await_latest_completed_pilot_bar`并阻断订单。
-  同批修复LLM账本摘要：只把非零数量（正负方向均计）计为持仓，避免flat账户三行零仓位被复盘为“3个持仓”；并补上中文直接
-  下单/买卖/开加减平仓/做多做空/杠杆/实盘与交易开关/目标权重/仓位越权扫描。
-  本地全仓当前`1559/1559 OK`，`diff --check`、compileall和密钥扫描通过。该候选尚未同步VPS、未重启服务、未改变账户或订单。
-  当前VPS周期仍为`duplicate_decision_noop`，0 market/0 stop、`exchange_mutation_attempted=false`；修复前后均没有真实成交样本。
+- **2026-07-22 0.2.13已完成VPS部署与受控生产验收。** 最近已完成UTC日线硬门、LLM flat仓位计数和中文越权扫描之外，
+  部署探针还发现并修复了`latest_date`字符串与`datetime.date`比较，以及live wrapper按历史completed状态错误刷新当前arm绑定两个问题。
+  最终release commit=`89be296...0f4`，provenance=`8141d31a...f205`；Mac全仓`1561/1561 OK`、VPS production
+  `338/338 OK`，compileall、Bash syntax、`diff --check`与高置信凭据扫描通过。最终run=
+  `/root/qount/state/mini_trend/forward/runs/20260722T133356Z`，decision date=`2026-07-21`、BTC/ETH/BNB权重`0/0/0`；
+  live artifact=`live_dispatch-20260722T133549Z.json`、SHA=`ae8cdc96...0900`，status=`completed`、0 market/0 stop、
+  `exchange_mutation_attempted=false`，live与标准reconciliation均passed。账户`486.15970914 USDT`、全平、普通挂单0、
+  one-way/isolated 1x、HALT absent、unresolved 0；live timer=`enabled/active`，forward timer=`disabled/inactive`，production cron=0。
 
-- **2026-07-22最新只读日报已更新为`38985fe5...50d5fc`。** 报告hash=`d42c851d...9e68`，pipeline=`complete`、evidence=`sufficient`、
-  status=`attention_required`；7份一手来源、3份行情、冻结RuntimeLedger均已归档，6个角色完成，策略/红队/总编因缺少事件窗口、
+- **2026-07-22 LLM复盘已完成问题审查和部署后验证。** 正式日报`38985fe5...50d5fc`生成于0.2.13部署前，报告hash=`d42c851d...9e68`，pipeline=`complete`、evidence=`sufficient`、
+  status=`attention_required`；7份一手来源、TOP3行情、冻结RuntimeLedger均已归档，6个角色完成，策略/红队/总编因缺少事件窗口、
   独立成交和历史容量返回`needs_research`。5个ResearchProposal的`g0_status=blocked_history_capacity`，全部
   `orders_allowed=false/live_changes_allowed=false`，不能作为信号、参数或盈利证据。微信通知job=`94dd8f...5c5d9`为
-  `DELIVERED/SUCCEEDED`；这只证明业务回执，不代表研究结论有效。
+  `DELIVERED/SUCCEEDED`；这只证明业务回执，不代表研究结论有效。旧报告把三个零数量symbol槽位误写成“3个持仓”；
+  0.2.13隔离、无通知复跑已确认`position_count=0`、误报文本0条，5个提案仍全部G0 blocked且禁止订单/live修改。
+  旧正式artifact保留历史证据，不原地重写；下一次定时日报自然使用修复后的代码。
 
 - **2026-07-22外置盘已完成保护性恢复并重新开放确定性研究。** 在确认WSL无其它任务后先关闭WSL，把
   `E:\qount_data`完整备份到全新目录`D:\qount_data-recovery-20260722T120000Z`：`robocopy`返回码`1`，
@@ -40,11 +42,15 @@ VPS生产版本：`0.2.12`（production provenance已验证，live timer已恢�
   Daily Intelligence和Alpha Agents聚焦回归`40/40 OK`。`D:`恢复备份必须保留；后续只按外置盘canonical输入和WSL ext4
   scratch推进，LLM的5个G0阻断提案仍不能替代费用、funding、滑点、beta residual、回撤、区块Bootstrap和时间顺序holdout证据。
 
-- **2026-07-22修复后WSL冻结复跑确认Funding Veto历史候选可重现，但真正前向仍为0根。** 公开UM日线缓存从
-  `2026-07-17`推进到`2026-07-21`，为`105 files/84,368 bytes`、content hash=`30fab795...66da`；归档缺失为0。
-  但WSL到`fapi.binance.com`及四个官方备选USD-M域均超时，`data-api.binance.vision`不提供该futures endpoint，
-  当月funding仍为`0/3`完整。冻结双状态回放因此严格返回`await_complete_shadow_inputs`、`evaluation_bars=0`、
-  `strategy_results_evaluated=false`，没有收益或journal，不得填0或借用VPS/LLM结果。
+- **2026-07-22 owner-approved良心云公开数据代理已补齐Funding Veto真正前向输入。** 首次隔离core误用2026-06-01
+  到期的测试副本，TLS返回unexpected EOF；现从当前良心云profile结构化派生47个真实节点、剔除3个流量/到期伪节点，
+  主Clash配置不变。仓库外`QOUNT_LIANGXIN_PROXY_URL`文件权限`0600`，URL/token未进入repo、artifact或外置盘，且未使用
+  苏菲家宽代理。TCP、`example.com`和Binance funding公共接口均通过后，刷新artifact
+  `20260722T141039Z-um-shadow-input-refresh-liangxin-current/`达到TOP3 `3/3`、各64次结算、108 files、0 unavailable，
+  dataset manifest=`b6f6aab8...ca05`。原v0.2 preregistration、Base、state-decay、50%阈值和成本合同均未改；离线回放
+  `20260722T141236Z-um-funding-veto-shadow-forward-liangxin/`得到2个完整pair、verdict=`collect_shadow_forward`。
+  两路径都是`bear_cash`，各0 active bar/0 order/0收益/0回撤，无veto和状态分叉；当前只证明数据与双状态journal闭环，
+  仍缺60个完整pair、每路径10个active bar和至少1次veto，不构成盈利、promotion、paper或live证据。
   同一已消费历史合同在WSL离线精确复跑：Funding Veto全窗收益/Sharpe/maxDD为
   `+88.950393%/0.965235/18.105121%`，交易成本`34.003616 USDT`、funding PnL `-43.423732 USDT`、平均/最大gross
   `0.216925/0.903255`；对BTC 1x和TOP3等权1x的beta/复合残差分别为`0.151612/+59.459570%`和
@@ -2764,10 +2770,10 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    当前Base 100 USDT minimal-live是独立例外，不能把它的授权扩散给RiskTier、FundingVeto或其它研究线。
    已拒绝的 UM 2.0% 全局档、三阶段 overlay 和stop-latch都不进入forward；funding-veto虽通过历史门和
    条件Bootstrap稳健门，也只冻结为首选 consumed-history 候选，不调50%阈值、不自动获得paper/live资格。
-   双状态shadow-forward已从`2026-07-19`预登记；VPS canonical UM日线已到`2026-07-18`，但冻结起点尚无完成bar，
-   当前仍为0根和`await_shadow_forward_data`。MiniTrend forward timer当前保持关闭；未来只有在重新获得明确授权的order-free周期中，
-   才能由VPS直连刷新公开REST/日包，并且只在价格与每日三次funding同时完整后追加两套权益、仓位/deadband/latch
-   状态，首次权重同步不能作为停止跟踪条件。禁止使用苏菲家宽代理，缺失funding禁止填0。
+   双状态shadow-forward已从`2026-07-19`预登记；WSL外置盘canonical现有价格与funding完整的2个pair，verdict=
+   `collect_shadow_forward`，两路径仍全现金、0 active/0收益且尚无veto。MiniTrend forward timer保持关闭；后续公开数据只在
+   Windows/WSL侧通过直连或仓库外良心云代理追加，并且只在价格与每日三次funding同时完整后更新两套权益、仓位/
+   deadband/latch状态，首次权重同步不能作为停止跟踪条件。禁止使用苏菲家宽代理，缺失funding禁止填0。
    Equity Mapping首个目标现金日是`2026-07-20`，当前`await_collection_window`；窗口前不得生成伪样本，窗口
    错过后不得用异步历史报价补写。只有同现金日sealed manifest逐项覆盖8类source hash，G0 v0.4才允许声称
    point-in-time market evidence；当前source-capacity只有cash calendar通过，必须先取得带source event timestamp的
@@ -2788,7 +2794,7 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    `qount-mini-trend-live.timer`现为`enabled/active`，forward timer和production cron保持关闭。当前信号全现金，所以没有真实订单或成交；不得为采集样本强制下单。
    旧X4/C×D cron与forward timer继续关闭，全局2.0%风险档和Funding Veto只能做shadow，不能控制真钱订单。
 
-   该阶段本地全仓复跑为`1542 OK`，VPS production为`328 OK`。Python compileall、Bash语法、release provenance、
+   当前`0.2.13` release回归为Mac全仓`1561 OK`、VPS production`338 OK`。Python compileall、Bash语法、release provenance、
    `systemd-analyze verify`和`git diff --check`通过；unit verify只报告无关cloudmonitor旧告警，唯一测试警告仍是既存
    `src/qount/cta_data.py` UTC deprecation warning。
 4. Owner外部建议按 `docs/mini-trend-agent/review.md` 矩阵执行：Coin Metrics latest-vintage链上G0与经济

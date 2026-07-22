@@ -8,7 +8,34 @@
 
 ## 2026-07-22
 
-### 0.2.13 本地实盘数据时点硬门与 LLM 复盘边界修复（未部署）
+### 0.2.13 VPS部署、良心云funding补齐与冻结shadow启动
+
+- VPS最终release为`0.2.13`、commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`、source tree=
+  `21ddfb09...3705`、provenance=`8141d31a...f205`。部署中修复`latest_date`字符串与`date`比较，以及live wrapper
+  按历史completed状态错误刷新当前arm绑定两个实机问题。Mac全仓`1561/1561 OK`、VPS production`338/338 OK`；
+  compileall、Bash syntax、`diff --check`与高置信凭据扫描通过。
+- 最终run=`/root/qount/state/mini_trend/forward/runs/20260722T133356Z`，decision date=`2026-07-21`、TOP3权重
+  `0/0/0`，readiness=`b25442fe...68fd`、authority batch=`092c95f9...a1f2`。受控live artifact SHA=
+  `ae8cdc96...0900`、status=`completed`、0 market/0 stop、`exchange_mutation_attempted=false`，live与标准
+  reconciliation均passed。余额`486.15970914 USDT`、全平、普通挂单0、one-way/isolated 1x、HALT absent、
+  unresolved 0；live timer active、forward timer inactive、production cron 0。没有强制下单或扩大100 USDT本金。
+- WSL良心云隔离代理首次因沿用2026-06到期测试副本而TLS unexpected EOF；从当前profile重新派生后保留47个真实节点、
+  排除3个流量/到期伪节点，主Clash未改。仓库外代理env mode=`0600`，URL/token未进入repo、artifact或外置盘，
+  未使用苏菲家宽代理。TCP、`example.com`与Binance funding公共接口均为200。
+- 输入刷新`artifacts/experiments/20260722T141039Z-um-shadow-input-refresh-liangxin-current/`达到TOP3 `3/3`、
+  各64次结算、108 files、0 unavailable；dataset/refresh experiment manifest hash分别为
+  `b6f6aab8...ca05`/`ae878275...40b4`。冻结回放
+  `artifacts/experiments/20260722T141236Z-um-funding-veto-shadow-forward-liangxin/`绑定原v0.2 preregistration、
+  Base和state-decay，得到2个完整pair、verdict=`collect_shadow_forward`。两路径都是`bear_cash`、0 active、0 order、
+  0收益、0回撤、0 veto、0状态分叉；只证明输入与journal闭环，不能声称盈利或晋级。shadow experiment manifest=
+  `a3ed130c...7a53`，环境manifest/code bundle hash=`3c32811f...15a0`/`386b7bc3...48d3`，不含生产凭据；
+  8个最终JSON经ext4 staging解析通过，scratch已清理。
+- 正式日报`38985fe5...50d5fc`生成于部署前，5个proposal虽全部G0 blocked且禁止订单/live，但旧代码把3个零数量
+  symbol槽位误写为“3个持仓”。`0.2.13`隔离、无通知复跑得到`position_count=0`、误报文本0条；pipeline complete、
+  evidence sufficient、5个proposal仍全部blocked，`orders_allowed=false/live_changes_allowed=false`。临时审计目录已清理，
+  正式archive、Dashboard、生产timer和arm未改。
+
+### 0.2.13 本地实盘数据时点硬门与 LLM 复盘边界修复（部署前阶段）
 
 - 只读复核发现VPS公开日线补数缺少`2026-07-21`的BTC/ETH/BNB三个ZIP；旧投影仍可从缓存生成`2026-07-20`决策。
   `0.2.13`在生产投影入口要求`expected_latest_date=UTC今天-1天`，缺失时返回`await_latest_completed_pilot_bar`；live dispatcher再独立检查

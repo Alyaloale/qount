@@ -5,8 +5,8 @@
 这份文档定义跨主机职责、权威数据位置、WSL计算流程和清理规则。策略结论仍以
 [current.md](current.md)为准，生产运行仍以VPS为准。
 
-本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前源码候选为`0.2.13`且尚未部署；VPS生产仍为
-`0.2.12`，MiniTrend Base固定100 USDT，live timer为`enabled/active`，forward timer为`disabled/inactive`。
+本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前源码与VPS生产均为`0.2.13/89be296`，
+MiniTrend Base固定100 USDT，live timer为`enabled/active`，forward timer为`disabled/inactive`。
 2026-07-22外置`E:`已完成保护性备份、文件系统修复和修复后逐文件校验。全新备份目录
 `D:\qount_data-recovery-20260722T120000Z`含`14,214`个文件、`34,096,177,913` bytes，源/目标SHA-256
 manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功复制新文件，`FAILED=0`、`Mismatch=0`。
@@ -23,7 +23,7 @@ manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功�
 | Mac | `/Users/alyaloale/Code/qount` | 研究设计、代码主仓、git、文档、轻量测试和任务编排 | 全量行情、训练集、模型批次、历史artifact |
 | Windows外置盘 | `E:\qount_data`；WSL见`/mnt/e/qount_data` | 大数据、不可变输入、最终artifact、环境锁和节点备份的存储真相 | `.env`、API密钥、活跃SQLite、venv |
 | WSL | `/home/alyaloale/Code/qount`；7945HX 32线程、RTX 4060 8GB | 大型CPU特征工程、表格模型、HMM、GPU训练和权威复跑 | 完成后的大数据副本、长期artifact、生产状态 |
-| VPS | `/root/qount` | `0.2.12` MiniTrend Base 100 USDT minimal-live、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
+| VPS | `/root/qount` | `0.2.13` MiniTrend Base 100 USDT minimal-live、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
 | 临时云GPU | disposable | 仅在4060显存或吞吐实测不足时临时训练 | 唯一数据副本、生产密钥、live state |
 
 WSL是正式计算节点，但不是实盘生产真相。Mac和WSL不要求每次全仓镜像；WSL基础计算接口变化时才显式
@@ -94,6 +94,16 @@ UM双状态shadow的公开输入现集中在`datasets/binance_um_shadow/v1/`，�
 `artifacts/experiments/20260722T123145Z-um-shadow-input-refresh-post-recovery/`和
 `20260722T123559Z-um-funding-veto-shadow-forward-post-recovery/`，manifest content hash为
 `3e9c315b...1aaa`/`0ae2cc8d...0265`。当月funding仍0/3完整，shadow未读取收益。
+
+owner-approved良心云隔离代理后续补齐同一canonical的当月funding。代理只保存在WSL仓库外`0600`环境文件；
+主Clash profile未修改，苏菲家宽代理未使用，URL/token未写入repo、artifact或外置盘。最终输入刷新位于
+`artifacts/experiments/20260722T141039Z-um-shadow-input-refresh-liangxin-current/`：TOP3各64次结算、完整度
+`3/3`、108 files/93,153 bytes、dataset manifest=`b6f6aab8...ca05`，refresh experiment manifest=
+`ae878275...40b4`。冻结v0.2离线回放位于
+`artifacts/experiments/20260722T141236Z-um-funding-veto-shadow-forward-liangxin/`：2个完整pair、
+verdict=`collect_shadow_forward`、shadow experiment manifest=`a3ed130c...7a53`。其输入manifest副本与环境锁均在
+同目录，环境manifest/code bundle hash=`3c32811f...15a0`/`386b7bc3...48d3`，明确不含生产凭据。
+8个最终JSON已stage到ext4逐份解析后清理临时目录；这批证据不能进入paper/live。
 冻结历史beta残差复跑与5000路径Bootstrap位于`20260722T124533Z-um-funding-veto-frozen-beta-residual-rerun/`
 和`20260722T124742Z-um-funding-veto-frozen-bootstrap-rerun/`，manifest content hash为
 `0e384cf7...f6e6`/`9e5c8159...43d4`；环境锁
