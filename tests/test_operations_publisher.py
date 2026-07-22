@@ -267,6 +267,32 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
             "unavailable_until_daily_intelligence",
         )
 
+    def test_invalid_latest_intelligence_is_scoped_to_unavailable_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _publish_authority_bundle(root)
+            intelligence_root = root / "intelligence"
+            report_id = "a" * 64
+            report_root = intelligence_root / "reports" / report_id
+            report_root.mkdir(parents=True, mode=0o700)
+            (report_root / "report.json").write_text("{}\n", encoding="ascii")
+            (report_root / "manifest.json").write_text("{}\n", encoding="ascii")
+            os.symlink(f"reports/{report_id}", intelligence_root / "latest")
+            config = replace(_config(root), intelligence_root=intelligence_root)
+
+            result = run_dashboard_publisher(
+                config,
+                observed_at="2026-07-20T00:09:00+00:00",
+                dependencies=_dependencies(),
+            )
+            models, publication = read_dashboard_v1(config.dashboard_root)
+
+        self.assertEqual(publication.publication_id, result.publication_id)
+        self.assertEqual(
+            models.intelligence.payload["authority"]["intelligence"],
+            "unavailable_until_daily_intelligence",
+        )
+
     def test_lock_busy_fails_without_changing_current_release(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

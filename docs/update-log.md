@@ -8,6 +8,15 @@
 
 ## 2026-07-22
 
+### 0.2.9 legacy Daily Intelligence compatibility isolation
+
+- `0.2.8` WAL修复后，publisher读到升级前的v1 `latest`日报时严格v2合同拒绝其缺失的
+  `pipeline_status/evidence_status/evidence_summary`，此前会使整个publisher失败。该artifact来自升级前的已完成只读日报，
+  不是账户、通知库或交易执行异常。
+- publisher现在只将无效、损坏或旧schema日报降级为`unavailable_until_daily_intelligence`；Dashboard继续原子发布其它
+  权威read model和其各自freshness。新增回归覆盖“存在但无效的latest”不得阻断发布。下一次有效v2日报仍会恢复正常
+  intelligence模型；该降级不把旧报告重写为新证据，也不掩盖该来源的不可用状态。
+
 ### 0.2.8 publisher SQLite WAL sandbox repair
 
 - `0.2.7`部署、通知库verified replay与无订单闭环后，publisher首次在`ProtectSystem=strict`和整个

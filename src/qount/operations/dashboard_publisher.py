@@ -23,6 +23,8 @@ from qount.contracts import canonical_hash
 from qount.contracts import is_sha256
 from qount.contracts.trace import aware_datetime
 from qount.intelligence import read_latest_daily_intelligence
+from qount.intelligence import IntelligenceArchiveError
+from qount.intelligence import IntelligenceContractError
 from qount.notifications import NotificationStore
 from qount.notifications import build_notification_snapshot
 from qount.operations.backups import BackupRecord
@@ -366,6 +368,20 @@ def _prepare_output_paths(config: PublisherConfig) -> None:
         raise DashboardPublisherError("publisher_cross_device_output_rejected")
 
 
+def _read_optional_daily_intelligence(config: PublisherConfig):
+    """Keep a bad or pre-upgrade intelligence artifact scoped to that source."""
+
+    if (
+        config.intelligence_root is None
+        or not (config.intelligence_root / "latest").exists()
+    ):
+        return None
+    try:
+        return read_latest_daily_intelligence(config.intelligence_root)
+    except (IntelligenceArchiveError, IntelligenceContractError, OSError):
+        return None
+
+
 def run_dashboard_publisher(
     config: PublisherConfig,
     *,
@@ -390,12 +406,7 @@ def run_dashboard_publisher(
             if config.notification_store_path is not None
             else bundle.notification_snapshot
         )
-        intelligence = (
-            read_latest_daily_intelligence(config.intelligence_root)
-            if config.intelligence_root is not None
-            and (config.intelligence_root / "latest").exists()
-            else None
-        )
+        intelligence = _read_optional_daily_intelligence(config)
         health = collect_os_system_health(
             HealthProbeConfig(
                 disk_path=config.disk_path,
