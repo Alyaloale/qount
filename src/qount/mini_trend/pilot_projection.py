@@ -143,8 +143,9 @@ def build_latest_pilot_projection(
             expected_date = dt.date.fromisoformat(expected_latest_date)
         except ValueError as exc:
             raise ValueError("expected_latest_date_invalid") from exc
-        report["data"]["expected_latest_date"] = expected_date.isoformat()
-        if latest_date != expected_date:
+        expected_date_text = expected_date.isoformat()
+        report["data"]["expected_latest_date"] = expected_date_text
+        if latest_date != expected_date_text:
             report["diagnostics"]["blockers"] = [
                 "latest_completed_bar_not_available"
             ]

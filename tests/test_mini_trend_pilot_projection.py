@@ -93,6 +93,19 @@ class MiniTrendPilotProjectionTest(unittest.TestCase):
         )
         self.assertIsNone(report["decision"])
 
+    def test_production_projection_accepts_the_expected_latest_bar(self) -> None:
+        report = build_latest_pilot_projection(
+            _bars(201),
+            _funding(201),
+            _rules(),
+            expected_latest_date="2026-07-19",
+        )
+        self.assertEqual(
+            report["diagnostics"]["verdict"],
+            "latest_causal_decision_projected",
+        )
+        self.assertEqual(report["decision"]["decision_date"], "2026-07-19")
+
     def test_projects_first_latest_decision_without_an_outcome(self) -> None:
         report = build_latest_pilot_projection(
             _bars(201), _funding(201), _rules()
