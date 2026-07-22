@@ -6,11 +6,11 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前源码版本为 `0.2.9`（WAL publisher与日报兼容修复发布候选）；VPS 已验证部署 `0.2.8`，且
+当前源码版本为 `0.2.10`（独立freshness最终修复发布候选）；VPS 已验证部署 `0.2.9`，且
 `qount-mini-trend-live.timer` 已在升级维护期间停用。唯一可在验收后恢复真钱权限的连续策略是
 `MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
 effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。
-恢复前必须通过 `0.2.9` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账验收。首次live cycle因冻结信号
+恢复前必须通过 `0.2.10` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账验收。首次live cycle因冻结信号
 为全现金而完成0订单账本闭环，不代表系统未启动，也不得强制制造首单。
 
 ## 主机职责
@@ -432,9 +432,9 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 
 当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一可恢复的真钱运行链为VPS `/root/qount` 上固定100 USDT的
-MiniTrend Base minimal-live，当前因0.2.9升级维护停盘。Dashboard静态前端已部署，
+MiniTrend Base minimal-live，当前因0.2.10升级维护停盘。Dashboard静态前端已部署，
 served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
-publisher timer在WAL只读沙箱修复与验收前为`disabled/inactive`；它只读完整batch/registry/ledger/notification/health/brief，并在恢复后每两分钟刷新系统健康、release、
+publisher timer为`enabled/active`；它只读完整batch/registry/ledger/notification/health/brief，并每两分钟刷新系统健康、release、
 备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单；
 recurring readiness已通过且registry为`minimal_live`。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
 在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持

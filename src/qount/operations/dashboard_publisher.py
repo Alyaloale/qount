@@ -71,7 +71,7 @@ class PublisherConfig:
     stale_after_seconds: int = 900
     alert_stale_after_seconds: int = 300
     report_stale_after_seconds: int = 90_000
-    system_stale_after_seconds: int = 120
+    system_stale_after_seconds: int = 180
 
     def validate(self) -> None:
         paths = (

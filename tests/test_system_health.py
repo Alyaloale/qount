@@ -184,7 +184,7 @@ class SystemHealthContractTest(unittest.TestCase):
                 batch,
                 registry,
                 generated_at=CAPTURED_AT,
-                evaluated_at="2026-07-20T00:08:06+00:00",
+                evaluated_at="2026-07-20T00:08:15+00:00",
                 stale_after_seconds=900,
                 system_stale_after_seconds=60,
                 ledger_snapshot=ledger_snapshot,
@@ -193,6 +193,9 @@ class SystemHealthContractTest(unittest.TestCase):
 
         self.assertEqual(models.overview.freshness["status"], "fresh")
         self.assertEqual(models.system.freshness["status"], "stale")
+        self.assertEqual(
+            set(models.system.freshness["sources"]), {"ops_observer"}
+        )
         self.assertEqual(models.system.payload["summary"]["status"], "healthy")
         self.assertEqual(
             set(models.system.source_hashes),
@@ -202,6 +205,29 @@ class SystemHealthContractTest(unittest.TestCase):
                 "runtime_ledger",
                 "system_health",
             },
+        )
+
+    def test_system_freshness_does_not_inherit_runtime_ledger_window(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger, batch, registry = _ledger_with_accounting(Path(temporary))
+            ledger_snapshot = build_runtime_ledger_snapshot(
+                ledger, batch, captured_at=CAPTURED_AT
+            )
+            models = build_dashboard_v1(
+                batch,
+                registry,
+                generated_at=CAPTURED_AT,
+                evaluated_at="2026-07-20T00:08:15+00:00",
+                stale_after_seconds=60,
+                system_stale_after_seconds=120,
+                ledger_snapshot=ledger_snapshot,
+                system_health=_health_snapshot(),
+            )
+
+        self.assertEqual(models.overview.freshness["status"], "stale")
+        self.assertEqual(models.system.freshness["status"], "fresh")
+        self.assertEqual(
+            set(models.system.freshness["sources"]), {"ops_observer"}
         )
 
     def test_unavailable_component_requires_halt(self) -> None:

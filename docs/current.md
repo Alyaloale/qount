@@ -2,9 +2,9 @@
 
 更新时间：2026-07-22
 
-源码版本：`0.2.9`（WAL publisher与日报兼容修复发布候选）
+源码版本：`0.2.10`（独立freshness最终修复发布候选）
 
-VPS生产版本：`0.2.8`（release `9874c83...af820ae`，升级维护中，live timer已停）
+VPS生产版本：`0.2.9`（release `41cd42f...ef99c5`，升级维护中，live timer已停）
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -15,7 +15,13 @@ VPS生产版本：`0.2.8`（release `9874c83...af820ae`，升级维护中，live
 [alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-22 0.2.9日报兼容与publisher修复待验收，VPS继续保持停盘维护。** `0.2.8`已部署并修复 WAL
+- **2026-07-22 0.2.10独立freshness最终修复待验收，VPS继续保持停盘维护。** `0.2.9`已部署，publisher与
+  v2日报均成功；order-free周期最终blocker 0，账户`486.15970914 USDT`、TOP3全平、0订单/成交，dry dispatcher
+  `duplicate_dry_noop`且未尝试交易所变更。随后确认 system read model把RuntimeLedger错误套用Ops Observer的120秒阈值，
+  会在两分钟调度边界自报stale。`0.2.10`将system顶层freshness只绑定Ops Observer，并把其窗口设为180秒；账户、仓位、
+  订单、决策和readiness继续独立使用RuntimeLedger的15分钟窗口。
+
+- **2026-07-22 0.2.9日报兼容与publisher修复已在VPS验收，继续保持停盘维护。** `0.2.8`已部署并修复 WAL
   sidecar 沙箱；随后发现 `latest` 指向升级前v1日报，缺少v2 `pipeline/evidence`字段。此类过期/不兼容日报现在只会让
   intelligence read model显示`unavailable_until_daily_intelligence`，不会阻断Dashboard、账户/账本、readiness或其它来源的独立freshness。
   `0.2.9`部署后会重新运行只读日报生成v2原文证据；其LLM和个人通知均不拥有交易权限。

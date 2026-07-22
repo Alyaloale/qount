@@ -8,6 +8,15 @@
 
 ## 2026-07-22
 
+### 0.2.10 per-source freshness boundary correction
+
+- `0.2.9`部署后，publisher、v2日报、通知与order-free authority均成功，但system read model仍把
+  RuntimeLedger纳入Ops Observer的120秒阈值；账本在周期后约2分钟即令system模块显示stale，而overview/readiness仍按正确的
+  15分钟窗口fresh，形成前端模块矛盾。
+- system顶层freshness现在只描述Ops Observer；RuntimeLedger仍通过source hash和system payload展示，但其时效权威归
+  overview/positions/orders/readiness的15分钟窗口。Ops Observer阈值从120秒改为180秒，覆盖两分钟timer和随机延迟。
+  新增回归证明ledger可以stale而system仍fresh，反向也可独立stale；不通过放宽账户/执行数据窗口洗新。
+
 ### 0.2.9 legacy Daily Intelligence compatibility isolation
 
 - `0.2.8` WAL修复后，publisher读到升级前的v1 `latest`日报时严格v2合同拒绝其缺失的

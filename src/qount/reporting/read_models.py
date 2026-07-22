@@ -3914,16 +3914,7 @@ def build_dashboard_v1(
                 stale_after_seconds=system_stale_after_seconds,
                 observed_at=system_health.captured_at,
                 content_updated_at=system_health.source_updated_at,
-                sources={
-                    "ops_observer": system_health.source_updated_at,
-                    **(
-                        {
-                            "runtime_ledger": ledger_snapshot.source_updated_at
-                        }
-                        if ledger_snapshot is not None
-                        else {}
-                    ),
-                },
+                sources={"ops_observer": system_health.source_updated_at},
             ),
         }
     models = DashboardReadModelSet(
