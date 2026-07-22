@@ -8,8 +8,6 @@
 
 ## 2026-07-22
 
-## 2026-07-22
-
 ### 0.2.12 live oneshot health self-check 修复与生产恢复
 
 - `0.2.11`首轮真实live service揭示health probe的自检循环：`qount-mini-trend-live.service`在`Type=oneshot`执行期间为

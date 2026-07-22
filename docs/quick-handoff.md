@@ -59,7 +59,7 @@ ssh -o ClearAllForwardings=yes qount-vps \
   `/root/qount/state/mini_trend/forward/runs/20260722T102023Z`，readiness=`f4dfbb82...ddca0`、batch=
   `65c8a64f...ba4750`、ledger=`efddab4c...02a3ee`、pre-dispatch reconciliation=`64fd12f...6934114` passed。
   账户`486.15970914 USDT`、TOP3全平、普通/条件挂单0、HALT absent，arm/env均root `0600`。
-- `qount-mini-trend-live.timer`现为`enabled/active`；forward timer与legacy cron关闭。受控live artifact
+- `qount-mini-trend-live.timer`现为`enabled/active`；forward timer与legacy cron关闭。历史首次live artifact
   `20260722T055437Z/live_dispatch-20260722T055659Z.json`完成`live_intent_locked -> live_completed`，post reconciliation
   `71c34b4d...0a01` passed。因Base权重`0/0/0`，0 market/0 STOP且未尝试exchange mutation；不得强制首单。
   recurring分支已实跑为`duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
