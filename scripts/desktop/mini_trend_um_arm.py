@@ -65,7 +65,9 @@ def main(argv: list[str] | None = None) -> int:
         promotion = authorize_minimal_live_authority_bundle(
             AuthorityWriterConfig(
                 repo_root=REPO.resolve(),
-                source_root=Path(args.authority_source_root).expanduser().resolve(),
+                # The authority writer validates that this selector itself is a
+                # symlink into forward/runs.  Keep the leaf symlink intact.
+                source_root=Path(args.authority_source_root).expanduser().absolute(),
                 authority_root=Path(args.authority_root).expanduser().resolve(),
                 runtime_root=Path(args.runtime_root).expanduser().resolve(),
                 backup_root=Path(args.backup_root).expanduser().resolve(),

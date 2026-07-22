@@ -147,7 +147,8 @@ def main(argv: list[str] | None = None) -> int:
             refresh = refresh_authority_bundle_from_runtime(
                 AuthorityWriterConfig(
                     repo_root=REPO.resolve(),
-                    source_root=Path(args.authority_source_root).expanduser().resolve(),
+                    # Keep the validated latest -> runs/<stamp> selector intact.
+                    source_root=Path(args.authority_source_root).expanduser().absolute(),
                     authority_root=Path(args.authority_root).expanduser().resolve(),
                     runtime_root=Path(args.runtime_root).expanduser().resolve(),
                     backup_root=Path(args.backup_root).expanduser().resolve(),
@@ -173,7 +174,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"stop_orders={len(artifact['stop_orders'])}")
     print(f"exchange_mutation_attempted={artifact['dispatch_result']['exchange_mutation_attempted']}")
     print(f"live_orders_allowed={artifact['meta']['live_orders_allowed']}")
-    return 0 if args.mode == "dry" or dispatch["status"] == "completed" else 2
+    authority_refresh_failed = "authority_refresh_error" in dispatch
+    return (
+        0
+        if args.mode == "dry"
+        or (dispatch["status"] == "completed" and not authority_refresh_failed)
+        else 2
+    )
 
 
 if __name__ == "__main__":

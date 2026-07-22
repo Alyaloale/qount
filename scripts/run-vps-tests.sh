@@ -31,6 +31,7 @@ if [[ "$TEST_TARGET" == "production" ]]; then
     tests.test_dashboard_read_models \
     tests.test_authority_importer \
     tests.test_authority_writer \
+    tests.test_mini_trend_authority_cli_paths \
     tests.test_mini_trend_pilot_runtime \
     tests.test_mini_trend_pilot_dispatcher \
     tests.test_system_health \
