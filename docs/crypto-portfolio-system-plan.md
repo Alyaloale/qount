@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-状态：多策略部分仍为`research_sandbox`；唯一例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
+状态：源码版本`0.2.6`已推送但尚未部署；VPS当前运行`0.2.5`。多策略部分仍为`research_sandbox`；唯一例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
 `1000 USDT`目标架构，不构成扩容或其它sleeve下单授权。60/10 forward、30 paper days和7 dry days仍是观察项；
 账户、订单、funding、标准authority/RuntimeLedger/对账、HALT和arm继续是每轮硬门。RiskTier与FundingVeto只做shadow。
 

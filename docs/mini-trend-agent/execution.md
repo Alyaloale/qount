@@ -1,4 +1,7 @@
-# MiniTrend Agent 执行手册
+# MiniTrend Agent 执行手册（历史版本）
+
+状态：archived / pre-live runbook。当前唯一生产入口、arm、timer、registry和停止条件以
+`docs/current.md`、`docs/quick-handoff.md`和VPS只读状态为准；本文中的“尚未arm”“timer关闭”和旧400/300 USDT读数均为历史阶段记录。
 
 ## Phase 0：只落设计，不碰生产
 
@@ -124,9 +127,8 @@ evidence review，不进入paper/live。
 
 ## Phase 1.7：一个月小资金UM实盘readiness
 
-2026-07-18 owner提出一个月小资金实盘方向；2026-07-21进一步授权不等待日历观察项自然完成，直接推进B/C/D。
-当前先部署并运行order-free readiness，不自动arm、不下单。真钱候选固定为
-Base v0.2；全局2.0%风险档是首选收益shadow，Funding Veto是次级shadow，二者都不能控制真钱订单。旧X4/C×D
+2026-07-18 owner提出一个月小资金实盘方向；2026-07-21/22进一步授权不等待日历观察项自然完成，直接推进B/C/D。
+当前唯一真钱候选Base v0.2已完成manual arm并进入`minimal_live`；全局2.0%风险档是首选收益shadow，Funding Veto是次级shadow，二者都不能控制真钱订单。旧X4/C×D
 的7币、short、2x、carry和5分钟cron全部禁止复用。
 
 冻结试点合同：`capital=100 USDT`、30天、TOP3、long/cash、1x逐仓、one-way、gross<=1、日线单批。
@@ -136,11 +138,8 @@ dispatch执行flatten后halt且不得自动恢复；两者均按冻结的100 USD
 `STOP_MARKET closePosition`。API key只能有USD-M交易权限、必须关闭提现并绑定VPS IP。
 未知余额/仓位、非TOP3或short仓位、错误模式、重复决策、缺价格/funding journal均直接halt。
 
-VPS审计结果：cron和qount交易进程均关闭，旧通用live guard已关闭。直连Binance公共接口可用，旧显式代理
-不可用；绕开代理后旧API key返回`-2015`，无法审计资金/仓位/one-way。readiness v0.3补齐Futures/IP权限、
-余额、空仓、open orders、7天dry-run与独立runtime验证门；最终artifact
-`20260718T100615Z-um-live-pilot-readiness-v04`有20项blocker，
-`live_orders_allowed=false`。已加入每日
+历史VPS审计结果曾显示cron和qount交易进程关闭、旧通用live guard关闭；这段证据不覆盖当前状态。当前生产读取必须以VPS
+`0.2.5` provenance和`qount-mini-trend-live.timer`为准。已加入每日
 append-only JSONL，记录权益、钱包、双权重、订单意图/结果、funding/费用、执行状态和risk flags；row/chain
 hash不闭合或重复决策日时拒绝追加。启动顺序固定为：
 
@@ -155,10 +154,9 @@ hash不闭合或重复决策日时拒绝追加。启动顺序固定为：
 7. 再次只读预检并生成标准authority后，向owner展示readiness/batch/ledger/reconciliation hash；只有owner单独确认后才
    生成manual arm并原子提升registry为`minimal_live`。
 
-2026-07-21当前进度：VPS systemd order-free run `20260721T063854Z`已通过上述第2/3/6项和标准authority/ledger/reconciliation，
-最终readiness为`ready_for_manual_final_arm`、blocker 0，但`live_orders_allowed=false`。观察值为forward pair/active/paper/dry
-`0/0/0/1`且funding完整；账户全平、普通/条件单0、dispatcher 0 intent且`exchange_mutation_attempted=false`。registry仍为
-`research`，manual arm为0，timer和live switch保持关闭。首笔真钱订单前必须由owner再次确认本run四类最终hash。
+最新已验证状态：VPS release=`0.2.5`，固定`100 USDT` Base已`armed/minimal_live`；live timer=`enabled/active`，forward timer与
+legacy cron关闭。最新run为`20260722T061346Z`，首次live全现金、0 market/0 STOP、post-dispatch reconciliation通过；recurring
+分支为`duplicate_dry_noop`。真实fill/fee/slippage/STOP/UNKNOWN恢复样本仍未采集，禁止扩容或恢复旧策略。
 
 ## Phase 2：paper forward
 

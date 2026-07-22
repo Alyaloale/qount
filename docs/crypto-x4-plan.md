@@ -1,6 +1,7 @@
 # 线 D — X4 计划 v0.1:四策略加密模拟盘 bake-off
 
-状态:预注册计划 v0.1 · 创建 2026-06-12 · 代号 **X4**(线 D) · **只计划,实现为下一轮先写单测**
+状态：archived / legacy research-only。X4/C×D不再是当前生产策略，live、cron和真钱权限均关闭；当前唯一生产线见`docs/current.md`。
+原始预注册计划 v0.1 · 创建 2026-06-12 · 代号 **X4**(线 D) · 仅保留历史实验与证据。
 上游资产:[grid-binance-plan.md](grid-binance-plan.md)(网格栈 + perp 账本)· [rv-c-plan.md](rv-c-plan.md)
 (dated 基差,跨三线唯一过多重检验认证的正 edge)
 

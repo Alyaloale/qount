@@ -41,9 +41,10 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | 接手 / 运维 | `quick-handoff.md`, `README.md` | 新会话启动、命令入口、主机职责 | 命令、主机、验证入口变化 |
 | 验证边界 | `holdout.md` | discovery / validation / promotion gate | 样本池或晋级规则变化 |
 | 记录链 | `update-log.md` | 每批有意义执行的结果、artifact、验证 | 代码、运行、规则或跨线结论变化 |
+| 归档索引 | `archive/README.md` | legacy研究线、旧运行手册和历史计划的状态与入口 | legacy状态或引用边界变化 |
 | 线 A legacy | `profit-*.md`, `optimization-plan.md`, `cta-r-value-gate-plan.md` | 旧 `qount.main` / ETH-only / CTA-R 研究 | 仅追溯或 owner 授权重启 |
 | 线 B GRID | `grid-binance-*.md` | 网格实验线 | 本线 changelog；不污染 current，除非影响全局 |
-| MiniTrend Base | `current.md`, `crypto-portfolio-system-plan.md`, `mini-trend-agent/*.md` | 当前唯一100 USDT minimal-live线 | VPS production、risk、sizing、execution 变化 |
+| MiniTrend Base | `current.md`, `crypto-portfolio-system-plan.md`, `system-architecture-design.md` | 当前唯一100 USDT minimal-live线；`mini-trend-agent/`为历史设计 | VPS production、risk、sizing、execution 变化 |
 | 线 C RV | `rv-c-plan.md` | 相对价值 carry legacy线 | 仅追溯或owner授权重启 |
 | 线 D X4 / CxD | `crypto-x4-plan.md`, `x4-live-position-management.md` | 旧加密趋势 / 组合实盘线 | 仅追溯或owner授权重启 |
 | 重启线 L1/L3/L4/L6 | `l*-*.md` | 已证伪、固化或暂停的结构性重启线 | 只在 owner 授权重启或修正结论时更新 |
@@ -53,6 +54,9 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 
 新增文档前先判断是否能放进现有分类。新策略计划文件只有在 owner 明确授权新研究线时创建。
 
+`archive/README.md`列出的文件保留历史证据和可追溯链接，但不属于当前生产入口；其中的运行命令、余额、订单、timer和live状态
+一律按历史语境读取，不能覆盖`current.md`或VPS只读事实。
+
 ## 4. 研究线隔离
 
 每条研究线必须有明确状态、文档归属、代码边界和 artifact 归属。
@@ -61,7 +65,7 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | --- | --- | --- | --- |
 | A legacy `qount.main` / ETH-only | research-only / live disabled | `current.md`, `profit-*.md` | `src/qount/*.py` legacy core |
 | B GRID | archived / falsified | `grid-binance-*.md` | `src/qount/grid/`, `scripts/research/grid_b_*.py` |
-| MiniTrend Base v0.2 | `minimal_live`，固定100 USDT，唯一真钱策略 | `current.md`, `crypto-portfolio-system-plan.md`, `mini-trend-agent/*.md` | `src/qount/mini_trend/`, `scripts/desktop/mini_trend_um_*` |
+| MiniTrend Base v0.2 | `minimal_live`，固定100 USDT，唯一真钱策略 | `current.md`, `crypto-portfolio-system-plan.md`, `system-architecture-design.md`；`mini-trend-agent/`为历史设计 | `src/qount/mini_trend/`, `scripts/desktop/mini_trend_um_*` |
 | C RV-C | research-only / carry disabled | `rv-c-plan.md` | `src/qount/rv/`, `scripts/desktop/rv_live.py` |
 | D X4 / CxD | legacy / live disabled | `crypto-x4-plan.md`, `x4-live-position-management.md` | `src/qount/x4/`, `scripts/desktop/*x4*`, `scripts/desktop/cxd_*` |
 | L1 / L3 / L4 / L6 | frozen / falsified / lessons retained | 对应 `l*-plan.md` | `src/qount/l*_*.py`, `scripts/research/l*_*.py` |

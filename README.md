@@ -6,7 +6,7 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前生产版本为 `0.2.5`（VPS release commit `e279b966...b95cf`）。唯一获得真钱权限的连续策略是
+当前源码版本为 `0.2.6`；VPS 当前生产版本仍为 `0.2.5`（release commit `e279b966...b95cf`）。唯一获得真钱权限的连续策略是
 `MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
 effective gross `<=1`；RiskTier和FundingVeto只做shadow。`qount-mini-trend-live.timer`现为
 `enabled/active`，旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。首次live cycle因冻结信号
@@ -137,7 +137,7 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
     `/root/qount/state/mini_trend/forward/runs/20260719T091232Z`通过独立systemd runtime证明；dispatcher因尚无首个完成bar
     返回`await_dispatch_decision`，0单、0 dry day、`exchange_mutation_attempted=false`。当时readiness显示5个新数据累积缺口，
     `live_orders_allowed=false`
-  - 2026-07-21 owner要求直接推进Phase B/C/D，60 forward pairs、10 active bars、30 paper days、7 dry days均降为
+  - 历史阶段（2026-07-21）：owner要求直接推进Phase B/C/D，60 forward pairs、10 active bars、30 paper days、7 dry days均降为
     非阻断观察指标。标准batch/RuntimeLedger/三方对账已接入dispatcher；market fill必须有exchange order和逐笔trade/fee证据，
     超时进入UNKNOWN+HALT且不重发。观察项也纳入readiness hash防篡改，但不进入blocker。Binance短窗口cash ledger
     只接受原始有符号`income`和明确的funding/commission/transfer白名单，未知账变直接HALT。该阶段arm/timer/live switch仍关闭，0真实订单
@@ -233,26 +233,18 @@ python -m qount.main candidate-walk-forward --research-profile eth-only --holdou
 `--research-profile eth-only` 会把 setup-model 训练默认值对齐当前 phase6 口径：`horizon_bars=6`、`split_higher_phase=true`。显式传 `--horizon-bars` 或 `--split-higher-phase` 时，以命令行参数为准。
 `backtest` / `walk-forward` 支持 `--holdout-role discovery|validation_v1|unknown` 和研究专用 `--ai-decision-cache`；live / run-once 不使用该缓存。
 
-当前加密生产状态从 VPS 读取：
+当前 MiniTrend 生产状态从 VPS 只读读取：
 
 ```bash
-ssh qount-vps 'cd /root/qount && tail -n 120 ~/cxd_live.log'
-ssh qount-vps 'cd /root/qount && python3 -m json.tool state/x4/live/latest.json'
-ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json 2>/dev/null || true'
+ssh qount-vps 'systemctl is-enabled qount-mini-trend-live.timer; systemctl is-active qount-mini-trend-live.timer'
+ssh qount-vps 'systemctl is-enabled qount-mini-trend-forward.timer; systemctl is-active qount-mini-trend-forward.timer'
+ssh qount-vps 'systemctl show qount-mini-trend-live.service -p Result -p ExecMainStatus -p ActiveState -p SubState'
 ssh qount-vps 'crontab -l'
 ```
 
-生产调度不是隐含基础设施。VPS `root` crontab 已于 2026-07-11资金撤出后按 owner 要求停用；
-2026-07-20起仓库`deploy/cron/qount-production.crontab`也固定为零active entry，以下历史入口只保留
-`DISABLED`注释，不能直接安装：
-
-- C×D/X4 live：每 5 分钟对账；当前 carry 暂停，实际为 trend-only。
-- X4 paper forward：每日 10:00。
-
-两个入口都有两层防护：crontab 外层和脚本内层均使用 non-blocking `flock`，并设置总运行
-`timeout`；live 内层上限 110 秒。不要恢复无锁的 `*/2` 调度。Binance futures client 还会关闭
-CCXT 不需要的 private `fetchCurrencies`，避免 `load_markets()` 额外访问
-`/sapi/v1/capital/config/getall`。完整运维读法见
+生产调度不是隐含基础设施。当前唯一交易timer是`qount-mini-trend-live.timer`；forward timer和root crontab
+必须保持关闭，旧 X4/C×D cron 只能按历史证据读取，不能直接安装。live oneshot service 空闲时显示
+`inactive/dead`是正常的，最近结果必须为`Result=success`。完整运维读法见
 [docs/quick-handoff.md](docs/quick-handoff.md)，安全冻结的生产 crontab 模板见
 [deploy/cron/qount-production.crontab](deploy/cron/qount-production.crontab)。
 
@@ -334,9 +326,10 @@ WSL 的 `HTTP_PROXY=http://192.168.128.1:7907` 等配置只属于历史研究 / 
 
 `live` 模式不会因为你改了 `QOUNT_MODE=live` 就直接开单。
 
-注意：本节是旧 `qount.main` line A 的通用保护。当前加密 X4 / C×D 实盘在 VPS 上运行，
-使用独立开关 `QOUNT_X4_LIVE_ENABLE` / `QOUNT_RV_LIVE_ENABLE` /
-`QOUNT_CXD_CARRY_ENABLE`；不要用 `QOUNT_LIVE_ENABLE` 推断 X4/C×D 是否 armed。
+注意：本节是旧 `qount.main` line A 的通用保护，仅供历史代码测试。当前生产不通过
+`QOUNT_LIVE_ENABLE`、`QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`或`QOUNT_CXD_CARRY_ENABLE`开启；
+唯一生产订单权限来自 MiniTrend 独立 `0600` arm/env、`minimal_live` registry、当前 readiness 和
+`qount-mini-trend-live.timer` 的组合门。
 
 还必须满足：
 
@@ -352,8 +345,8 @@ python -m qount.main preflight-live
 python -m qount.main live-guard-status
 ```
 
-现在的 live guard 是“持续放行”语义，不再写入会过期的 arm 权限。
-只要当前配置仍然满足 `QOUNT_MODE=live`、`QOUNT_LIVE_ENABLE=true`、确认短语正确，且每次运行前的交易所检查仍然通过，`run-once` 就会继续执行真实下单。
+旧 live guard 的“持续放行”语义不适用于当前 MiniTrend 生产。不要用 `qount.main run-once`、旧环境变量或
+旧脚本获得订单权限；任何 release/config 变化都必须重新生成 order-free readiness 并轮换 arm。
 
 对于 `future` 模式，guard 还会额外检查：
 
@@ -411,16 +404,17 @@ python -m qount.main clear-halt
 - 已执行 paper 订单口径：用 `paper-replay`
 - 纯历史 full backtest：用 `backtest`
 
-当前 VPS 加密生产 smoke-check 示例：
+当前 VPS MiniTrend 只读 smoke-check 示例：
 
 ```bash
-ssh qount-vps 'cd /root/qount && QOUNT_CXD_CARRY_ENABLE=0 bash scripts/desktop/cxd_live_cron.sh dry'
-ssh qount-vps 'cd /root/qount && python3 -m json.tool state/x4/live/latest.json'
-ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json 2>/dev/null || true'
+ssh qount-vps 'systemctl is-enabled qount-mini-trend-live.timer && systemctl is-active qount-mini-trend-live.timer'
+ssh qount-vps 'systemctl is-enabled qount-mini-trend-forward.timer; systemctl is-active qount-mini-trend-forward.timer'
+ssh qount-vps 'systemctl show qount-mini-trend-live.service -p Result -p ExecMainStatus -p ActiveState -p SubState'
+ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1'
 ```
 
-读法：dry 只读账户 / 算目标 / 写日志，不应发真实订单；carry 默认暂停
-(`QOUNT_CXD_CARRY_ENABLE=0`)，趋势腿仍由 VPS 上的 C×D orchestrator 驱动。
+读法：live timer 的 oneshot service 空闲时显示 `inactive/dead` 是正常的，最近一次结果需为
+`Result=success`；forward timer 和 legacy cron 必须保持关闭。不要恢复 X4/C×D 或用旧 dry 入口刷新生产状态。
 
 ## 当前文档入口
 
@@ -434,18 +428,14 @@ ssh qount-vps 'cd /root/qount && python3 -m json.tool state/cxd/live/latest.json
 - 执行记录：[docs/update-log.md](docs/update-log.md)，记录近期 artifact、验证结果和读法。
 - 多智能体研究层：[docs/alpha-agent-plan.md](docs/alpha-agent-plan.md)，定义 Alpha Agents
   research-only 角色、任务、source book、relay-station ChatGPT接入和后续量化接入边界。
-- 线 A legacy / 盈利工程历史：[docs/optimization-plan.md](docs/optimization-plan.md)、
-  [docs/profit-research-plan.md](docs/profit-research-plan.md)、
-  [docs/profit-engineering-plan.md](docs/profit-engineering-plan.md)。
-- 独立研究线：`docs/grid-binance-*.md`(线 B)、[docs/rv-c-plan.md](docs/rv-c-plan.md)(线 C)、
-  [docs/crypto-x4-plan.md](docs/crypto-x4-plan.md)(线 D)、`docs/l*-plan.md`(L1/L3/L4/L6)。
+- 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 
 当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一真钱运行链为VPS `/root/qount` 上固定100 USDT的
 MiniTrend Base minimal-live。Dashboard静态前端已部署，
 served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
 publisher timer现为`enabled/active`，只读完整batch/registry/ledger/notification/health/brief，每两分钟刷新系统健康、release、
 备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单；
-recurring readiness为`ready_for_manual_final_arm`且registry为`minimal_live`。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
+recurring readiness已通过且registry为`minimal_live`。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
 在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持
 `static/inactive`，MiniTrend forward timer和production cron关闭，live timer每日运行；publisher不查询交易所，也不授予订单权。
 只读日报生产默认使用Binance公告API、Federal Reserve RSS和SEC RSS，不需要Brave；六角色中文Responses经

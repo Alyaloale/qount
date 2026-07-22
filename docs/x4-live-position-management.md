@@ -1,4 +1,7 @@
-# X4 实盘仓位管理 — 优化分析与回测主文档（线 D）
+# X4 实盘仓位管理 — 历史优化分析与回测文档（线 D）
+
+> 状态：archived / legacy。X4/C×D当前已关闭，本文运行态示例、余额、cron和`QOUNT_X4_*`开关均为历史记录，
+> 不得据此判断当前账户或执行任何生产操作。当前唯一生产策略与状态以`docs/current.md`和VPS只读核查为准。
 
 > 隔离边界：本文属**线 D（X4 加密 bake-off）**,只向线 A 借教训不借纪律,变更写回本线文档,不写
 > `current.md` / `update-log.md`。bake-off / 判生死 / 上线决策仍以 `docs/crypto-x4-plan.md` 为事实入口;
@@ -7,15 +10,13 @@
 >
 > 代码真相:`src/qount/x4/live.py`(纯函数仓位逻辑,网络无关、单测覆盖)+
 > `scripts/desktop/x4_live.py`(驱动 + 落盘)+ `src/qount/x4/backtest.py:run_directional`(回测 sizing 真相)。
-> 运行态:当前 **全量 ARMED**(`QOUNT_X4_LIVE_ENABLE=1` + `QOUNT_X4_SHORT_GATE=1`),本金 `auto`(实时
-> USDT 余额 ~$485)。当前**多头闸 SHUT**(BTC 在 200MA 下 −16.5%)→ **做空闸开 6 条真实空仓**,gross
-> ≈ 0.29、占用保证金 ~$70 = **买力的 ~14%**(本文 §8 专题解剖此数是否正确)。cron 每 10 分钟对账。
+> 历史运行态示例已失效；不要恢复`QOUNT_X4_LIVE_ENABLE`、`QOUNT_X4_SHORT_GATE`或旧cron。
 
 ---
 
 ## 0. 一句话定性
 
-当前实盘**有完整仓位管理**,但范式是**「目标权重对账制」(target-weight reconciliation)**,
+历史实盘范式曾是**「目标权重对账制」(target-weight reconciliation)**,
 **不是**传统的「分批加仓 / 金字塔 / 补仓摊低 / 分批止盈」。每个 cron tick 重算一套**目标权重**,再把
 实际持仓**对账**成目标——「加仓 / 减仓」是这个对账的副产物,而非独立的策略动作。
 

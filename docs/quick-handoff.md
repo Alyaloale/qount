@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-当前版本：`0.2.5`
+源码版本：`0.2.6`（已推送，尚未部署）；VPS生产版本：`0.2.5`
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -16,12 +16,8 @@
 - [holdout.md](holdout.md)：`discovery_pool` / `validation_pool_v1` 和 `G_paper` / `G_live`。
 - [quick-handoff.md](quick-handoff.md)：接手命令和运维坑点。
 - [update-log.md](update-log.md)：近期 artifact、验证结果、读法。
-- [optimization-plan.md](optimization-plan.md)：2026-05-31 架构评审和 T-A..T-J 路线。
-- [profit-research-plan.md](profit-research-plan.md)：盈利研究历史路线；旧 G1/G2 已被
-  [holdout.md](holdout.md) 取代。
-- [profit-engineering-plan.md](profit-engineering-plan.md)：2026-06-05 终审后的盈利工程
-  主线；落地以 §10 的 S0 -> S1' -> S-CARRY 或 S2/S3 分叉为准。
 - [alpha-agent-plan.md](alpha-agent-plan.md)：Alpha Agents research-only 架构、Strategy V0 和 S3 collector。
+- [archive/README.md](archive/README.md)：旧研究线、legacy 运行手册和历史计划索引；不作为当前生产入口。
 
 ## 第一原则
 
@@ -31,8 +27,8 @@
 - VPS 是所有 live / paper forward / dashboard 的生产真相：`qount-vps:/root/qount`；真实host只存仓库外inventory。
 - WSL不作为当前实盘依据；完成数据必须发布到外置盘，WSL ext4只留可清理scratch。
 - 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
-- 加密 X4 / C×D 实盘看 `QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`、
-  `QOUNT_CXD_CARRY_ENABLE` 和 VPS state，不用 `QOUNT_LIVE_ENABLE` 推断。
+- X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一生产交易入口是
+  `qount-mini-trend-live.timer` 与独立 MiniTrend arm/registry/readiness。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
   `qount-dashboard-publisher.timer`和`qount-daily-intelligence.timer`已获授权并保持`enabled/active`；后者每日`04:30 UTC`抓免费官方feed、
@@ -172,7 +168,7 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
   --lock-path /run/qount-dashboard/publisher.lock'
 ```
 
-成功authority来自`/root/qount/state/mini_trend/forward/runs/20260720T101653Z`：账户preflight为flat、TOP3仓位/挂单为0，
+历史authority示例（不作为最新状态）来自`/root/qount/state/mini_trend/forward/runs/20260720T101653Z`：账户preflight为flat、TOP3仓位/挂单为0，
 projection与dry dispatcher通过且`exchange_mutation_attempted=false`。batch为
 `5a1c94a4280bb578c9ff1e8745cb309983f0f978096070819865c4b4024f4815`，authority/result hash分别为
 `d2648116252cc23235caa2bacf69e845d9190e343046466c4685609e79c8f34b` /
@@ -183,8 +179,8 @@ private API、手工补文件、复制fixture或恢复forward timer。authority 
 
 常见读法：
 
-- `cxd_live_cron.sh` 是当前加密组合实盘入口；standalone `x4_live_cron.sh` 不应同时交易同一账户。
-- `QOUNT_CXD_CARRY_ENABLE=0` 是当前默认：carry 暂停，趋势腿仍跑。
+- `cxd_live_cron.sh`、`x4_live_cron.sh` 和旧 C×D/X4 状态文件均为 legacy，不是当前生产入口；不得恢复。
+- 当前只允许 MiniTrend Base `100 USDT`、long/cash、one-way、isolated 1x、gross<=1。
 - `cron_guard.sh` 是未来若获授权后仍必须保留的脚本内防线：live 110 秒、publisher 90 秒、paper 1800 秒；
   crontab 外层 timeout 略大，只做最后兜底。`[SKIP] previous run still active` 是正常防重入，
   `[ALERT] exceeded ... runtime limit` 才是需要排查的超时。
@@ -836,9 +832,9 @@ python -m qount.main walk-forward \
 预注册 anti-overfit/correlation-stress 证据，不借此恢复旧价格/频段扫描。
 
 架构支线已完成账户/回撤、四项健康和position/decision trace。腾讯个人微信adapter及日报发送已获只读情报范围内授权并形成真实
-`DELIVERED/SUCCEEDED`证据；legacy `Notifier`/shell ServerChan不得复用。production publisher和Daily Intelligence是当前两个active
-qount timer，均不具备订单权限；authority writer保持`static/inactive`，最后一次授权账户快照已stale。不要为了刷新页面调用私有API或恢复
-forward/cron；交易通知、订单和live仍未获授权。
+`DELIVERED/SUCCEEDED`证据；legacy `Notifier`/shell ServerChan不得复用。production publisher、Daily Intelligence和MiniTrend live
+timer是当前active timers；只有MiniTrend在独立arm/registry/readiness门通过时具备订单权限。不要为了刷新页面调用私有API或恢复
+forward/cron；账户authority由已授权live cycle刷新并按15分钟规则自然stale。
 
 1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
    不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做
@@ -851,7 +847,6 @@ forward/cron；交易通知、订单和live仍未获授权。
 4. 已证伪、**不要重复**：`4h xs_mom` 的 exit/regime/barrier/purged-CV 复核；funding/basis 作
    预测特征（xs_funding/xs_funding_rev）；WLD/SOL entry-only basis filter；top12 1d TS-MOM；
    S-CARRY 现金流。
-5. 硬纪律全不变：live 关闭、不 forward paper、不放宽 broad gate、`validation_v1` once-only 资格
-   继续保留。止盈是停止投入，不是放松边界。
-6. 只有 `G_paper` 通过后才讨论 forward paper；只有 forward paper 后才讨论 `G_live`——当前无
-   promotion 证据，二者都不触发。
+5. MiniTrend Base 的 `minimal_live` 只维持固定100 USDT合同；不因首个非零信号扩大本金或启用其它sleeve。
+   RiskTier、FundingVeto和所有旧研究线继续shadow/research-only。
+6. 首个真实fill、fee/slippage、原生STOP和UNKNOWN恢复样本仍未出现；在这些证据补齐前不扩容、不恢复旧入口。

@@ -2,23 +2,18 @@
 
 更新时间：2026-07-22
 
-当前版本：`0.2.5`
+源码版本：`0.2.6`（已推送，尚未部署）
+
+VPS生产版本：`0.2.5`（release `e279b966...b95cf`）
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
 [project-rules.md](project-rules.md)，发现/验证边界看
-[holdout.md](holdout.md)，长证据链看 [update-log.md](update-log.md)，架构评审和路线看
-[optimization-plan.md](optimization-plan.md)，历史盈利研究路线看
-[profit-research-plan.md](profit-research-plan.md)，架构天花板与现代量化 ML 升级看
-[profit-engineering-plan.md](profit-engineering-plan.md)，§7 止盈后的重启设计（换信息源/L3,已证伪）看
-[l3-information-edge-plan.md](l3-information-edge-plan.md)，跨资产趋势重启线（L1,攻 BR,首个真 edge 但
-已固化暂停）看 [l1-cross-asset-plan.md](l1-cross-asset-plan.md)，跨所套利重启线（L4,换游戏,S1 已证伪）看
-[l4-cross-exchange-plan.md](l4-cross-exchange-plan.md)，A股 L2 微观结构重启线（L6,换信息源攻 IC,
-当前在推进）看 [l6-microstructure-plan.md](l6-microstructure-plan.md)，新多智能体研究组织层看
-[alpha-agent-plan.md](alpha-agent-plan.md)，A股 ETF 20 日战术研究看
-[ashare-etf-month-plan.md](ashare-etf-month-plan.md)，1000 USDT加密多策略组合架构、策略合同和90天推进顺序看
-[crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)（当前100 USDT单策略与未来1000 USDT组合目标），交易、账本、对账、通知、Dashboard和LLM的系统工程
-主设计看 [system-architecture-design.md](system-architecture-design.md)。
+[holdout.md](holdout.md)，长证据链看 [update-log.md](update-log.md)。当前系统工程主设计看
+[system-architecture-design.md](system-architecture-design.md)，100 USDT Base与未来组合合同看
+[crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，Alpha Agents研究层看
+[alpha-agent-plan.md](alpha-agent-plan.md)。旧研究线、历史计划和legacy运行手册统一从
+[archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
 - **2026-07-22 MiniTrend Base 100 USDT单策略minimal-live已正式启用，系统当前运行正常。** VPS部署release为
   commit `e279b966...b95cf`、version `0.2.5`、source tree `42681594...8eb38`；本地全仓`1542 OK`，VPS production
@@ -38,6 +33,9 @@
   dedupe identity冲突、已完成live decision使recurring dry refresh返回75。对应版本`0.2.3/0.2.4/0.2.5`均有回归；
   recurring service已实际复跑为`duplicate_decision_noop`且systemd result success。旧`0.2.4` arm artifact已0600归档，
   旧live env token已删除且不可恢复，新arm绑定`0.2.5` release。
+- **最新只读核查（2026-07-22）：** VPS源码/production provenance仍为`0.2.5`，live timer=`enabled/active`，
+  forward timer=`disabled/inactive`，legacy cron有效项`0`，live service最近结果`success/0`。arm=`armed`、本金`100 USDT`、
+  最新run仍为`20260722T061346Z`，HALT与未完成live lock均不存在；本地源码版本`0.2.6`仅作为下一次发布候选。
 
 - **2026-07-22 owner将100 USDT MiniTrend canary的账户级日损熔断固定为5%，累计试点峰值回撤保持10%。**
   两条线都按冻结的`100 USDT`试点本金计算，即分别约`5 USDT`和`10 USDT`，不会改变Base v0.2的逐币
@@ -2687,9 +2685,9 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    可执行cash premarket bid/ask，并补齐mapping、mapped quote、USDTUSD、公司行动、事件上下文和stress来源。
    Nasdaq当前delayed quote不能代替现金腿，也不得用HTTP接收时点冒充市场quote时点。仍需累计30个独立现金交易日，
    且不因此进入shadow/paper/live。
-3. 一个月小资金实盘作为`paper_live`目标，2026-07-21 owner已把本金严格固定为`100 USDT`并要求直接推进
-   Phase B/C/D，不等待约两个月日历累积。`60 forward pairs / 10 active bars / 30 paper days / 7 unique dry days`
-   现为Dashboard/readiness非阻断观察指标；它们当前为0只表示尚无时间样本，不等于策略0收益或系统错误。Funding完整性、
+3. 一个月小资金实盘已进入`minimal_live`，下一步是等待自然信号并收集真实执行样本。2026-07-21 owner已把本金严格固定为
+   `100 USDT`并要求直接推进Phase B/C/D，不等待约两个月日历累积。`60 forward pairs / 10 active bars / 30 paper days /
+   7 unique dry days`现为Dashboard/readiness非阻断观察指标；它们当前为0只表示尚无时间样本，不等于策略0收益或系统错误。Funding完整性、
    当前私有预检、无未管理仓位/订单、one-way/isolated 1x、标准authority batch、RuntimeLedger、pre/post-dispatch
    reconciliation、UNKNOWN停机和有效manual arm仍是阻断门。dispatcher已要求订单提交前落`SUBMITTING`，market成交只接受
    交易所order+逐笔trade/fee证据；超时或证据缺失进入`UNKNOWN + HALT`且不重发，失败authority同步发布halted registry。

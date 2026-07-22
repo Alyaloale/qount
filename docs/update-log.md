@@ -11,6 +11,9 @@
 ### Source package version bumped to 0.2.6
 
 - `pyproject.toml`从`0.2.5`升至`0.2.6`，作为下一次源码发布版本；当前VPS仍运行已验证的`0.2.5` release，未执行同步、部署或任何交易路径变更。
+- 最新VPS只读核查仍为：live timer=`enabled/active`、forward timer=`disabled/inactive`、legacy cron有效项`0`、live service最近结果
+  `success/0`、arm=`armed`、capital=`100 USDT`、HALT与未完成live lock为空；最新run仍为`20260722T061346Z`。
+- 文档入口已清理为当前事实/架构/交接/项目规则加`docs/archive/README.md`索引；旧研究线文件保留为历史证据，不再出现在当前生产导航中。
 
 ### MiniTrend Base 100 USDT minimal-live enabled and recurring path closed
 

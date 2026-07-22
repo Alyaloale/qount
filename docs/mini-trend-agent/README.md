@@ -1,11 +1,11 @@
 # MiniTrend Agent 方案总览
 
-状态：v0.7 低频 TOP3 forward monitoring + 独立 UM futures no-carry 研究分支，线 D / X4 的小资金子方案。
-当前不改变 VPS 生产配置，不 arm 新实盘，不替代 `docs/current.md`。
+状态：历史设计与研究合同（archived）；当前生产事实以`docs/current.md`为准。
+MiniTrend Base已在VPS以固定`100 USDT`进入`minimal_live`；本文保留早期400 USDT/forward设计，不作为当前arm、timer或订单入口。
 
 ## 目标
 
-为约 400 USDT 小盘账户设计一套更适合当前资金量的加密交易系统：
+本文原为约400 USDT小盘账户设计一套更适合当时资金量的加密交易系统；当前生产合同已收敛为100 USDT：
 
 - 保留已验证相对靠谱的日线趋势骨架。
 - 删除或延后小资金不适配的复杂腿：C×D carry、动态币池、分钟级短线、软配对、网格。
@@ -17,7 +17,7 @@
 当前项目结论给出的约束：
 
 - 旧 line A / ETH-only 已 research-only，不能复活当 live 方案。
-- X4 日线趋势是当前可复用主骨架；400 USDT 的真实可成交性复核只支持 TOP3，TOP4/TOP5 会被
+- Base v0.2 日线趋势是当前可复用主骨架；历史400 USDT的真实可成交性复核只支持 TOP3，TOP4/TOP5 会被
   SOL/XRP 最小名义拖累。
 - RV-C BTC/ETH dated carry 是真 edge，但薄、窄、多场所，400 USDT 阶段不优先。
 - 最近 VPS 审计暴露 stop 成交后立即重开问题；任何新方案必须把 latch 作为硬风控。

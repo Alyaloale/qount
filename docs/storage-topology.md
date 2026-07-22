@@ -1,9 +1,12 @@
 # qount 存储与计算拓扑
 
-更新时间：2026-07-18
+更新时间：2026-07-22
 
 这份文档定义跨主机职责、权威数据位置、WSL计算流程和清理规则。策略结论仍以
 [current.md](current.md)为准，生产运行仍以VPS为准。
+
+本文后续实验路径和300 USDT/旧paper artifact均为存储历史；当前VPS生产只运行`0.2.5`的MiniTrend Base
+100 USDT minimal-live，源码`0.2.6`尚未部署。
 
 ## 1. 当前职责
 
@@ -12,7 +15,7 @@
 | Mac | `/Users/alyaloale/Code/qount` | 研究设计、代码主仓、git、文档、轻量测试和任务编排 | 全量行情、训练集、模型批次、历史artifact |
 | Windows外置盘 | `E:\qount_data`；WSL见`/mnt/e/qount_data` | 大数据、不可变输入、最终artifact、环境锁和节点备份的存储真相 | `.env`、API密钥、活跃SQLite、venv |
 | WSL | `/home/alyaloale/Code/qount`；7945HX 32线程、RTX 4060 8GB | 大型CPU特征工程、表格模型、HMM、GPU训练和权威复跑 | 完成后的大数据副本、长期artifact、生产状态 |
-| VPS | `/root/qount` | 冻结版本的live/paper/dashboard运行和最小runtime state | 研究缓存、历史训练集、批量artifact |
+| VPS | `/root/qount` | `0.2.5`冻结版本的MiniTrend 100 USDT minimal-live、order-free refresh、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
 | 临时云GPU | disposable | 仅在4060显存或吞吐实测不足时临时训练 | 唯一数据副本、生产密钥、live state |
 
 WSL是正式计算节点，但不是实盘生产真相。Mac和WSL不要求每次全仓镜像；WSL基础计算接口变化时才显式
