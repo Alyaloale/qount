@@ -26,7 +26,7 @@ VPS生产版本：`0.2.12`（production provenance已验证，live timer已恢�
   registry=`minimal_live`，新arm=`qmt-arm-9f10c9487f998bb6b586`，文件与env均root `0600`，旧两个arm已按原SHA-256归档且旧token未备份。
   live service最近结果`success/0`，dispatch为`duplicate_decision_noop`，目标权重`BTC/ETH/BNB=0/0/0`，0 market/0 stop、
   `exchange_mutation_attempted=false`、无`live_dispatch`，不得为制造样本强制下单。
-  Dashboard最新publication=`f8d9c840...6152`；system、overview、positions、orders、readiness、strategies、alerts和intelligence均fresh，
+  Dashboard publisher已完成最新原子publication；system、overview、positions、orders、readiness、strategies、alerts和intelligence均fresh，
   system窗口`180s`，ledger类窗口`15min`。最终health四个scope全pass；open alert仅1条日报证据不足WARNING，CRITICAL/HALT均0，dead-letter 0，
   该WARNING不阻断Base live。
 

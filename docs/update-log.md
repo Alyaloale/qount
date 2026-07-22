@@ -26,7 +26,7 @@
 - 首轮受控live service最终为`success/0`和`duplicate_decision_noop`，决策权重`0/0/0`，0 market/0 stop、无`live_dispatch`、
   `exchange_mutation_attempted=false`；不得强制下单以制造fill/fee样本。随后开启`qount-mini-trend-live.timer=enabled/active`，
   `qount-mini-trend-forward.timer=disabled/inactive`。
-- publisher最终publication=`f8d9c840...6152`；system窗口`180s`，RuntimeLedger类read model窗口`15min`，主read model均fresh。
+- publisher最终原子publication成功；system窗口`180s`，RuntimeLedger类read model窗口`15min`，主read model均fresh。
   alert summary为open 1 WARNING（日报证据不足）、CRITICAL/HALT 0、dead-letter 0；该WARNING是研究提醒而非execution故障。
 
 ### 0.2.11 publisher CLI/config freshness default parity
