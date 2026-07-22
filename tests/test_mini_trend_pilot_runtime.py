@@ -78,7 +78,9 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
         self.assertIn("blocked_live_env_permissions", cycle)
         self.assertIn("blocked_arm_permissions", cycle)
         self.assertIn("blocked_legacy_live_switch", cycle)
-        self.assertIn("executed_count", cycle)
+        self.assertIn("current_decision_status", cycle)
+        self.assertIn("executed|missing)", cycle)
+        self.assertIn("new) ;;", cycle)
         self.assertIn("duplicate_decision_noop", cycle)
         self.assertIn("await_latest_completed_pilot_bar", cycle)
         self.assertIn("blocked_unresolved_live_intent", cycle)
@@ -127,7 +129,10 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
             arm = state / "arm" / "manual-final-arm.json"
             live_env = root / "config" / "mini-trend-live.env"
             fake_bin = root / "bin"
-            run.mkdir(parents=True)
+            fake_repo = root / "repo"
+            fake_scripts = fake_repo / "scripts" / "desktop"
+            fake_scripts.mkdir(parents=True)
+            (fake_repo / "src").symlink_to(ROOT / "src", target_is_directory=True)
             arm.parent.mkdir(parents=True)
             live_env.parent.mkdir(parents=True)
             fake_bin.mkdir()
@@ -145,21 +150,26 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
             fake_flock = fake_bin / "flock"
             fake_flock.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
             fake_flock.chmod(0o700)
-            (state / "forward" / "latest").symlink_to(
-                Path("runs") / run.name, target_is_directory=True
-            )
-            (run / "latest_projection.json").write_text(
-                json.dumps(
+            fake_forward = fake_scripts / "mini_trend_um_forward_cycle.sh"
+            fake_forward.write_text(
+                "#!/bin/bash\n"
+                "set -euo pipefail\n"
+                f"mkdir -p '{run}'\n"
+                f"printf '%s\\n' '"
+                + json.dumps(
                     {
                         "diagnostics": {
                             "verdict": "await_latest_completed_pilot_bar"
                         },
                         "decision": None,
-                    }
+                    },
+                    separators=(",", ":"),
                 )
-                + "\n",
+                + f"' >'{run / 'latest_projection.json'}'\n"
+                f"ln -sfn 'runs/{run.name}' '{state / 'forward' / 'latest'}'\n",
                 encoding="ascii",
             )
+            fake_forward.chmod(0o700)
             arm.write_text('{"arm_id":"test-arm"}\n', encoding="ascii")
             arm.chmod(0o600)
             live_env.write_text("# test-only\n", encoding="ascii")
@@ -167,7 +177,7 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
             env = os.environ.copy()
             env.update(
                 {
-                    "QOUNT_PROJECT_ROOT": str(ROOT),
+                    "QOUNT_PROJECT_ROOT": str(fake_repo),
                     "QOUNT_PYTHON_BIN": str(ROOT / ".venv" / "bin" / "python"),
                     "QOUNT_MINI_TREND_STATE_ROOT": str(state),
                     "QOUNT_MINI_TREND_ARM_PATH": str(arm),

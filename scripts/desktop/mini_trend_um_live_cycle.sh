@@ -105,13 +105,54 @@ if [[ ! "$DISPATCH_CONTRACT_HASH" =~ ^[0-9a-f]{64}$ ]]; then
 fi
 
 DISPATCH_JOURNAL_PATH="$STATE_ROOT/dry/contracts/$DISPATCH_CONTRACT_HASH/dispatcher.jsonl"
-executed_count="$(
-  PYTHONPATH="$REPO/src" "$PYTHON" -c \
-    'import sys; from qount.mini_trend.pilot_dispatcher import verify_dispatch_journal; print(len(verify_dispatch_journal(sys.argv[1])["executed_decision_ids"]))' \
+decision_status() {
+  "$PYTHON" - "$1" "$2" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+projection_path = Path(sys.argv[1])
+if not projection_path.is_file():
+    print("missing")
+    raise SystemExit(0)
+projection = json.loads(projection_path.read_text(encoding="utf-8"))
+decision_id = str((projection.get("decision") or {}).get("decision_id") or "")
+executed = set()
+locked = set()
+journal = Path(sys.argv[2])
+if journal.exists():
+    for raw in journal.read_text(encoding="utf-8").splitlines():
+        if not raw.strip():
+            continue
+        row = json.loads(raw)
+        row_decision = str(row.get("decision_id") or "")
+        event_type = str(row.get("event_type") or "")
+        if event_type == "live_intent_locked":
+            locked.add(row_decision)
+        elif event_type == "live_completed":
+            executed.add(row_decision)
+            locked.discard(row_decision)
+if not decision_id:
+    print("missing")
+elif decision_id in locked:
+    print("locked")
+elif decision_id in executed:
+    print("executed")
+else:
+    print("new")
+PY
+}
+
+current_decision_status="$(
+  decision_status "$FORWARD_ROOT/latest/latest_projection.json" \
     "$DISPATCH_JOURNAL_PATH"
 )"
-
-if (( executed_count > 0 )); then
+case "$current_decision_status" in
+  locked)
+    printf '%s\n' "mini_trend_live_cycle=blocked_unresolved_live_intent"
+    exit 87
+    ;;
+  executed|missing)
   # After the arm has been consumed once, refresh every input and the standard
   # authority under an explicitly order-free environment. The refresh script
   # owns the same cycle lock, so release it only for that subprocess.
@@ -125,7 +166,13 @@ if (( executed_count > 0 )); then
     printf '%s\n' "mini_trend_live_cycle=blocked_lock_reacquire"
     exit 83
   fi
-fi
+    ;;
+  new) ;;
+  *)
+    printf '%s\n' "mini_trend_live_cycle=blocked_decision_status"
+    exit 88
+    ;;
+esac
 
 RUN_DIR="$(readlink -f "$FORWARD_ROOT/latest")"
 case "$RUN_DIR" in
@@ -178,37 +225,8 @@ done
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LIVE_DISPATCH_PATH="$RUN_DIR/live_dispatch-$STAMP.json"
 
-decision_status="$($PYTHON - "$RUN_DIR/latest_projection.json" "$DISPATCH_JOURNAL_PATH" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-projection = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-decision_id = str((projection.get("decision") or {}).get("decision_id") or "")
-executed = set()
-locked = set()
-journal = Path(sys.argv[2])
-if journal.exists():
-    for raw in journal.read_text(encoding="utf-8").splitlines():
-        if not raw.strip():
-            continue
-        row = json.loads(raw)
-        row_decision = str(row.get("decision_id") or "")
-        event_type = str(row.get("event_type") or "")
-        if event_type == "live_intent_locked":
-            locked.add(row_decision)
-        elif event_type == "live_completed":
-            executed.add(row_decision)
-            locked.discard(row_decision)
-if not decision_id:
-    print("missing")
-elif decision_id in locked:
-    print("locked")
-elif decision_id in executed:
-    print("executed")
-else:
-    print("new")
-PY
+decision_status="$(
+  decision_status "$RUN_DIR/latest_projection.json" "$DISPATCH_JOURNAL_PATH"
 )"
 case "$decision_status" in
   executed)
