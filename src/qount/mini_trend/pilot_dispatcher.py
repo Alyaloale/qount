@@ -1980,7 +1980,11 @@ def run_pilot_dispatch(
     )
     result["event_recorded"] = True
     responses: list[dict[str, Any]] = []
-    result["exchange_mutation_attempted"] = True
+    result["exchange_mutation_attempted"] = bool(
+        plan.get("market_orders")
+        or plan.get("stop_cancels")
+        or plan.get("stop_orders")
+    )
     fill_fees = 0.0
     slippage_breaches: list[dict[str, Any]] = []
     try:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -54,6 +56,65 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
         )
         self.assertTrue(validate_pilot_runtime_proof(proof))
         self.assertNotIn("test-invocation", str(proof))
+
+    def test_live_cycle_and_systemd_unit_keep_single_strategy_fail_closed(self) -> None:
+        cycle = (
+            ROOT / "scripts" / "desktop" / "mini_trend_um_live_cycle.sh"
+        ).read_text(encoding="ascii")
+        service = (
+            ROOT / "deploy" / "systemd" / "qount-mini-trend-live.service"
+        ).read_text(encoding="ascii")
+        timer = (
+            ROOT / "deploy" / "systemd" / "qount-mini-trend-live.timer"
+        ).read_text(encoding="ascii")
+
+        self.assertIn("mini_trend_um_forward_cycle.sh", cycle)
+        self.assertIn("--mode live", cycle)
+        self.assertIn("--arm-path", cycle)
+        self.assertIn("QOUNT_MINI_TREND_LIVE_ENABLE", cycle)
+        self.assertIn("QOUNT_MINI_TREND_LIVE_CONFIRMATION", cycle)
+        self.assertIn("QOUNT_MINI_TREND_ARM_TOKEN", cycle)
+        self.assertIn("blocked_live_env_permissions", cycle)
+        self.assertIn("blocked_arm_permissions", cycle)
+        self.assertIn("blocked_legacy_live_switch", cycle)
+        self.assertIn("executed_count", cycle)
+        self.assertIn("duplicate_decision_noop", cycle)
+        self.assertIn("blocked_unresolved_live_intent", cycle)
+        self.assertNotIn("x4_live", cycle)
+        self.assertNotIn("cxd_live", cycle)
+        self.assertIn(
+            "EnvironmentFile=/root/.config/qount/mini-trend-live.env", service
+        )
+        self.assertIn("ConditionPathExists=!/root/qount/state/mini_trend/HALT", service)
+        self.assertIn("QOUNT_LIVE_ENABLE=false", service)
+        self.assertIn("QOUNT_X4_LIVE_ENABLE=false", service)
+        self.assertIn("QOUNT_RV_LIVE_ENABLE=false", service)
+        self.assertIn("QOUNT_CXD_CARRY_ENABLE=false", service)
+        self.assertNotIn("QOUNT_MINI_TREND_LIVE_ENABLE=true", service)
+        self.assertIn("Unit=qount-mini-trend-live.service", timer)
+
+    def test_live_cycle_stops_before_refresh_when_unarmed(self) -> None:
+        cycle = ROOT / "scripts" / "desktop" / "mini_trend_um_live_cycle.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "QOUNT_PROJECT_ROOT": str(ROOT),
+                    "QOUNT_PYTHON_BIN": str(ROOT / ".venv" / "bin" / "python"),
+                    "QOUNT_MINI_TREND_STATE_ROOT": str(root / "state"),
+                    "QOUNT_MINI_TREND_LIVE_ENABLE": "false",
+                }
+            )
+            result = subprocess.run(
+                ["/bin/bash", str(cycle)],
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 77)
+        self.assertIn("blocked_live_switch", result.stdout)
 
     def test_manual_or_live_enabled_run_is_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

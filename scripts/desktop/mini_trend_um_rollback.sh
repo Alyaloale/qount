@@ -14,10 +14,13 @@ if command -v systemctl >/dev/null 2>&1; then
     qount-mini-trend.service \
     qount-mini-trend-forward.timer \
     qount-mini-trend-forward.service \
+    qount-mini-trend-live.timer \
+    qount-mini-trend-live.service \
     2>/dev/null || true
   systemctl disable \
     qount-mini-trend.timer \
     qount-mini-trend-forward.timer \
+    qount-mini-trend-live.timer \
     2>/dev/null || true
 fi
 
