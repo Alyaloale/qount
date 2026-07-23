@@ -8,6 +8,25 @@
 
 ## 2026-07-23
 
+### Phase D 真实最小认证首次执行成功
+
+- owner 授权后在 VPS 执行首次 Phase D 真实最小认证（§9 Phase D）。BTCUSDT / `real_ack_fill` 语义，
+  真实 MARKET buy 0.001 BTC -> MARKET sell 归零。`completed=True`、`final_position_is_zero=True`、
+  12 artifact 成员齐全、arm 已消费（`status=used`，不可复用）。生产状态 `0.2.13` 不变，Base 仍是唯一真钱策略。
+
+- **执行流程**：commit Phase C/D 代码 -> `sync-to-vps.sh --install` 同步到 VPS -> VPS production 测试 343 OK
+  + 认证测试 114 OK -> 只读账户快照确认 486.16 USDT / 全平 / one-way -> `make-plan`（owner 授权 hash）
+  -> `make-arm`（0600，1h 失效）-> `run`（真实 buy/sell 归零）-> `mark_used` 消费 arm -> scorecard。
+- **结果**（`state/certification/runs/20260723T072005Z_phase_d_real.json`）：
+  - 真实 buy 0.001 BTC @ ~65394 USDT（cost 65.39，fee 0.0327 USDT）；
+  - 真实 sell 0.001 BTC @ ~65394 USDT（cost 65.39，fee 0.0327 USDT）；
+  - 买卖几乎持平（<5s 内市价单），净亏损 = fee = 0.0654 USDT；
+  - 余额 486.15970914 -> 486.0942153（-0.0655 USDT = 认证成本，独立归档不进 Base PnL）；
+  - 归零确认 active positions=[]；参数全在预算内（notional 65.4<120、fee 0.0654<1.0、holding <5s<120）。
+- **纪律**：认证订单用独立 `cert-xxx` client_order_id，不影响 Base live（Base 权重 0/0/0 全平）；
+  归零失败处置路径未触发；认证成本不进策略 PnL；§9 完成标准：artifact 完整 ≠ Base 扩容资格。
+  未修改 timer/arm/registry/cron/live 开关；Base live timer 继续 0.2.13 行为。
+
 ### Phase D 真实认证工程基建就绪
 
 - Phase D（§9 真实最小认证）工程基建已就绪：CertificationArm + RealVenueClient + `phase_d_real_run.py`。

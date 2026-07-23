@@ -16,6 +16,14 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 [research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
+- **2026-07-23 Phase D 真实最小认证首次执行成功。** owner 授权后在 VPS 执行首次真实认证：BTCUSDT /
+  `real_ack_fill` 语义，真实 MARKET buy 0.001 BTC -> MARKET sell 归零。`completed=True`、
+  `final_position_is_zero=True`、12 artifact 成员齐全、arm 已消费（`status=used`）。真实 buy/sell 各 0.001 BTC
+  @ ~65394 USDT，fee 0.0654 USDT（认证成本独立归档不进 Base PnL，在 max_fee 1.0 内）；余额
+  486.1597 -> 486.0942（-0.0655 = fee）；归零确认 active positions=[]。认证订单用独立 `cert-xxx`
+  client_order_id，不影响 Base live（Base 权重 0/0/0 全平）。§9 完成标准：artifact 完整 ≠ Base 扩容资格，
+  Base 仍是唯一真钱策略。详见 [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §16.5。生产状态`0.2.13`不变。
+
 - **2026-07-23 Phase D 真实认证工程基建就绪。** 新增 CertificationArm（`src/qount/certification/arm.py`，
   独立、单次、带失效时间的 0600 arm，不复用 Base arm/token）+ RealVenueClient（`real_client.py`，连真实
   Binance USD-M，`submit` 受 arm 门控 fail-closed，`query`/`cancel` 不受门控以支持归零恢复）+

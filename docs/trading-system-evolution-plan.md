@@ -885,11 +885,33 @@ Mac 全仓 `1865/1865 OK`（Phase D 基建前 1837，+28 新测试）。现有 g
 未访问 VPS/私有 API/交易所/订单接口；未修改 timer/arm/registry/cron/live 开关。
 `dry-run` 验证完整流程（12 artifact + 零仓位 + completed）。
 
-### 16.5 下一步
+### 16.5 真实认证首次执行（2026-07-23）
 
-1. **VPS 部署 + 真实执行**：`phase_d_real_run.py run` 需要 VPS 生产 keys + owner 在场。
-   执行顺序：`make-plan`（绑定 owner hash）-> `make-arm`（0600，1h 失效）-> `run`（真实 buy/sell，
-   120s 内归零）-> `scorecard`。归零失败需人工处置。
-2. **ExecutionAttributionReport**（§4.4）：真实 fill 产生后，从逐笔 trade 填充
-   `submit_to_ack_ms`/`ack_to_fill_ms`/`adverse_slippage`/`maker_or_taker`/`fee` 等字段（不用回测常数）。
+owner 授权后，在 VPS 执行首次 Phase D 真实最小认证：
+
+- **执行环境**：VPS `/root/qount`，生产 keys（`.env`，0600），`QOUNT_EXCHANGE_BYPASS_PROXY=1`。
+- **流程**：`make-plan`（owner 授权 hash）-> `make-arm`（0600，1h 失效）-> `run`（真实 MARKET buy 0.001 BTC
+  -> MARKET sell 归零）-> `mark_used` 消费 arm -> 12 artifact + 双会计对账。
+- **结果**（`state/certification/runs/20260723T072005Z_phase_d_real.json`）：
+  - `completed=True`、`final_position_is_zero=True`、12 artifact 成员齐全；
+  - 真实 buy 0.001 BTC @ ~65394 USDT（cost 65.39，fee 0.0327 USDT）；
+  - 真实 sell 0.001 BTC @ ~65394 USDT（cost 65.39，fee 0.0327 USDT）；
+  - 买卖几乎持平（120s 内市价单，价格几乎不变），净亏损 = fee = 0.0654 USDT；
+  - 余额 486.1597 -> 486.0942（-0.0655 USDT = 认证成本，独立归档不进 Base PnL）；
+  - 归零确认：active positions = []；
+  - arm 已消费（`status=used`，不可复用）。
+- **参数预算**：max_notional 120 USDT（实际 ~65.4 ✓）、max_fee 1.0 USDT（实际 0.0654 ✓）、
+  max_holding 120s（实际 <5s ✓）。
+- **纪律**：认证订单用独立 `cert-xxx` client_order_id，不影响 Base live（Base 权重 0/0/0 全平）；
+  归零失败处置路径未触发；认证成本不进策略 PnL。
+- **完成标准**（§9）：artifact 完整 ≠ Base 或新策略获得扩容资格。本次只验证了真实执行链路
+  （ACK/fill/fee/rounding 闭环），Base 仍是唯一真钱策略，不扩容。
+
+### 16.6 下一步
+
+1. **ExecutionAttributionReport**（§4.4）：本次真实 fill 已产生，应从逐笔 trade 填充
+   `submit_to_ack_ms`/`ack_to_fill_ms`/`adverse_slippage`/`maker_or_taker`/`fee` 等字段
+   （当前 runner 的 operational_cost 为 0，需从真实 trades/income 填充真实 fee）。
+2. **后续场所语义**（§3.2）：`real_rounding`/`real_fee_maker_taker`/`real_stop_algo`/
+   `real_funding_income`/`real_reconciliation` 可作为后续认证，每次需新的 owner 授权 + 独立 arm。
 3. **Phase B 退出门**：30 批次进度 2/30，timer 自动运行中。
