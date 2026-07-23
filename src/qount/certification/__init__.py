@@ -6,9 +6,12 @@ False and no real exchange mutation is possible.
 """
 
 from qount.certification.attribution import ATTRIBUTION_SCHEMA_VERSION
+from qount.certification.attribution import ATTRIBUTION_SCHEMA_VERSIONS
 from qount.certification.attribution import ATTRIBUTION_SOURCES
+from qount.certification.attribution import FIELD_AVAILABILITY
 from qount.certification.attribution import UNAVAILABLE
 from qount.certification.attribution import ExecutionAttributionReport
+from qount.certification.attribution_recovery import build_recovered_attribution
 from qount.certification.contracts import CERTIFICATION_EVENT_SOURCES
 from qount.certification.contracts import CERTIFICATION_EVENT_TYPES
 from qount.certification.contracts import CERTIFICATION_SCHEMA_VERSION
@@ -27,22 +30,49 @@ from qount.certification.runner import VenueAdapter
 
 __all__ = [
     "ATTRIBUTION_SCHEMA_VERSION",
+    "ATTRIBUTION_SCHEMA_VERSIONS",
     "ATTRIBUTION_SOURCES",
     "CERTIFICATION_EVENT_SOURCES",
     "CERTIFICATION_EVENT_TYPES",
     "CERTIFICATION_SCHEMA_VERSION",
     "CERTIFICATION_STATUSES",
     "CERTIFICATION_TYPES",
+    "FIELD_AVAILABILITY",
     "OBSERVED_ORDER_STATES",
     "REQUIRED_RESULT_MEMBERS",
     "RUN_STATUSES",
     "UNAVAILABLE",
     "VENUE_SEMANTICS",
     "CertificationEvent",
+    "CertificationArtifactIncompleteError",
+    "CertificationArtifactStoreError",
     "CertificationPlan",
     "CertificationResult",
     "CertificationRun",
     "CertificationRunner",
     "ExecutionAttributionReport",
+    "VerifiedCertificationBundle",
     "VenueAdapter",
+    "build_recovered_attribution",
+    "publish_certification_bundle",
+    "read_certification_bundle",
 ]
+
+
+_ARTIFACT_STORE_EXPORTS = {
+    "CertificationArtifactIncompleteError",
+    "CertificationArtifactStoreError",
+    "VerifiedCertificationBundle",
+    "publish_certification_bundle",
+    "read_certification_bundle",
+}
+
+
+def __getattr__(name: str) -> object:
+    """Load the artifact store lazily to preserve persistence boundaries."""
+
+    if name in _ARTIFACT_STORE_EXPORTS:
+        from qount.certification import artifact_store
+
+        return getattr(artifact_store, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

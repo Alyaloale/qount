@@ -144,6 +144,8 @@ class TestnetVenueClient:
             "status": status,
             "exchange_order_id": exchange_id,
             "reduce_only": reduce_only,
+            # Preserve the venue response alongside the normalized contract.
+            "raw_response": dict(response),
         }
         if filled > 0:
             result["executedQty"] = str(filled)
@@ -159,7 +161,7 @@ class TestnetVenueClient:
                 f"order_not_found_no_metadata:{client_order_id}"
             )
         if meta.get("is_algo") == "true":
-            self._exchange.fapiPrivateDeleteAlgoOrder(
+            raw_response = self._exchange.fapiPrivateDeleteAlgoOrder(
                 params={"algoId": meta["algo_id"]}
             )
             return {
@@ -167,6 +169,11 @@ class TestnetVenueClient:
                 "symbol": meta["symbol"],
                 "status": "CANCELLED",
                 "exchange_order_id": meta["exchange_order_id"],
+                "raw_response": (
+                    dict(raw_response)
+                    if isinstance(raw_response, dict)
+                    else raw_response
+                ),
             }
         ccxt_symbol = self._to_ccxt_symbol(meta["symbol"])
         response = self._exchange.cancel_order(
@@ -179,6 +186,9 @@ class TestnetVenueClient:
             "symbol": meta["symbol"],
             "status": "CANCELLED",
             "exchange_order_id": meta["exchange_order_id"],
+            "raw_response": (
+                dict(response) if isinstance(response, dict) else response
+            ),
         }
 
     def query(self, *, client_order_id: str) -> dict[str, Any]:
@@ -209,6 +219,7 @@ class TestnetVenueClient:
                 "symbol": meta["symbol"],
                 "status": status,
                 "exchange_order_id": meta["exchange_order_id"],
+                "raw_response": dict(response),
             }
         ccxt_symbol = self._to_ccxt_symbol(meta["symbol"])
         response = self._exchange.fetch_order(
@@ -228,6 +239,7 @@ class TestnetVenueClient:
             "symbol": meta["symbol"],
             "status": status,
             "exchange_order_id": meta["exchange_order_id"],
+            "raw_response": dict(response),
         }
         if filled > 0:
             result["executedQty"] = str(filled)

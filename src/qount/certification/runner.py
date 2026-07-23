@@ -184,15 +184,29 @@ class CertificationRunner:
         source: str,
         *,
         venue_capability_payload: dict[str, Any] | None = None,
+        evidence_provenance: dict[str, Any] | None = None,
     ) -> None:
         self._plan = plan
         self._venue = venue
         self._source = source
-        self._venue_capability_payload = venue_capability_payload or {
-            "venue": source,
-            "compatibility": "pass",
-            "symbol_rules": {},
-        }
+        self._venue_capability_payload = (
+            dict(venue_capability_payload)
+            if venue_capability_payload is not None
+            else {
+                "venue": source,
+                "compatibility": "pass",
+                "symbol_rules": {},
+            }
+        )
+        self._evidence_provenance = dict(evidence_provenance or {})
+        if (
+            plan.certification_type == "real_minimum"
+            and canonical_hash(self._venue_capability_payload)
+            != plan.venue_capability_snapshot_hash
+        ):
+            raise ValueError(
+                "real_certification_venue_capability_hash_mismatch"
+            )
         self._run: CertificationRun | None = None
         self._events: list[CertificationEvent] = []
         self._raw_responses: list[dict[str, Any]] = []
@@ -200,6 +214,7 @@ class CertificationRunner:
         self._preflight_snapshot: dict[str, Any] = {}
         self._known_order_ids: set[str] = set()
         self._halt_errors: list[str] = []
+        self._artifact_payloads: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _now() -> str:
@@ -225,6 +240,19 @@ class CertificationRunner:
     @property
     def halt_errors(self) -> tuple[str, ...]:
         return tuple(self._halt_errors)
+
+    @property
+    def plan(self) -> CertificationPlan:
+        return self._plan
+
+    @property
+    def artifact_payloads(self) -> dict[str, dict[str, Any]]:
+        """Return a copy of the payloads used to build the result references."""
+
+        return {
+            name: dict(payload)
+            for name, payload in self._artifact_payloads.items()
+        }
 
     def submit_order(
         self,
@@ -354,14 +382,17 @@ class CertificationRunner:
         if self._run is None:
             raise RuntimeError("runner_not_started")
 
+        completed_at = self._now()
         authorization_payload = {
             "owner_authorization_hash": self._plan.owner_authorization_hash,
             "arm_token_hash": self._plan.arm_token_hash,
             "expires_at": self._plan.expires_at,
             "certification_type": self._plan.certification_type,
             "venue_semantic": self._plan.venue_semantic,
+            "runtime_provenance": dict(self._evidence_provenance),
         }
         preflight_payload = {
+            "planned_preflight_snapshot_hash": self._plan.preflight_snapshot_hash,
             "positions": dict(self._preflight_snapshot.get("positions", {})),
             "order_count": len(
                 self._preflight_snapshot.get("orders", [])
@@ -388,30 +419,35 @@ class CertificationRunner:
             ),
         }
         primary_snapshot = self._venue.snapshot()
+        snapshot_trades = [
+            dict(trade)
+            for trade in primary_snapshot.get("trades", [])
+            if isinstance(trade, dict)
+        ]
+        certification_trades = self._certification_trades(snapshot_trades)
         runtime_ledger_payload = {
             "orders": primary_snapshot.get("orders", []),
             "positions": dict(primary_snapshot.get("positions", {})),
-            "trades": primary_snapshot.get("trades", []),
+            "trades": certification_trades,
+            "trade_scope": "certification_order_ids",
+            "snapshot_trade_count": len(snapshot_trades),
+            "matched_trade_count": len(certification_trades),
         }
         shadow_positions = self._reconstruct_positions_from_trades(
-            primary_snapshot.get("trades", [])
+            certification_trades
         )
         shadow_accountant_payload = {
             "positions": shadow_positions,
-            "trade_count": len(primary_snapshot.get("trades", [])),
+            "trade_count": len(certification_trades),
             "source": "independent_rebuild_from_trades",
         }
         reconciliation_payload = self._build_reconciliation_diff(
             dict(primary_snapshot.get("positions", {})),
             shadow_positions,
         )
-        operational_cost_payload = {
-            "commission": 0.0,
-            "funding": 0.0,
-            "transfer": 0.0,
-            "total": 0.0,
-            "note": "local_gateway_no_real_fees",
-        }
+        operational_cost_payload = self._build_operational_cost(
+            {"trades": certification_trades}
+        )
         zero_position = self.verify_zero_position()
         zero_position_payload = {
             "final_position_count": self._venue.position_count,
@@ -435,6 +471,13 @@ class CertificationRunner:
             ("operational_cost", operational_cost_payload),
             ("zero_position_proof", zero_position_payload),
         ]
+        self._artifact_payloads = {
+            "certification_plan": _plan_payload(self._plan),
+            **{
+                artifact_type: payload
+                for artifact_type, payload in custom_artifacts
+            },
+        }
         custom_refs = [
             _custom_reference(
                 atype,
@@ -458,7 +501,6 @@ class CertificationRunner:
             final_position_is_zero=zero_position,
         )
 
-        completed_at = self._now()
         self._run = CertificationRun.create(
             plan_id=self._plan.plan_id,
             certification_type=self._plan.certification_type,
@@ -467,6 +509,84 @@ class CertificationRunner:
             status="completed" if result.completed else "halted",
         )
         return result
+
+    @staticmethod
+    def _build_operational_cost(
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Rebuild observed trade fees without inventing missing income."""
+
+        commission = 0.0
+        observed_trade_count = 0
+        fee_records = 0
+        for trade in snapshot.get("trades", []):
+            if not isinstance(trade, dict):
+                continue
+            observed_trade_count += 1
+            fee = trade.get("fee")
+            fee_value: Any = None
+            if isinstance(fee, dict):
+                fee_value = fee.get("cost")
+            if fee_value is None:
+                fee_value = trade.get("commission")
+            if fee_value is None:
+                info = trade.get("info")
+                if isinstance(info, dict):
+                    fee_value = info.get("commission")
+            if fee_value is None:
+                continue
+            try:
+                commission += abs(float(fee_value))
+            except (TypeError, ValueError):
+                continue
+            fee_records += 1
+        fees_complete = observed_trade_count > 0 and fee_records == observed_trade_count
+        commission_value: Any = commission if fee_records else "unavailable"
+        total_value: Any = commission if fees_complete else "unavailable"
+        return {
+            "commission": commission_value,
+            "funding": "unavailable",
+            "transfer": "unavailable",
+            "total": total_value,
+            "observed_trade_count": observed_trade_count,
+            "fee_record_count": fee_records,
+            "fees_complete": fees_complete,
+            "funding_source": "not_queried_for_this_certification_run",
+            "transfer_source": "not_in_certification_scope",
+            "commission_source": (
+                "exchange_trade_fee" if fee_records else "unavailable"
+            ),
+        }
+
+    def _certification_trades(
+        self,
+        trades: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        exchange_ids = {
+            str(response["exchange_order_id"])
+            for response in self._raw_responses
+            if response.get("exchange_order_id") not in (None, "")
+        }
+        known_ids = set(self._known_order_ids) | exchange_ids
+
+        def identifiers(trade: dict[str, Any]) -> set[str]:
+            values: set[str] = set()
+            for key in (
+                "client_order_id",
+                "clientOrderId",
+                "order",
+                "order_id",
+                "orderId",
+            ):
+                value = trade.get(key)
+                if value not in (None, ""):
+                    values.add(str(value))
+            info = trade.get("info")
+            if isinstance(info, dict):
+                values.update(identifiers(info))
+            return values
+
+        return [trade for trade in trades if identifiers(trade) & known_ids]
 
     def _record_event(
         self,
@@ -502,8 +622,15 @@ class CertificationRunner:
         positions: dict[str, float] = {}
         for trade in trades:
             symbol = str(trade.get("symbol", ""))
-            side = str(trade.get("side", ""))
-            qty = float(trade.get("qty", 0.0))
+            side = str(trade.get("side", "")).upper()
+            raw_qty = trade.get("qty", trade.get("amount", 0.0))
+            if raw_qty in (None, "") and isinstance(trade.get("info"), dict):
+                info = trade["info"]
+                raw_qty = info.get("qty", info.get("quantity", 0.0))
+            try:
+                qty = float(raw_qty)
+            except (TypeError, ValueError):
+                continue
             if side == "BUY":
                 positions[symbol] = positions.get(symbol, 0.0) + qty
             elif side == "SELL":

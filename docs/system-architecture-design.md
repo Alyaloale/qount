@@ -1355,6 +1355,9 @@ virtual NAV -> shadow execution -> paper -> event minimal-live -> risk scaling
 ```
 
 每个sleeve先证明Standalone Executable NAV可执行，不能依赖Base净额补贴其最小名义价值或掩盖成本。
+Phase E 的入口还要求至少两个 sleeve 分别通过自身 promotion 合同；本地 allocator、GlobalExperimentRecord 或
+CandidateRevalidationRecord 的存在都不构成入口。CxD carry 在新 owner 授权前只能 observation/shadow/virtual，CTA-R 的
+跨资产研究也不产生 Binance 钱包订单权限。
 
 ### Phase F：持续研究与规模化
 

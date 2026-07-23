@@ -893,7 +893,7 @@ owner 授权后，在 VPS 执行首次 Phase D 真实最小认证：
 - **流程**：`make-plan`（owner 授权 hash）-> `make-arm`（0600，1h 失效）-> `run`（真实 MARKET buy 0.001 BTC
   -> MARKET sell 归零）-> `mark_used` 消费 arm -> 12 artifact + 双会计对账。
 - **结果**（`state/certification/runs/20260723T072005Z_phase_d_real.json`）：
-  - `completed=True`、`final_position_is_zero=True`、12 artifact 成员齐全；
+  - `completed=True`、`final_position_is_zero=True`、CertificationResult 在内存中引用 12 个 artifact 成员；
   - 真实 buy 0.001 BTC @ ~65394 USDT（cost 65.39，fee 0.0327 USDT）；
   - 真实 sell 0.001 BTC @ ~65394 USDT（cost 65.39，fee 0.0327 USDT）；
   - 买卖几乎持平（120s 内市价单，价格几乎不变），净亏损 = fee = 0.0654 USDT；
@@ -907,11 +907,37 @@ owner 授权后，在 VPS 执行首次 Phase D 真实最小认证：
 - **完成标准**（§9）：artifact 完整 ≠ Base 或新策略获得扩容资格。本次只验证了真实执行链路
   （ACK/fill/fee/rounding 闭环），Base 仍是唯一真钱策略，不扩容。
 
-### 16.6 下一步
+### 16.6 首次 run 证据限制和本地补强（2026-07-23）
 
-1. **ExecutionAttributionReport**（§4.4）：本次真实 fill 已产生，应从逐笔 trade 填充
-   `submit_to_ack_ms`/`ack_to_fill_ms`/`adverse_slippage`/`maker_or_taker`/`fee` 等字段
-   （当前 runner 的 operational_cost 为 0，需从真实 trades/income 填充真实 fee）。
-2. **后续场所语义**（§3.2）：`real_rounding`/`real_fee_maker_taker`/`real_stop_algo`/
-   `real_funding_income`/`real_reconciliation` 可作为后续认证，每次需新的 owner 授权 + 独立 arm。
-3. **Phase B 退出门**：30 批次进度 2/30，timer 自动运行中。
+首次真实认证的执行、fee 和归零事实有效，但旧 `phase_d_real_run.py` 只持久化约 412 字节摘要；12 个成员 payload/hash
+只在进程内构造，不能把该历史 run 追溯改写为完整不可变证据包。当前本地补强尚未部署：
+
+- `CertificationArtifactStore` 在 `state/certification/runs/<run_id>/` 先写 12 个完整成员和自校验 metadata，最后写
+  `manifest.json`；目录 `0700`、文件 `0600`、O_EXCL 不可覆盖、fsync、逐字节回读、精确文件集和篡改检测；
+- authorization 成员绑定 plan/arm、代码文件 bundle、`pyproject.toml`、release provenance、preflight 和
+  VenueCapabilitySnapshot hash；未来 real plan/run 必须提供并核对真实 preflight 和 venue capability 输入；
+- 原始 ccxt submit/query/cancel 响应不再被归一化层丢弃；逐笔 trades 按本认证 client/exchange order ID 过滤，避免把 Base
+  或其它订单费用计入 certification operational cost；fee 齐全时写真实 commission/total，未查询的 funding/transfer
+  明确 `unavailable`，不填零；
+- real arm 在首个 submit 前原子写为 `used`。即使执行或证据持久化中断也不得重试同一 arm；query/cancel 仍可用于降险恢复；
+- 覆盖中断写入、缺成员、成员/metadata 篡改、重复目录、manifest-last、权限、敏感字段和循环导入边界测试。
+
+### 16.7 逐字段归因、Phase B 出口和后续纪律
+
+`ExecutionAttributionReport` schema v2 已允许每个指标单独使用 `available|unavailable + missing_reason + source_hash`。
+`backfill-attribution` 可直接验证并读取 Phase B archive，从已有 trade/income 恢复 fill VWAP、fee、maker/taker、数量比例和
+有完整 income 窗口时的 funding；arrival mid、spread、完整 submit/ACK/保护单时间点若未在事件时捕获，写
+`not_captured_at_event_time`，不得填零或估算。schema v1 继续可读且原 hash 兼容。
+
+Phase B 每日 timer 保持原频率，当前生产进度仍为 `2/30`，还需 28 个有效日批次；若连续通过，最早约 2026-08-20
+达到退出门。本地新增 cycle/progress/exit artifact，区分 valid/failed batch，记录最新 watermark/diff/venue/HALT 和累计
+真实成交覆盖。达到 30 只产生 `exit_gate_passed=true` 的不可变 artifact，固定
+`orders_authorized=false/automatic_authority_change=false`，不得自动修改 dispatcher、registry 或权限。
+
+下一顺序：
+
+1. 等下一次自然 Phase B 24 小时 archive 覆盖首次 Phase D fill，离线回填可证明字段；现有证据不足时才讨论新语义授权。
+2. Base 继续固定 100 USDT、TOP3、long/cash、isolated 1x，不强制制造首单；自然订单出现后验证
+   `decision -> submit -> ACK -> trades/fee -> protection -> primary/shadow -> reconciliation -> attribution`。
+3. 暂不重复真钱 `real_ack_fill`；优先复用已有 fill 验证 reconciliation、fee maker/taker 和 rounding。
+   `real_stop_algo`、`real_funding_income` 当前不得直接在真实账户试验。

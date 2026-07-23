@@ -32,9 +32,11 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -42,11 +44,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from qount.certification.arm import CertificationArm
+from qount.certification.artifact_store import publish_certification_bundle
+from qount.certification.attribution_recovery import build_recovered_attribution
 from qount.certification.contracts import CertificationPlan
+from qount.certification.contracts import CertificationResult
 from qount.certification.contracts import VENUE_SEMANTICS
 from qount.certification.gateway import LocalVenueGateway
 from qount.certification.gateway import SymbolRules
 from qount.certification.runner import CertificationRunner
+from qount.contracts.hashing import canonical_hash
+from qount.persistence import write_immutable_artifact
 
 _DUMMY_HASH = "a" * 64
 DEFAULT_SYMBOL = "BTCUSDT"
@@ -109,8 +116,116 @@ def _arm_fields(arm: CertificationArm) -> dict:
 
 def _write_0600(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, default=str))
-    os.chmod(path, 0o600)
+    raw = json.dumps(data, indent=2, default=str).encode("ascii") + b"\n"
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        descriptor = -1
+        os.replace(temporary, path)
+        parent_descriptor = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(parent_descriptor)
+        finally:
+            os.close(parent_descriptor)
+        if path.read_bytes() != raw:
+            raise RuntimeError("phase_d_0600_readback_mismatch")
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _source_tree_hash() -> tuple[str, int]:
+    files = sorted((ROOT / "src" / "qount").rglob("*.py"))
+    files.append(ROOT / "scripts" / "operations" / "phase_d_real_run.py")
+    digest = hashlib.sha256()
+    for path in files:
+        relative = path.relative_to(ROOT).as_posix().encode("ascii")
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        digest.update(bytes.fromhex(_sha256_file(path)))
+    return digest.hexdigest(), len(files)
+
+
+def _runtime_provenance(*, plan: CertificationPlan, arm_hash: str) -> dict:
+    code_paths = (
+        Path("src/qount/certification/runner.py"),
+        Path("src/qount/certification/artifact_store.py"),
+        Path("src/qount/certification/attribution.py"),
+        Path("src/qount/certification/real_client.py"),
+        Path("src/qount/certification/testnet_client.py"),
+        Path("scripts/operations/phase_d_real_run.py"),
+    )
+    code_hashes = {
+        path.as_posix(): _sha256_file(ROOT / path)
+        for path in code_paths
+    }
+    source_tree_hash, source_tree_file_count = _source_tree_hash()
+    dependency_path = ROOT / "pyproject.toml"
+    release_path = ROOT / ".qount-release-provenance.json"
+    release_provenance: dict = {"status": "unavailable"}
+    if release_path.is_file():
+        release_provenance = {
+            "status": "captured",
+            "file_sha256": _sha256_file(release_path),
+        }
+        try:
+            release_data = json.loads(release_path.read_text(encoding="ascii"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            release_data = {}
+        for field in (
+            "git_commit",
+            "version",
+            "source_tree_hash",
+            "provenance_hash",
+        ):
+            value = release_data.get(field)
+            if isinstance(value, str):
+                release_provenance[field] = value
+    core = {
+        "plan_hash": plan.plan_hash,
+        "arm_hash": arm_hash,
+        "preflight_snapshot_hash": plan.preflight_snapshot_hash,
+        "venue_capability_snapshot_hash": plan.venue_capability_snapshot_hash,
+        "source_tree_hash": source_tree_hash,
+        "source_tree_file_count": source_tree_file_count,
+        "code_file_sha256": code_hashes,
+        "code_bundle_hash": hashlib.sha256(
+            json.dumps(
+                code_hashes,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        ).hexdigest(),
+        "dependency_manifest": "pyproject.toml",
+        "dependency_manifest_hash": _sha256_file(dependency_path),
+        "release_provenance": release_provenance,
+    }
+    return core | {
+        "runtime_provenance_hash": hashlib.sha256(
+            json.dumps(core, sort_keys=True, separators=(",", ":")).encode(
+                "ascii"
+            )
+        ).hexdigest()
+    }
 
 
 def _load_plan(path: str) -> CertificationPlan:
@@ -139,6 +254,8 @@ def _make_real_plan(
     max_holding_time: float,
     owner_hash: str,
     ttl_hours: float,
+    preflight_snapshot_hash: str,
+    venue_capability_snapshot_hash: str,
 ) -> CertificationPlan:
     return CertificationPlan.create(
         certification_type="real_minimum",
@@ -151,8 +268,8 @@ def _make_real_plan(
         owner_authorization_hash=owner_hash,
         arm_token_hash=_DUMMY_HASH,
         expires_at=_iso(_now() + timedelta(hours=ttl_hours)),
-        preflight_snapshot_hash=_DUMMY_HASH,
-        venue_capability_snapshot_hash=_DUMMY_HASH,
+        preflight_snapshot_hash=preflight_snapshot_hash,
+        venue_capability_snapshot_hash=venue_capability_snapshot_hash,
         zero_position_plan="market_reverse_to_close_then_verify_zero",
         failure_handling_path="manual_flatten_reconcile_and_halt",
         certification_status="real_pending_owner",
@@ -160,6 +277,11 @@ def _make_real_plan(
 
 
 def run_make_plan(args: argparse.Namespace) -> int:
+    preflight_path = Path(args.preflight_snapshot_path)
+    venue_capability_payload = _load_json_object(
+        Path(args.venue_capability_snapshot_path),
+        label="venue_capability_snapshot",
+    )
     plan = _make_real_plan(
         symbol=args.symbol,
         venue_semantic=args.venue_semantic,
@@ -168,6 +290,8 @@ def run_make_plan(args: argparse.Namespace) -> int:
         max_holding_time=args.max_holding_time,
         owner_hash=args.owner_hash,
         ttl_hours=args.ttl_hours,
+        preflight_snapshot_hash=_sha256_file(preflight_path),
+        venue_capability_snapshot_hash=canonical_hash(venue_capability_payload),
     )
     out = ROOT / "state" / "certification" / "plans" / f"{plan.plan_id}.json"
     _write_0600(out, _plan_fields(plan))
@@ -220,7 +344,7 @@ def _execute_run(
     symbol: str,
     qty: float,
     label: str,
-) -> dict:
+) -> CertificationResult:
     cid_buy = f"phase-d-{label}-buy-" + _now().strftime("%H%M%S%f")
     cid_sell = cid_buy + "-close"
     runner.submit_order(cid_buy, symbol, "BUY", qty)
@@ -238,6 +362,18 @@ def run_dry_run(args: argparse.Namespace) -> int:
             tick_size=0.10,
         ),
     })
+    venue_capability_payload = {
+        "venue": "local_gateway",
+        "compatibility": "pass",
+        "symbol_rules": {
+            DEFAULT_SYMBOL: {
+                "min_qty": 0.001,
+                "min_notional": 100.0,
+                "step_size": 0.001,
+                "tick_size": 0.10,
+            }
+        },
+    }
     plan = _make_real_plan(
         symbol=DEFAULT_SYMBOL,
         venue_semantic="real_ack_fill",
@@ -246,8 +382,19 @@ def run_dry_run(args: argparse.Namespace) -> int:
         max_holding_time=DEFAULT_MAX_HOLDING,
         owner_hash=_DUMMY_HASH,
         ttl_hours=DEFAULT_TTL_HOURS,
+        preflight_snapshot_hash=canonical_hash({"source": "local_gateway"}),
+        venue_capability_snapshot_hash=canonical_hash(venue_capability_payload),
     )
-    runner = CertificationRunner(plan, gw, source="local_gateway")
+    runner = CertificationRunner(
+        plan,
+        gw,
+        source="local_gateway",
+        venue_capability_payload=venue_capability_payload,
+        evidence_provenance=_runtime_provenance(
+            plan=plan,
+            arm_hash=_DUMMY_HASH,
+        ),
+    )
     runner.start()
     result = _execute_run(runner, DEFAULT_SYMBOL, DEFAULT_QTY, "dryrun")
     run_id = _now().strftime("%Y%m%dT%H%M%SZ")
@@ -262,8 +409,18 @@ def run_dry_run(args: argparse.Namespace) -> int:
     }
     state_dir = ROOT / "state" / "certification" / "runs"
     state_dir.mkdir(parents=True, exist_ok=True)
+    if runner.run is None:
+        raise RuntimeError("certification_run_missing_after_result")
+    bundle = publish_certification_bundle(
+        state_dir / result.run_id,
+        run=runner.run,
+        result=result,
+        member_payloads=runner.artifact_payloads,
+    )
+    out["certification_run_id"] = result.run_id
+    out["bundle_path"] = str(bundle.directory)
     out_path = state_dir / f"{run_id}_phase_d_dryrun.json"
-    out_path.write_text(json.dumps(out, indent=2, default=str))
+    _write_0600(out_path, out)
     print(f"Phase D dry-run (local gateway, no real order)")
     print(f"  completed: {result.completed}")
     print(f"  final_position_is_zero: {result.final_position_is_zero}")
@@ -278,6 +435,13 @@ def run_real(args: argparse.Namespace) -> int:
     from qount.settings import Settings
 
     plan = _load_plan(args.plan_path)
+    venue_capability_payload = _load_json_object(
+        Path(args.venue_capability_snapshot_path),
+        label="venue_capability_snapshot",
+    )
+    if canonical_hash(venue_capability_payload) != plan.venue_capability_snapshot_hash:
+        print("ERROR: venue capability payload does not match plan")
+        return 1
     arm = _load_arm(args.arm_path)
     if not arm.orders_authorized:
         print("ERROR: arm is not in real_authorized status (used or invalid)")
@@ -295,23 +459,32 @@ def run_real(args: argparse.Namespace) -> int:
     if not client.orders_authorized:
         print("ERROR: certification arm is expired or not valid at this time")
         return 1
-    runner = CertificationRunner(plan, client, source="real")
+    runner = CertificationRunner(
+        plan,
+        client,
+        source="real",
+        venue_capability_payload=venue_capability_payload,
+        evidence_provenance=_runtime_provenance(
+            plan=plan,
+            arm_hash=arm.arm_hash,
+        ),
+    )
     runner.start()
     print(f"Real certification run: {plan.venue_semantic} on {plan.symbol}")
     print(f"  arm_id: {arm.arm_id}")
     print(f"  expires_at: {arm.expires_at}")
     print("  Submitting real MARKET buy -> sell (section 3.2 real_ack_fill)...")
+    used_arm = arm.mark_used()
+    arm_path = Path(args.arm_path)
+    _write_0600(arm_path, _arm_fields(used_arm))
+    print(f"  Arm consumed before first submit (status=used): {arm_path}")
     try:
         result = _execute_run(runner, plan.symbol, DEFAULT_QTY, "real")
     except Exception as exc:
         print(f"  RUN FAILED: {type(exc).__name__}: {exc}")
-        print("  Arm NOT consumed. Attempt manual zero-out and reconciliation.")
-        _persist_failed_run(runner, plan, arm)
+        print("  Arm remains consumed; do not retry. Reconcile and zero out.")
+        _persist_failed_run(runner, plan, used_arm)
         return 1
-    used_arm = arm.mark_used()
-    arm_path = Path(args.arm_path)
-    _write_0600(arm_path, _arm_fields(used_arm))
-    print(f"  Arm consumed (status=used): {arm_path}")
     run_id = _now().strftime("%Y%m%dT%H%M%SZ")
     out = {
         "run_id": run_id,
@@ -327,11 +500,32 @@ def run_real(args: argparse.Namespace) -> int:
     }
     state_dir = ROOT / "state" / "certification" / "runs"
     state_dir.mkdir(parents=True, exist_ok=True)
+    if runner.run is None:
+        print("  ERROR: completed result has no CertificationRun")
+        return 1
+    try:
+        bundle = publish_certification_bundle(
+            state_dir / result.run_id,
+            run=runner.run,
+            result=result,
+            member_payloads=runner.artifact_payloads,
+        )
+    except Exception as exc:
+        print(
+            "  EVIDENCE PERSISTENCE FAILED: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        print("  Arm remains consumed; do not retry the certification order.")
+        _persist_failed_run(runner, plan, used_arm)
+        return 1
+    out["certification_run_id"] = result.run_id
+    out["bundle_path"] = str(bundle.directory)
     out_path = state_dir / f"{run_id}_phase_d_real.json"
-    out_path.write_text(json.dumps(out, indent=2, default=str))
+    _write_0600(out_path, out)
     print(f"  completed: {result.completed}")
     print(f"  final_position_is_zero: {result.final_position_is_zero}")
     print(f"  artifact_members: {len(result.artifact_members)}")
+    print(f"  immutable_bundle: {bundle.directory}")
     print(f"  artifact: {out_path}")
     if not result.final_position_is_zero:
         print(
@@ -361,7 +555,7 @@ def _persist_failed_run(
     state_dir = ROOT / "state" / "certification" / "runs"
     state_dir.mkdir(parents=True, exist_ok=True)
     out_path = state_dir / f"{run_id}_phase_d_failed.json"
-    out_path.write_text(json.dumps(out, indent=2, default=str))
+    _write_0600(out_path, out)
     print(f"  Failed run evidence: {out_path}")
 
 
@@ -390,6 +584,178 @@ def run_scorecard(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_backfill_attribution(args: argparse.Namespace) -> int:
+    """Build a partial report from already archived read-only evidence."""
+
+    source_path = Path(args.source_path)
+    source, trades, income = _load_attribution_source(source_path)
+    if not isinstance(trades, list) or not all(
+        isinstance(item, dict) for item in trades
+    ):
+        raise ValueError("attribution_recovery_trades_invalid")
+    if not isinstance(income, list) or not all(
+        isinstance(item, dict) for item in income
+    ):
+        raise ValueError("attribution_recovery_income_invalid")
+    trades = _filter_attribution_records(
+        trades,
+        symbol=args.symbol,
+        start_time_ms=args.start_time_ms,
+        end_time_ms=args.end_time_ms,
+        order_ids=set(args.order_id or ()),
+    )
+    income = _filter_attribution_records(
+        income,
+        symbol=args.symbol,
+        start_time_ms=args.start_time_ms,
+        end_time_ms=args.end_time_ms,
+        order_ids=set(),
+    )
+    report = build_recovered_attribution(
+        run_id=args.run_id,
+        trades=trades,
+        income=income,
+        planned_quantity=args.planned_quantity,
+        source_metadata={
+            "source_path": str(source_path),
+            **source["source_metadata"],
+            "selection": {
+                "symbol": args.symbol,
+                "start_time_ms": args.start_time_ms,
+                "end_time_ms": args.end_time_ms,
+                "order_ids": sorted(args.order_id or ()),
+            },
+        },
+    )
+    output = (
+        Path(args.output_path)
+        if args.output_path
+        else ROOT
+        / "state"
+        / "certification"
+        / "attribution"
+        / f"{report.report_id}.json"
+    )
+    write_immutable_artifact(output, report)
+    available = sorted(
+        field
+        for field, evidence in report.field_evidence.items()
+        if evidence.get("status") == "available"
+    )
+    print("Recovered execution attribution (read-only source, no order)")
+    print(f"  report_id: {report.report_id}")
+    print(f"  run_id: {report.run_id}")
+    print(f"  available_fields: {','.join(available) or 'none'}")
+    print(f"  artifact: {output}")
+    return 0
+
+
+def _load_attribution_source(
+    source_path: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Load a consolidated JSON file or a verified Phase B archive directory."""
+
+    archive_dir = source_path
+    if source_path.is_file() and source_path.name == "archive_manifest.json":
+        archive_dir = source_path.parent
+    if archive_dir.is_dir() and (archive_dir / "archive_manifest.json").is_file():
+        from qount.shadow_accounting.archive import verify_archive
+
+        manifest = verify_archive(archive_dir)
+        raw_dir = archive_dir / "raw"
+
+        def read_jsonl(file_name: str) -> list[dict[str, Any]]:
+            path = raw_dir / file_name
+            if not path.is_file():
+                return []
+            records: list[dict[str, Any]] = []
+            for line in path.read_text(encoding="ascii").splitlines():
+                if line.strip():
+                    value = json.loads(line)
+                    if not isinstance(value, dict):
+                        raise ValueError(
+                            f"attribution_recovery_record_invalid:{file_name}"
+                        )
+                    records.append(value)
+            return records
+
+        manifest_path = archive_dir / "archive_manifest.json"
+        return (
+            {
+                "source_metadata": {
+                    "archive_manifest_sha256": _sha256_file(manifest_path),
+                    "archive_manifest": manifest,
+                }
+            },
+            read_jsonl("trades.jsonl"),
+            read_jsonl("income_history.jsonl") or read_jsonl("income.jsonl"),
+        )
+    source = json.loads(source_path.read_text(encoding="ascii"))
+    if not isinstance(source, dict):
+        raise ValueError("attribution_recovery_source_object_required")
+    metadata = source.get("source_metadata")
+    source_metadata = dict(metadata) if isinstance(metadata, dict) else {}
+    source_metadata.setdefault("source_file_sha256", _sha256_file(source_path))
+    return (
+        {"source_metadata": source_metadata},
+        source.get("trades", []),
+        source.get("income", []),
+    )
+
+
+def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="ascii"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{label}_object_required")
+    return value
+
+
+def _filter_attribution_records(
+    records: list[dict[str, Any]],
+    *,
+    symbol: str | None,
+    start_time_ms: int | None,
+    end_time_ms: int | None,
+    order_ids: set[str],
+) -> list[dict[str, Any]]:
+    def nested(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
+        for key in keys:
+            if record.get(key) not in (None, ""):
+                return record.get(key)
+        info = record.get("info")
+        if isinstance(info, dict):
+            return nested(info, keys)
+        return None
+
+    selected: list[dict[str, Any]] = []
+    for record in records:
+        record_symbol = nested(record, ("symbol",))
+        if symbol and record_symbol not in (symbol, symbol.replace("/", "")):
+            continue
+        raw_time = nested(record, ("time", "timestamp", "T"))
+        try:
+            record_time = int(float(raw_time)) if raw_time is not None else None
+        except (TypeError, ValueError):
+            record_time = None
+        if start_time_ms is not None and (
+            record_time is None or record_time < start_time_ms
+        ):
+            continue
+        if end_time_ms is not None and (
+            record_time is None or record_time > end_time_ms
+        ):
+            continue
+        if order_ids:
+            record_order = nested(
+                record,
+                ("order", "orderId", "order_id", "clientOrderId", "client_order_id"),
+            )
+            if str(record_order) not in order_ids:
+                continue
+        selected.append(record)
+    return selected
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Phase D: real minimum certification run"
@@ -408,6 +774,8 @@ def main() -> int:
     mp.add_argument("--max-fee", type=float, default=DEFAULT_MAX_FEE)
     mp.add_argument("--max-holding-time", type=float, default=DEFAULT_MAX_HOLDING)
     mp.add_argument("--ttl-hours", type=float, default=DEFAULT_TTL_HOURS)
+    mp.add_argument("--preflight-snapshot-path", required=True)
+    mp.add_argument("--venue-capability-snapshot-path", required=True)
 
     ma = sub.add_parser("make-arm", help="Mint a certification arm (0600, single-use)")
     ma.add_argument("--plan-path", required=True)
@@ -419,8 +787,22 @@ def main() -> int:
     rp = sub.add_parser("run", help="Real certification run (needs keys + owner)")
     rp.add_argument("--plan-path", required=True)
     rp.add_argument("--arm-path", required=True)
+    rp.add_argument("--venue-capability-snapshot-path", required=True)
 
     sub.add_parser("scorecard", help="Show scorecard for latest Phase D run")
+
+    ba = sub.add_parser(
+        "backfill-attribution",
+        help="Build partial attribution from archived read-only trades/income",
+    )
+    ba.add_argument("--run-id", required=True)
+    ba.add_argument("--source-path", required=True)
+    ba.add_argument("--planned-quantity", type=float, default=None)
+    ba.add_argument("--symbol", default=None)
+    ba.add_argument("--start-time-ms", type=int, default=None)
+    ba.add_argument("--end-time-ms", type=int, default=None)
+    ba.add_argument("--order-id", action="append", default=None)
+    ba.add_argument("--output-path", default=None)
 
     args = parser.parse_args()
     if args.command == "make-plan":
@@ -433,6 +815,8 @@ def main() -> int:
         return run_real(args)
     elif args.command == "scorecard":
         return run_scorecard(args)
+    elif args.command == "backfill-attribution":
+        return run_backfill_attribution(args)
     else:
         parser.print_help()
         return 1

@@ -14,6 +14,14 @@ from qount.governance.research import funding_episode_independence
 from qount.governance.research import liquid_trend_independence
 from qount.governance.research import record_forward_review
 from qount.governance.research import register_formal_trial
+from qount.governance.research_records import CandidateRevalidationRecord
+from qount.governance.research_records import GlobalExperimentRecord
+from qount.governance.research_records import HistoricalFamilyMapping
+from qount.governance.research_records import PointInTimeSymbolLifecycle
+from qount.governance.research_records import PointInTimeUniverseRevision
+from qount.governance.research_records import UnifiedNavScorecard
+from qount.governance.research_records import build_point_in_time_universe
+from qount.governance.research_records import build_r0_candidate_records
 from qount.governance.registry import GOVERNANCE_SCHEMA_VERSION
 from qount.governance.registry import PROMOTION_STATUSES
 from qount.governance.registry import DeploymentManifest
@@ -32,10 +40,18 @@ __all__ = [
     "FormalTrial",
     "ForwardPeriod",
     "DeploymentManifest",
+    "CandidateRevalidationRecord",
+    "GlobalExperimentRecord",
+    "HistoricalFamilyMapping",
+    "PointInTimeSymbolLifecycle",
+    "PointInTimeUniverseRevision",
+    "UnifiedNavScorecard",
     "SleeveRuntimeEligibility",
     "StrategyRegistration",
     "StrategyRegistry",
     "base_operational_evidence",
+    "build_point_in_time_universe",
+    "build_r0_candidate_records",
     "equity_mapping_event_capacity",
     "equity_mapping_independence",
     "funding_episode_independence",

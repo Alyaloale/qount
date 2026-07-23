@@ -8,11 +8,46 @@
 
 ## 2026-07-23
 
+### Phase D immutable evidence, partial attribution, Phase B exit state, and R0 contracts completed locally
+
+- Added `CertificationArtifactStore`: publishes exactly 12 referenced member envelopes under
+  `state/certification/runs/<run_id>/`, then self-hashed `bundle_metadata.json`, and writes
+  `manifest.json` (`CertificationResult`) last. Directories are `0700`, files `0600`; writes are
+  no-overwrite/fsync/readback verified. Tests cover missing members, interruption before manifest,
+  member and metadata tamper, duplicate publish, sensitive keys, exact file set, and import boundaries.
+- `TestnetVenueClient`/`RealVenueClient` now retain the raw ccxt submit/query/cancel response. Runner
+  filters snapshot trades by this certification's client/exchange order IDs before primary/shadow
+  reconstruction and cost attribution. Complete observed fees produce real commission/total;
+  unqueried funding/transfer remain `unavailable`, never synthetic zero. Future real plans must bind
+  actual preflight and venue-capability inputs; the arm is persisted `used` before first submit.
+- `ExecutionAttributionReport` schema v2 supports per-field availability, missing reason, and source
+  hash while keeping schema v1 readable/hash-compatible. `backfill-attribution` verifies a Phase B
+  archive manifest and can recover fill VWAP, fee, maker/taker, quantity ratio, and evidenced funding;
+  uncaptured mid/spread/latency fields remain `not_captured_at_event_time`.
+- Phase B now writes immutable cycle/progress history plus a one-time exit artifact. It separates
+  valid/failed batches, reports `valid_streak`, `required=30`, remaining cycles, latest watermark/diff/
+  venue/HALT, cumulative real-trade coverage, and always publishes
+  `orders_authorized=false/automatic_authority_change=false`. This code is local only; production
+  remains `2/30`, timer cadence unchanged.
+- R0 added hashed GlobalExperimentRecord/family mapping, point-in-time symbol lifecycle/universe,
+  unified three-NAV/beta-residual/cost/trial scorecard, and CandidateRevalidationRecord contracts.
+  The generated CxD record is blocked/virtual-only; CTA-R is planned/research-only. No allocator or
+  order authority was connected to VPS.
+- Verification: Mac full suite `1892/1892 OK`, architecture boundaries `14/14 OK`, compileall and
+  `git diff --check` passed. A local Phase D dry-run published/read back a complete 12-member bundle
+  with correct permissions. No VPS write/deploy, timer change, private exchange call, arm mint, or
+  order occurred in this batch.
+- Historical correction: the first real Phase D run persisted only the small summary. Its 12 payloads
+  were built in memory, not stored as an immutable bundle. Existing real fill/fee/zero-position facts
+  remain valid, but missing raw members cannot be recreated. Backfill must use the next natural read-only
+  archive and leave event-time gaps unavailable; no repeat real certification is authorized.
+
 ### Phase D 真实最小认证首次执行成功
 
 - owner 授权后在 VPS 执行首次 Phase D 真实最小认证（§9 Phase D）。BTCUSDT / `real_ack_fill` 语义，
   真实 MARKET buy 0.001 BTC -> MARKET sell 归零。`completed=True`、`final_position_is_zero=True`、
-  12 artifact 成员齐全、arm 已消费（`status=used`，不可复用）。生产状态 `0.2.13` 不变，Base 仍是唯一真钱策略。
+  CertificationResult 在内存中引用 12 个 artifact 成员、arm 已消费（`status=used`，不可复用）。当时只落盘摘要，
+  未形成完整 12 成员不可变目录；这一限制以上一节为当前读法。生产状态 `0.2.13` 不变，Base 仍是唯一真钱策略。
 
 - **执行流程**：commit Phase C/D 代码 -> `sync-to-vps.sh --install` 同步到 VPS -> VPS production 测试 343 OK
   + 认证测试 114 OK -> 只读账户快照确认 486.16 USDT / 全平 / one-way -> `make-plan`（owner 授权 hash）
@@ -44,7 +79,8 @@
   0600）、`make-arm`（0600 arm，单次带失效）、`dry-run`（LocalVenueGateway 离线验证）、`run`（真实 Binance
   下单，消费 arm）、`scorecard`。`run` 流程：加载 plan+arm -> 校验 arm 有效 -> build_exchange(private=True)
   -> MARKET buy -> MARKET sell 归零 -> generate_result（12 artifact + 双会计）-> mark_used 消费 arm。
-  失败保留证据、不消费 arm、提示人工归零（§3.2）。arm 文件 0600 权限验证。
+  这是首次执行前的历史实现；当前本地版本已改为首个 submit 前消费 arm，失败不得重试，并要求真实 preflight/
+  venue-capability 输入。arm 文件 0600 权限验证。
 - `dry-run` 验证完整流程：completed=True、final_position_is_zero=True、12 artifact 成员。
 - 新增文件：`arm.py`、`real_client.py`、`phase_d_real_run.py`、2 个测试文件。全仓 `1865/1865 OK`，
   现有 golden hash 不变，`orders_authorized=false` 在所有 certification 合同中恒定。

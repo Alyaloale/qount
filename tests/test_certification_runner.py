@@ -386,6 +386,54 @@ class ShadowReconciliationTest(unittest.TestCase):
                 break
         self.assertIsNotNone(recon_ref)
 
+    def test_operational_cost_uses_observed_trade_fees(self):
+        payload = CertificationRunner._build_operational_cost(
+            {
+                "trades": [
+                    {"fee": {"cost": 0.0327}},
+                    {"info": {"commission": "0.0327"}},
+                ]
+            }
+        )
+        self.assertAlmostEqual(payload["commission"], 0.0654)
+        self.assertAlmostEqual(payload["total"], 0.0654)
+        self.assertEqual(payload["fee_record_count"], 2)
+        self.assertEqual(payload["commission_source"], "exchange_trade_fee")
+
+    def test_evidence_trades_are_scoped_to_certification_order_ids(self):
+        gw = LocalVenueGateway()
+        runner = CertificationRunner(
+            _make_plan(),
+            gw,
+            source="local_gateway",
+        )
+        runner.start()
+        runner.submit_order("cert-buy", "BTCUSDT", "BUY", 0.001)
+        runner.submit_order("cert-sell", "BTCUSDT", "SELL", 0.001)
+        gw._trades.append(
+            {
+                "symbol": "ETHUSDT",
+                "side": "BUY",
+                "qty": "1.0",
+                "client_order_id": "outside-certification",
+                "fee": {"cost": 100.0},
+            }
+        )
+        runner.generate_result()
+        ledger = runner.artifact_payloads["runtime_ledger_snapshot"]
+        self.assertEqual(ledger["snapshot_trade_count"], 3)
+        self.assertEqual(ledger["matched_trade_count"], 2)
+        self.assertEqual(len(ledger["trades"]), 2)
+
+    def test_shadow_rebuild_accepts_ccxt_amount_and_lowercase_side(self):
+        positions = CertificationRunner._reconstruct_positions_from_trades(
+            [
+                {"symbol": "BTC/USDT:USDT", "side": "buy", "amount": 0.002},
+                {"symbol": "BTC/USDT:USDT", "side": "sell", "amount": 0.001},
+            ]
+        )
+        self.assertEqual(positions, {"BTC/USDT:USDT": 0.001})
+
     def test_events_recorded_with_correct_source(self):
         gw = LocalVenueGateway()
         plan = _make_plan()

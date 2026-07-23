@@ -126,6 +126,7 @@ class TestnetVenueClientSubmitTest(unittest.TestCase):
         self.assertEqual(result["status"], "FILLED")
         self.assertEqual(result["client_order_id"], "test-001")
         self.assertTrue(result["exchange_order_id"])
+        self.assertEqual(result["raw_response"]["id"], "1")
         self.assertEqual(mock.created_orders[0]["symbol"], "BTC/USDT:USDT")
         self.assertEqual(
             mock.created_orders[0]["params" if False else "side"], "buy"
@@ -216,6 +217,7 @@ class TestnetVenueClientCancelQueryTest(unittest.TestCase):
         )
         result = client.query(client_order_id="test-query")
         self.assertIn(result["status"], ("FILLED", "PARTIALLY_FILLED"))
+        self.assertEqual(result["raw_response"]["id"], "1")
         self.assertEqual(len(mock.fetched_orders), 1)
 
     def test_cancel_without_metadata_raises(self):

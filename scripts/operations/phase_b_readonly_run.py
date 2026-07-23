@@ -158,6 +158,7 @@ def _run_shadow(
         "run_id": run.run_id,
         "has_blocking_diff": run.has_blocking_diff,
         "unknown_income_count": run.unknown_income_count,
+        "watermark_hash": run.watermark_hash,
         "run_dir": str(run_dir),
     }
 
@@ -177,11 +178,18 @@ def _run_venue(
         symbols=symbols,
         archive_dir=str(archive_dir),
     )
+    archive_path = Path(archive_dir) / (
+        dt.datetime.fromisoformat(snapshot.observed_at).strftime(
+            "%Y%m%dT%H%M%SZ"
+        )
+        + ".json"
+    )
 
     return {
         "snapshot_id": snapshot.snapshot_id,
         "compatibility": snapshot.compatibility,
         "blockers": list(snapshot.blockers),
+        "archive_path": str(archive_path),
     }
 
 
@@ -286,6 +294,15 @@ def main(argv: list[str] | None = None) -> int:
             results["halt_error"] = str(exc)
 
     results["completed_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+
+    try:
+        from qount.shadow_accounting.progress import record_phase_b_cycle
+
+        results["progress"] = record_phase_b_cycle(args.state_dir, results)
+    except Exception as exc:
+        results["progress_error"] = str(exc)
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+        return 1
 
     print(json.dumps(results, indent=2, ensure_ascii=False))
     return 0

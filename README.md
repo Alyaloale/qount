@@ -16,6 +16,11 @@ effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、
 状态为`completed`，冻结信号仍为全现金，0 market/0 stop、`exchange_mutation_attempted=false`，live与标准
 reconciliation均passed；这不是未启动，也不得强制制造首单。
 
+2026-07-23 的 Phase D 不可变证据包、逐字段执行归因、Phase B 机器退出门和研究 R0 合同已在 Mac 本地完成，
+全仓 `1892/1892 OK`，但尚未部署到 VPS。首次真实认证当时只落了摘要，不能追溯声称为完整 12 成员包；现有 fill
+只通过下一次自然 Phase B 只读 archive 回填可证明字段，不重复真钱认证。生产 Phase B 仍为 `2/30`，Base 继续自然等待
+首个非零信号，生产 timer、arm、dispatcher 和权限均未改变。
+
 ## 主机职责
 
 当前权威分工如下，详细路径、ExFAT边界和迁移门见

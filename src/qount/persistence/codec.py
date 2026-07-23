@@ -1366,68 +1366,38 @@ def _decode_payload(artifact_type: str, payload: Mapping[str, Any]) -> object:
             "report_id",
             "report_hash",
         }
+        schema_version = payload.get("schema_version")
+        if schema_version == 2:
+            expected.add("field_evidence")
         _exact_fields(
             payload, expected, name="execution_attribution_report_payload"
         )
         source = payload["attribution_source"]
-        if source == "unavailable":
-            value = ExecutionAttributionReport(
-                schema_version=payload["schema_version"],
-                report_id=payload["report_id"],
-                run_id=payload["run_id"],
-                attribution_source=source,
-                decision_to_submit_ms=payload["decision_to_submit_ms"],
-                submit_to_ack_ms=payload["submit_to_ack_ms"],
-                ack_to_fill_ms=payload["ack_to_fill_ms"],
-                planned_vs_filled_qty=payload["planned_vs_filled_qty"],
-                partial_fill_count=payload["partial_fill_count"],
-                cancel_replace_count=payload["cancel_replace_count"],
-                arrival_mid=payload["arrival_mid"],
-                bid_ask_spread=payload["bid_ask_spread"],
-                fill_vwap=payload["fill_vwap"],
-                adverse_slippage=payload["adverse_slippage"],
-                maker_or_taker=payload["maker_or_taker"],
-                fee=payload["fee"],
-                funding=payload["funding"],
-                unfilled_exposure_time=payload["unfilled_exposure_time"],
-                protection_order_latency=payload[
-                    "protection_order_latency"
-                ],
-                stop_gap=payload["stop_gap"],
-                attribution_source_hash=payload[
-                    "attribution_source_hash"
-                ],
-                report_hash=payload["report_hash"],
-            )
-        else:
-            value = ExecutionAttributionReport(
-                schema_version=payload["schema_version"],
-                report_id=payload["report_id"],
-                run_id=payload["run_id"],
-                attribution_source=source,
-                decision_to_submit_ms=payload["decision_to_submit_ms"],
-                submit_to_ack_ms=payload["submit_to_ack_ms"],
-                ack_to_fill_ms=payload["ack_to_fill_ms"],
-                planned_vs_filled_qty=payload["planned_vs_filled_qty"],
-                partial_fill_count=payload["partial_fill_count"],
-                cancel_replace_count=payload["cancel_replace_count"],
-                arrival_mid=payload["arrival_mid"],
-                bid_ask_spread=payload["bid_ask_spread"],
-                fill_vwap=payload["fill_vwap"],
-                adverse_slippage=payload["adverse_slippage"],
-                maker_or_taker=payload["maker_or_taker"],
-                fee=payload["fee"],
-                funding=payload["funding"],
-                unfilled_exposure_time=payload["unfilled_exposure_time"],
-                protection_order_latency=payload[
-                    "protection_order_latency"
-                ],
-                stop_gap=payload["stop_gap"],
-                attribution_source_hash=payload[
-                    "attribution_source_hash"
-                ],
-                report_hash=payload["report_hash"],
-            )
+        value = ExecutionAttributionReport(
+            schema_version=schema_version,
+            report_id=payload["report_id"],
+            run_id=payload["run_id"],
+            attribution_source=source,
+            decision_to_submit_ms=payload["decision_to_submit_ms"],
+            submit_to_ack_ms=payload["submit_to_ack_ms"],
+            ack_to_fill_ms=payload["ack_to_fill_ms"],
+            planned_vs_filled_qty=payload["planned_vs_filled_qty"],
+            partial_fill_count=payload["partial_fill_count"],
+            cancel_replace_count=payload["cancel_replace_count"],
+            arrival_mid=payload["arrival_mid"],
+            bid_ask_spread=payload["bid_ask_spread"],
+            fill_vwap=payload["fill_vwap"],
+            adverse_slippage=payload["adverse_slippage"],
+            maker_or_taker=payload["maker_or_taker"],
+            fee=payload["fee"],
+            funding=payload["funding"],
+            unfilled_exposure_time=payload["unfilled_exposure_time"],
+            protection_order_latency=payload["protection_order_latency"],
+            stop_gap=payload["stop_gap"],
+            field_evidence=payload.get("field_evidence", {}),
+            attribution_source_hash=payload["attribution_source_hash"],
+            report_hash=payload["report_hash"],
+        )
     else:
         raise ArtifactCodecError(f"artifact_type_unknown:{artifact_type}")
     return _verify_reconstruction(payload, value, artifact_type=artifact_type)

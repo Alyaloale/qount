@@ -16,9 +16,30 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 [research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
+- **2026-07-23 Phase D 不可变证据、逐字段归因、Phase B 退出门和研究 R0 已在本地实现，尚未部署。**
+  新增 `CertificationArtifactStore`：在 `state/certification/runs/<run_id>/` 先写并回读 12 个完整成员，再写
+  `bundle_metadata.json`，最后以 `manifest.json` (`CertificationResult`) 作为完成标记；目录 `0700`、文件 `0600`、
+  不可覆盖、fsync、精确成员集、metadata/member hash、篡改/中断/敏感字段检测均有测试。venue client 现在保留
+  原始 ccxt 响应；逐笔 trade 只按本认证的 client/exchange order ID 进入主/影子会计和 operational cost，未查询的
+  funding/transfer 不再填零。`ExecutionAttributionReport` 升到 schema v2，每个指标独立记录
+  `available|unavailable + missing_reason + source_hash`；`backfill-attribution` 可从经 manifest 校验的 Phase B
+  `raw/trades.jsonl` 和 `income_history.jsonl` 只读回填 fee/fill/maker-taker/quantity，未捕获的到达中价和延迟明确为
+  `not_captured_at_event_time`。Phase B 新增不可变 cycle/progress/exit artifact，机器字段包括 `valid_streak=2`、
+  `required=30`、有效/失败批次、最新 watermark/diff/venue/HALT、累计真实成交覆盖，且
+  `orders_authorized=false/automatic_authority_change=false`。研究 R0 新增 GlobalExperimentRecord、历史 family mapping、
+  point-in-time symbol lifecycle/universe、统一三 NAV/beta residual/cost/trial scorecard 和 CxD/CTA-R
+  CandidateRevalidationRecord；CxD 仍 `blocked_pending_owner_authorization`，CTA-R 仍 `research_only`。Mac 全仓
+  `1892/1892 OK`。本批未访问或修改 VPS、timer、arm、dispatcher、registry、cron 或交易权限，也没有任何新订单。
+
+- **首次 Phase D 真实认证的证据限制已明确。** 2026-07-23 首次真实 fill/fee/归零是有效的场所执行事实，但当时脚本只把
+  约 412 字节摘要落盘；12 个成员 payload/hash 只在进程内构造，不能追溯声称为已经持久化的完整不可变包。本批存储器只保证
+  后续 run 的完整落盘，不能伪造首次 run 已丢失的原始成员。首次 fill 的 fee、price、quantity、maker/taker 等可证明字段等待
+  下一次 Phase B 24 小时只读 archive 后回填；arrival mid、spread、完整 submit/ACK 时间点若当时未捕获，永久标记
+  `unavailable/not_captured_at_event_time`。不得为了补证据重复真钱认证。
+
 - **2026-07-23 Phase D 真实最小认证首次执行成功。** owner 授权后在 VPS 执行首次真实认证：BTCUSDT /
   `real_ack_fill` 语义，真实 MARKET buy 0.001 BTC -> MARKET sell 归零。`completed=True`、
-  `final_position_is_zero=True`、12 artifact 成员齐全、arm 已消费（`status=used`）。真实 buy/sell 各 0.001 BTC
+  `final_position_is_zero=True`、CertificationResult 在内存中引用 12 个 artifact 成员、arm 已消费（`status=used`）。真实 buy/sell 各 0.001 BTC
   @ ~65394 USDT，fee 0.0654 USDT（认证成本独立归档不进 Base PnL，在 max_fee 1.0 内）；余额
   486.1597 -> 486.0942（-0.0655 = fee）；归零确认 active positions=[]。认证订单用独立 `cert-xxx`
   client_order_id，不影响 Base live（Base 权重 0/0/0 全平）。§9 完成标准：artifact 完整 ≠ Base 扩容资格，
@@ -27,10 +48,10 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 - **2026-07-23 Phase D 真实认证工程基建就绪。** 新增 CertificationArm（`src/qount/certification/arm.py`，
   独立、单次、带失效时间的 0600 arm，不复用 Base arm/token）+ RealVenueClient（`real_client.py`，连真实
   Binance USD-M，`submit` 受 arm 门控 fail-closed，`query`/`cancel` 不受门控以支持归零恢复）+
-  `phase_d_real_run.py`（make-plan/make-arm/dry-run/run/scorecard；`run` 真实下单后 `mark_used` 消费 arm，
+  `phase_d_real_run.py`（make-plan/make-arm/dry-run/run/scorecard；当前本地版本在首个真实 submit 前消费 arm，
   失败保留证据不归入 Base）。owner 已确认授权参数（BTCUSDT / real_ack_fill / 120 USDT / 1.0 USDT / 120s）。
   dry-run 验证完整流程（12 artifact + 零仓位 + completed）；Mac 全仓 `1865/1865 OK`（+28 新测试）。
-  真实执行仍需 VPS 生产 keys + owner 在场，当前未下真单。详见
+  这是首次执行前的历史基建记录；首次真实认证随后已按上一条完成。详见
   [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §16。生产状态`0.2.13`不变。
 
 - **2026-07-23 Phase C 两个 FAIL 已修复、真实 testnet 4/4 PASS、Phase D 合同就绪。** §3.4 验收矩阵两个 FAIL 已修复：
@@ -41,8 +62,8 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
   不强制幂等的 testnet。local gateway 与真实 Binance USD-M testnet 均 4/4 PASS、GATE: PASS；
   Mac 全仓 `1837/1837 OK`（+10 新测试）。Phase D 合同层已就绪（`real_minimum` 类型 + `real_pending_owner`
   状态 + 6 个 `real_*` 语义），`phase_c_testnet_run.py real-plan` 生成 draft plan 模板
-  （`orders_authorized=false`、不下单）。Phase C 前置已通过，Phase D 真实认证仍需独立 owner 授权，
-  当前未授权。详见 [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §15。生产状态`0.2.13`不变。
+  （`orders_authorized=false`、不下单）。Phase C 前置随后通过，独立 owner 授权后的首次 Phase D 真实认证见上方
+  当前事实；不重复该语义。详见 [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §15。生产状态`0.2.13`不变。
 
 - **2026-07-23 Phase C（testnet 认证）基建与首轮实测完成。** owner 已授权 testnet mutation。
   Phase A 的"积木"扩展为"胶水"层：CertificationRunner（VenueAdapter Protocol 统一 local gateway + testnet，

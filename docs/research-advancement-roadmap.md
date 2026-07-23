@@ -231,6 +231,20 @@ blocked_reasons
 - 统一`Signal NAV / Standalone Executable NAV / Portfolio Realized NAV`口径；
 - 统一market/TOP3 beta residual、成本、trial count和fold稳定性报告。
 
+本地实现状态（2026-07-23，尚未部署、未运行候选 PnL）：
+
+- `src/qount/governance/research_records.py` 已新增 `GlobalExperimentRecord`、`HistoricalFamilyMapping`、
+  `PointInTimeSymbolLifecycle`、`PointInTimeUniverseRevision`、`UnifiedNavScorecard` 和
+  `CandidateRevalidationRecord` 的 hash/validation 合同；
+- point-in-time universe builder 只按 `valid_from <= as_of < valid_to` 选择当时 active symbol，不用未来上市或已退市状态反填；
+- 统一 scorecard 同时保存 Signal NAV、Standalone Executable NAV、Portfolio Realized NAV、beta residual、成本、trial count
+  和 fold metrics；它是报告合同，不是 allocator 或 promotion；
+- `scripts/research/build_r0_records.py` 生成两个不可覆盖的本地候选合同：CxD 为
+  `blocked_pending_owner_authorization/observation-shadow-virtual-only`，CTA-R 为 `research_only/planned`；二者
+  `orders_allowed=false`，未接入 VPS allocator；
+- R0 尚未完成项仍包括历史 trial 的实际 family 迁移表、真实 USD-M lifecycle 数据摄取、LiteratureRecord/Research Intelligence MVP、
+  两个候选的当前数据 IDs、冻结 cost model、Standalone NAV 和 Candidate scorecard。未完成项不得用占位记录替代证据。
+
 ### R0.1：Edge储备与组合候选重新认证，P0/P1
 
 当前研究不把“工程能力强”当作收益证据，也不把单一加密市场的币数当作edge breadth。LiquidTrend10的有效广度`1.438`

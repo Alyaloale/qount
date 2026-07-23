@@ -9,6 +9,8 @@ from qount.certification import ExecutionAttributionReport
 from qount.persistence import ArtifactCodecError
 from qount.persistence import dump_artifact
 from qount.persistence import load_artifact
+from qount.contracts.hashing import canonical_hash
+from qount.contracts.trace import trace_id
 
 _HASH_A = "a" * 64
 
@@ -136,6 +138,157 @@ class ExecutionAttributionRealFillTest(unittest.TestCase):
         r1 = self._make_real_fill()
         r2 = self._make_real_fill()
         self.assertEqual(r1.report_hash, r2.report_hash)
+
+    def test_partial_real_fill_preserves_missing_reason(self):
+        evidence = {
+            field: {
+                "status": "unavailable",
+                "missing_reason": "not_captured_at_event_time",
+                "source_hash": _HASH_A,
+            }
+            for field in (
+                "decision_to_submit_ms",
+                "submit_to_ack_ms",
+                "ack_to_fill_ms",
+                "planned_vs_filled_qty",
+                "partial_fill_count",
+                "cancel_replace_count",
+                "arrival_mid",
+                "bid_ask_spread",
+                "fill_vwap",
+                "adverse_slippage",
+                "maker_or_taker",
+                "fee",
+                "funding",
+                "unfilled_exposure_time",
+                "protection_order_latency",
+                "stop_gap",
+            )
+        }
+        for field in ("planned_vs_filled_qty", "fill_vwap", "fee"):
+            evidence[field] = {
+                "status": "available",
+                "missing_reason": None,
+                "source_hash": _HASH_A,
+            }
+        evidence["maker_or_taker"] = {
+            "status": "available",
+            "missing_reason": None,
+            "source_hash": _HASH_A,
+        }
+        report = ExecutionAttributionReport.create_partial_real_fill(
+            run_id="b" * 64,
+            values={
+                "planned_vs_filled_qty": 1.0,
+                "fill_vwap": 65394.0,
+                "fee": 0.0654,
+            },
+            maker_or_taker="taker",
+            field_evidence=evidence,
+            attribution_source_hash=_HASH_A,
+        )
+        self.assertEqual(report.arrival_mid, "unavailable")
+        self.assertEqual(
+            report.field_evidence["arrival_mid"]["missing_reason"],
+            "not_captured_at_event_time",
+        )
+        self.assertEqual(report.fee, 0.0654)
+        self.assertFalse(report.validate())
+        restored = load_artifact(
+            dump_artifact(report),
+            expected_artifact_type="execution_attribution_report",
+        )
+        self.assertEqual(restored.field_evidence, report.field_evidence)
+
+    def test_partial_available_field_requires_numeric_value(self):
+        unavailable = {
+            field: {
+                "status": "unavailable",
+                "missing_reason": "not_captured_at_event_time",
+                "source_hash": _HASH_A,
+            }
+            for field in (
+                "decision_to_submit_ms",
+                "submit_to_ack_ms",
+                "ack_to_fill_ms",
+                "planned_vs_filled_qty",
+                "partial_fill_count",
+                "cancel_replace_count",
+                "arrival_mid",
+                "bid_ask_spread",
+                "fill_vwap",
+                "adverse_slippage",
+                "maker_or_taker",
+                "fee",
+                "funding",
+                "unfilled_exposure_time",
+                "protection_order_latency",
+                "stop_gap",
+            )
+        }
+        unavailable["fee"] = {
+            "status": "available",
+            "missing_reason": None,
+            "source_hash": _HASH_A,
+        }
+        with self.assertRaises(ValueError):
+            ExecutionAttributionReport.create_partial_real_fill(
+                run_id="b" * 64,
+                values={},
+                field_evidence=unavailable,
+                attribution_source_hash=_HASH_A,
+            )
+
+    def test_schema_v1_artifact_remains_readable(self):
+        core = {
+            "schema_version": 1,
+            "run_id": "b" * 64,
+            "attribution_source": "real_fill",
+            "decision_to_submit_ms": 10.0,
+            "submit_to_ack_ms": 20.0,
+            "ack_to_fill_ms": 30.0,
+            "planned_vs_filled_qty": 1.0,
+            "partial_fill_count": 0,
+            "cancel_replace_count": 0,
+            "arrival_mid": 100.0,
+            "bid_ask_spread": 1.0,
+            "fill_vwap": 100.5,
+            "adverse_slippage": 0.5,
+            "fee": 0.04,
+            "funding": 0.0,
+            "unfilled_exposure_time": 0.0,
+            "protection_order_latency": 0.0,
+            "stop_gap": 0.0,
+            "maker_or_taker": "taker",
+            "attribution_source_hash": _HASH_A,
+        }
+        report_hash = canonical_hash(core)
+        payload = core | {
+            "report_id": trace_id(
+                "execution_attribution_report",
+                {"report_hash": report_hash},
+            ),
+            "report_hash": report_hash,
+        }
+        envelope_core = {
+            "artifact_schema_version": 1,
+            "artifact_type": "execution_attribution_report",
+            "object_id": payload["report_id"],
+            "payload": payload,
+            "payload_hash": canonical_hash(payload),
+        }
+        raw = json.dumps(
+            envelope_core
+            | {"artifact_hash": canonical_hash(envelope_core)},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii") + b"\n"
+        restored = load_artifact(
+            raw,
+            expected_artifact_type="execution_attribution_report",
+        )
+        self.assertEqual(restored.schema_version, 1)
+        self.assertEqual(restored.field_evidence, {})
 
 
 if __name__ == "__main__":
