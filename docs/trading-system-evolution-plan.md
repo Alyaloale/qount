@@ -910,7 +910,7 @@ owner 授权后，在 VPS 执行首次 Phase D 真实最小认证：
 ### 16.6 首次 run 证据限制和本地补强（2026-07-23）
 
 首次真实认证的执行、fee 和归零事实有效，但旧 `phase_d_real_run.py` 只持久化约 412 字节摘要；12 个成员 payload/hash
-只在进程内构造，不能把该历史 run 追溯改写为完整不可变证据包。当前本地补强尚未部署：
+只在进程内构造，不能把该历史 run 追溯改写为完整不可变证据包。`0.2.14` 已将本地补强部署到 VPS：
 
 - `CertificationArtifactStore` 在 `state/certification/runs/<run_id>/` 先写 12 个完整成员和自校验 metadata，最后写
   `manifest.json`；目录 `0700`、文件 `0600`、O_EXCL 不可覆盖、fsync、逐字节回读、精确文件集和篡改检测；
@@ -929,8 +929,8 @@ owner 授权后，在 VPS 执行首次 Phase D 真实最小认证：
 有完整 income 窗口时的 funding；arrival mid、spread、完整 submit/ACK/保护单时间点若未在事件时捕获，写
 `not_captured_at_event_time`，不得填零或估算。schema v1 继续可读且原 hash 兼容。
 
-Phase B 每日 timer 保持原频率，当前生产进度仍为 `2/30`，还需 28 个有效日批次；若连续通过，最早约 2026-08-20
-达到退出门。本地新增 cycle/progress/exit artifact，区分 valid/failed batch，记录最新 watermark/diff/venue/HALT 和累计
+Phase B 每日 timer 保持原频率，当前生产已观察到 `3/30` 个有效批次，还需 27 个有效日批次；若从下一周期连续通过，最早约 2026-08-19
+达到退出门。`0.2.14` 新增 cycle/progress/exit artifact，区分 valid/failed batch，记录最新 watermark/diff/venue/HALT 和累计
 真实成交覆盖。达到 30 只产生 `exit_gate_passed=true` 的不可变 artifact，固定
 `orders_authorized=false/automatic_authority_change=false`，不得自动修改 dispatcher、registry 或权限。
 

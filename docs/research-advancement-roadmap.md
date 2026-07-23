@@ -231,7 +231,7 @@ blocked_reasons
 - 统一`Signal NAV / Standalone Executable NAV / Portfolio Realized NAV`口径；
 - 统一market/TOP3 beta residual、成本、trial count和fold稳定性报告。
 
-本地实现状态（2026-07-23，尚未部署、未运行候选 PnL）：
+实现状态（2026-07-23，合同已随 `0.2.14` 部署，未运行候选 PnL）：
 
 - `src/qount/governance/research_records.py` 已新增 `GlobalExperimentRecord`、`HistoricalFamilyMapping`、
   `PointInTimeSymbolLifecycle`、`PointInTimeUniverseRevision`、`UnifiedNavScorecard` 和

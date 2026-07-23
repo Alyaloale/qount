@@ -2,8 +2,8 @@
 
 更新时间：2026-07-23
 
-源码与VPS生产版本：`0.2.13`，commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`，
-production provenance=`8141d31a...f205`
+源码与VPS生产版本：`0.2.14`，implementation commit=`23355079fc0a196ab932d8085bc4b4deb8da94d3`，
+production provenance=`e3ad4d7d...1d0f9`
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -32,7 +32,7 @@ production provenance=`8141d31a...f205`
 - 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
 - X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一生产交易入口是
   `qount-mini-trend-live.timer` 与独立 MiniTrend arm/registry/readiness。
-- 当前`qount-mini-trend-live.timer=enabled/active`，`qount-mini-trend-forward.timer=disabled/inactive`。`0.2.13`已完成
+- 当前`qount-mini-trend-live.timer=enabled/active`，`qount-mini-trend-forward.timer=disabled/inactive`。`0.2.14`已完成
   provenance/readiness五轴/RuntimeLedger/reconciliation与publisher验收；不要恢复旧X4/C×D、forward timer或production cron。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
@@ -226,9 +226,9 @@ Phase B（只读生产并行）管道已建成，`qount-phase-b-readonly.timer` 
 ssh qount-vps 'systemctl list-timers qount-phase-b-readonly.timer --no-pager'
 ```
 
-30 批次退出门生产进度：2/30（batch #1 手动 + batch #2 timer 触发）。不要为了累计进度手工补跑或提高频率；
-timer 每日自然运行。当前本地代码会生成 `cycles/*.json`、`progress/*.json`、`latest_progress.json` 和达到 30 时的
-`exit/phase_b_exit.json`，但尚未部署。达到退出门也只产生机器证据，不改变 dispatcher、registry 或权限。
+30 批次退出门生产进度：3/30（前两批历史验证 + 2026-07-23 自然批次）。不要为了累计进度手工补跑或提高频率；
+timer 每日自然运行。`0.2.14` 已部署，下一次自然周期会生成 `cycles/*.json`、`progress/*.json`、`latest_progress.json`，
+达到 30 时再生成 `exit/phase_b_exit.json`。达到退出门也只产生机器证据，不改变 dispatcher、registry 或权限。
 
 Phase B 本地测试：
 
@@ -266,7 +266,8 @@ Phase C 本地测试：
 ## Phase D 证据与归因
 
 首次真实 `real_ack_fill` 已完成且 arm 已消费。不要重复真钱认证。历史 run 只落了摘要，不能追溯生成完整 12 成员包；
-本地新 `CertificationArtifactStore` 只保证后续 run。优先等待下一次 Phase B 24 小时只读 archive 覆盖首次 fill，然后离线回填。
+`0.2.14` 已把新 `CertificationArtifactStore` 部署到 VPS，只保证后续 run。最新 Phase B archive 没有 trades/income，
+优先等待下一次自然 archive 覆盖首次 fill，然后离线回填。
 
 离线 dry-run（本地，不下真单）：
 
@@ -305,7 +306,7 @@ Phase D 本地测试：
 
 ## Research R0
 
-本地已实现记录合同，未接 allocator/VPS：
+R0 记录合同已随 `0.2.14` 同步到 VPS，但未接 allocator，也未在 VPS 运行候选 PnL：
 
 ```bash
 PYTHONPATH=src ./.venv/bin/python scripts/research/build_r0_records.py

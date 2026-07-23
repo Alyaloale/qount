@@ -8,6 +8,19 @@
 
 ## 2026-07-23
 
+### 0.2.14 Phase D/Phase B/R0 release deployed
+
+- 收到 owner 对本批代码同步的授权，范围限定为 Phase D evidence store、逐字段 attribution、Phase B progress 和 R0 合同；
+  不包含新订单、arm 轮换、timer 频率变化、dispatcher/registry/权限变化或重复真钱认证。
+- 本地 release commit=`23355079fc0a196ab932d8085bc4b4deb8da94d3`，version=`0.2.14`，source tree=`a5a3f9c3...f387955`；
+  已通过 `scripts/sync-to-vps.sh --install` 同步并在 VPS 完成 editable install。部署 provenance=`e3ad4d7d...1d0f9`。
+- VPS production surface `343/343 OK`，本批新增认证/归因/Phase B/R0 聚焦测试 `80/80 OK`，compileall 与 provenance readback 通过。
+- 部署前一次 live 周期曾因旧文件树 provenance mismatch fail closed，未进入订单路径；部署后 provenance 可验证。没有手工重跑 live 或
+  Phase B，两个 timer 均继续 `enabled/active`，production cron 仍为零。
+- 最新自然 Phase B archive 为 shadow diff=0、venue=pass、HALT=0、仓位全平，但 trades/income 均为 0 条；有效批次累计为 `3/30`，
+  新的 machine progress artifact 从下一次自然周期开始生成。架构整体仍未完工：Phase B 30 日门、Base 自然成交证据、R0真实数据/NAV 和
+  Phase E 两个独立 promotion sleeve 尚未满足。
+
 ### Phase D immutable evidence, partial attribution, Phase B exit state, and R0 contracts completed locally
 
 - Added `CertificationArtifactStore`: publishes exactly 12 referenced member envelopes under

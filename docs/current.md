@@ -2,8 +2,8 @@
 
 更新时间：2026-07-23
 
-源码与VPS生产版本：`0.2.13`，commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`，
-source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
+源码与VPS生产版本：`0.2.14`，implementation commit=`23355079fc0a196ab932d8085bc4b4deb8da94d3`，
+source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -16,7 +16,7 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 [research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-23 Phase D 不可变证据、逐字段归因、Phase B 退出门和研究 R0 已在本地实现，尚未部署。**
+- **2026-07-23 Phase D 不可变证据、逐字段归因、Phase B 退出门和研究 R0 已随 `0.2.14` 部署。**
   新增 `CertificationArtifactStore`：在 `state/certification/runs/<run_id>/` 先写并回读 12 个完整成员，再写
   `bundle_metadata.json`，最后以 `manifest.json` (`CertificationResult`) 作为完成标记；目录 `0700`、文件 `0600`、
   不可覆盖、fsync、精确成员集、metadata/member hash、篡改/中断/敏感字段检测均有测试。venue client 现在保留
@@ -24,12 +24,22 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
   funding/transfer 不再填零。`ExecutionAttributionReport` 升到 schema v2，每个指标独立记录
   `available|unavailable + missing_reason + source_hash`；`backfill-attribution` 可从经 manifest 校验的 Phase B
   `raw/trades.jsonl` 和 `income_history.jsonl` 只读回填 fee/fill/maker-taker/quantity，未捕获的到达中价和延迟明确为
-  `not_captured_at_event_time`。Phase B 新增不可变 cycle/progress/exit artifact，机器字段包括 `valid_streak=2`、
+  `not_captured_at_event_time`。Phase B 新增不可变 cycle/progress/exit artifact，机器字段包括 `valid_streak`、
   `required=30`、有效/失败批次、最新 watermark/diff/venue/HALT、累计真实成交覆盖，且
   `orders_authorized=false/automatic_authority_change=false`。研究 R0 新增 GlobalExperimentRecord、历史 family mapping、
   point-in-time symbol lifecycle/universe、统一三 NAV/beta residual/cost/trial scorecard 和 CxD/CTA-R
   CandidateRevalidationRecord；CxD 仍 `blocked_pending_owner_authorization`，CTA-R 仍 `research_only`。Mac 全仓
-  `1892/1892 OK`。本批未访问或修改 VPS、timer、arm、dispatcher、registry、cron 或交易权限，也没有任何新订单。
+  `1892/1892 OK`，VPS production surface `343/343 OK`，新增聚焦测试 `80/80 OK`。本批只同步代码并安装依赖，
+  未重启 timer、轮换 arm、修改 dispatcher、registry、cron 或交易权限，也没有任何新订单。
+
+- **部署后生产状态。** 最新自然 Phase B archive（`2026-07-23T04:08:43Z`）为 shadow diff=0、venue=pass、HALT=0、
+  TOP3 实际仓位全平；该 archive 的 `trades.jsonl` 和 `income_history.jsonl` 均为 0 条，因此首次认证 fill 仍不可回填。
+  Phase B 已有 3 个有效批次，退出门仍为 `3/30`；新的 `cycles/progress/latest_progress` 会从下一次自然 timer 周期开始写入，
+  不手工补跑、不提高频率。
+
+- **架构计划完成度。** 单策略 Base 的生产链、Phase A-D 工程能力和本批证据存储已实现并部署；整体架构计划尚未完成。
+  未完成门包括 Phase B 30 个有效日批次、首次 Base 自然成交的全链路样本、R0 真实历史 family/lifecycle/cost/NAV 证据、
+  至少两个独立 sleeve promotion，以及 Phase E allocator 入口。R0 合同存在不等于 Phase E 通过，allocator 仍未接入 VPS。
 
 - **首次 Phase D 真实认证的证据限制已明确。** 2026-07-23 首次真实 fill/fee/归零是有效的场所执行事实，但当时脚本只把
   约 412 字节摘要落盘；12 个成员 payload/hash 只在进程内构造，不能追溯声称为已经持久化的完整不可变包。本批存储器只保证

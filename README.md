@@ -6,20 +6,21 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前源码与VPS生产版本均为 `0.2.13`，production commit=`89be296014a9d826353c4b72d9d9487714b3c0f4`、
-provenance=`8141d31a...f205`。该版本增加最近已完成日线硬门，修复LLM flat仓位计数、中文越权扫描、
+当前源码与VPS生产版本均为 `0.2.14`，production implementation commit=`23355079fc0a196ab932d8085bc4b4deb8da94d3`、
+provenance=`e3ad4d7d...1d0f9`，source tree=`a5a3f9c3...f387955`。该版本增加最近已完成日线硬门，修复LLM flat仓位计数、中文越权扫描、
 latest-date类型比较和当前decision arm绑定，并补Funding Veto beta残差报告；
 `qount-mini-trend-live.timer` 已恢复 `enabled/active`。唯一获得真钱权限的连续策略是
 `MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
 effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。
-`0.2.13` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账均已验收。最终受控live artifact
+`0.2.14` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账均已验收。最终受控live artifact
 状态为`completed`，冻结信号仍为全现金，0 market/0 stop、`exchange_mutation_attempted=false`，live与标准
 reconciliation均passed；这不是未启动，也不得强制制造首单。
 
-2026-07-23 的 Phase D 不可变证据包、逐字段执行归因、Phase B 机器退出门和研究 R0 合同已在 Mac 本地完成，
-全仓 `1892/1892 OK`，但尚未部署到 VPS。首次真实认证当时只落了摘要，不能追溯声称为完整 12 成员包；现有 fill
-只通过下一次自然 Phase B 只读 archive 回填可证明字段，不重复真钱认证。生产 Phase B 仍为 `2/30`，Base 继续自然等待
-首个非零信号，生产 timer、arm、dispatcher 和权限均未改变。
+2026-07-23 的 Phase D 不可变证据包、逐字段执行归因、Phase B 机器退出门和研究 R0 合同已随 `0.2.14` 部署到 VPS，
+Mac 全仓 `1892/1892 OK`、VPS production surface `343/343 OK`、新增认证/R0聚焦测试 `80/80 OK`。部署只更新代码和依赖，
+没有重启 timer、轮换 arm、改变 dispatcher/registry/权限或产生订单。首次真实认证当时只落了摘要，不能追溯声称为完整 12 成员包；
+截至最新自然 Phase B archive，已观察到 `3/30` 个有效批次，但该 archive 的 trades/income 均为 0 条，首次 fill 仍不能诚实回填；
+下一周期才会首次写入新的机器 progress artifact。Base 继续自然等待首个非零信号。
 
 ## 主机职责
 
