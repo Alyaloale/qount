@@ -5,12 +5,14 @@ from qount.governance.eligibility import SleeveRuntimeEligibility
 from qount.governance.eligibility import validate_runtime_eligibility
 from qount.governance.event_capacity import EquityMappingExecutionContract
 from qount.governance.event_capacity import equity_mapping_event_capacity
+from qount.governance.research import FORMAL_TRIAL_REVIEW_MILESTONE
 from qount.governance.research import MAX_FORMAL_TRIALS_PER_FAMILY
 from qount.governance.research import FormalTrial
 from qount.governance.research import ForwardPeriod
 from qount.governance.research import base_operational_evidence
 from qount.governance.research import equity_mapping_independence
 from qount.governance.research import funding_episode_independence
+from qount.governance.research import formal_trial_observation
 from qount.governance.research import liquid_trend_independence
 from qount.governance.research import record_forward_review
 from qount.governance.research import register_formal_trial
@@ -19,6 +21,7 @@ from qount.governance.research_records import GlobalExperimentRecord
 from qount.governance.research_records import HistoricalFamilyMapping
 from qount.governance.research_records import PointInTimeSymbolLifecycle
 from qount.governance.research_records import PointInTimeUniverseRevision
+from qount.governance.research_records import ResearchEvidenceReadinessRecord
 from qount.governance.research_records import UnifiedNavScorecard
 from qount.governance.research_records import build_point_in_time_universe
 from qount.governance.research_records import build_r0_candidate_records
@@ -41,10 +44,12 @@ __all__ = [
     "ForwardPeriod",
     "DeploymentManifest",
     "CandidateRevalidationRecord",
+    "FORMAL_TRIAL_REVIEW_MILESTONE",
     "GlobalExperimentRecord",
     "HistoricalFamilyMapping",
     "PointInTimeSymbolLifecycle",
     "PointInTimeUniverseRevision",
+    "ResearchEvidenceReadinessRecord",
     "UnifiedNavScorecard",
     "SleeveRuntimeEligibility",
     "StrategyRegistration",
@@ -55,6 +60,7 @@ __all__ = [
     "equity_mapping_event_capacity",
     "equity_mapping_independence",
     "funding_episode_independence",
+    "formal_trial_observation",
     "liquid_trend_independence",
     "record_forward_review",
     "register_formal_trial",

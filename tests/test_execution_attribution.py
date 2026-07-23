@@ -6,6 +6,9 @@ import unittest
 
 from qount.certification import UNAVAILABLE
 from qount.certification import ExecutionAttributionReport
+from qount.certification import build_event_time_attribution
+from qount.certification import capture_arrival_quote
+from qount.certification import exchange_evidence_envelope
 from qount.persistence import ArtifactCodecError
 from qount.persistence import dump_artifact
 from qount.persistence import load_artifact
@@ -289,6 +292,114 @@ class ExecutionAttributionRealFillTest(unittest.TestCase):
         )
         self.assertEqual(restored.schema_version, 1)
         self.assertEqual(restored.field_evidence, {})
+
+    def test_event_time_capture_builds_partial_real_report(self):
+        class Exchange:
+            def fetch_order_book(self, symbol, limit):
+                self.call = (symbol, limit)
+                return {
+                    "bids": [[99.0, 2.0]],
+                    "asks": [[101.0, 3.0]],
+                    "apiKey": "must-not-persist",
+                }
+
+        exchange = Exchange()
+        arrival = capture_arrival_quote(
+            exchange,
+            symbol="BTC/USDT:USDT",
+            observed_at="2026-07-23T00:00:00+00:00",
+        )
+        raw = exchange_evidence_envelope(
+            submit_response={"id": "order-1", "secret": "redact"},
+            confirmed_order={"id": "order-1", "status": "closed"},
+            trades=(
+                {
+                    "id": "trade-1",
+                    "takerOrMaker": "taker",
+                    "api_key": "redact",
+                },
+            ),
+        )
+        report = build_event_time_attribution(
+            run_id="b" * 64,
+            decision_time="2026-07-23T00:00:00+00:00",
+            submitted_at="2026-07-23T00:00:01+00:00",
+            acknowledged_at="2026-07-23T00:00:01.050000+00:00",
+            planned_quantity=2.0,
+            side="buy",
+            arrival_quote=arrival,
+            fills=(
+                {
+                    "quantity": 1.0,
+                    "price": 100.0,
+                    "fee": 0.04,
+                    "occurred_at": "2026-07-23T00:00:01.100000+00:00",
+                },
+                {
+                    "quantity": 1.0,
+                    "price": 101.0,
+                    "fee": 0.04,
+                    "occurred_at": "2026-07-23T00:00:01.200000+00:00",
+                },
+            ),
+            raw_trades=(
+                {"id": "trade-1", "takerOrMaker": "taker"},
+                {"id": "trade-2", "takerOrMaker": "taker"},
+            ),
+            raw_exchange_evidence=raw,
+            protection_acknowledged_at="2026-07-23T00:00:01.400000+00:00",
+            stop_price=95.0,
+        )
+        self.assertEqual(exchange.call, ("BTC/USDT:USDT", 5))
+        self.assertEqual(arrival["mid"], 100.0)
+        self.assertEqual(report.submit_to_ack_ms, 50.0)
+        self.assertEqual(report.partial_fill_count, 1)
+        self.assertEqual(report.fill_vwap, 100.5)
+        self.assertEqual(report.maker_or_taker, "taker")
+        self.assertEqual(report.funding, UNAVAILABLE)
+        self.assertEqual(
+            report.field_evidence["funding"]["missing_reason"],
+            "not_attributable_to_single_order",
+        )
+        self.assertEqual(raw["submit_response"]["secret"], "[REDACTED]")
+        self.assertEqual(raw["trades"][0]["api_key"], "[REDACTED]")
+        self.assertFalse(report.validate())
+
+    def test_missing_order_book_does_not_block_fill_fields(self):
+        arrival = capture_arrival_quote(
+            object(),
+            symbol="BTC/USDT:USDT",
+            observed_at="2026-07-23T00:00:00+00:00",
+        )
+        raw = exchange_evidence_envelope(submit_response={"id": "order-1"})
+        report = build_event_time_attribution(
+            run_id="b" * 64,
+            decision_time="2026-07-23T00:00:00+00:00",
+            submitted_at="2026-07-23T00:00:01+00:00",
+            acknowledged_at="2026-07-23T00:00:01.050000+00:00",
+            planned_quantity=1.0,
+            side="buy",
+            arrival_quote=arrival,
+            fills=(
+                {
+                    "quantity": 1.0,
+                    "price": 100.0,
+                    "fee": 0.04,
+                    "occurred_at": "2026-07-23T00:00:01.100000+00:00",
+                },
+            ),
+            raw_trades=(),
+            raw_exchange_evidence=raw,
+            protection_acknowledged_at=None,
+            stop_price=None,
+        )
+        self.assertEqual(report.arrival_mid, UNAVAILABLE)
+        self.assertEqual(report.fill_vwap, 100.0)
+        self.assertEqual(report.fee, 0.04)
+        self.assertEqual(
+            report.field_evidence["arrival_mid"]["missing_reason"],
+            "order_book_query_unavailable",
+        )
 
 
 if __name__ == "__main__":

@@ -12,6 +12,10 @@ from qount.certification.attribution import FIELD_AVAILABILITY
 from qount.certification.attribution import UNAVAILABLE
 from qount.certification.attribution import ExecutionAttributionReport
 from qount.certification.attribution_recovery import build_recovered_attribution
+from qount.certification.attribution_capture import build_event_time_attribution
+from qount.certification.attribution_capture import capture_arrival_quote
+from qount.certification.attribution_capture import exchange_evidence_envelope
+from qount.certification.attribution_capture import sanitize_exchange_evidence
 from qount.certification.contracts import CERTIFICATION_EVENT_SOURCES
 from qount.certification.contracts import CERTIFICATION_EVENT_TYPES
 from qount.certification.contracts import CERTIFICATION_SCHEMA_VERSION
@@ -54,8 +58,12 @@ __all__ = [
     "VerifiedCertificationBundle",
     "VenueAdapter",
     "build_recovered_attribution",
+    "build_event_time_attribution",
+    "capture_arrival_quote",
+    "exchange_evidence_envelope",
     "publish_certification_bundle",
     "read_certification_bundle",
+    "sanitize_exchange_evidence",
 ]
 
 

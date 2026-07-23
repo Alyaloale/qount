@@ -31,8 +31,8 @@ from qount.shadow_accounting.fetch import fetch_income_history
 from qount.shadow_accounting.fetch import fetch_open_orders
 from qount.shadow_accounting.fetch import fetch_private_trades
 from qount.shadow_accounting.orchestrator import run_shadow_accountant
+from qount.shadow_accounting.progress import PHASE_B_OBSERVATION_TARGET
 from qount.shadow_accounting.progress import PHASE_B_PROGRESS_SCHEMA_VERSION
-from qount.shadow_accounting.progress import PHASE_B_REQUIRED_VALID_STREAK
 from qount.shadow_accounting.progress import PhaseBProgressError
 from qount.shadow_accounting.progress import initialize_phase_b_baseline
 from qount.shadow_accounting.progress import record_phase_b_cycle
@@ -47,8 +47,8 @@ __all__ = [
     "BLOCKING_LEVELS",
     "CASH_EVENT_TYPES",
     "FetchResult",
+    "PHASE_B_OBSERVATION_TARGET",
     "PHASE_B_PROGRESS_SCHEMA_VERSION",
-    "PHASE_B_REQUIRED_VALID_STREAK",
     "PhaseBProgressError",
     "QueryMetadata",
     "ReadOnlyExchange",

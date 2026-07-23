@@ -769,6 +769,29 @@ class AuthorityWriterTest(unittest.TestCase):
                     standard_registry=minimal_registry,
                 )
             self.assertEqual(result["status"], "completed", result)
+            self.assertEqual(
+                len(result["execution_attribution_reports"]),
+                len(plan["market_orders"]),
+            )
+            for report in result["execution_attribution_reports"]:
+                self.assertEqual(report["attribution_source"], "real_fill")
+                self.assertEqual(
+                    report["field_evidence"]["fee"]["status"],
+                    "available",
+                )
+                self.assertEqual(report["arrival_mid"], "unavailable")
+                self.assertEqual(
+                    report["field_evidence"]["arrival_mid"]["missing_reason"],
+                    "order_book_query_unavailable",
+                )
+            market_responses = [
+                response
+                for response in result["responses"]
+                if response.get("type") == "market"
+            ]
+            self.assertTrue(
+                all("raw_exchange_evidence" in response for response in market_responses)
+            )
             self.assertFalse((root / "HALT").exists())
             self.assertEqual(
                 verify_dispatch_journal(journal)["executed_decision_ids"],

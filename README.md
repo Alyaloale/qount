@@ -16,11 +16,17 @@ effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、
 状态为`completed`，冻结信号仍为全现金，0 market/0 stop、`exchange_mutation_attempted=false`，live与标准
 reconciliation均passed；这不是未启动，也不得强制制造首单。
 
-2026-07-23 的 Phase D 不可变证据包、逐字段执行归因、Phase B 机器退出门和研究 R0 合同已随 `0.2.14` 部署到 VPS，
+2026-07-23 的 Phase D 不可变证据包、逐字段执行归因、Phase B机器观测和研究R0合同已随`0.2.14`部署到VPS，
 Mac 全仓 `1892/1892 OK`、VPS production surface `343/343 OK`、新增认证/R0聚焦测试 `80/80 OK`。部署只更新代码和依赖，
 没有重启 timer、轮换 arm、改变 dispatcher/registry/权限或产生订单。首次真实认证当时只落了摘要，不能追溯声称为完整 12 成员包；
-截至最新自然 Phase B archive，已观察到 `3/30` 个有效批次，但该 archive 的 trades/income 均为 0 条，首次 fill 仍不能诚实回填；
-下一周期才会首次写入新的机器 progress artifact。Base 继续自然等待首个非零信号。
+截至最新自然Phase B archive，已观察到`3/30`个有效批次，但该archive的trades/income均为0条，首次fill仍不能诚实回填。
+本地后续政策已取消日历、样本、双sleeve和阶段顺序对研发的硬阻塞：30批次和3 trial只作观测/复盘里程碑，CxD与CTA-R已是
+`active_research`且允许virtual研究；真实订单安全和授权边界保持不变。标准多sleeve本地runtime现已打通
+`MarketSnapshot -> StrategyIntent[] -> allocator -> RiskDecision -> OrderPlan -> RuntimeLedger -> reconciliation`，并生成
+manifest-last不可变集成artifact。Base dispatcher已在自然订单提交前捕获arrival quote和submit/ACK/trade/protection证据；无自然订单时不生成
+归因样本。R0 v4 bundle已用真实代码/历史文档hash替代family占位，并逐项保留lifecycle、成本和候选Standalone NAV的缺失原因。
+最终bundle为`state/research_governance/r0/f5bfb3b5...6fa85/`、manifest=`05a303d4...c6bb3`。这使本地达到research-ready，
+但没有替代VPS legacy dispatcher、接入allocator或生成候选PnL；Base继续自然等待首个非零信号。
 
 ## 主机职责
 

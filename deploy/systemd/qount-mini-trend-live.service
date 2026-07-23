@@ -1,5 +1,5 @@
 [Unit]
-Description=Qount MiniTrend single-strategy 100 USDT live cycle
+Description=Qount Base standard-production 100 USDT live cycle
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/root/qount/scripts/desktop/mini_trend_um_live_cycle.sh
@@ -17,6 +17,7 @@ Environment=QOUNT_PYTHON_BIN=/root/qount/.venv/bin/python
 Environment=QOUNT_MINI_TREND_STATE_ROOT=/root/qount/state/mini_trend
 Environment=QOUNT_MINI_TREND_ARM_PATH=/root/qount/state/mini_trend/arm/manual-final-arm.json
 Environment=QOUNT_MINI_TREND_LIVE_ENV_PATH=/root/.config/qount/mini-trend-live.env
+Environment=QOUNT_BASE_STANDARD_PRODUCTION_ROOT=/root/qount/state/mini_trend/standard-production
 Environment=QOUNT_DASHBOARD_AUTHORITY_ROOT=/var/lib/qount/dashboard-authority
 Environment=QOUNT_DASHBOARD_RUNTIME_ROOT=/var/lib/qount/dashboard-runtime
 Environment=QOUNT_DASHBOARD_BACKUP_ROOT=/var/lib/qount/dashboard-backups

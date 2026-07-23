@@ -16,7 +16,26 @@ source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
 [research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-23 Phase D 不可变证据、逐字段归因、Phase B 退出门和研究 R0 已随 `0.2.14` 部署。**
+- **2026-07-23 本地标准多sleeve runtime和R0 readiness证据已闭合研究入口，生产仍保持`0.2.14`不变。**
+  `src/qount/portfolio/virtual_runtime.py`已完整连接`MarketSnapshot -> StrategyIntent[] -> allocator -> PortfolioTarget ->
+  RiskDecision -> OrderPlan -> RuntimeLedger -> virtual fills/fees/funding -> 三NAV -> three-way reconciliation`。固定两sleeve
+  artifact位于`state/research_governance/runtime/d4faa121...48a80/`，result=`a98977dd...1672f`、runtime snapshot=
+  `f69bea0c...c3447`，manifest-last、`0700/0600`、不可覆盖、全成员hash和audit hash chain均已回读；固定
+  `orders_authorized=false/orders_routed=false/promotion_evidence=false`。`ResearchEvidenceReadinessRecord`与R0 v4 bundle把
+  CxD/CTA-R实际历史family映射、代码/文档来源、已冻结的研究成本假设和缺失项机器化；真实historical lifecycle、账户/场所成本、
+  当前数据IDs和候选Standalone NAV仍明确为partial/unavailable。最终R0 bundle位于
+  `state/research_governance/r0/f5bfb3b5...6fa85/`，manifest=`05a303d4...c6bb3`；因此可开始数据工程和discovery，尚不可声称候选PnL或promotion。
+  Base dispatcher同时已接入事件时点归因采集；只有自然market fill才生成report，当前仍无样本。本批未访问或部署VPS。
+
+- **2026-07-23 本地研究推进政策已改为非阻塞，生产仍保持 `0.2.14` 不变。** Phase B的30个有效批次、每family
+  3个formal trial、两个promotion sleeve和Phase顺序都只作为证据成熟度观测，不再阻止本地数据工程、discovery、
+  virtual allocator或架构建设。Phase B schema v2输出`policy_mode=non_blocking_observation`以及
+  `blocks_local_progress=false/blocks_research=false/blocks_allocator_development=false`，达到30只写milestone。
+  CxD和CTA-R的v4 CandidateRevalidationRecord均为`owner_authorized_research/active_research`，允许historical/discovery/
+  shadow/virtual研究，仍固定`orders_allowed=false`。单sleeve allocator与第4个formal trial已有回归覆盖。生产registry、
+  UNKNOWN/HALT、幂等、对账、密钥隔离、真实订单arm和owner授权未放宽；本地最新全仓`1908/1908 OK`，本批未访问或部署VPS。
+
+- **2026-07-23 Phase D 不可变证据、逐字段归因、Phase B观测和研究 R0 已随 `0.2.14` 部署。**
   新增 `CertificationArtifactStore`：在 `state/certification/runs/<run_id>/` 先写并回读 12 个完整成员，再写
   `bundle_metadata.json`，最后以 `manifest.json` (`CertificationResult`) 作为完成标记；目录 `0700`、文件 `0600`、
   不可覆盖、fsync、精确成员集、metadata/member hash、篡改/中断/敏感字段检测均有测试。venue client 现在保留
@@ -24,22 +43,23 @@ source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
   funding/transfer 不再填零。`ExecutionAttributionReport` 升到 schema v2，每个指标独立记录
   `available|unavailable + missing_reason + source_hash`；`backfill-attribution` 可从经 manifest 校验的 Phase B
   `raw/trades.jsonl` 和 `income_history.jsonl` 只读回填 fee/fill/maker-taker/quantity，未捕获的到达中价和延迟明确为
-  `not_captured_at_event_time`。Phase B 新增不可变 cycle/progress/exit artifact，机器字段包括 `valid_streak`、
-  `required=30`、有效/失败批次、最新 watermark/diff/venue/HALT、累计真实成交覆盖，且
+  `not_captured_at_event_time`。部署版Phase B新增不可变cycle/progress/exit artifact；本地后续schema v2已把它改为
+  non-blocking observation/milestone，机器字段包括`valid_streak`、`observation_target=30`、有效/失败批次、最新
+  watermark/diff/venue/HALT、累计真实成交覆盖，且
   `orders_authorized=false/automatic_authority_change=false`。研究 R0 新增 GlobalExperimentRecord、历史 family mapping、
   point-in-time symbol lifecycle/universe、统一三 NAV/beta residual/cost/trial scorecard 和 CxD/CTA-R
-  CandidateRevalidationRecord；CxD 仍 `blocked_pending_owner_authorization`，CTA-R 仍 `research_only`。Mac 全仓
+  CandidateRevalidationRecord；部署时CxD为blocked、CTA-R为planned，本地v4现均为active research。Mac全仓
   `1892/1892 OK`，VPS production surface `343/343 OK`，新增聚焦测试 `80/80 OK`。本批只同步代码并安装依赖，
   未重启 timer、轮换 arm、修改 dispatcher、registry、cron 或交易权限，也没有任何新订单。
 
 - **部署后生产状态。** 最新自然 Phase B archive（`2026-07-23T04:08:43Z`）为 shadow diff=0、venue=pass、HALT=0、
   TOP3 实际仓位全平；该 archive 的 `trades.jsonl` 和 `income_history.jsonl` 均为 0 条，因此首次认证 fill 仍不可回填。
-  Phase B 已有 3 个有效批次，退出门仍为 `3/30`；新的 `cycles/progress/latest_progress` 会从下一次自然 timer 周期开始写入，
-  不手工补跑、不提高频率。
+  Phase B已有3个有效批次，观测进度为`3/30`；这不阻止任何本地工作。timer继续自然运行，不为累计样本手工补跑或提高频率。
 
-- **架构计划完成度。** 单策略 Base 的生产链、Phase A-D 工程能力和本批证据存储已实现并部署；整体架构计划尚未完成。
-  未完成门包括 Phase B 30 个有效日批次、首次 Base 自然成交的全链路样本、R0 真实历史 family/lifecycle/cost/NAV 证据、
-  至少两个独立 sleeve promotion，以及 Phase E allocator 入口。R0 合同存在不等于 Phase E 通过，allocator 仍未接入 VPS。
+- **架构计划完成度。** 单策略Base生产链、Phase A-D工程能力、不可变证据、逐字段归因、shadow accounting、venue provenance、
+  allocator/governance底座和本地标准多sleeve virtual integration artifact均已实现，本地研究入口已经闭合。整体生产架构仍未闭合：
+  标准runtime尚未替代legacy MiniTrend dispatcher，allocator仍未接入VPS；R0 actual historical lifecycle、账户/venue成本、当前数据IDs和
+  候选Standalone NAV仍须通过数据研究产生；Base事件时点捕获代码已就位但自然fill归因仍无样本。这些是并行backlog，不是本地等待门。
 
 - **首次 Phase D 真实认证的证据限制已明确。** 2026-07-23 首次真实 fill/fee/归零是有效的场所执行事实，但当时脚本只把
   约 412 字节摘要落盘；12 个成员 payload/hash 只在进程内构造，不能追溯声称为已经持久化的完整不可变包。本批存储器只保证
@@ -90,7 +110,7 @@ source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
   主账本独立提取器+HALT 旁路观测+venue snapshot 抓取器+统一脚本入口。新增1个独立包、6个源文件、5个测试文件、61条新测试；
   Mac全仓`1783/1783 OK`。`qount-phase-b-readonly.timer`每日UTC 04:00自动运行(live timer 03:20后40分钟)，
   batch #1手动验证+batch #2 timer触发验证均通过：shadow diff=0 block、venue=pass、halt=0 events。
-  30批次退出门进度：2/30。
+  当时按旧命名记录为30批次“退出门”2/30；当前政策只按非阻塞观测进度读取。
 
 - **2026-07-23 Phase A（架构演进合同与离线认证）已全部完成。** 按trading-system-evolution-plan.md §9 Phase A交付7项：Certification
   合同(CertificationPlan/Run/Event/Result)、ExecutionAttributionReport、HALT三层分类(operational/strategy/portfolio bypass observer)、
@@ -901,7 +921,7 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
   （SHA-256 `018195cb...4695`），明确research-only、0订单、无paper/live资格。
 - **1000 USDT组合治理已从文档约定落成确定性代码。** 账户低于3000时最多一个连续live候选和一个事件最小试单；
   Signal/Standalone Executable/Portfolio Realized三类NAV分账，晋级只看Standalone；风险预算统一为压力损失贡献；
-  每假设族最多3个正式trial；查看前向结果后改规则会把该时间段降为consumed。Base 60日只作运行证据，Equity按
+  每假设族第3个正式trial触发复盘但不阻止后续trial；查看前向结果后改规则会把该时间段降为consumed。Base 60日只作运行证据，Equity按
   独立美股交易日、Funding按episode计数。LiquidTrend首个PnL前已冻结robust rank、8币下限、121日warm-up、
   可执行bid/ask时点，并加入特征值有效维度、PC1、BTC beta、下跌条件相关和相关簇稳定性；旧G0结果仍保持阻断。
 - **Equity Mapping G0 v0.3已完成合同管道，但没有新增真实市场样本。** `mini_trend/equity_mapping.py`和离线CLI

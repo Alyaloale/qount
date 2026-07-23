@@ -41,44 +41,50 @@ def _results(
 
 
 class PhaseBProgressTest(unittest.TestCase):
-    def test_valid_streak_and_remaining_cycles(self) -> None:
+    def test_valid_streak_and_remaining_observations_do_not_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             first = record_phase_b_cycle(
                 root,
                 _results(root, valid=True, cycle="01"),
-                required_valid_streak=3,
+                observation_target=3,
             )
             self.assertEqual(first["valid_streak"], 1)
-            self.assertEqual(first["remaining_valid_cycles"], 2)
+            self.assertEqual(first["remaining_observation_cycles"], 2)
+            self.assertFalse(first["blocks_local_progress"])
+            self.assertFalse(first["blocks_research"])
+            self.assertFalse(first["blocks_allocator_development"])
             second = record_phase_b_cycle(
                 root,
                 _results(root, valid=False, cycle="02"),
-                required_valid_streak=3,
+                observation_target=3,
             )
             self.assertEqual(second["valid_streak"], 0)
             third = record_phase_b_cycle(
                 root,
                 _results(root, valid=True, cycle="03"),
-                required_valid_streak=3,
+                observation_target=3,
             )
             self.assertEqual(third["valid_streak"], 1)
-            self.assertFalse(third["exit_gate_passed"])
+            self.assertFalse(third["observation_target_reached"])
             self.assertEqual(third["invalid_cycle_count"], 1)
 
-    def test_exit_artifact_is_created_without_authority(self) -> None:
+    def test_observation_milestone_is_created_without_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             first = record_phase_b_cycle(
                 root,
                 _results(root, valid=True, cycle="11"),
-                required_valid_streak=1,
+                observation_target=1,
             )
-            self.assertTrue(first["exit_gate_passed"])
-            exit_files = list((root / "exit").glob("*.json"))
-            self.assertEqual(len(exit_files), 1)
+            self.assertTrue(first["observation_target_reached"])
+            milestone_files = list((root / "milestones").glob("*.json"))
+            self.assertEqual(len(milestone_files), 1)
+            self.assertFalse((root / "exit").exists())
+            self.assertNotIn("exit_gate_passed", first)
             self.assertFalse(first["orders_authorized"])
             self.assertFalse(first["automatic_authority_change"])
+            self.assertEqual(first["authority_effect"], "none")
 
     def test_real_trade_coverage_is_reported_from_archive_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -112,7 +118,7 @@ class PhaseBProgressTest(unittest.TestCase):
                     "venue": {"compatibility": "pass", "blockers": []},
                     "halt": {"event_count": 0, "halt_types": []},
                 },
-                required_valid_streak=1,
+                observation_target=1,
             )
             self.assertTrue(result["real_trade_coverage"]["available"])
             self.assertEqual(
@@ -125,7 +131,7 @@ class PhaseBProgressTest(unittest.TestCase):
             first = record_phase_b_cycle(
                 root,
                 _results(root, valid=True, cycle="21"),
-                required_valid_streak=3,
+                observation_target=3,
             )
             self.assertFalse(first["has_real_trade_coverage"])
             run_dir = root / "shadow_accounting" / "runs" / "22"
@@ -143,13 +149,13 @@ class PhaseBProgressTest(unittest.TestCase):
                         "run_dir": str(run_dir),
                     },
                 },
-                required_valid_streak=3,
+                observation_target=3,
             )
             self.assertTrue(traded["has_real_trade_coverage"])
             empty = record_phase_b_cycle(
                 root,
                 _results(root, valid=True, cycle="23"),
-                required_valid_streak=3,
+                observation_target=3,
             )
             self.assertTrue(empty["has_real_trade_coverage"])
 
@@ -159,7 +165,7 @@ class PhaseBProgressTest(unittest.TestCase):
             record_phase_b_cycle(
                 root,
                 _results(root, valid=True, cycle="31"),
-                required_valid_streak=3,
+                observation_target=3,
             )
             cycle_path = next((root / "cycles").glob("*.json"))
             payload = json.loads(cycle_path.read_text(encoding="ascii"))
@@ -169,8 +175,20 @@ class PhaseBProgressTest(unittest.TestCase):
                 record_phase_b_cycle(
                     root,
                     _results(root, valid=True, cycle="32"),
-                    required_valid_streak=3,
+                    observation_target=3,
                 )
+
+    def test_schema_v1_keyword_is_only_an_observation_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = record_phase_b_cycle(
+                root,
+                _results(root, valid=True, cycle="41"),
+                required_valid_streak=2,
+            )
+            self.assertEqual(result["observation_target"], 2)
+            self.assertFalse(result["observation_target_reached"])
+            self.assertFalse(result["blocks_local_progress"])
 
 
 if __name__ == "__main__":

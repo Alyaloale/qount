@@ -8,6 +8,50 @@
 
 ## 2026-07-23
 
+### Standard multi-sleeve virtual runtime and evidence-backed R0 readiness
+
+- 新增标准本地链：`MarketSnapshot -> StrategyIntent[] -> allocator -> PortfolioTarget -> RiskDecision -> OrderPlan ->
+  RuntimeLedger -> virtual execution -> three NAVs -> three-way reconciliation`。Risk对坏类型/非有限限额fail closed；OrderPlan按
+  reduce-before-increase排序并执行step/min-qty/min-notional检查。virtual venue逐单记录`SUBMITTING/ACKNOWLEDGED/FILLED`、fill、fee和
+  funding，不调用交易所。
+- multi-sleeve bundle保留完整decision batch、ledger snapshot、audit rows、execution、sleeve NAV和result；manifest-last、目录`0700`、
+  文件`0600`、不可覆盖、fsync/readback、嵌套hash、精确成员集和audit sequence/previous/row/final hash均验证。固定fixture artifact为
+  `state/research_governance/runtime/d4faa121...48a80/`，result=`a98977dd...1672f`、snapshot=`f69bea0c...c3447`，
+  `orders_authorized=false/orders_routed=false/promotion_evidence=false`。
+- R0新增`ResearchEvidenceReadinessRecord`。实际family mapping绑定历史代码/文档hash；CxD/CTA-R的lifecycle、成本和NAV按字段记录
+  `available/partial/unavailable + missing reason`。生成8份readiness、1份GlobalExperimentRecord和两个v4 candidate，不再使用
+  `historical_evidence_pending_revalidation/current_data_pending/to_be_frozen`占位。最终bundle为
+  `state/research_governance/r0/f5bfb3b5...6fa85/`、manifest=`05a303d4...c6bb3`；candidate PnL仍为not ready，架构fixture不冒充策略收益。
+- MiniTrend Base dispatcher在自然market submit前捕获arrival book，保存独立submit/ACK/fill/protection时点、脱敏submit/order/trade原始证据，
+  并在真实fill后构造逐字段`ExecutionAttributionReport`；order-book不支持时arrival字段unavailable但不阻断执行。当前信号仍全现金，未制造样本。
+- 新增聚焦测试覆盖零/单/双sleeve、reduce-first、min-notional、账本/对账、经济重放、权限、manifest缺失、外层/ledger audit深层篡改、
+  R0 bundle幂等/缺manifest/篡改及Base归因journal。架构边界/persistence/ledger聚焦`53/53 OK`，Mac全仓`1908/1908 OK`，
+  compileall和`git diff --check`通过；全批未访问VPS、私有交易所、testnet，未创建arm、修改timer/registry/dispatcher权限或发送订单。
+
+### Local research policy made non-blocking and R0 moved to research-ready
+
+- Owner取消了日历、样本数量、阶段顺序、双sleeve和固定trial上限对本地推进的硬阻塞。生产资金安全不变量保持不变：
+  真实账户mutation仍要求显式授权/arm，订单幂等、UNKNOWN/HALT、零仓位、对账、密钥隔离和风险预算没有放宽；本批未访问或部署VPS。
+- Phase B progress升到schema v2：`30`改为`observation_target`，输出
+  `policy_mode=non_blocking_observation`、`blocks_local_progress=false`、`blocks_research=false`、
+  `blocks_allocator_development=false`和`authority_effect=none`。达到目标只写
+  `milestones/phase_b_observation_target.json`，不再生成新的exit gate；schema v1 keyword仅作输入兼容。
+- formal trial的`3`次硬上限改为review milestone。所有trial仍要求ID、family、预注册主指标/失败条件/敏感性范围和连续编号，
+  但第4个及后续trial不再被代码拒绝；机器观测固定`blocks_additional_trials=false`。
+- CxD和CTA-R CandidateRevalidationRecord更新为v3，均为`owner_authorized_research/active_research`，允许historical/discovery/
+  shadow/virtual研究且`blocks_local_progress=false/trial_budget_blocks_research=false`；两者继续`orders_allowed=false`。
+  artifact分别为`state/research_governance/r0/candidate-cxd-trend-carry-revalidation-v3.json`
+  (`SHA-256 8d2f6d06...215769`)和`candidate-cta-r-cross-asset-revalidation-v3.json`
+  (`SHA-256 a651eb8d...2d53a`)。
+- allocator代码审计确认不存在双sleeve硬编码，并新增单research sleeve无需promotion即可allocatable的回归；零sleeve仍返回可解释的
+  fail-closed blocker。registry审计确认`research`环境本来就不受promotion顺序限制，production status/owner/risk检查未改。
+- 权威文档已统一把Phase视为并行workstream：证据缺失降低结论强度，不冻结family或virtual架构。本地现在具备开始R0/R1研究的
+  contracts、trace、不可变artifact、point-in-time universe、三NAV scorecard、allocator、shadow accounting和governance底座。
+  尚未完全闭合的是标准多sleeve runtime替代legacy dispatcher、真实多sleeve virtual integration artifact、R0真实
+  family/lifecycle/cost/NAV数据和Base自然fill归因样本；这些是并行backlog，不是等待门。
+- 验证：非阻塞/R0/allocator/registry/architecture聚焦回归`61/61 OK`，Mac全仓`1895/1895 OK`，compileall与
+  `git diff --check`通过。测试仅使用本地fixture/fake client，无私有API、timer、arm、权限或订单变更。
+
 ### 0.2.14 Phase D/Phase B/R0 release deployed
 
 - 收到 owner 对本批代码同步的授权，范围限定为 Phase D evidence store、逐字段 attribution、Phase B progress 和 R0 合同；

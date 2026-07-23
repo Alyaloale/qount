@@ -118,7 +118,7 @@ canonical通知库迁移、无订单周期、readiness五轴、账本和post-dis
 | 能力 | 当前成熟度 | 解释 |
 | --- | --- | --- |
 | 研究治理 | Level 2-3 | hash、trial、历史/forward角色已较完整 |
-| 策略研究 | Level 2 | Base稳定，其他sleeve多为research/shadow/blocked |
+| 策略研究 | Level 2-3 | Base稳定，CxD/CTA-R已开放historical/discovery/virtual；family mapping已落证据，actual lifecycle/cost/NAV待研究数据 |
 | order-free运行 | Level 2 | systemd、preflight、paper、dry、readiness已部署 |
 | 执行代码 | Level 2-3 | 首次live与recurring幂等周期已验证；真实有单成交路径仍只有模拟/故障测试证据 |
 | 内部账本 | production Level 2 | SQLite WAL、event/cash/NAV、post-dispatch reconciliation已接入MiniTrend live |
@@ -127,7 +127,17 @@ canonical通知库迁移、无订单周期、readiness五轴、账本和post-dis
 | 通知与日报 | 本地Level 2 / production Level 2 | 分级事件、WAL outbox、重试、审计、确定性DailyBrief和六角色DailyIntelligence已实现；个人微信真实投递与每日scheduler已接入，交易权限保持隔离 |
 | 实盘证据 | Level 1 | Base已manual arm并运行live；当前全现金，尚无真实成交样本 |
 
-下一里程碑是把单策略系统提升到 Level 3，而不是先增加更多实盘策略。
+### 2.5 本地research-ready结论
+
+本地共享底座已经可以推进研究：标准contracts/trace、不可变artifact、GlobalExperimentRecord、point-in-time universe合同、
+三类NAV scorecard、单sleeve allocator、virtual目标、独立账本/对账、certification和venue provenance均已有实现与测试。
+日历批次、trial数、promotion状态和sleeve数不再作为本地入口门。
+
+本地研究入口已进一步闭合：标准多sleeve runtime已连接`MarketSnapshot`、多个`StrategyIntent`、allocator、`RiskDecision`、
+reduce-before-increase `OrderPlan`、virtual venue、`RuntimeLedger`、三类NAV和三方对账，并落manifest-last不可变integration artifact；
+R0历史family mapping已由实际代码/文档hash确认，lifecycle/cost/NAV的available与missing字段也有v4 readiness证据。架构仍未“全部完成”：
+标准runtime尚未替代legacy MiniTrend production dispatcher，R0 actual point-in-time数据和候选Standalone NAV尚未产生，Base自然fill归因
+尚无样本。后续工作可以并行，不需要等待30天或第二个promotion sleeve。
 
 ## 3. 架构原则与关键取舍
 
@@ -1346,7 +1356,7 @@ reconciliation均完成；recurring重复decision已验证为order-free refresh�
 
 ### Phase E：多策略组合
 
-目标：Base稳定后才把新sleeve接入统一Portfolio。
+目标：立即在本地把零/单/多sleeve接入统一Portfolio并形成virtual证据；Base生产路径保持独立。
 
 顺序：
 
@@ -1354,10 +1364,10 @@ reconciliation均完成；recurring重复decision已验证为order-free refresh�
 virtual NAV -> shadow execution -> paper -> event minimal-live -> risk scaling
 ```
 
-每个sleeve先证明Standalone Executable NAV可执行，不能依赖Base净额补贴其最小名义价值或掩盖成本。
-Phase E 的入口还要求至少两个 sleeve 分别通过自身 promotion 合同；本地 allocator、GlobalExperimentRecord 或
-CandidateRevalidationRecord 的存在都不构成入口。CxD carry 在新 owner 授权前只能 observation/shadow/virtual，CTA-R 的
-跨资产研究也不产生 Binance 钱包订单权限。
+本地allocator没有双sleeve入口门：零sleeve fixture验证空状态，单sleeve验证passthrough，固定两sleeve integration artifact已验证
+净额、风险、reduce-before-increase、rounding/min-notional、虚拟成交/费用/funding、账本、三NAV、对账、重放和篡改检测。
+每个真实候选的Standalone Executable NAV成熟度影响结论强度和production资格，不阻止virtual架构运行。
+CxD和CTA-R现已授权historical/discovery/virtual研究；二者都不因此获得Binance钱包订单权限。
 
 ### Phase F：持续研究与规模化
 
@@ -1410,12 +1420,11 @@ LLM可以提供洞察，但不能直接改变真钱行为
 qount 的近期主线因此固定为：
 
 ```text
-统一合同和trace
--> 账本与reconciliation
--> 订单状态恢复
--> 通知和Dashboard read models
--> deterministic + LLM日报
--> Base minimal-live审查
--> 多策略接入
--> 持续研究和受控扩容
+统一合同、trace、账本、恢复和read models作为共享底座
+├─ Base minimal-live持续观测
+├─ execution certification与shadow accounting持续观测
+├─ R0/R1/... discovery和数据工程
+└─ 零/单/多sleeve virtual allocator集成
+
+任何paper/live/真实账户mutation再单独进入授权、arm、对账和回滚路径
 ```

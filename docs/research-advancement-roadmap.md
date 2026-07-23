@@ -1,11 +1,11 @@
 # qount 策略研究与情报推进路线
 
-版本：`v0.3`
+版本：`v0.4`
 
 更新时间：`2026-07-23`
 
-状态：owner要求形成的research_sandbox路线；允许设计来源、实验合同和离线研究，不构成promotion、paper、live、
-carry、short、杠杆、期权交易或生产配置变更授权。
+状态：owner已授权本地research_sandbox、historical discovery、数据工程和virtual allocator并行推进，包括CxD carry和
+CTA-R的虚拟研究。该授权不构成promotion、paper、live、真实订单、short、杠杆或生产配置变更授权。
 
 ## 0. 研究定位
 
@@ -26,7 +26,7 @@ carry、short、杠杆、期权交易或生产配置变更授权。
 - LiquidTrend10首个G0有效广度仅`1.438`，原10币横截面trial被阻断；
 - 既有price-only ML、HMM、GRU、宏观/链上风险缩放和多个overlay已留下负证据；
 - 当前部署约束仍是低频、Binance USD-M钱包、no-carry、no-short、无杠杆增益、effective gross `<=1`；
-- 研究可以提出超出当前部署约束的未来路线，但开始相应正式trial前必须有owner对该hypothesis family的明确授权。
+- 当前部署约束只约束可部署候选和真实账户行为；本地research/discovery可检验超出部署约束的假设并如实标记，不需等待阶段或样本门。
 
 ## 1. 对三组建议的研究分流
 
@@ -34,11 +34,11 @@ carry、short、杠杆、期权交易或生产配置变更授权。
 | --- | --- |
 | 多速度趋势 | 作为新的有限trial hypothesis family，Base继续作为冻结控制组，不做SMA参数无限扫描 |
 | point-in-time流动性宇宙 | P0数据基础；先审计退市、规则、成交额、盘口、OI、funding和缺失，再看PnL |
-| 横截面动量 | 只有新宇宙G0证明有效广度和容量相对LiquidTrend10发生实质变化后才启动 |
+| 横截面动量 | 可立即做数据、synthetic和discovery研究；新宇宙G0决定结果能否升级为候选证据 |
 | 波动率/危机状态层 | 可研究，但必须引入与既有失败price-only缩放不同的信息或目标 |
 | ML meta-labeling | 仅用于波动、成本、成交和异常等元任务；不直接生成live权重 |
-| carry/basis | 设为`blocked_pending_owner_authorization`；不因旧RV-C结果恢复 |
-| VRP/期权 | 远期capacity lane；当前options surface数据门失败，不能直接回测或卖波动 |
+| carry/basis | CxD/RV-C可立即做historical/discovery/shadow/virtual研究；真实多腿订单仍需独立授权 |
+| VRP/期权 | 可继续本地数据和虚拟研究；当前options surface缺口降低结论强度，不能被写成可交易或卖波动资格 |
 | 跨资产CTA-R | 提升为高价值重新认证候选；先复核selection-free、新时间、可交易ETF/期货通道和成本，不继承旧promotion资格 |
 | C×D趋势+carry | 作为组合数学候选单独复核；carry/no-carry、双腿执行、尾部和场所权限仍是硬门，不直接进入paper/live |
 | maker/post-only | 作为执行经济学family，不把理论maker费率当作alpha；必须测成交率、等待成本、逆向选择和fallback taker |
@@ -70,14 +70,14 @@ carry、short、杠杆、期权交易或生产配置变更授权。
   "first_result_observed_at": null,
   "reviewer_observations": [],
   "result_artifact_hash": null,
-  "decision": "planned|retain|reject|blocked",
+  "decision": "planned|active_research|retain|reject|blocked",
   "contamination_notes": []
 }
 ```
 
 规则：
 
-- 每个`hypothesis_family`最多3个冻结正式trial；探索诊断也登记，但不能伪装成不计trial的promotion候选；
+- 每个`hypothesis_family`第3个冻结正式trial是复盘里程碑，不是上限；后续trial继续编号，探索诊断也登记，不能通过改名逃避计数；
 - 已查看窗口默认`consumed_historical_discovery_pool`；改参数后不能继续称其为独立OOS；
 - 负结果、blocked capacity和未完成实验同样进入账本；
 - 同一经济机制换模型、阈值或窗口仍属于同一family，除非预先证明信息集或执行合同发生实质变化；
@@ -231,19 +231,25 @@ blocked_reasons
 - 统一`Signal NAV / Standalone Executable NAV / Portfolio Realized NAV`口径；
 - 统一market/TOP3 beta residual、成本、trial count和fold稳定性报告。
 
-实现状态（2026-07-23，合同已随 `0.2.14` 部署，未运行候选 PnL）：
+实现状态（2026-07-23，生产仍为`0.2.14`；本地合同已进入non-blocking research policy，未运行候选PnL）：
 
 - `src/qount/governance/research_records.py` 已新增 `GlobalExperimentRecord`、`HistoricalFamilyMapping`、
-  `PointInTimeSymbolLifecycle`、`PointInTimeUniverseRevision`、`UnifiedNavScorecard` 和
+  `PointInTimeSymbolLifecycle`、`PointInTimeUniverseRevision`、`UnifiedNavScorecard`、`ResearchEvidenceReadinessRecord` 和
   `CandidateRevalidationRecord` 的 hash/validation 合同；
 - point-in-time universe builder 只按 `valid_from <= as_of < valid_to` 选择当时 active symbol，不用未来上市或已退市状态反填；
 - 统一 scorecard 同时保存 Signal NAV、Standalone Executable NAV、Portfolio Realized NAV、beta residual、成本、trial count
   和 fold metrics；它是报告合同，不是 allocator 或 promotion；
-- `scripts/research/build_r0_records.py` 生成两个不可覆盖的本地候选合同：CxD 为
-  `blocked_pending_owner_authorization/observation-shadow-virtual-only`，CTA-R 为 `research_only/planned`；二者
-  `orders_allowed=false`，未接入 VPS allocator；
-- R0 尚未完成项仍包括历史 trial 的实际 family 迁移表、真实 USD-M lifecycle 数据摄取、LiteratureRecord/Research Intelligence MVP、
-  两个候选的当前数据 IDs、冻结 cost model、Standalone NAV 和 Candidate scorecard。未完成项不得用占位记录替代证据。
+- `scripts/research/run_multi_sleeve_virtual_runtime.py`已生成固定两sleeve标准链artifact，result=`a98977dd...1672f`；它验证
+  allocator/Risk/OrderPlan/virtual ledger/fees/funding/三NAV/reconciliation，不是候选表现；
+- `scripts/research/build_r0_records.py`现读取并验证上述artifact，生成8份readiness、1份GlobalExperimentRecord和两个v4候选。
+  CxD实际映射到`x4_s7_trend_portfolio/rv_c_basis_carry/x4_cxd_combo_v1_9`，CTA-R映射到
+  `l1_cross_asset_v1/cta_r_selection_free_a_share_etf`；来源文件均绑定SHA-256，不继承旧promotion结论。最终bundle为
+  `state/research_governance/r0/f5bfb3b5...6fa85/`、manifest=`05a303d4...c6bb3`；
+- v4候选均为`owner_authorized_research/active_research`且`orders_allowed=false`。历史lifecycle、真实账户/venue成本、当前数据IDs、
+  candidate Signal/Standalone/Realized NAV和beta residual尚未取得的字段均逐项写`missing_evidence`，固定
+  `candidate_pnl_ready=false`；未完成项不得以0、估算或架构fixture冒充。
+- R0 后续实际数据工作仍包括USD-M/COIN-M/spot与跨资产historical lifecycle摄取、LiteratureRecord/Research Intelligence MVP、
+  两个候选的current dataset和Standalone scorecard。它们决定结果强度，不阻止数据工程与discovery开始。
 
 ### R0.1：Edge储备与组合候选重新认证，P0/P1
 
@@ -252,8 +258,8 @@ blocked_reasons
 crypto sleeve”转向两个可证伪的候选组合方向：
 
 1. **C×D重新认证**：把历史趋势+carry组合只作为组合构造假设，重新建立当前版本的两份Standalone NAV、共同因子/crypto beta、
-   basis tail、双腿成本、场所集中和独立新时间证据。carry仍处于`blocked_pending_owner_authorization`，因此只能先做
-   observation、shadow attribution和virtual allocator，不能因为历史负相关或目标Sharpe直接paper/live。
+   basis tail、双腿成本、场所集中和独立新时间证据。carry已可做historical discovery、observation、shadow attribution和
+   virtual allocator；不能因为历史负相关或目标Sharpe直接paper/live。
 2. **CTA-R跨资产重新认证**：优先复核selection-free ensemble、walk-forward OOS、可交易ETF/期货通道、真实费用、时区、税费和
    账户约束；跨资产广度若能稳定通过，不代表它自动成为当前Binance钱包的sleeve。期货券商、海外券商或新场所都需要独立
    venue/data/owner合同，不能把ETF研究读数当作已认证期货edge。
@@ -269,22 +275,24 @@ current_data_ids / untouched_data_ids / venue_and_account_scope
 baseline_ids / frozen_cost_model / execution_contract
 standalone_nav_artifacts / factor_and_beta_plan / tail_scenarios
 primary_metric / kill_tests / trial_budget / owner_authorization_state
-decision = planned | retain | reject | blocked
+decision = planned | active_research | retain | reject | blocked
 ```
 
-### R0.2：两个候选的最小退出门
+### R0.2：两个候选的证据清单
 
-**C×D趋势+carry**必须依次通过：
+以下项目决定候选能否形成更强结论或进入production review，不阻止本地实验并行运行。
+
+**C×D趋势+carry**需要报告：
 
 1. 趋势腿和carry腿分别重建当前版本的Standalone Executable NAV，使用独立数据水位和成本模型；
 2. 对两腿及组合分别报告crypto beta、market/momentum/carry暴露、basis tail、legging、资金占用和场所集中；
 3. 在新时间或未消费窗口上完成价格连续、funding/contract完整和双腿可执行性审计；
-4. 只在两腿都没有硬阻断时运行virtual allocator；carry仍停留在shadow/virtual，除非获得新的owner授权。
+4. virtual allocator可先用零/单腿/synthetic fixture验证架构；只有两腿证据齐全后才能把结果解释为C×D候选组合表现。
 
-任一腿的after-tail净收益非正、required maker fill超过1、独立NAV无法对账或新时间证据缺失，candidate=`blocked|reject`，
-不得通过调组合权重救援。
+任一腿的after-tail净收益非正、required maker fill超过1、独立NAV无法对账或新时间证据缺失，应将该版本标为
+`blocked|reject|insufficient_evidence`并降低结论强度；允许提出有实质变化的新实验，不能通过调组合权重伪造原版本通过。
 
-**CTA-R跨资产趋势**必须依次通过：
+**CTA-R跨资产趋势**需要报告：
 
 1. 固定selection-free ensemble或预登记walk-forward，不以历史最优lookback作为唯一结果；
 2. 保存point-in-time ETF/期货标的、上市/退市、跟踪误差、时区、费用、税费和容量；
@@ -309,7 +317,7 @@ Forecast[i,t] = clip(w_fast * F_fast[i,t]
 fast负责事件后的快速降险，medium承担主要持仓，slow表达长期牛熊状态。`F`可以来自breakout、EMA或标准化收益动量，
 但尺度、标准化、裁剪和`w_fast/w_medium/w_slow`必须在读取候选结果前冻结；连续forecast不得被事后阈值化成新的参数搜索。
 
-首个family只允许三个冻结正式trial：
+首个family先运行三个冻结正式trial并在此处强制复盘，后续trial不被代码禁止：
 
 1. 多速度方向一致性基线；
 2. 固定连续forecast等权组合；
@@ -326,7 +334,7 @@ fast负责事件后的快速降险，medium承担主要持仓，slow表达长期
 
 ### R2：point-in-time universe与流动性约束横截面，P1条件项
 
-只有R0证明相对当前LiquidTrend10发生以下实质变化才启动PnL trial：
+discovery PnL可随时启动，但只有R0证明相对当前LiquidTrend10发生以下实质变化，结果才可升级为候选或promotion证据：
 
 - 历史上市/下架和可交易状态可重建；
 - 至少8个同期标的具有完整bar/funding/rules/流动性；
@@ -366,12 +374,13 @@ fast负责事件后的快速降险，medium承担主要持仓，slow表达长期
 
 Logistic/常数先验/确定性规则是强制baseline。使用chronological walk-forward、purge/embargo和真实成本；预测准确率不能替代净收益或执行改进。
 
-### R5：carry/basis，暂停等待授权
+### R5：carry/basis，本地研究已开放
 
-旧RV-C和C×D只提供机制与工程教训，不提供当前promotion资格。若owner未来明确重启，必须新建独立StrategyIntent和新版本合同，
-覆盖spot/dated/perp数据、多腿状态机、legging risk、collateral、venue exposure、tail stress和独立NAV。不得把carry重新塞进Base过滤器后声称独立收益源。
+旧RV-C和C×D只提供机制与工程教训，不提供当前promotion资格。owner现已授权historical/discovery/shadow/virtual重启；研究应新建
+独立StrategyIntent和新版本合同，覆盖spot/dated/perp数据、多腿状态机、legging risk、collateral、venue exposure、tail stress
+和独立NAV。不得把carry重新塞进Base过滤器后声称独立收益源。
 
-若未来获批，固定按以下证据顺序推进，每一级都需要独立artifact和新的owner授权，不能跨级：
+本地各层可并行建设；以下顺序只约束真实权限升级，每一级保留独立artifact，paper/live需要新的owner授权：
 
 ```text
 funding observation
@@ -383,19 +392,20 @@ funding observation
 每一级分别归因funding forecast误差、basis变化、两腿费用/滑点、legging损失、资金占用和场所集中；所谓market-neutral必须由
 实际beta和压力情景证明，不能由“现货多 + 永续空”的名义结构直接推出。
 
-C×D的组合回测只能在两条独立NAV都完成当前版本重建后运行；组合结果不回写Base参数，不把carry过滤器包装成趋势alpha，
-也不允许用组合净额掩盖某一腿的不可执行或basis-tail失败。
+C×D组合回测可先用synthetic/历史腿验证管道，但只有两条独立NAV都完成当前版本重建后，结果才可解释为当前候选证据；组合结果
+不回写Base参数，不把carry过滤器包装成趋势alpha，也不允许用组合净额掩盖某一腿的不可执行或basis-tail失败。
 
 ### R6：options/VRP，远期capacity lane
 
-当前Deribit历史option surface和公共容量在G0被阻断，因此先做数据/许可/执行能力审计，不做卖波动PnL回测：
+当前Deribit历史option surface和公共容量在G0证据不足，因此优先做数据/许可/执行能力审计；允许synthetic/discovery PnL用于
+验证方法，但必须标为不可交易证据：
 
 - 可获得的point-in-time chain、IV surface、bid/ask和expiry历史；
 - delta hedge、保证金、尾部压力和多腿恢复；
 - 远OTM保护成本和极端跳空；
 - 数据预算、交易权限和场所风险。
 
-只有capacity通过且owner明确允许新的期权研究family，才可写首个trial。
+期权family可写本地trial；capacity缺失必须进入scorecard并阻止可交易结论，真实场所或订单仍需独立owner授权。
 
 若未来研究卖波动，优先采用“净carry + 远OTM保护成本 + 压力损失预算”的尾部对冲合同，而不是裸卖vol；保护成本、delta
 hedge滑点、保证金占用和跳空损失必须进入Standalone NAV。这个合同仍不改变当前options surface G0阻断和no-options权限。
@@ -407,7 +417,8 @@ CTA-R历史可作为方法和baseline背景，但当前仍是guarded blueprint�
 1. 固定selection-free ensemble和walk-forward合同，先在可交易ETF上复核；
 2. 报告跨资产有效广度、单一资产/类别贡献、债券/黄金/海外股regime集中和真实跟踪误差；
 3. 再评估期货券商或其他场所的容量与执行，不把杠杆或期货授权当作策略收益证明；
-4. 只有新时间、成本、账户权限和venue capability均通过，才进入virtual allocator。
+4. 可先用research/synthetic输入进入virtual allocator验证架构；新时间、成本、账户权限和venue capability齐全后，
+   才能把结果解释为可执行CTA-R候选证据。
 
 多频段趋势（例如fast 20-60日、medium 60-120日、slow 120-250日）可以作为一个冻结trial合同；不得围绕最近结果继续扩展
 lookback网格，也不得以“期货杠杆”掩盖ETF边际收益或新venue风险。
@@ -417,17 +428,17 @@ lookback网格，也不得以“期货杠杆”掩盖ETF边际收益或新venue�
 这条线不先声称新增alpha，而是验证薄edge是否能被兑现、组合是否能在尾部保持可控：
 
 - `post_only/maker`：冻结maker/taker费、实际fill概率、等待机会成本、逆向选择、取消/重挂和fallback taker成本；
-  required fill rate超过1或after-tail净收益非正时立即kill；
-- `TWAP/VWAP`：只有组合名义和容量门触发才启动，先做paper/shadow slice replay；100 USDT canary不引入该复杂度；
+  required fill rate超过1或after-tail净收益非正时拒绝该版本，不冻结新的实质机制研究；
+- `TWAP/VWAP`：可随时用fixture/virtual slice replay验证；只有组合名义和容量确实需要时才进入paper或生产设计；
 - 风险预算：先用固定压力损失预算、单资产上限和per-sleeve volatility target；协方差只作为稳健滚动估计，相关性趋近1或
   流动性同步下降时必须降风险，不能依赖优化器“找到”分散；
 - 每个组合候选都输出单sleeve、组合、因子和无法解释残差，并把执行成本和尾部对冲成本从alpha中剥离。
 
 ### R9：跨策略组合复核，P1条件项
 
-只有C×D、CTA-R或其他候选各自通过当前promotion合同，才可研究统一allocator。先用等风险/压力损失预算的简单基线，
-再比较波动率目标、权重上限和相关性闸门；不得直接把协方差优化器当成生产配置。目标是验证增量风险贡献和尾部改善，
-不是把历史Sharpe相加或预先锁定组合Sharpe目标。
+统一allocator研究立即开放：先用零sleeve fail-closed、单sleeve passthrough以及多个synthetic/research sleeve验证等风险/压力损失
+预算，再比较波动率目标、权重上限和相关性约束。C×D、CTA-R或其他候选的promotion状态只决定输入能否代表真实候选或进入生产，
+不阻止allocator代码与virtual归因。不得直接把协方差优化器当成生产配置；目标是验证增量风险贡献和尾部改善，不是把历史Sharpe相加。
 
 ## 5. 统一统计和经济门
 
@@ -482,7 +493,7 @@ strategy return
 报告必须区分总收益、因子解释收益和残差，并在正常期、压力期和滚动窗口分别估计。策略名称、币种数量或不同参数不构成
 alpha breadth；只有扣成本后的残差、不同失效场景和Standalone Executable证据才能进入组合分散判断。
 
-### 5.3 研究到实盘迁移门
+### 5.3 研究与真实账户权限分离
 
 ```text
 discovery
@@ -494,7 +505,8 @@ discovery
 -> minimal live
 ```
 
-每次晋级只增加一层权限，并冻结上一层的信号、成本模型、预期换手/持有期、回撤区间和数据版本。迁移scorecard逐层比较：
+这条梯子只描述证据和真实账户权限，不限制本地workstream并行。每次真实权限升级只增加一层，并冻结上一层的信号、成本模型、
+预期换手/持有期、回撤区间和数据版本。迁移scorecard逐层比较：
 
 - forecast/目标暴露分布；
 - 实际与预期换手、持有期和漏单；
@@ -518,7 +530,7 @@ discovery
 
 ### 2-5个月：趋势核心与执行科学
 
-- 完成多速度趋势最多3个冻结trial；
+- 完成多速度趋势首批3个冻结trial并复盘；
 - 通过则进入独立virtual/shadow，未通过则关闭family或提出不同机制；
 - 完成CTA-R可交易ETF的selection-free/walk-forward复核；若通过，再建立跨资产virtual sleeve，不接期货实盘；
 - 以历史数据/fixture完成C×D双NAV、共同因子和basis-tail复核，carry仍不获得paper权限；
@@ -529,16 +541,16 @@ discovery
 
 - 在危机状态、执行经济学、横截面动量中，只优先启动数据容量和执行合同最完整的一条；
 - ML只做元任务并与简单baseline竞争；
-- 若options capacity重新通过，才预登记tail-hedged VRP；否则保持blocked；
-- 只有两个独立Standalone NAV均通过，才运行统一allocator的风险预算/相关性闸门消融；
-- carry/basis只有收到新的明确owner授权才进入正式trial；
+- options capacity不足时仍可继续数据/fixture/discovery，结果保持低证据等级；
+- 立即用零/单/多synthetic sleeve运行统一allocator的风险预算/相关性闸门消融，真实候选NAV成熟后再替换fixture；
+- carry/basis已可进行historical/discovery/virtual正式trial；真实多腿订单仍需独立owner授权；
 - 每个family独立记账，不提前混合信号。
 
 ### 8-12个月：组合化审查
 
 - 最多选择一个拥有新时间/独立执行证据的candidate进入promotion review；
 - 先virtual NAV、shadow execution，再决定是否需要paper；
-- 只有两个sleeve均有Standalone Executable证据，才评估allocator和风险贡献；
+- allocator和风险贡献架构可随时评估；两个真实sleeve证据只影响能否作真实组合结论；
 - 一次只晋级一个新策略，任何live仍需另行owner授权。
 
 月份是资源规划，不是结果承诺；capacity或kill test失败时应提前停止，不为满足日历继续投入。

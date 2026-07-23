@@ -14,6 +14,7 @@ from qount.portfolio_governance import base_operational_evidence
 from qount.portfolio_governance import equity_mapping_independence
 from qount.portfolio_governance import equity_mapping_event_capacity
 from qount.portfolio_governance import funding_episode_independence
+from qount.portfolio_governance import formal_trial_observation
 from qount.portfolio_governance import record_forward_review
 from qount.portfolio_governance import register_formal_trial
 from qount.portfolio_governance import scale_standalone_weights
@@ -190,7 +191,7 @@ class PortfolioGovernanceTests(unittest.TestCase):
             "stress_sized_notional_below_exchange_minimum", capacity["reasons"]
         )
 
-    def test_fourth_formal_trial_in_family_is_rejected(self) -> None:
+    def test_trial_review_milestone_does_not_block_fourth_trial(self) -> None:
         trials: tuple[FormalTrial, ...] = ()
         for index in range(3):
             trials = register_formal_trial(
@@ -204,18 +205,35 @@ class PortfolioGovernanceTests(unittest.TestCase):
                     number_of_prior_trials=index,
                 ),
             )
-        with self.assertRaisesRegex(ValueError, "trial_budget_exhausted"):
-            register_formal_trial(
-                trials,
-                FormalTrial(
-                    trial_id="trial-3",
-                    hypothesis_family="liquid_rank",
-                    preregistered_primary_metric="net_return_vs_base",
-                    preregistered_failure_condition="net_return_not_positive",
-                    allowed_sensitivity_range="cost 12-24 bps only",
-                    number_of_prior_trials=3,
-                ),
-            )
+        observation = formal_trial_observation(trials, "liquid_rank")
+        self.assertTrue(observation["review_milestone_reached"])
+        self.assertFalse(observation["blocks_additional_trials"])
+        trials = register_formal_trial(
+            trials,
+            FormalTrial(
+                trial_id="trial-3",
+                hypothesis_family="liquid_rank",
+                preregistered_primary_metric="net_return_vs_base",
+                preregistered_failure_condition="net_return_not_positive",
+                allowed_sensitivity_range="cost 12-24 bps only",
+                number_of_prior_trials=3,
+            ),
+        )
+        self.assertEqual(len(trials), 4)
+
+    def test_single_research_sleeve_is_allocatable_without_promotion(self) -> None:
+        intent = self._intent("research-only", {"BTCUSDT": 0.4})
+        result = allocate_strategy_intents(
+            (intent,),
+            (SleeveRiskBudget("research-only", 0.10, 0.20, 1.0),),
+            account_equity_usdt=500.0,
+            allowed_strategy_ids=("research-only",),
+            minimum_notional_by_symbol={"BTCUSDT": 5.0},
+            maximum_weight_by_symbol={"BTCUSDT": 0.5},
+        )
+        self.assertTrue(result["allocatable"])
+        self.assertEqual(result["blockers"], [])
+        self.assertEqual(len(result["sleeves"]), 1)
 
     def test_rule_change_consumes_forward_period(self) -> None:
         reviewed = record_forward_review(

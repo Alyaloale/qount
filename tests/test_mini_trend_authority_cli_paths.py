@@ -134,6 +134,8 @@ class MiniTrendAuthorityCliPathsTest(unittest.TestCase):
                 paths["authority_lock_path"],
                 "--notification-store",
                 paths["notification_store"],
+                "--standard-production-root",
+                str(root / "standard-production"),
                 "--output-path",
                 str(output),
             ]
@@ -161,6 +163,32 @@ class MiniTrendAuthorityCliPathsTest(unittest.TestCase):
                     side_effect=ValueError("refresh failed"),
                 ) as refresh,
                 mock.patch.object(
+                    module,
+                    "verify_release_provenance",
+                    return_value={
+                        "git_commit": "a" * 40,
+                        "version": "0.2.15",
+                        "source_tree_hash": "b" * 64,
+                        "provenance_hash": "c" * 64,
+                    },
+                ),
+                mock.patch.object(
+                    module,
+                    "record_base_standard_production_cycle",
+                    return_value={"first_fill_observation": "awaiting_natural_fill"},
+                ) as record_production,
+                mock.patch.object(
+                    module,
+                    "_object",
+                    side_effect=[
+                        ({}, "1" * 64),
+                        ({}, "2" * 64),
+                        ({}, "3" * 64),
+                        ({}, "4" * 64),
+                        ({}, "5" * 64),
+                    ],
+                ),
+                mock.patch.object(
                     module, "write_pilot_dispatch_artifact", return_value=artifact
                 ),
                 contextlib.redirect_stdout(io.StringIO()),
@@ -170,6 +198,10 @@ class MiniTrendAuthorityCliPathsTest(unittest.TestCase):
             self.assertEqual(config.source_root, selector.absolute())
             self.assertTrue(config.source_root.is_symlink())
             self.assertIn("authority_refresh_error", dispatch)
+            self.assertEqual(
+                record_production.call_args.args[0],
+                (root / "standard-production").resolve(),
+            )
 
 
 if __name__ == "__main__":

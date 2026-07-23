@@ -6,12 +6,76 @@ from qount.governance import CandidateRevalidationRecord
 from qount.governance import GlobalExperimentRecord
 from qount.governance import HistoricalFamilyMapping
 from qount.governance import PointInTimeSymbolLifecycle
+from qount.governance import ResearchEvidenceReadinessRecord
 from qount.governance import UnifiedNavScorecard
 from qount.governance import build_point_in_time_universe
 from qount.governance import build_r0_candidate_records
 
 
 _HASH = "a" * 64
+
+
+def _r0_evidence() -> dict[str, ResearchEvidenceReadinessRecord]:
+    def record(
+        evidence_type: str,
+        scope: str,
+        *,
+        status: str = "partial",
+        missing: dict[str, str] | None = None,
+    ) -> ResearchEvidenceReadinessRecord:
+        return ResearchEvidenceReadinessRecord.create(
+            evidence_type=evidence_type,
+            scope=scope,
+            status=status,
+            available_evidence={"contract": "verified"},
+            missing_evidence=missing or {},
+            source_hashes={"fixture": _HASH},
+            supports_research=True,
+            supports_candidate_pnl=False,
+        )
+
+    return {
+        "cxd_family": record(
+            "historical_family_mapping",
+            "cxd",
+            status="available",
+        ),
+        "cxd_lifecycle": record(
+            "point_in_time_lifecycle",
+            "cxd",
+            missing={"historical_intervals": "not_collected"},
+        ),
+        "cxd_cost": record(
+            "cost_model",
+            "cxd",
+            missing={"funding_history": "not_collected"},
+        ),
+        "cxd_nav": record(
+            "standalone_nav_readiness",
+            "cxd",
+            missing={"candidate_nav": "not_computed"},
+        ),
+        "cta_r_family": record(
+            "historical_family_mapping",
+            "cta-r",
+            status="available",
+        ),
+        "cta_r_lifecycle": record(
+            "point_in_time_lifecycle",
+            "cta-r",
+            missing={"historical_intervals": "not_collected"},
+        ),
+        "cta_r_cost": record(
+            "cost_model",
+            "cta-r",
+            missing={"broker_costs": "not_collected"},
+        ),
+        "cta_r_nav": record(
+            "standalone_nav_readiness",
+            "cta-r",
+            missing={"candidate_nav": "not_computed"},
+        ),
+    }
 
 
 class ResearchRecordsTest(unittest.TestCase):
@@ -88,19 +152,46 @@ class ResearchRecordsTest(unittest.TestCase):
         self.assertEqual(scorecard.validate(), ())
         self.assertIn("standalone_executable_nav", scorecard.__dict__)
 
-    def test_default_candidates_keep_cxd_blocked_and_cta_research_only(self) -> None:
-        cxd, cta_r = build_r0_candidate_records()
+    def test_default_candidates_are_research_active_without_order_authority(self) -> None:
+        cxd, cta_r = build_r0_candidate_records(_r0_evidence())
         self.assertIsInstance(cxd, CandidateRevalidationRecord)
-        self.assertEqual(cxd.decision, "blocked")
+        self.assertEqual(cxd.decision, "active_research")
         self.assertEqual(
             cxd.owner_authorization_state,
-            "blocked_pending_owner_authorization",
+            "owner_authorized_research",
         )
         self.assertFalse(cxd.execution_contract["orders_allowed"])
-        self.assertEqual(cta_r.decision, "planned")
-        self.assertEqual(cta_r.owner_authorization_state, "research_only")
+        self.assertTrue(cxd.execution_contract["research_execution_allowed"])
+        self.assertFalse(cxd.execution_contract["blocks_local_progress"])
+        self.assertFalse(cxd.execution_contract["trial_budget_blocks_research"])
+        self.assertFalse(cxd.execution_contract["candidate_pnl_ready"])
+        self.assertTrue(cxd.historical_evidence_ids[0])
+        self.assertTrue(cxd.current_data_ids[0])
+        self.assertTrue(cxd.standalone_nav_artifacts[0])
+        self.assertEqual(cta_r.decision, "active_research")
+        self.assertEqual(
+            cta_r.owner_authorization_state,
+            "owner_authorized_research",
+        )
+        self.assertTrue(cta_r.execution_contract["research_execution_allowed"])
         self.assertEqual(cxd.validate(), ())
         self.assertEqual(cta_r.validate(), ())
+
+    def test_carry_order_authority_remains_separate_from_research(self) -> None:
+        cxd, _ = build_r0_candidate_records(_r0_evidence())
+        unsafe = cxd.__class__(
+            **{
+                **cxd.__dict__,
+                "execution_contract": {
+                    **cxd.execution_contract,
+                    "orders_allowed": True,
+                },
+            }
+        )
+        self.assertIn(
+            "candidate_revalidation_carry_order_authorization_required",
+            unsafe.validate(),
+        )
 
     def test_family_mapping_is_not_an_automatic_promotion(self) -> None:
         mapping = HistoricalFamilyMapping.create(
@@ -110,6 +201,21 @@ class ResearchRecordsTest(unittest.TestCase):
         )
         self.assertEqual(mapping.validate(), ())
         self.assertEqual(mapping.mapping_status, "review_required")
+
+    def test_readiness_record_preserves_missing_evidence_without_authority(self) -> None:
+        record = _r0_evidence()["cxd_lifecycle"]
+        self.assertEqual(record.validate(), ())
+        self.assertEqual(record.status, "partial")
+        self.assertFalse(record.supports_candidate_pnl)
+        self.assertFalse(record.orders_allowed)
+
+        unsafe = record.__class__(
+            **{**record.__dict__, "orders_allowed": True}
+        )
+        self.assertIn(
+            "research_evidence_order_authority_forbidden",
+            unsafe.validate(),
+        )
 
 
 if __name__ == "__main__":

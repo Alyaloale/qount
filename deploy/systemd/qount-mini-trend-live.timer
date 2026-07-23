@@ -1,5 +1,5 @@
 [Unit]
-Description=Run Qount MiniTrend single-strategy live cycle daily
+Description=Run Qount Base standard-production cycle and natural-fill observer daily
 
 [Timer]
 OnCalendar=*-*-* 03:20:00 UTC

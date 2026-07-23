@@ -101,6 +101,13 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 
 项目默认继承以下研究纪律：
 
+- 研究阶段、日历时长、样本数量、promotion状态、sleeve数量和trial复盘目标都不是本地研发许可；它们只描述证据成熟度。
+- discovery、历史重放、数据工程、virtual allocator和shadow建模可以并行推进。缺数据或失败结果必须降级结论强度并记录，不能冻结整个family。
+- `3`个formal trial是强制复盘里程碑，不是上限；后续trial继续编号、预注册并记录已消费窗口。
+- `30`个Phase B有效批次是生产观测目标，不是Phase B退出门，也不阻止本地研究、allocator开发或其它workstream。
+- allocator本地开发允许零sleeve fixture、单sleeve passthrough和多个synthetic/research sleeve，不要求先有两个promotion候选。
+- 只有真实账户mutation继续受显式owner授权、arm、订单幂等、UNKNOWN/HALT、仓位归零、对账、密钥隔离和风险预算约束。
+
 - 已看过窗口只能算 `discovery_pool`，不能调参后再当 validation。
 - promotion 必须走 `holdout.md` 的 once-only 规则。
 - 时间序列或重叠标签必须使用 purged split / embargo 或等价防泄漏设计。

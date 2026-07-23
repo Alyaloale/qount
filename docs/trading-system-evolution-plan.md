@@ -444,7 +444,8 @@ holdout或真实执行门。
 - Dashboard增加certification/accounting/venue capability只读状态；
 - 在首个授权fill后生成ExecutionAttributionReport，不提前填充模拟slippage/latency。
 
-完成标准：不改变dispatcher决策或订单，至少连续30个运行批次无无法解释diff；样本目标是工程观察，不是自动晋级门。
+观测目标：不改变dispatcher决策或订单，持续记录有效/失败批次、diff、capability、HALT和真实成交覆盖。连续30个有效
+运行批次只是成熟度里程碑，不是退出门，不阻止任何本地研究、virtual allocator或其它Phase并行建设。
 
 ### Phase C：testnet认证
 
@@ -467,26 +468,31 @@ holdout或真实执行门。
 
 完成标准：artifact完整不等于Base或新策略获得扩容资格。
 
-### Phase E：多策略生产化，等待研究候选
+### Phase E：多策略架构与生产化
 
-状态：依赖研究candidate和Phase A-D的适用证据，当前不进入VPS dispatcher。
+状态：本地合同和零/单/多sleeve fixture已完成；固定两sleeve artifact已完整连接allocator、Risk、reduce-before-increase OrderPlan、
+virtual venue、RuntimeLedger、fees/funding、三NAV和three-way reconciliation。它属于`research_sandbox_virtual_integration`，固定
+`orders_authorized=false/orders_routed=false/promotion_evidence=false`。接入VPS dispatcher、paper或live仍是独立生产变更。
 
 - 先virtual NAV，再shadow execution，再paper；
 - 一次只晋级一个新sleeve；
 - 冻结StrategyIntent扩展字段、因子口径、压力矩阵和allocator裁剪理由；
 - allocator、Risk、Ledger和Dashboard统一显示sleeve风险贡献、成本和因子暴露。
 
-### 9.1 阶段依赖与退出门
+### 9.1 并行workstream与生产边界
 
-| 阶段 | 必须先有 | 退出门 | 失败处理 |
+这些Phase是并行工作流，不是本地研发的串行许可链。表中证据只决定能声明什么、能否发生真实账户mutation，不决定代码、
+数据、discovery或virtual研究能否继续。
+
+| 阶段 | 可立即推进 | 生产mutation前仍需 | 失败处理 |
 | --- | --- | --- | --- |
-| A 离线合同 | 无私有API、无订单权限 | schema/hash、故障fixture、import boundary和golden diff全通过 | 留在离线；不进入VPS |
-| B 只读并行 | A通过、当前VPS只读授权、主/影子抓取水位合同 | 连续30批次无无法解释diff，capability兼容，HALT只旁路 | 停止并回到A；不改变dispatcher |
-| C testnet | A通过、testnet明确授权 | 重放无重复单，UNKNOWN闭合或正确HALT，REST重建覆盖gap | 停止testnet；不进入真实认证 |
-| D真实最小 | C通过、独立owner授权、账户/venue preflight通过 | 双会计/三方对账通过、成本归档、最终零仓位 | 保留artifact并halt；不归入策略PnL |
-| E多sleeve | 至少两个候选通过当前promotion、A-D适用证据 | virtual→shadow→paper逐层对齐，风险/因子/容量门通过 | 回滚Base-only；不接真钱allocator |
+| A 离线合同 | schema/hash、故障fixture、import boundary、golden diff | 无 | 记录失败并继续修复或隔离实验 |
+| B 只读并行 | 本地fixture、历史archive分析、机器观测schema | VPS只读访问授权 | 记录无效批次；不改变dispatcher |
+| C testnet | local gateway和testnet客户端开发 | testnet mutation授权 | 保留失败语义；不进入真实账户 |
+| D真实最小 | plan、artifact、归因和恢复代码 | 单次arm、预算、preflight、零仓位和owner授权 | 保留artifact并HALT；不归入策略PnL |
+| E多sleeve | 零/单/多sleeve virtual集成、synthetic/research NAV | VPS/paper/live分别授权并满足订单安全不变量 | 保持Base-only生产；本地研究继续 |
 
-任何阶段都不能用下一阶段的“计划完成”替代上一阶段的证据；阶段回退必须保留原artifact和失败原因。
+任何workstream都不能把“代码存在”冒充成交、收益或生产证据；失败和缺失必须保留原artifact，但不得据此冻结其它本地工作流。
 
 ## 10. 验证与回滚
 
@@ -568,6 +574,9 @@ Phase D（真实最小认证）需要 C 通过 + 独立 owner 授权。
 
 ## 13. Phase B 推进记录（2026-07-23）
 
+本节保留当日实施记录中的旧“退出门”命名。自§9.1和§16.7的non-blocking policy生效后，以下`30批次/退出门`一律只按
+历史观测里程碑读取，不再阻止本地或其它workstream推进。
+
 ### 13.1 完成状态
 
 Phase B（§9 只读生产并行）的本地管道建设已完成。owner 已授权 VPS 只读并行。
@@ -627,7 +636,7 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
 - 当前 live cycle 权重 `0/0/0`、0 成交：shadow 只能验证"空状态一致性 + 管道正确性"。
 - 真正的 trades/income 重建能力要等首笔成交验证。
 - 0 成交期间 `ExecutionAttributionReport` 保持 `unavailable`，不填模拟 slippage/latency。
-- 30 批次退出门（§9.1）从 VPS 首次 shadow 运行开始计数。
+- 30批次观测里程碑从VPS首次shadow运行开始计数，不构成退出门。
 
 ### 13.6 首次 VPS 只读验证（batch #1）
 
@@ -653,13 +662,13 @@ owner 授权后，已安装 `qount-phase-b-readonly.timer`（每日 UTC 04:00，
 - 手动触发 batch #2：exit=0、约 3 秒完成；shadow diff=0 block、venue=pass、halt=0 events。
 - 归档落 `state/phase_b/shadow_accounting/runs/20260723T040843Z/`。
 
-30 批次退出门进度：batch #2/30（timer 自动运行中）。
+30批次观测进度：batch #2/30（timer自动运行中）。
 
 ### 13.8 下一步
 
-1. timer 每日自动运行，积累剩余 28 批次。
-2. 30 批次无无法解释 diff 后，Phase B 退出门通过。
-3. Dashboard 只读状态（`phase_b_observability` read model）作为后续工作。
+1. timer每日自动运行，继续积累观测批次，不为样本数手工补跑。
+2. 任何批次失败单独归档；不冻结其它workstream。
+3. Dashboard只读状态（`phase_b_observability` read model）与本地研究并行推进。
 
 ## 14. Phase C 推进记录（2026-07-23）
 
@@ -922,17 +931,17 @@ owner 授权后，在 VPS 执行首次 Phase D 真实最小认证：
 - real arm 在首个 submit 前原子写为 `used`。即使执行或证据持久化中断也不得重试同一 arm；query/cancel 仍可用于降险恢复；
 - 覆盖中断写入、缺成员、成员/metadata 篡改、重复目录、manifest-last、权限、敏感字段和循环导入边界测试。
 
-### 16.7 逐字段归因、Phase B 出口和后续纪律
+### 16.7 逐字段归因、Phase B 观测和后续纪律
 
 `ExecutionAttributionReport` schema v2 已允许每个指标单独使用 `available|unavailable + missing_reason + source_hash`。
 `backfill-attribution` 可直接验证并读取 Phase B archive，从已有 trade/income 恢复 fill VWAP、fee、maker/taker、数量比例和
 有完整 income 窗口时的 funding；arrival mid、spread、完整 submit/ACK/保护单时间点若未在事件时捕获，写
 `not_captured_at_event_time`，不得填零或估算。schema v1 继续可读且原 hash 兼容。
 
-Phase B 每日 timer 保持原频率，当前生产已观察到 `3/30` 个有效批次，还需 27 个有效日批次；若从下一周期连续通过，最早约 2026-08-19
-达到退出门。`0.2.14` 新增 cycle/progress/exit artifact，区分 valid/failed batch，记录最新 watermark/diff/venue/HALT 和累计
-真实成交覆盖。达到 30 只产生 `exit_gate_passed=true` 的不可变 artifact，固定
-`orders_authorized=false/automatic_authority_change=false`，不得自动修改 dispatcher、registry 或权限。
+Phase B 每日 timer 保持原频率，当前生产已观察到 `3/30` 个有效批次。`30`只保留为观测里程碑，不存在“还需27批次才能
+推进”的解释。后续schema v2 cycle/progress区分valid/failed batch，记录最新watermark/diff/venue/HALT和累计真实成交覆盖，
+并固定`policy_mode=non_blocking_observation`、`blocks_local_progress=false`、`blocks_research=false`、
+`blocks_allocator_development=false`。达到30只生成`milestones/phase_b_observation_target.json`，authority effect仍为none。
 
 下一顺序：
 
@@ -941,3 +950,14 @@ Phase B 每日 timer 保持原频率，当前生产已观察到 `3/30` 个有效
    `decision -> submit -> ACK -> trades/fee -> protection -> primary/shadow -> reconciliation -> attribution`。
 3. 暂不重复真钱 `real_ack_fill`；优先复用已有 fill 验证 reconciliation、fee maker/taker 和 rounding。
    `real_stop_algo`、`real_funding_income` 当前不得直接在真实账户试验。
+
+### 16.8 本地多sleeve runtime与Base事件时点捕获
+
+本地新增确定性portfolio Risk和OrderPlan builder，以及标准multi-sleeve virtual runtime。运行链保存完整decision batch、ledger snapshot、
+audit rows、逐单`SUBMITTING/ACKNOWLEDGED/FILLED`、fills/fees/funding、sleeve NAV、account observation和reconciliation；bundle先写成员、
+最后写manifest，目录`0700`、文件`0600`、不可覆盖，并验证嵌套envelope、成员集合和ledger audit chain。该artifact只证明架构链可运行，
+不证明任何候选收益，也不改变生产authority。
+
+MiniTrend Base dispatcher现会在每个自然market submit前尽力捕获bid/ask/mid/spread，并分别记录submit、ACK、trade/fill和保护单时点；
+交易所不支持order-book查询时执行仍可继续，但arrival字段明确`unavailable/order_book_query_unavailable`。只有真实自然fill才生成partial
+`ExecutionAttributionReport`并随append-only dispatch journal保存脱敏原始证据；无订单周期不会合成样本。

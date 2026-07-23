@@ -8,11 +8,15 @@ import hashlib
 import json
 import math
 import os
+from dataclasses import asdict
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Mapping
 
 from qount.artifacts import write_research_json_artifact
+from qount.certification import build_event_time_attribution
+from qount.certification import capture_arrival_quote
+from qount.certification import exchange_evidence_envelope
 from qount.execution import compare_legacy_dispatch_plan
 from qount.exchange_utils import (
     build_exchange,
@@ -1535,7 +1539,12 @@ def _fetch_market_fill_evidence(
     exchange: Any,
     response: Mapping[str, Any],
     order: Mapping[str, Any],
-) -> tuple[dict[str, Any], tuple[dict[str, Any], ...]]:
+) -> tuple[
+    dict[str, Any],
+    tuple[dict[str, Any], ...],
+    dict[str, Any],
+    tuple[Mapping[str, Any], ...],
+]:
     """Confirm a market fill from exchange order and trade records before ledgering it."""
 
     initial = _exchange_response_view(response)
@@ -1613,7 +1622,15 @@ def _fetch_market_fill_evidence(
         raise ValueError("market_trade_evidence_not_complete")
     observed["fill_count"] = len(fills)
     observed["fee_usdt"] = sum(_float(row["fee"]) for row in fills)
-    return observed, fills
+    raw_trades = tuple(
+        trade for trade in trade_rows if isinstance(trade, Mapping)
+    )
+    raw_evidence = exchange_evidence_envelope(
+        submit_response=response,
+        confirmed_order=confirmed_order,
+        trades=raw_trades,
+    )
+    return observed, fills, raw_evidence, raw_trades
 
 
 def _adverse_slippage_bps(
@@ -2006,12 +2023,21 @@ def run_pilot_dispatch(
     )
     fill_fees = 0.0
     slippage_breaches: list[dict[str, Any]] = []
+    attribution_contexts: list[dict[str, Any]] = []
+    protective_ack_by_symbol: dict[str, dict[str, Any]] = {}
+    attribution_reports: list[dict[str, Any]] = []
     try:
         for order in sorted(
             plan.get("market_orders") or [],
             key=lambda row: 0 if row["side"] == "sell" else 1,
         ):
             client_order_id = str(order["client_order_id"])
+            arrival_observed_at = utc_now().isoformat()
+            arrival_quote = capture_arrival_quote(
+                client,
+                symbol=str(order["ccxt_symbol"]),
+                observed_at=arrival_observed_at,
+            )
             submitted_at = utc_now().isoformat()
             runtime_ledger.transition_order(
                 client_order_id,
@@ -2036,7 +2062,10 @@ def run_pilot_dispatch(
                 None,
                 params,
             )
-            observed, fills = _fetch_market_fill_evidence(client, response, order)
+            acknowledged_at = utc_now().isoformat()
+            observed, fills, raw_evidence, raw_trades = _fetch_market_fill_evidence(
+                client, response, order
+            )
             reference_price = _float(
                 (plan.get("execution_reference_prices") or {}).get(order["symbol"])
             )
@@ -2050,6 +2079,7 @@ def run_pilot_dispatch(
             observed["maximum_adverse_slippage_bps"] = (
                 LIVE_PILOT_CONTRACT.maximum_adverse_slippage_bps
             )
+            observed["raw_exchange_evidence"] = raw_evidence
             if slippage_bps > LIVE_PILOT_CONTRACT.maximum_adverse_slippage_bps:
                 slippage_breaches.append(
                     {
@@ -2059,6 +2089,18 @@ def run_pilot_dispatch(
                     }
                 )
             responses.append(observed)
+            attribution_contexts.append(
+                {
+                    "order": dict(order),
+                    "observed": observed,
+                    "submitted_at": submitted_at,
+                    "acknowledged_at": acknowledged_at,
+                    "arrival_quote": arrival_quote,
+                    "fills": fills,
+                    "raw_trades": raw_trades,
+                    "raw_exchange_evidence": raw_evidence,
+                }
+            )
             observation_hash = canonical_hash(
                 {
                     "event": "exchange_market_fill_evidence",
@@ -2151,14 +2193,18 @@ def run_pilot_dispatch(
             )
             observed = _exchange_response_view(response)
             observed["client_order_id"] = client_order_id
+            observed["raw_exchange_evidence"] = exchange_evidence_envelope(
+                submit_response=response,
+            )
             responses.append(observed)
             exchange_order_id = str(observed.get("id") or "")
             if not exchange_order_id:
                 raise RuntimeError("protective_stop_acknowledgement_missing")
+            protective_acknowledged_at = utc_now().isoformat()
             runtime_ledger.transition_order(
                 client_order_id,
                 "ACKNOWLEDGED",
-                event_at=utc_now().isoformat(),
+                event_at=protective_acknowledged_at,
                 source_hash=canonical_hash(
                     {
                         "event": "protective_stop_acknowledged",
@@ -2169,6 +2215,37 @@ def run_pilot_dispatch(
                 exchange_order_id=exchange_order_id,
                 reason="exchange_protective_stop_accepted",
             )
+            protective_ack_by_symbol[str(order["symbol"])] = {
+                "acknowledged_at": protective_acknowledged_at,
+                "stop_price": _float(order.get("stop_price")),
+            }
+        decision_time = str(
+            (plan.get("decision") or {}).get("decision_available_after") or ""
+        )
+        for context in attribution_contexts:
+            market_order = context["order"]
+            protection = protective_ack_by_symbol.get(str(market_order["symbol"]))
+            report = build_event_time_attribution(
+                run_id=standard_batch.manifest.batch_id,
+                decision_time=decision_time,
+                submitted_at=str(context["submitted_at"]),
+                acknowledged_at=str(context["acknowledged_at"]),
+                planned_quantity=_float(market_order.get("quantity")),
+                side=str(market_order["side"]),
+                arrival_quote=context["arrival_quote"],
+                fills=context["fills"],
+                raw_trades=context["raw_trades"],
+                raw_exchange_evidence=context["raw_exchange_evidence"],
+                protection_acknowledged_at=(
+                    str(protection["acknowledged_at"]) if protection else None
+                ),
+                stop_price=(
+                    _float(protection["stop_price"]) if protection else None
+                ),
+            )
+            report_payload = asdict(report)
+            context["observed"]["execution_attribution"] = report_payload
+            attribution_reports.append(report_payload)
     except Exception as exc:
         safe = _safe_error(exc, settings)
         for order in standard_batch.plan.orders:
@@ -2320,6 +2397,7 @@ def run_pilot_dispatch(
                 ),
                 "reconciliation": reconciliation,
                 "runtime_ledger_snapshot_hash": standard_snapshot.snapshot_hash,
+                "execution_attribution_reports": attribution_reports,
             }
         )
         if not completed or plan.get("halt_after_dispatch") or slippage_halt:

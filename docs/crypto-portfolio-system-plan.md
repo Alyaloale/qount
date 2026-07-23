@@ -377,8 +377,8 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
   `085ab913...f7c6`。确定性复核确认现有解析器已有2025微秒时间戳归一化，但缺官方ZIP sidecar验证；现已新增
   `verified_archive_fetch`/`.CHECKSUM`解析与hash/filename双绑定。该helper只用于新严格摄取，旧缓存不会被静默
   标为已验证；远端归档可修订，因此本地精确bytes/hash/manifest仍是复跑真相。
-- 组合治理合同已代码化：小账户并行实盘上限、三NAV归因、压力损失风险标量、每假设族3个正式trial、前向污染
-  降级和独立样本计数均有fail-closed单测。
+- 组合治理合同已代码化：小账户并行实盘上限、三NAV归因、压力损失风险标量、formal trial连续编号、前向污染
+  降级和独立样本计数均有单测。每family第3个trial现在触发复盘里程碑，不再拒绝第4个trial。
 - 组合Strategy Plane进一步落地标准`StrategyIntent`和Base causal projection adapter；allocator只接受allowlist策略，
   按sleeve压力损失预算缩放后再聚合，并检查同批decision time、总gross、单币cap、相关簇和最小名义。最小名义
   先按Standalone sleeve检查，再按组合检查，禁止Base净额掩盖一个自身不可成交的事件sleeve。任一异常让整个批次
@@ -446,11 +446,12 @@ SHA-256 `743f83c1...2728`；manifest content hash `93206835...101c`。
 - `Portfolio Realized NAV`使用净额合并后的真实成交，是账户PnL和对账口径。
 - allocator必须单独记录netting savings；该节省不得分配回任何standalone NAV，不得重复归因。
 
-## 12. Research Trial Budget
+## 12. Research Trial Observation
 
-每个`hypothesis_family`最多3个冻结正式trial。每个trial必须预先写入
+每个`hypothesis_family`在第3个冻结正式trial后必须复盘，但不存在硬上限。每个trial必须预先写入
 `hypothesis_family/preregistered_primary_metric/preregistered_failure_condition/allowed_sensitivity_range/
-number_of_prior_trials`。三次未通过即关闭该假设族；继续研究必须提交不同经济机制，而不是围绕旧历史收益微调。
+number_of_prior_trials`。三次未通过会降低该机制的证据等级；继续研究必须明确是新信息、新目标、新执行合同，或如实标记为
+同family后续探索，不能通过改名隐藏trial count。
 
 探索性诊断可以运行，但不得伪装成“未计trial”的正式候选，也不得参与promotion选择。
 

@@ -226,9 +226,10 @@ Phase B（只读生产并行）管道已建成，`qount-phase-b-readonly.timer` 
 ssh qount-vps 'systemctl list-timers qount-phase-b-readonly.timer --no-pager'
 ```
 
-30 批次退出门生产进度：3/30（前两批历史验证 + 2026-07-23 自然批次）。不要为了累计进度手工补跑或提高频率；
-timer 每日自然运行。`0.2.14` 已部署，下一次自然周期会生成 `cycles/*.json`、`progress/*.json`、`latest_progress.json`，
-达到 30 时再生成 `exit/phase_b_exit.json`。达到退出门也只产生机器证据，不改变 dispatcher、registry 或权限。
+非阻塞观测进度：3/30（前两批历史验证 + 2026-07-23 自然批次）。不要为了累计样本手工补跑或提高频率；timer每日自然运行。
+生产`0.2.14`下一周期仍会先产生旧schema；本地后续schema v2改为`cycles/*.json`、`progress/*.json`、
+`latest_progress.json`，达到30时生成`milestones/phase_b_observation_target.json`。机器字段固定
+`blocks_local_progress=false/blocks_research=false/authority_effect=none`；30不是退出门，也不改变dispatcher、registry或权限。
 
 Phase B 本地测试：
 
@@ -309,12 +310,20 @@ Phase D 本地测试：
 R0 记录合同已随 `0.2.14` 同步到 VPS，但未接 allocator，也未在 VPS 运行候选 PnL：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/build_r0_records.py
-PYTHONPATH=src ./.venv/bin/python -m unittest tests.test_research_records
+PYTHONPATH=src ./.venv/bin/python scripts/research/run_multi_sleeve_virtual_runtime.py
+PYTHONPATH=src ./.venv/bin/python scripts/research/build_r0_records.py \
+  --virtual-runtime-artifact state/research_governance/runtime/d4faa121a0e57a32a2210901f7789676153b7d59d37714874629ea0f38548a80
+PYTHONPATH=src ./.venv/bin/python -m unittest \
+  tests.test_multi_sleeve_virtual_runtime \
+  tests.test_research_records \
+  tests.test_r0_artifacts
 ```
 
-输出 CxD=`blocked_pending_owner_authorization/virtual-only`、CTA-R=`research_only/planned`。下一步是填真实历史 family 映射、
-point-in-time lifecycle 数据、冻结 cost model 和各自 Standalone NAV，不是运行组合 allocator。
+本地固定两sleeve runtime artifact为`state/research_governance/runtime/d4faa121...48a80/`，result=`a98977dd...1672f`；
+最终R0 bundle为`state/research_governance/r0/f5bfb3b5...6fa85/`，manifest=`05a303d4...c6bb3`。v4 CxD/CTA-R均为
+`owner_authorized_research/active_research`、`research_execution_allowed=true`、`blocks_local_progress=false`、
+`orders_allowed=false`。family mapping已绑定实际来源；下一步并行采集point-in-time lifecycle/current data、冻结适用账户/场所成本并重建
+各自Standalone scorecard。这些研究不等待promotion或Phase B 30批次，架构fixture也不得解释为candidate PnL。
 
 ## 本地与 VPS 验证
 

@@ -23,7 +23,10 @@ from qount.mini_trend.pilot_dispatcher import (  # noqa: E402
 from qount.ledger import RuntimeLedger  # noqa: E402
 from qount.models import utc_now  # noqa: E402
 from qount.operations import AuthorityWriterConfig  # noqa: E402
+from qount.operations import prepare_base_standard_production_store  # noqa: E402
+from qount.operations import record_base_standard_production_cycle  # noqa: E402
 from qount.operations import refresh_authority_bundle_from_runtime  # noqa: E402
+from qount.operations import verify_release_provenance  # noqa: E402
 from qount.reporting import read_vps_authority_bundle  # noqa: E402
 from qount.settings import Settings  # noqa: E402
 
@@ -58,6 +61,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--dashboard-root")
     parser.add_argument("--authority-lock-path")
     parser.add_argument("--notification-store")
+    parser.add_argument("--standard-production-root")
     parser.add_argument("--halt-path")
     parser.add_argument("--output-path")
     return parser.parse_args(argv)
@@ -85,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             args.dashboard_root,
             args.authority_lock_path,
             args.notification_store,
+            args.standard_production_root,
         )
         if not all(live_authority_paths):
             raise ValueError(
@@ -95,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         runtime_ledger = RuntimeLedger(
             Path(args.runtime_root).expanduser().resolve() / "runtime.sqlite3"
+        )
+        prepare_base_standard_production_store(
+            Path(args.standard_production_root).expanduser().resolve()
         )
 
     settings = Settings.from_env()
@@ -165,6 +173,24 @@ def main(argv: list[str] | None = None) -> int:
             dispatch["authority_refresh"] = refresh.as_dict()
         except Exception as exc:
             dispatch["authority_refresh_error"] = f"{type(exc).__name__}: {exc}"[:1000]
+        try:
+            release_payload, _ = _object(REPO / ".qount-release-provenance.json")
+            release_identity = verify_release_provenance(REPO, release_payload)
+            observation = record_base_standard_production_cycle(
+                Path(args.standard_production_root).expanduser().resolve(),
+                batch=authority_bundle.batch,
+                ledger_snapshot=authority_bundle.ledger_snapshot,
+                registry=authority_bundle.registry,
+                plan=plan,
+                dispatch=dispatch,
+                release_identity=release_identity,
+                observed_at=utc_now().isoformat(),
+            )
+            dispatch["standard_production_observation"] = observation
+        except Exception as exc:
+            dispatch["standard_production_observation_error"] = (
+                f"{type(exc).__name__}: {exc}"[:1000]
+            )
     payload = dict(plan)
     payload["account_snapshot"] = snapshot
     payload["dispatch_result"] = dispatch
@@ -180,10 +206,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"exchange_mutation_attempted={artifact['dispatch_result']['exchange_mutation_attempted']}")
     print(f"live_orders_allowed={artifact['meta']['live_orders_allowed']}")
     authority_refresh_failed = "authority_refresh_error" in dispatch
+    production_observation_failed = (
+        "standard_production_observation_error" in dispatch
+    )
     return (
         0
         if args.mode == "dry"
-        or (dispatch["status"] == "completed" and not authority_refresh_failed)
+        or (
+            dispatch["status"] == "completed"
+            and not authority_refresh_failed
+            and not production_observation_failed
+        )
         else 2
     )
 

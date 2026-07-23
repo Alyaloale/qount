@@ -82,6 +82,9 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
         self.assertIn("executed|missing)", cycle)
         self.assertIn("new) ;;", cycle)
         self.assertIn("duplicate_decision_noop", cycle)
+        self.assertIn("--standard-production-root", cycle)
+        self.assertIn("QOUNT_BASE_STANDARD_PRODUCTION_ROOT", service)
+        self.assertIn("Base standard-production", service)
         self.assertIn("await_latest_completed_pilot_bar", cycle)
         self.assertIn("blocked_unresolved_live_intent", cycle)
         self.assertNotIn("x4_live", cycle)
@@ -96,6 +99,7 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
         self.assertIn("QOUNT_CXD_CARRY_ENABLE=false", service)
         self.assertNotIn("QOUNT_MINI_TREND_LIVE_ENABLE=true", service)
         self.assertIn("Unit=qount-mini-trend-live.service", timer)
+        self.assertIn("natural-fill observer", timer)
 
     def test_live_cycle_stops_before_refresh_when_unarmed(self) -> None:
         cycle = ROOT / "scripts" / "desktop" / "mini_trend_um_live_cycle.sh"

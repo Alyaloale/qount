@@ -11,6 +11,7 @@ FORWARD_ROOT="$STATE_ROOT/forward"
 ARM_PATH="${QOUNT_MINI_TREND_ARM_PATH:-$STATE_ROOT/arm/manual-final-arm.json}"
 LIVE_ENV_PATH="${QOUNT_MINI_TREND_LIVE_ENV_PATH:-/root/.config/qount/mini-trend-live.env}"
 LIVE_ROOT="$STATE_ROOT/live"
+STANDARD_PRODUCTION_ROOT="${QOUNT_BASE_STANDARD_PRODUCTION_ROOT:-$STATE_ROOT/standard-production}"
 AUTHORITY_ROOT="${QOUNT_DASHBOARD_AUTHORITY_ROOT:-/var/lib/qount/dashboard-authority}"
 AUTHORITY_RUNTIME_ROOT="${QOUNT_DASHBOARD_RUNTIME_ROOT:-/var/lib/qount/dashboard-runtime}"
 AUTHORITY_BACKUP_ROOT="${QOUNT_DASHBOARD_BACKUP_ROOT:-/var/lib/qount/dashboard-backups}"
@@ -263,6 +264,7 @@ cd "$REPO"
   --dashboard-root "$DASHBOARD_ROOT" \
   --authority-lock-path "$AUTHORITY_LOCK_PATH" \
   --notification-store "$NOTIFICATION_STORE" \
+  --standard-production-root "$STANDARD_PRODUCTION_ROOT" \
   --halt-path "$STATE_ROOT/HALT" \
   --output-path "$LIVE_DISPATCH_PATH"
 

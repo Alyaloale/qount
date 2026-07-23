@@ -7,7 +7,9 @@ from dataclasses import dataclass, replace
 from typing import Any, Mapping, Sequence
 
 
-MAX_FORMAL_TRIALS_PER_FAMILY = 3
+FORMAL_TRIAL_REVIEW_MILESTONE = 3
+# Compatibility alias.  This is an observation target, not a registration cap.
+MAX_FORMAL_TRIALS_PER_FAMILY = FORMAL_TRIAL_REVIEW_MILESTONE
 
 
 @dataclass(frozen=True)
@@ -42,9 +44,25 @@ def register_formal_trial(
     )
     if proposed.number_of_prior_trials != family_trials:
         raise ValueError("number_of_prior_trials_mismatch")
-    if family_trials >= MAX_FORMAL_TRIALS_PER_FAMILY:
-        raise ValueError("hypothesis_family_trial_budget_exhausted")
     return (*existing, proposed)
+
+
+def formal_trial_observation(
+    existing: Sequence[FormalTrial], hypothesis_family: str
+) -> dict[str, Any]:
+    """Report family trial maturity without blocking further research."""
+
+    count = sum(
+        trial.hypothesis_family == hypothesis_family for trial in existing
+    )
+    return {
+        "policy_mode": "non_blocking_observation",
+        "hypothesis_family": hypothesis_family,
+        "formal_trial_count": count,
+        "review_milestone": FORMAL_TRIAL_REVIEW_MILESTONE,
+        "review_milestone_reached": count >= FORMAL_TRIAL_REVIEW_MILESTONE,
+        "blocks_additional_trials": False,
+    }
 
 
 @dataclass(frozen=True)

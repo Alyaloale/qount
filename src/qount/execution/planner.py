@@ -1,0 +1,199 @@
+"""Pure current-position to target-position planning."""
+
+from __future__ import annotations
+
+import math
+from decimal import Decimal, ROUND_DOWN
+from typing import Any, Mapping
+
+from qount.contracts import MarketSnapshot
+from qount.contracts import OrderPlan
+from qount.contracts import PlannedOrder
+from qount.contracts import PortfolioTarget
+from qount.contracts import RiskDecision
+from qount.contracts import canonical_hash
+
+
+def _floor_to_step(value: float, step: float) -> float:
+    units = (Decimal(str(value)) / Decimal(str(step))).to_integral_value(
+        rounding=ROUND_DOWN
+    )
+    return float(units * Decimal(str(step)))
+
+
+def _validated_rule(
+    symbol: str,
+    rules: Mapping[str, Mapping[str, float]],
+) -> tuple[dict[str, float] | None, tuple[str, ...]]:
+    raw = rules.get(symbol)
+    if not isinstance(raw, Mapping):
+        return None, (f"symbol_rule_missing:{symbol}",)
+    values: dict[str, float] = {}
+    errors: list[str] = []
+    for name in ("step_size", "minimum_quantity", "minimum_notional"):
+        try:
+            value = float(raw.get(name, 0.0))
+        except (TypeError, ValueError):
+            value = math.nan
+        minimum = 0.0 if name == "minimum_notional" else 1e-18
+        if not math.isfinite(value) or value < minimum:
+            errors.append(f"symbol_rule_{name}_invalid:{symbol}")
+        values[name] = value
+    return (values if not errors else None), tuple(errors)
+
+
+def build_portfolio_order_plan(
+    snapshot: MarketSnapshot,
+    target: PortfolioTarget,
+    risk: RiskDecision,
+    *,
+    current_positions: Mapping[str, float],
+    account_equity_usdt: float,
+    symbol_rules: Mapping[str, Mapping[str, float]],
+) -> OrderPlan:
+    """Build deterministic reduce-before-increase market orders.
+
+    This function only creates an ``OrderPlan``. It has no exchange adapter and
+    cannot route the plan.
+    """
+
+    blockers: list[str] = []
+    blockers.extend(f"snapshot:{error}" for error in snapshot.validate())
+    blockers.extend(f"target:{error}" for error in target.validate())
+    blockers.extend(f"risk:{error}" for error in risk.validate())
+    if target.snapshot_id != snapshot.snapshot_id:
+        blockers.append("order_planner_snapshot_target_mismatch")
+    if risk.portfolio_target_id != target.portfolio_target_id:
+        blockers.append("order_planner_risk_target_mismatch")
+    if not risk.approved or risk.violations:
+        blockers.extend(risk.violations or ("risk_decision_not_approved",))
+    try:
+        equity = float(account_equity_usdt)
+    except (TypeError, ValueError):
+        equity = math.nan
+    if not math.isfinite(equity) or equity <= 0.0:
+        blockers.append("order_planner_account_equity_invalid")
+
+    current: dict[str, float] = {}
+    for symbol, raw_quantity in current_positions.items():
+        try:
+            quantity = float(raw_quantity)
+        except (TypeError, ValueError):
+            quantity = math.nan
+        if not symbol or not math.isfinite(quantity) or quantity < 0.0:
+            blockers.append(f"order_planner_current_position_invalid:{symbol}")
+        else:
+            current[str(symbol)] = quantity
+
+    symbols = sorted(set(current) | set(risk.approved_target))
+    rows: list[dict[str, Any]] = []
+    tolerances: dict[str, float] = {}
+    expected = dict(current)
+    for symbol in symbols:
+        rule, rule_errors = _validated_rule(symbol, symbol_rules)
+        blockers.extend(rule_errors)
+        try:
+            price = float(snapshot.prices[symbol])
+            weight = float(risk.approved_target.get(symbol, 0.0))
+        except (KeyError, TypeError, ValueError):
+            blockers.append(f"order_planner_target_input_invalid:{symbol}")
+            continue
+        if not math.isfinite(price) or price <= 0.0 or not math.isfinite(weight):
+            blockers.append(f"order_planner_target_input_invalid:{symbol}")
+            continue
+        if rule is None:
+            continue
+        step = rule["step_size"]
+        target_quantity = _floor_to_step(equity * weight / price, step)
+        delta = target_quantity - current.get(symbol, 0.0)
+        phase = "increase" if delta > 0.0 else "reduce"
+        quantity = _floor_to_step(abs(delta), step)
+        tolerances[symbol] = step
+        if quantity <= 1e-15:
+            expected[symbol] = current.get(symbol, 0.0)
+            continue
+        if quantity + 1e-12 < rule["minimum_quantity"]:
+            blockers.append(f"order_quantity_below_minimum:{symbol}")
+        if quantity * price + 1e-12 < rule["minimum_notional"]:
+            blockers.append(f"order_notional_below_minimum:{symbol}")
+        if phase == "increase" and not risk.increase_risk_allowed:
+            blockers.append(f"risk_increase_not_allowed:{symbol}")
+        if phase == "reduce" and not risk.reduce_risk_allowed:
+            blockers.append(f"risk_reduction_not_allowed:{symbol}")
+        rows.append(
+            {
+                "symbol": symbol,
+                "side": "buy" if phase == "increase" else "sell",
+                "quantity": quantity,
+                "phase": phase,
+            }
+        )
+        expected[symbol] = (
+            current.get(symbol, 0.0) + quantity
+            if phase == "increase"
+            else max(0.0, current.get(symbol, 0.0) - quantity)
+        )
+
+    normalized_blockers = tuple(sorted(set(blockers)))
+    current_position_hash = canonical_hash(
+        {
+            "current_positions": dict(sorted(current.items())),
+            "account_equity_usdt": equity,
+            "snapshot_hash": snapshot.snapshot_hash,
+            "symbol_rules": {
+                symbol: dict(sorted(rule.items()))
+                for symbol, rule in sorted(symbol_rules.items())
+            },
+        }
+    )
+    if normalized_blockers:
+        return OrderPlan.create(
+            batch_id=risk.batch_id,
+            risk_decision_id=risk.risk_decision_id,
+            portfolio_target_id=target.portfolio_target_id,
+            snapshot_id=snapshot.snapshot_id,
+            decision_ids=target.decision_ids,
+            created_at=target.decision_time,
+            current_position_hash=current_position_hash,
+            approved_target=risk.approved_target,
+            orders=(),
+            expected_positions=dict(sorted(current.items())),
+            reconciliation_tolerance={
+                symbol: tolerances.get(symbol, 0.0) for symbol in sorted(current)
+            },
+            blockers=normalized_blockers,
+            executable=False,
+        )
+
+    ordered_rows = sorted(
+        rows,
+        key=lambda row: (0 if row["phase"] == "reduce" else 1, row["symbol"]),
+    )
+    orders = tuple(
+        PlannedOrder.create(
+            batch_id=risk.batch_id,
+            decision_ids=target.decision_ids,
+            symbol=str(row["symbol"]),
+            side=str(row["side"]),
+            quantity=float(row["quantity"]),
+            reduce_only=row["phase"] == "reduce",
+            phase=str(row["phase"]),
+            sequence=index,
+        )
+        for index, row in enumerate(ordered_rows, start=1)
+    )
+    return OrderPlan.create(
+        batch_id=risk.batch_id,
+        risk_decision_id=risk.risk_decision_id,
+        portfolio_target_id=target.portfolio_target_id,
+        snapshot_id=snapshot.snapshot_id,
+        decision_ids=target.decision_ids,
+        created_at=target.decision_time,
+        current_position_hash=current_position_hash,
+        approved_target=risk.approved_target,
+        orders=orders,
+        expected_positions={symbol: expected.get(symbol, 0.0) for symbol in symbols},
+        reconciliation_tolerance={symbol: tolerances[symbol] for symbol in symbols},
+        blockers=(),
+        executable=True,
+    )

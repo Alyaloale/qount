@@ -18,7 +18,13 @@ from qount.contracts.trace import is_sha256
 
 
 RESEARCH_RECORD_SCHEMA_VERSION = 1
-RESEARCH_DECISIONS = ("planned", "retain", "reject", "blocked")
+RESEARCH_DECISIONS = (
+    "planned",
+    "active_research",
+    "retain",
+    "reject",
+    "blocked",
+)
 RESEARCH_DATA_ROLES = (
     "discovery_pool",
     "promotion_pool",
@@ -27,6 +33,13 @@ RESEARCH_DATA_ROLES = (
     "point_in_time_forward_collection",
 )
 LIFECYCLE_STATES = ("active", "delisted", "suspended", "unknown")
+RESEARCH_EVIDENCE_STATUSES = ("available", "partial", "unavailable")
+RESEARCH_EVIDENCE_TYPES = (
+    "historical_family_mapping",
+    "point_in_time_lifecycle",
+    "cost_model",
+    "standalone_nav_readiness",
+)
 
 
 def _record_hash(core: Mapping[str, Any]) -> str:
@@ -100,6 +113,93 @@ class HistoricalFamilyMapping:
         errors.extend(
             _hash_error(_as_dict(self), "mapping_hash", "family_mapping_hash_invalid")
         )
+        return tuple(errors)
+
+
+@dataclass(frozen=True)
+class ResearchEvidenceReadinessRecord:
+    """Hash-bound statement of which R0 evidence is and is not available."""
+
+    record_id: str
+    evidence_type: str
+    scope: str
+    status: str
+    available_evidence: Mapping[str, Any]
+    missing_evidence: Mapping[str, str]
+    source_hashes: Mapping[str, str]
+    supports_research: bool
+    supports_candidate_pnl: bool
+    supports_promotion: bool
+    orders_allowed: bool
+    record_hash: str
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        evidence_type: str,
+        scope: str,
+        status: str,
+        available_evidence: Mapping[str, Any],
+        missing_evidence: Mapping[str, str],
+        source_hashes: Mapping[str, str],
+        supports_research: bool,
+        supports_candidate_pnl: bool,
+        supports_promotion: bool = False,
+        orders_allowed: bool = False,
+    ) -> "ResearchEvidenceReadinessRecord":
+        core = {
+            "evidence_type": evidence_type,
+            "scope": scope,
+            "status": status,
+            "available_evidence": dict(available_evidence),
+            "missing_evidence": dict(sorted(missing_evidence.items())),
+            "source_hashes": dict(sorted(source_hashes.items())),
+            "supports_research": supports_research,
+            "supports_candidate_pnl": supports_candidate_pnl,
+            "supports_promotion": supports_promotion,
+            "orders_allowed": orders_allowed,
+        }
+        record_hash = _record_hash(core)
+        return cls(record_id=record_hash, **core, record_hash=record_hash)
+
+    def validate(self) -> tuple[str, ...]:
+        errors: list[str] = []
+        if self.evidence_type not in RESEARCH_EVIDENCE_TYPES:
+            errors.append("research_evidence_type_invalid")
+        if not self.scope.strip():
+            errors.append("research_evidence_scope_empty")
+        if self.status not in RESEARCH_EVIDENCE_STATUSES:
+            errors.append("research_evidence_status_invalid")
+        if self.status == "available" and self.missing_evidence:
+            errors.append("research_evidence_available_has_missing_fields")
+        if self.status in {"partial", "unavailable"} and not self.missing_evidence:
+            errors.append("research_evidence_missing_reasons_required")
+        if not self.source_hashes:
+            errors.append("research_evidence_source_hashes_empty")
+        for source_name, source_hash in self.source_hashes.items():
+            if not source_name or not is_sha256(source_hash):
+                errors.append(f"research_evidence_source_hash_invalid:{source_name}")
+        for field_name, reason in self.missing_evidence.items():
+            if not field_name or not reason.strip():
+                errors.append(f"research_evidence_missing_reason_invalid:{field_name}")
+        if self.supports_candidate_pnl and not self.supports_research:
+            errors.append("research_evidence_candidate_pnl_without_research")
+        if self.supports_promotion and not self.supports_candidate_pnl:
+            errors.append("research_evidence_promotion_without_candidate_pnl")
+        if self.orders_allowed:
+            errors.append("research_evidence_order_authority_forbidden")
+        value = _as_dict(self)
+        value.pop("record_id", None)
+        errors.extend(
+            _hash_error(
+                value,
+                "record_hash",
+                "research_evidence_record_hash_invalid",
+            )
+        )
+        if self.record_id != self.record_hash:
+            errors.append("research_evidence_record_id_invalid")
         return tuple(errors)
 
 
@@ -570,9 +670,19 @@ class CandidateRevalidationRecord:
             errors.append("candidate_revalidation_decision_invalid")
         if not self.owner_authorization_state:
             errors.append("candidate_revalidation_authorization_state_empty")
-        if "carry" in self.hypothesis_family.lower() and self.owner_authorization_state != "authorized":
-            if self.decision not in {"blocked", "planned"}:
-                errors.append("candidate_revalidation_carry_authorization_required")
+        orders_allowed = self.execution_contract.get("orders_allowed")
+        if not isinstance(orders_allowed, bool):
+            errors.append("candidate_revalidation_orders_allowed_invalid")
+        if self.decision == "active_research" and not bool(
+            self.execution_contract.get("research_execution_allowed")
+        ):
+            errors.append("candidate_revalidation_research_execution_not_allowed")
+        if (
+            "carry" in self.hypothesis_family.lower()
+            and orders_allowed is True
+            and self.owner_authorization_state != "authorized"
+        ):
+            errors.append("candidate_revalidation_carry_order_authorization_required")
         errors.extend(
             _hash_error(
                 _as_dict(self),
@@ -583,16 +693,35 @@ class CandidateRevalidationRecord:
         return tuple(errors)
 
 
-def build_r0_candidate_records() -> tuple[CandidateRevalidationRecord, ...]:
-    """Return the two explicitly requested candidates in non-promoted states."""
+def build_r0_candidate_records(
+    evidence_records: Mapping[str, ResearchEvidenceReadinessRecord],
+) -> tuple[CandidateRevalidationRecord, ...]:
+    """Build v4 candidates from explicit evidence records, never placeholders."""
+
+    required = {
+        "cxd_family": "historical_family_mapping",
+        "cxd_lifecycle": "point_in_time_lifecycle",
+        "cxd_cost": "cost_model",
+        "cxd_nav": "standalone_nav_readiness",
+        "cta_r_family": "historical_family_mapping",
+        "cta_r_lifecycle": "point_in_time_lifecycle",
+        "cta_r_cost": "cost_model",
+        "cta_r_nav": "standalone_nav_readiness",
+    }
+    missing = sorted(set(required) - set(evidence_records))
+    if missing:
+        raise ValueError("r0_evidence_records_missing:" + ",".join(missing))
+    for name, expected_type in required.items():
+        record = evidence_records[name]
+        errors = record.validate()
+        if errors:
+            raise ValueError(f"r0_evidence_record_invalid:{name}:" + ",".join(errors))
+        if record.evidence_type != expected_type:
+            raise ValueError(f"r0_evidence_record_type_mismatch:{name}")
 
     common = {
-        "historical_evidence_ids": ("historical_evidence_pending_revalidation",),
-        "current_data_ids": ("current_data_pending_point_in_time_collection",),
         "untouched_data_ids": (),
         "baseline_ids": ("base_v0.2_frozen_control",),
-        "frozen_cost_model": {"status": "to_be_frozen_before_pnl"},
-        "standalone_nav_artifacts": (),
         "factor_and_beta_plan": {
             "market": "crypto_market",
             "momentum": "required",
@@ -607,22 +736,69 @@ def build_r0_candidate_records() -> tuple[CandidateRevalidationRecord, ...]:
         ),
         "trial_budget": 3,
     }
+    cxd_family = evidence_records["cxd_family"]
+    cxd_lifecycle = evidence_records["cxd_lifecycle"]
+    cxd_cost = evidence_records["cxd_cost"]
+    cxd_nav = evidence_records["cxd_nav"]
     cxd = CandidateRevalidationRecord.create(
-        candidate_id="cxd-trend-carry-revalidation-v1",
+        candidate_id="cxd-trend-carry-revalidation-v4",
         hypothesis_family="cxd_trend_carry",
-        venue_and_account_scope="observation_shadow_virtual_only; no carry order permission",
-        execution_contract={"carry": "observation_shadow_virtual", "orders_allowed": False},
-        owner_authorization_state="blocked_pending_owner_authorization",
-        decision="blocked",
+        historical_evidence_ids=(cxd_family.record_id,),
+        current_data_ids=(cxd_lifecycle.record_id,),
+        frozen_cost_model={
+            "status": cxd_cost.status,
+            "evidence_id": cxd_cost.record_id,
+            "evidence_hash": cxd_cost.record_hash,
+            "candidate_pnl_ready": cxd_cost.supports_candidate_pnl,
+        },
+        standalone_nav_artifacts=(cxd_nav.record_id,),
+        venue_and_account_scope="historical_discovery_shadow_virtual; no carry order permission",
+        execution_contract={
+            "mode": "research_virtual",
+            "carry": "observation_shadow_virtual",
+            "research_execution_allowed": True,
+            "orders_allowed": False,
+            "blocks_local_progress": False,
+            "trial_budget_blocks_research": False,
+            "candidate_pnl_ready": all(
+                record.supports_candidate_pnl
+                for record in (cxd_lifecycle, cxd_cost, cxd_nav)
+            ),
+        },
+        owner_authorization_state="owner_authorized_research",
+        decision="active_research",
         **common,
     )
+    cta_family = evidence_records["cta_r_family"]
+    cta_lifecycle = evidence_records["cta_r_lifecycle"]
+    cta_cost = evidence_records["cta_r_cost"]
+    cta_nav = evidence_records["cta_r_nav"]
     cta_r = CandidateRevalidationRecord.create(
-        candidate_id="cta-r-cross-asset-revalidation-v1",
+        candidate_id="cta-r-cross-asset-revalidation-v4",
         hypothesis_family="cta_r_cross_asset",
+        historical_evidence_ids=(cta_family.record_id,),
+        current_data_ids=(cta_lifecycle.record_id,),
+        frozen_cost_model={
+            "status": cta_cost.status,
+            "evidence_id": cta_cost.record_id,
+            "evidence_hash": cta_cost.record_hash,
+            "candidate_pnl_ready": cta_cost.supports_candidate_pnl,
+        },
+        standalone_nav_artifacts=(cta_nav.record_id,),
         venue_and_account_scope="research_cross_asset_only; no Binance wallet order permission",
-        execution_contract={"mode": "research_virtual", "orders_allowed": False},
-        owner_authorization_state="research_only",
-        decision="planned",
+        execution_contract={
+            "mode": "research_virtual",
+            "research_execution_allowed": True,
+            "orders_allowed": False,
+            "blocks_local_progress": False,
+            "trial_budget_blocks_research": False,
+            "candidate_pnl_ready": all(
+                record.supports_candidate_pnl
+                for record in (cta_lifecycle, cta_cost, cta_nav)
+            ),
+        },
+        owner_authorization_state="owner_authorized_research",
+        decision="active_research",
         **common,
     )
     return (cxd, cta_r)

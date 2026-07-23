@@ -1,4 +1,4 @@
-"""Machine-readable Phase B cycle and 30-run exit-gate evidence."""
+"""Machine-readable Phase B cycle and non-blocking observation evidence."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from typing import Any, Mapping
 from qount.contracts.hashing import canonical_hash
 
 
-PHASE_B_PROGRESS_SCHEMA_VERSION = 1
-PHASE_B_REQUIRED_VALID_STREAK = 30
+PHASE_B_PROGRESS_SCHEMA_VERSION = 2
+PHASE_B_OBSERVATION_TARGET = 30
 
 
 class PhaseBProgressError(ValueError):
@@ -183,11 +183,13 @@ def initialize_phase_b_baseline(
     core = {
         "schema_version": PHASE_B_PROGRESS_SCHEMA_VERSION,
         "artifact_type": "phase_b_progress_baseline",
+        "policy_mode": "non_blocking_observation",
         "frozen_at": datetime.now(timezone.utc).isoformat(),
         "acceptance_basis": "pre_cycle_shadow_archives_and_documented_venue_halt_results",
         "legacy_runs": ordered_runs,
         "legacy_valid_runs": valid,
         "legacy_invalid_runs": invalid,
+        "blocks_local_progress": False,
         "orders_authorized": False,
     }
     baseline = core | {"baseline_hash": canonical_hash(core)}
@@ -249,12 +251,25 @@ def record_phase_b_cycle(
     state_dir: str | os.PathLike[str],
     results: Mapping[str, Any],
     *,
-    required_valid_streak: int = PHASE_B_REQUIRED_VALID_STREAK,
+    observation_target: int = PHASE_B_OBSERVATION_TARGET,
+    required_valid_streak: int | None = None,
 ) -> dict[str, Any]:
-    """Archive one cycle, update immutable progress history and exit status."""
+    """Archive one cycle and update non-blocking observation progress.
 
-    if required_valid_streak <= 0:
-        raise PhaseBProgressError("phase_b_required_streak_invalid")
+    ``required_valid_streak`` remains as a compatibility keyword for callers
+    written against schema v1.  It selects an observation milestone only and
+    never gates local research, allocator development, or authority.
+    """
+
+    if required_valid_streak is not None:
+        if (
+            observation_target != PHASE_B_OBSERVATION_TARGET
+            and observation_target != required_valid_streak
+        ):
+            raise PhaseBProgressError("phase_b_observation_target_conflict")
+        observation_target = required_valid_streak
+    if observation_target <= 0:
+        raise PhaseBProgressError("phase_b_observation_target_invalid")
     root = Path(state_dir)
     current_shadow = results.get("shadow")
     current_run_dir = (
@@ -282,6 +297,7 @@ def record_phase_b_cycle(
     cycle_core = {
         "schema_version": PHASE_B_PROGRESS_SCHEMA_VERSION,
         "artifact_type": "phase_b_readonly_cycle",
+        "policy_mode": "non_blocking_observation",
         "started_at": results.get("started_at"),
         "completed_at": results.get("completed_at"),
         "symbols": list(results.get("symbols", [])),
@@ -296,6 +312,7 @@ def record_phase_b_cycle(
         ),
         "source_hashes": source_hashes,
         "real_trade_coverage": _real_trade_coverage(results),
+        "blocks_local_progress": False,
         "orders_authorized": False,
     }
     cycle_id = canonical_hash(cycle_core)
@@ -350,18 +367,18 @@ def record_phase_b_cycle(
         if isinstance(item, Mapping)
     )
     has_real_trade_coverage = legacy_trade_coverage or cycle_trade_coverage
-    remaining = max(required_valid_streak - streak, 0)
+    remaining = max(observation_target - streak, 0)
     latest_shadow = cycle.get("shadow") or {}
     latest_venue = cycle.get("venue") or {}
     latest_halt = cycle.get("halt") or {}
     progress_core = {
         "schema_version": PHASE_B_PROGRESS_SCHEMA_VERSION,
-        "artifact_type": "phase_b_exit_progress",
+        "artifact_type": "phase_b_observation_progress",
+        "policy_mode": "non_blocking_observation",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "required_valid_streak": required_valid_streak,
-        "required": required_valid_streak,
+        "observation_target": observation_target,
         "valid_streak": streak,
-        "remaining_valid_cycles": remaining,
+        "remaining_observation_cycles": remaining,
         "legacy_valid_count": len(legacy_valid),
         "legacy_invalid_count": len(legacy_invalid),
         "recorded_cycle_count": len(cycles),
@@ -376,9 +393,13 @@ def record_phase_b_cycle(
         "latest_halt_event_count": latest_halt.get("event_count"),
         "real_trade_coverage": cycle["real_trade_coverage"],
         "has_real_trade_coverage": has_real_trade_coverage,
-        "exit_gate_passed": streak >= required_valid_streak,
+        "observation_target_reached": streak >= observation_target,
+        "blocks_local_progress": False,
+        "blocks_research": False,
+        "blocks_allocator_development": False,
         "orders_authorized": False,
         "automatic_authority_change": False,
+        "authority_effect": "none",
         "baseline_hash": baseline.get("baseline_hash"),
     }
     progress_hash = canonical_hash(progress_core)
@@ -386,8 +407,10 @@ def record_phase_b_cycle(
     progress_path = root / "progress" / f"{progress_hash}.json"
     _write_immutable(progress_path, progress)
     _replace_projection(root / "latest_progress.json", progress)
-    if progress["exit_gate_passed"]:
-        exit_path = root / "exit" / "phase_b_exit.json"
-        if not exit_path.exists():
-            _write_immutable(exit_path, progress)
+    if progress["observation_target_reached"]:
+        milestone_path = (
+            root / "milestones" / "phase_b_observation_target.json"
+        )
+        if not milestone_path.exists():
+            _write_immutable(milestone_path, progress)
     return progress

@@ -15,6 +15,7 @@ from qount.governance import base_operational_evidence
 from qount.governance import equity_mapping_event_capacity
 from qount.governance import equity_mapping_independence
 from qount.governance import funding_episode_independence
+from qount.governance import formal_trial_observation
 from qount.governance import liquid_trend_independence
 from qount.governance import record_forward_review
 from qount.governance import register_formal_trial
@@ -43,6 +44,7 @@ __all__ = [
     "equity_mapping_event_capacity",
     "equity_mapping_independence",
     "funding_episode_independence",
+    "formal_trial_observation",
     "liquid_trend_independence",
     "record_forward_review",
     "register_formal_trial",
