@@ -13,7 +13,7 @@
 - 当前 Mac、Windows 外置盘、WSL、VPS 和 `qount.alyaloale.com` 的真实分工；
 - 已有 Base、组合治理、MiniTrend dispatcher、研究 agents 和旧 X4/CxD 代码的复用边界；
 - 数据、策略、组合、风险、执行、账本、对账、通知、Dashboard 和 LLM 的目标接口；
-- 从当前 Base minimal-live 提升到可恢复、可解释的单策略 Level 3，再扩展多策略的顺序；
+- 从当前 Base standard-production（minimal-live规模）提升到可恢复、可解释的单策略 Level 3，再扩展多策略的顺序；
 - 未来多策略扩展和持续优化必须遵守的治理规则。
 
 本文不替代：
@@ -56,7 +56,7 @@ WSL /home/alyaloale/Code/qount
   7945HX/RTX 4060研究计算、特征、回测、ML、Bootstrap
 
 VPS /root/qount
-  production truth、Base 100 USDT minimal-live、order-free refresh、journal、dashboard发布
+  production truth、Base 100 USDT standard-production、natural-fill observer、journal、dashboard发布
 
 qount.alyaloale.com
   Caddy + Basic Auth保护的只读静态监控站
@@ -67,7 +67,7 @@ qount.alyaloale.com
 
 ### 2.2 当前生产能力
 
-当前 VPS 已有 MiniTrend Base 的独立日线minimal-live周期：
+当前 VPS 已有 MiniTrend Base 的独立日线standard-production周期（registry仍为`minimal_live`）：
 
 ```text
 runtime proof
@@ -76,10 +76,11 @@ runtime proof
   -> private read-only preflight
   -> paper replay
   -> causal projection
+  -> standard MarketSnapshot / StrategyIntent / RiskDecision / OrderPlan
   -> readiness
-  -> dry dispatcher
+  -> pre-dispatch RuntimeLedger / reconciliation / legacy parity
   -> final readiness / manual arm / minimal-live registry
-  -> live dispatcher / post-dispatch ledger reconciliation
+  -> venue adapter / post-dispatch reconciliation / attribution
 ```
 
 已存在的可复用生产能力：
@@ -91,12 +92,12 @@ runtime proof
 - Binance `STOP_MARKET closePosition` 保护计划；
 - append-only row hash / chain hash journal；
 - 成交后仓位和保护单对账；
-- 5%试点单日损失或10%试点峰值回撤时 flatten-then-halt；
+- 10%试点权益峰值回撤时 flatten-then-halt；当前没有独立账户单日损失线；
 - 独立 manual arm、live switch 和 confirmation 三重授权。
 
-`qount-mini-trend-live.timer`在0.2.7升级维护期间为`disabled/inactive`。恢复前必须重新验证release provenance、
-canonical通知库迁移、无订单周期、readiness五轴、账本和post-dispatch对账。首次live cycle已写完整锁定、完成、账本和post-dispatch对账，
-但Base信号为全现金，实际0订单、0成交；因此系统已获得minimal-live运行证据，尚未获得真实fill/fee/slippage/STOP触发证据。
+`qount-mini-trend-live.timer`已恢复为`enabled/active`。`0.2.15` standard-production迁移已重新验证release provenance、
+standard batch/plan、registry、pre/post-dispatch账本与对账、legacy parity及自然成交观察路径。最新live cycle已完成，
+但Base信号为全现金，实际0订单、0成交；因此系统已获得标准生产运行证据，尚未获得自然真实fill/fee/slippage/STOP触发证据。
 
 ### 2.3 当前代码问题
 
@@ -136,8 +137,8 @@ canonical通知库迁移、无订单周期、readiness五轴、账本和post-dis
 本地研究入口已进一步闭合：标准多sleeve runtime已连接`MarketSnapshot`、多个`StrategyIntent`、allocator、`RiskDecision`、
 reduce-before-increase `OrderPlan`、virtual venue、`RuntimeLedger`、三类NAV和三方对账，并落manifest-last不可变integration artifact；
 R0历史family mapping已由实际代码/文档hash确认，lifecycle/cost/NAV的available与missing字段也有v4 readiness证据。架构仍未“全部完成”：
-标准runtime尚未替代legacy MiniTrend production dispatcher，R0 actual point-in-time数据和候选Standalone NAV尚未产生，Base自然fill归因
-尚无样本。后续工作可以并行，不需要等待30天或第二个promotion sleeve。
+Base 已在 `0.2.15` 迁入标准 production authority；兼容命名的 legacy dispatcher 只保留为 projection/venue adapter，并由标准 batch/plan parity
+约束。R0 actual point-in-time数据和候选Standalone NAV尚未产生，Base自然fill归因尚无样本。后续工作可以并行，不需要等待30天或第二个promotion sleeve。
 
 ## 3. 架构原则与关键取舍
 
@@ -1328,12 +1329,12 @@ order-free authority。publisher保留source time，authority在每次周期后�
 
 目标：以固定`100 USDT` canary完成Base最小实盘审查，不等待日历观察指标自然累积。
 
-状态：**Phase B/C/D工程链已部署，Base 100 USDT minimal-live已启用**。Owner在2026-07-21/22明确授权跳过约两个月等待，
+状态：**Phase B/C/D工程链已部署，Base 100 USDT 已在 `0.2.15` 迁入 standard production**。Owner在2026-07-21/22明确授权跳过约两个月等待，
 `60 forward pairs / 10 active bars / 30 paper days / 7 dry decision days`降为非阻断观察指标。它们继续出现在
 readiness与Dashboard中，用于解释样本成熟度，并纳入readiness hash防篡改，但不再决定`ready_for_manual_final_arm`。
-当前recurring run `/root/qount/state/mini_trend/forward/runs/20260722T061346Z`为`ready_for_manual_final_arm`、blocker 0，
-registry为`minimal_live`，live timer为`enabled/active`。首次live因目标权重全零而没有订单，但journal与post-dispatch
-reconciliation均完成；recurring重复decision已验证为order-free refresh后幂等no-op。
+最新迁移 run `/root/qount/state/mini_trend/forward/runs/20260723T120610Z`以新 arm 绑定标准 batch/registry/ledger，
+registry为`minimal_live`，live timer为`enabled/active`。验收因目标权重全零而没有订单，但journal、standard parity、
+post-dispatch reconciliation与独立 production status 均完成；首个自然fill observer为`awaiting_natural_fill`。
 
 前置：
 
@@ -1356,7 +1357,7 @@ reconciliation均完成；recurring重复decision已验证为order-free refresh�
 
 ### Phase E：多策略组合
 
-目标：立即在本地把零/单/多sleeve接入统一Portfolio并形成virtual证据；Base生产路径保持独立。
+目标：立即在本地把零/单/多sleeve接入统一Portfolio并形成virtual证据；Base标准生产路径保持独立。
 
 顺序：
 
@@ -1368,6 +1369,10 @@ virtual NAV -> shadow execution -> paper -> event minimal-live -> risk scaling
 净额、风险、reduce-before-increase、rounding/min-notional、虚拟成交/费用/funding、账本、三NAV、对账、重放和篡改检测。
 每个真实候选的Standalone Executable NAV成熟度影响结论强度和production资格，不阻止virtual架构运行。
 CxD和CTA-R现已授权historical/discovery/virtual研究；二者都不因此获得Binance钱包订单权限。
+
+Base 的生产迁移不等于把研究 allocator 接到 VPS。`operations/base_production.py` state store只证明当前唯一 live sleeve 的标准 authority 与
+场所适配器相符，并独立保存自然首单归因。未来多sleeve仍按 `actual candidate Standalone NAV -> virtual -> shadow -> paper/live review`
+推进；fixture或两个candidate名称不能让 allocator 获得真钱权限。
 
 ### Phase F：持续研究与规模化
 
@@ -1421,7 +1426,7 @@ qount 的近期主线因此固定为：
 
 ```text
 统一合同、trace、账本、恢复和read models作为共享底座
-├─ Base minimal-live持续观测
+├─ Base standard-production与自然首单归因持续观测
 ├─ execution certification与shadow accounting持续观测
 ├─ R0/R1/... discovery和数据工程
 └─ 零/单/多sleeve virtual allocator集成

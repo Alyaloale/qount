@@ -231,7 +231,7 @@ blocked_reasons
 - 统一`Signal NAV / Standalone Executable NAV / Portfolio Realized NAV`口径；
 - 统一market/TOP3 beta residual、成本、trial count和fold稳定性报告。
 
-实现状态（2026-07-23，生产仍为`0.2.14`；本地合同已进入non-blocking research policy，未运行候选PnL）：
+实现状态（2026-07-23，Base生产已迁入`0.2.15 standard_production`；研究 allocator 仍只在本地，未运行候选PnL）：
 
 - `src/qount/governance/research_records.py` 已新增 `GlobalExperimentRecord`、`HistoricalFamilyMapping`、
   `PointInTimeSymbolLifecycle`、`PointInTimeUniverseRevision`、`UnifiedNavScorecard`、`ResearchEvidenceReadinessRecord` 和
@@ -250,6 +250,28 @@ blocked_reasons
   `candidate_pnl_ready=false`；未完成项不得以0、估算或架构fixture冒充。
 - R0 后续实际数据工作仍包括USD-M/COIN-M/spot与跨资产historical lifecycle摄取、LiteratureRecord/Research Intelligence MVP、
   两个候选的current dataset和Standalone scorecard。它们决定结果强度，不阻止数据工程与discovery开始。
+
+### R0.0：当前可执行研究路线
+
+以下是从当前 research-ready 状态到真实 candidate 复核的工作顺序。顺序用于减少返工，不是日历硬门；Base 自然首单由生产 timer
+独立等待，不阻塞任何研究步骤。
+
+1. **R0-DATA：建立 point-in-time 数据真相。** 在 Windows 外置盘发布 Binance USD-M/COIN-M/spot symbol lifecycle、rules、
+   listing/delisting、bar/funding/OI 可用时点和缺失清单；CTA-R另建ETF/期货合约、时区、跟踪误差、费用与可交易通道 lifecycle。
+   每个 dataset/revision 都写 manifest、source hash、watermark 和 contamination role。
+2. **R0-COST/NAV：冻结当前可执行成本与三 NAV。** C×D 分别冻结趋势腿和carry腿的 fee/spread/slippage/funding/legging/collateral/tail
+   成本；CTA-R冻结ETF/期货费用、税费、roll/FX/时区成本。先生成 Signal NAV 和 Standalone Executable NAV，Portfolio Realized NAV
+   只在组合 replay 后产生；缺字段保持 unavailable，不能用 Base 的0订单样本填充。
+3. **R0-RECORD：回填全局实验与候选记录。** 把真实 dataset IDs、lifecycle revision、cost-model hash、historical family mapping、
+   trial ledger、beta residual plan 和 kill tests 写入新的 `GlobalExperimentRecord`/`CandidateRevalidationRecord` revision；旧失败trial全部保留。
+4. **R0-RUNTIME：用真实 candidate intent 重跑标准 virtual runtime。** 先分别跑 CTA-R、C×D趋势腿、carry腿的单sleeve passthrough，
+   再跑两sleeve/多sleeve allocator；要求逐sleeve fill/cost/NAV、组合净额、RiskDecision、OrderPlan、RuntimeLedger 和 reconciliation 对齐。
+   这一步仍固定 `orders_authorized=false/orders_routed=false`，不部署 VPS allocator。
+5. **R0-DECISION：分别作 retain/revise/reject 结论。** CTA-R优先做selection-free跨资产复核；C×D先判断两条Standalone NAV和basis-tail，
+   再讨论组合。结果不足只降低该候选结论，不冻结其它family或基础设施；只有后续独立 shadow/paper 证据才进入新的生产授权讨论。
+
+并行旁路：Base live timer保存首个自然 `decision -> submit -> ACK -> trades/fee -> protection -> ledger/reconciliation -> attribution`
+样本；Phase B readonly timer继续累计有效/失败批次。两者用于更新执行成本和语义置信度，不是R0-DATA/R0-COST的启动条件。
 
 ### R0.1：Edge储备与组合候选重新认证，P0/P1
 
@@ -560,6 +582,8 @@ discovery
 | 频率 | 任务 | 节点 | 输出 |
 | --- | --- | --- | --- |
 | 每日04:30 UTC | 现有Daily Intelligence | VPS | 生产/市场一手简报，不改交易 |
+| 每日03:20 UTC | Base standard-production + natural-fill observer | VPS | 自然决策、标准对账、仅有fill时生成归因样本 |
+| 每日04:00 UTC | Phase B readonly observation | VPS | valid/failed批次、watermark/diff/venue/HALT/fill覆盖 |
 | 每日 | Binance changelog hash与capability impact | VPS只读或Mac轻任务 | 仅变化时告警 |
 | 每周 | arXiv/Crossref/OpenAlex和curated source discovery | Windows/WSL，Mac编排 | Research Intelligence周报 |
 | 每周 | proposal novelty/capacity/trial-budget triage | Mac | 接受、拒绝、blocked列表 |

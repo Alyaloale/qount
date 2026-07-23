@@ -2,8 +2,8 @@
 
 更新时间：2026-07-23
 
-源码与VPS生产版本：`0.2.14`，implementation commit=`23355079fc0a196ab932d8085bc4b4deb8da94d3`，
-source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
+VPS生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
+source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -16,7 +16,16 @@ source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
 [research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-23 本地标准多sleeve runtime和R0 readiness证据已闭合研究入口，生产仍保持`0.2.14`不变。**
+- **2026-07-23 Base 已完成 `0.2.15` 标准生产迁移。** `qount-mini-trend-live.service` 已改为
+  `Qount Base standard-production 100 USDT live cycle`；新的 Base production store 强制验证标准 batch、registry=`minimal_live`、
+  pre-dispatch ledger/reconciliation 和 legacy parity，再以不可覆盖迁移证据和可回读状态记录 production mode。VPS migration=
+  `d3668938...d51b`，status=`37d49d70...b907`，latest live artifact=`3b4817f3...3a6a`；`0.2.15` arm 为
+  `qmt-arm-edae15fc6e37c7a2902c`，旧 arm 已归档。验收 cycle=`completed`，0 market/0 STOP、无 exchange mutation、
+  post reconciliation passed；账户`486.09421530 USDT`、TOP3全平、普通/条件挂单0、HALT absent。live/Phase B timers 均
+  `enabled/active`，forward timer `disabled/inactive`，production cron 0。首单状态是`awaiting_natural_fill`、sample_count=0；
+  timer 仅等待自然信号，绝不为归因样本下单。
+
+- **2026-07-23 本地标准多sleeve runtime和R0 readiness证据已闭合研究入口，随后已用于 Base 标准生产 authority。**
   `src/qount/portfolio/virtual_runtime.py`已完整连接`MarketSnapshot -> StrategyIntent[] -> allocator -> PortfolioTarget ->
   RiskDecision -> OrderPlan -> RuntimeLedger -> virtual fills/fees/funding -> 三NAV -> three-way reconciliation`。固定两sleeve
   artifact位于`state/research_governance/runtime/d4faa121...48a80/`，result=`a98977dd...1672f`、runtime snapshot=
@@ -25,15 +34,15 @@ source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
   CxD/CTA-R实际历史family映射、代码/文档来源、已冻结的研究成本假设和缺失项机器化；真实historical lifecycle、账户/场所成本、
   当前数据IDs和候选Standalone NAV仍明确为partial/unavailable。最终R0 bundle位于
   `state/research_governance/r0/f5bfb3b5...6fa85/`，manifest=`05a303d4...c6bb3`；因此可开始数据工程和discovery，尚不可声称候选PnL或promotion。
-  Base dispatcher同时已接入事件时点归因采集；只有自然market fill才生成report，当前仍无样本。本批未访问或部署VPS。
+  Base dispatcher同时已接入事件时点归因采集；只有自然market fill才生成report，当前仍无样本。
 
-- **2026-07-23 本地研究推进政策已改为非阻塞，生产仍保持 `0.2.14` 不变。** Phase B的30个有效批次、每family
+- **2026-07-23（标准生产迁移前）本地研究推进政策已改为非阻塞，生产当时仍保持 `0.2.14`。** Phase B的30个有效批次、每family
   3个formal trial、两个promotion sleeve和Phase顺序都只作为证据成熟度观测，不再阻止本地数据工程、discovery、
   virtual allocator或架构建设。Phase B schema v2输出`policy_mode=non_blocking_observation`以及
   `blocks_local_progress=false/blocks_research=false/blocks_allocator_development=false`，达到30只写milestone。
   CxD和CTA-R的v4 CandidateRevalidationRecord均为`owner_authorized_research/active_research`，允许historical/discovery/
   shadow/virtual研究，仍固定`orders_allowed=false`。单sleeve allocator与第4个formal trial已有回归覆盖。生产registry、
-  UNKNOWN/HALT、幂等、对账、密钥隔离、真实订单arm和owner授权未放宽；本地最新全仓`1908/1908 OK`，本批未访问或部署VPS。
+  UNKNOWN/HALT、幂等、对账、密钥隔离、真实订单arm和owner授权未放宽；该阶段本地全仓`1908/1908 OK`，本批未访问或部署VPS。
 
 - **2026-07-23 Phase D 不可变证据、逐字段归因、Phase B观测和研究 R0 已随 `0.2.14` 部署。**
   新增 `CertificationArtifactStore`：在 `state/certification/runs/<run_id>/` 先写并回读 12 个完整成员，再写
@@ -57,9 +66,9 @@ source tree=`a5a3f9c3...f387955`，production provenance=`e3ad4d7d...1d0f9`
   Phase B已有3个有效批次，观测进度为`3/30`；这不阻止任何本地工作。timer继续自然运行，不为累计样本手工补跑或提高频率。
 
 - **架构计划完成度。** 单策略Base生产链、Phase A-D工程能力、不可变证据、逐字段归因、shadow accounting、venue provenance、
-  allocator/governance底座和本地标准多sleeve virtual integration artifact均已实现，本地研究入口已经闭合。整体生产架构仍未闭合：
-  标准runtime尚未替代legacy MiniTrend dispatcher，allocator仍未接入VPS；R0 actual historical lifecycle、账户/venue成本、当前数据IDs和
-  候选Standalone NAV仍须通过数据研究产生；Base事件时点捕获代码已就位但自然fill归因仍无样本。这些是并行backlog，不是本地等待门。
+  allocator/governance底座、本地多sleeve virtual integration artifact和 Base 标准生产 authority 均已实现。剩余工作是实际候选研究：
+  R0 historical lifecycle、账户/venue成本、当前数据IDs和候选Standalone NAV；以及未来真实多sleeve只在 virtual/shadow 层验证，
+  不接入 Base 的 Binance 钱包。Base事件时点捕获已就位但自然fill归因仍无样本。这些是并行 backlog，不是本地研究等待门。
 
 - **首次 Phase D 真实认证的证据限制已明确。** 2026-07-23 首次真实 fill/fee/归零是有效的场所执行事实，但当时脚本只把
   约 412 字节摘要落盘；12 个成员 payload/hash 只在进程内构造，不能追溯声称为已经持久化的完整不可变包。本批存储器只保证
@@ -2878,7 +2887,7 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    UM base-trend v0.2 已完成完整 forward preregistration，等待新的完整 UM 日线后再收集；Equity Mapping
    只在纽约`09:24:30-09:25:00`冻结窗口追加有raw readback hash的同步三腿/日历/公司行动/压力证据。
    这些research/shadow记录都不改参数、不获得paper/live权限；spot forward 至少累计60根且10根active前保持`collect_forward`。
-   当前Base 100 USDT minimal-live是独立例外，不能把它的授权扩散给RiskTier、FundingVeto或其它研究线。
+   当前Base 100 USDT standard-production（`minimal_live` registry）是独立例外，不能把它的授权扩散给RiskTier、FundingVeto或其它研究线。
    已拒绝的 UM 2.0% 全局档、三阶段 overlay 和stop-latch都不进入forward；funding-veto虽通过历史门和
    条件Bootstrap稳健门，也只冻结为首选 consumed-history 候选，不调50%阈值、不自动获得paper/live资格。
    双状态shadow-forward已从`2026-07-19`预登记；WSL外置盘canonical现有价格与funding完整的2个pair，verdict=
@@ -2891,7 +2900,8 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    可执行cash premarket bid/ask，并补齐mapping、mapped quote、USDTUSD、公司行动、事件上下文和stress来源。
    Nasdaq当前delayed quote不能代替现金腿，也不得用HTTP接收时点冒充市场quote时点。仍需累计30个独立现金交易日，
    且不因此进入shadow/paper/live。
-3. 一个月小资金实盘已进入`minimal_live`，下一步是等待自然信号并收集真实执行样本。2026-07-21 owner已把本金严格固定为
+3. 一个月小资金实盘已进入`standard_production`，registry保持`minimal_live`；下一步是等待自然信号并收集真实执行样本。
+   2026-07-21 owner已把本金严格固定为
    `100 USDT`并要求直接推进Phase B/C/D，不等待约两个月日历累积。`60 forward pairs / 10 active bars / 30 paper days /
    7 unique dry days`现为Dashboard/readiness非阻断观察指标；它们当前为0只表示尚无时间样本，不等于策略0收益或系统错误。Funding完整性、
    当前私有预检、无未管理仓位/订单、one-way/isolated 1x、标准authority batch、RuntimeLedger、pre/post-dispatch
@@ -2902,10 +2912,11 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    由fill/position账本负责，避免重复记账。`1000 USDT`只作历史research/paper/order-free兼容上界，真钱readiness、arm、
    dispatcher和live journal均要求精确`100 USDT`。
    2026-07-22最终已由owner既有明确授权完成manual arm、`minimal_live` promotion、首次live闭环和recurring幂等复跑；
+   2026-07-23已完成`0.2.15` standard-production迁移、新arm绑定和order-free验收。
    `qount-mini-trend-live.timer`现为`enabled/active`，forward timer和production cron保持关闭。当前信号全现金，所以没有真实订单或成交；不得为采集样本强制下单。
    旧X4/C×D cron与forward timer继续关闭，全局2.0%风险档和Funding Veto只能做shadow，不能控制真钱订单。
 
-   当前`0.2.13` release回归为Mac全仓`1561 OK`、VPS production`338 OK`。Python compileall、Bash语法、release provenance、
+   当前`0.2.15` release回归为Mac全仓`1911 OK`、VPS生产链聚焦`71 OK`。Python compileall、Bash语法、release provenance、
    `systemd-analyze verify`和`git diff --check`通过；unit verify只报告无关cloudmonitor旧告警，唯一测试警告仍是既存
    `src/qount/cta_data.py` UTC deprecation warning。
 4. Owner外部建议按 `docs/mini-trend-agent/review.md` 矩阵执行：Coin Metrics latest-vintage链上G0与经济

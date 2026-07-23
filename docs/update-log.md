@@ -8,6 +8,25 @@
 
 ## 2026-07-23
 
+### 0.2.15 Base standard-production migration and natural-fill observer deployed
+
+- owner 授权后将 Base 从兼容命名的 MiniTrend production entry 迁入标准 authority：`MarketSnapshot -> StrategyIntent -> allocator ->
+  RiskDecision -> OrderPlan -> RuntimeLedger -> reconciliation -> ExecutionAttributionReport`。projection 与 venue dispatcher 现在只作
+  input/adapter，任何订单前必须匹配标准 batch、plan、registry、pre-dispatch ledger/reconciliation 和 economic parity。
+- 新增 `operations/base_production.py` state store（`prepare_base_standard_production_store` /
+  `record_base_standard_production_cycle`）。每个正式 cycle 在 `state/mini_trend/standard-production/` 生成不可覆盖 release migration
+  artifact（`0700/0600`、O_EXCL、fsync/readback、hash）并原子更新状态；真实自然 fill 才会把逐字段 attribution 与脱敏 raw exchange evidence
+  固化为独立样本。store 在 live dispatch 前预检可写性，缺失或不可写不能取得执行路径。
+- release commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，version=`0.2.15`，source tree=`c6577f36...e15bb`，
+  provenance=`80fb1c38...b745`。VPS 先停 timer 触发并备份 `0.2.14` 代码，再同步、安装、回读 provenance、更新 unit、order-free
+  refresh、轮换 arm，最后恢复 timer；避免 rsync/安装窗口与 timer 重叠。
+- VPS migration=`d3668938...d51b`、status=`37d49d70...b907`。正式验收 artifact=`3b4817f3...3a6a`：`completed`、0 market/0 STOP、
+  `exchange_mutation_attempted=false`、standard parity=true、post reconciliation passed；账户`486.09421530 USDT`、TOP3/普通单/条件单均为0、
+  HALT absent。首单状态`awaiting_natural_fill`、sample_count=0，不制造订单。
+- `qount-mini-trend-live.timer` 与 `qount-phase-b-readonly.timer` 为`enabled/active`，forward timer保持`disabled/inactive`、cron为0；
+  下一 live 触发为 2026-07-24 03:20 UTC 加最多10分钟随机延迟。Mac全仓`1911/1911 OK`，VPS生产链聚焦`71/71 OK`，真实 cycle 后 provenance
+  再验证通过。
+
 ### Standard multi-sleeve virtual runtime and evidence-backed R0 readiness
 
 - 新增标准本地链：`MarketSnapshot -> StrategyIntent[] -> allocator -> PortfolioTarget -> RiskDecision -> OrderPlan ->

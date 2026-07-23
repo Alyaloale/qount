@@ -436,7 +436,7 @@ holdout或真实执行门。
 
 ### Phase B：只读生产并行
 
-状态：未来只读阶段；当前文档不自动授予VPS访问或任何订单权限。
+状态：已部署为只读观测；owner已授权该VPS只读timer，它不授予任何订单权限。
 
 - 在现有live周期后生成shadow accountant快照和diff；
 - 只读生成venue capability snapshot；
@@ -449,7 +449,7 @@ holdout或真实执行门。
 
 ### Phase C：testnet认证
 
-状态：需要owner对testnet mutation的单独授权；没有授权时只运行local gateway。
+状态：owner已授权并完成首轮testnet mutation与修复复验；后续新testnet实验仍按独立计划记录。
 
 - 运行完整故障矩阵；
 - 验证重启、重复、部分成交、STOP/Algo和REST恢复；
@@ -459,7 +459,7 @@ holdout或真实执行门。
 
 ### Phase D：真实最小认证，必须另获授权
 
-状态：当前明确未授权；任何新授权都必须绑定一次性CertificationPlan和失效时间。
+状态：首次`real_ack_fill`已在单次owner授权下完成且arm已消耗；任何新真钱认证仍必须绑定新的一次性CertificationPlan和失效时间。
 
 - owner指定每个测试的最大名义和费用预算；
 - 每次只认证一个场所语义；
@@ -507,7 +507,7 @@ virtual venue、RuntimeLedger、fees/funding、三NAV和three-way reconciliation
 - Dashboard只读、无交易credential、无写入口；
 - 生产发布仍可整体回滚到当前Base-only release。
 
-任何新模块未通过时，回滚目标是当前`0.2.13` Base-only行为：不恢复legacy cron、X4/C×D/RV-C或forward timer。
+任何新模块未通过时，回滚目标是当前`0.2.15` Base-only standard-production行为：不恢复legacy cron、X4/C×D/RV-C或forward timer。
 
 ## 11. 当前明确不做
 
@@ -961,3 +961,25 @@ audit rows、逐单`SUBMITTING/ACKNOWLEDGED/FILLED`、fills/fees/funding、sleev
 MiniTrend Base dispatcher现会在每个自然market submit前尽力捕获bid/ask/mid/spread，并分别记录submit、ACK、trade/fill和保护单时点；
 交易所不支持order-book查询时执行仍可继续，但arrival字段明确`unavailable/order_book_query_unavailable`。只有真实自然fill才生成partial
 `ExecutionAttributionReport`并随append-only dispatch journal保存脱敏原始证据；无订单周期不会合成样本。
+
+### 16.9 Base standard-production 迁移（2026-07-23）
+
+`0.2.15` 已将 Base 的 live authority 明确收口到标准 batch/registry/RuntimeLedger。兼容命名的 MiniTrend projection 与 dispatcher
+继续负责生成策略输入和调用 Binance adapter，但订单前必须证明：
+
+```text
+standard batch/manifest/OrderPlan
+-> minimal_live registry + owner authorization
+-> pre-dispatch RuntimeLedgerSnapshot + reconciliation
+-> legacy economic parity
+-> venue submit/ACK/trades/protection
+-> post-dispatch reconciliation + attribution
+```
+
+`state/mini_trend/standard-production/migrations/<release_commit>.json` 是 release 迁移证据，`status.json` 是当前机器状态，
+`samples/<sample_id>.json` 只保存自然 real fill。目录/文件固定`0700/0600`，迁移与样本不可覆盖、fsync/readback/hash校验；
+status 原子替换并回链 migration/first sample。live CLI 在调用 dispatcher 前必须完成 store 可写性预检，避免成交后才发现观察路径不可用。
+
+当前 migration=`d3668938...d51b`，首单状态=`awaiting_natural_fill`、sample_count=0。最新正式 cycle 0 market/0 STOP、
+`exchange_mutation_attempted=false`，standard parity和post reconciliation均passed。该迁移不改变100 USDT/TOP3/long-cash/isolated 1x，
+不启用研究 allocator 或其它 sleeve，也不把无订单周期写成执行样本。

@@ -6,27 +6,24 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前源码与VPS生产版本均为 `0.2.14`，production implementation commit=`23355079fc0a196ab932d8085bc4b4deb8da94d3`、
-provenance=`e3ad4d7d...1d0f9`，source tree=`a5a3f9c3...f387955`。该版本增加最近已完成日线硬门，修复LLM flat仓位计数、中文越权扫描、
-latest-date类型比较和当前decision arm绑定，并补Funding Veto beta残差报告；
-`qount-mini-trend-live.timer` 已恢复 `enabled/active`。唯一获得真钱权限的连续策略是
-`MiniTrend-UM-Base-v0.2`，固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、
-effective gross `<=1`；RiskTier和FundingVeto只做shadow。旧forward timer、X4/C×D/line A交易入口和production cron保持关闭。
-`0.2.14` provenance、通知库迁移、无订单周期、readiness 五轴、账本和对账均已验收。最终受控live artifact
-状态为`completed`，冻结信号仍为全现金，0 market/0 stop、`exchange_mutation_attempted=false`，live与标准
-reconciliation均passed；这不是未启动，也不得强制制造首单。
+当前 VPS 生产版本为 `0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`、
+provenance=`80fb1c38...b745`，source tree=`c6577f36...e15bb`。Base 已迁入 `standard_production`：唯一真钱策略
+`MiniTrend-UM-Base-v0.2` 仍固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`；
+RiskTier/FundingVeto 仍为 shadow，X4/C×D/line A、forward timer 和 production cron 继续关闭。
 
-2026-07-23 的 Phase D 不可变证据包、逐字段执行归因、Phase B机器观测和研究R0合同已随`0.2.14`部署到VPS，
-Mac 全仓 `1892/1892 OK`、VPS production surface `343/343 OK`、新增认证/R0聚焦测试 `80/80 OK`。部署只更新代码和依赖，
-没有重启 timer、轮换 arm、改变 dispatcher/registry/权限或产生订单。首次真实认证当时只落了摘要，不能追溯声称为完整 12 成员包；
-截至最新自然Phase B archive，已观察到`3/30`个有效批次，但该archive的trades/income均为0条，首次fill仍不能诚实回填。
-本地后续政策已取消日历、样本、双sleeve和阶段顺序对研发的硬阻塞：30批次和3 trial只作观测/复盘里程碑，CxD与CTA-R已是
-`active_research`且允许virtual研究；真实订单安全和授权边界保持不变。标准多sleeve本地runtime现已打通
-`MarketSnapshot -> StrategyIntent[] -> allocator -> RiskDecision -> OrderPlan -> RuntimeLedger -> reconciliation`，并生成
-manifest-last不可变集成artifact。Base dispatcher已在自然订单提交前捕获arrival quote和submit/ACK/trade/protection证据；无自然订单时不生成
-归因样本。R0 v4 bundle已用真实代码/历史文档hash替代family占位，并逐项保留lifecycle、成本和候选Standalone NAV的缺失原因。
-最终bundle为`state/research_governance/r0/f5bfb3b5...6fa85/`、manifest=`05a303d4...c6bb3`。这使本地达到research-ready，
-但没有替代VPS legacy dispatcher、接入allocator或生成候选PnL；Base继续自然等待首个非零信号。
+标准权威链为 `MarketSnapshot -> StrategyIntent -> allocator -> RiskDecision -> OrderPlan -> RuntimeLedger -> reconciliation ->
+ExecutionAttributionReport`。MiniTrend projection/dispatcher 只保留为策略输入与场所适配器，必须与标准 batch/plan 经济行为 parity；
+订单身份、registry、ledger 和 reconciliation 均由标准合同绑定。最新正式 cycle 为 `completed`、0 market/0 STOP、
+`exchange_mutation_attempted=false`，post-dispatch reconciliation passed，账户仍全平、普通/条件挂单均为 0；这不是未启动，也不得为了样本强制下单。
+
+`state/mini_trend/standard-production/status.json` 是首个自然成交观察的机器状态：migration=`d3668938...d51b`，当前
+`awaiting_natural_fill`、sample_count=0。每日 `qount-mini-trend-live.timer` 和 Phase B readonly timer 均为 `enabled/active`，
+只在自然 Base 决策出现真实 fill 时保存脱敏原始交易所证据与逐字段 attribution；无成交不生成样本。Mac 全仓 `1911/1911 OK`，VPS 生产链聚焦
+`71/71 OK`，release provenance 已在真实 cycle 后再次验证。
+
+本地研究已处于 research-ready：标准多sleeve virtual runtime 生成 manifest-last 不可变集成 artifact，R0 v4 bundle 已记录真实 family mapping、
+lifecycle/成本/Standalone NAV 的缺失项。R0 数据工程、CTA-R 与 C×D revalidation、真实 candidate virtual replay 可并行推进；首个 Base 成交样本
+是执行证据 workstream，不是研究启动门，也不向其它 sleeve 授予真钱权限。
 
 ## 主机职责
 
@@ -456,10 +453,10 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 
 当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一可运行的真钱链为VPS `/root/qount` 上固定100 USDT的
-MiniTrend Base minimal-live。Dashboard静态前端已部署，
+MiniTrend Base standard-production（registry仍为`minimal_live`）。Dashboard静态前端已部署，
 served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
 publisher timer为`enabled/active`；它只读完整batch/registry/ledger/notification/health/brief，并每两分钟刷新系统健康、release、
-备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.15970914 USDT`、TOP3全平、0挂单；
+备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.09421530 USDT`、TOP3全平、0挂单；
 recurring readiness已通过且registry为`minimal_live`。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
 在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持
 `static/inactive`，MiniTrend forward timer和production cron保持关闭；live timer为`enabled/active`，publisher不查询交易所，也不授予订单权。

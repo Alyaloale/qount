@@ -2,8 +2,8 @@
 
 更新时间：2026-07-23
 
-源码与VPS生产版本：`0.2.14`，implementation commit=`23355079fc0a196ab932d8085bc4b4deb8da94d3`，
-production provenance=`e3ad4d7d...1d0f9`
+VPS生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
+production provenance=`80fb1c38...b745`
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -31,9 +31,10 @@ production provenance=`e3ad4d7d...1d0f9`
 - WSL不作为当前实盘依据；完成数据必须发布到外置盘，WSL ext4只留可清理scratch。
 - 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
 - X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一生产交易入口是
-  `qount-mini-trend-live.timer` 与独立 MiniTrend arm/registry/readiness。
-- 当前`qount-mini-trend-live.timer=enabled/active`，`qount-mini-trend-forward.timer=disabled/inactive`。`0.2.14`已完成
-  provenance/readiness五轴/RuntimeLedger/reconciliation与publisher验收；不要恢复旧X4/C×D、forward timer或production cron。
+  `qount-mini-trend-live.timer` 与独立 Base arm/standard batch/registry/RuntimeLedger/reconciliation。
+- 当前`qount-mini-trend-live.timer=enabled/active`，`qount-mini-trend-forward.timer=disabled/inactive`。`0.2.15`已将 Base 迁为
+  `standard_production`；`state/mini_trend/standard-production/status.json` 是自然首单观察真相，当前为
+  `awaiting_natural_fill`、sample_count=0。不要恢复旧X4/C×D、forward timer或production cron，也不要强制下单采样。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
   `qount-dashboard-publisher.timer`和`qount-daily-intelligence.timer`已获授权并保持`enabled/active`；后者每日`04:30 UTC`抓免费官方feed、
@@ -59,14 +60,14 @@ ssh -o ClearAllForwardings=yes qount-vps \
 - 最新动态会话验证job为`6d51a764...4324`，状态`DELIVERED/SUCCEEDED`；生产NotificationStore为5 event/job/attempt、20行audit chain。
   旧代码回滚目录为`/root/qount-notify-backup.rl6QL6`，其中不含凭据。不得用该代码回滚覆盖当前四字段凭据；若必须回滚provider，需同时恢复
   相容凭据合同并重新执行真实通知验证。
-- 2026-07-22固定`100 USDT` MiniTrend Base已完成manual arm并进入`minimal_live`。VPS release为`0.2.13`；当前run
+- 2026-07-22固定`100 USDT` MiniTrend Base已完成manual arm并进入`minimal_live`。当日VPS release为`0.2.13`；当日run
   `/root/qount/state/mini_trend/forward/runs/20260722T133356Z`，readiness=`b25442fe...68fd`、batch=
   `092c95f9...a1f2`，最终live artifact SHA=`ae8cdc96...0900`，live与标准reconciliation passed。
   账户`486.15970914 USDT`、TOP3全平、普通/条件挂单0、HALT absent，arm/env均root `0600`。
 - `qount-mini-trend-live.timer`现为`enabled/active`；forward timer与legacy cron关闭。历史首次live artifact
   `20260722T055437Z/live_dispatch-20260722T055659Z.json`完成`live_intent_locked -> live_completed`，post reconciliation
   `71c34b4d...0a01` passed。因Base权重`0/0/0`，0 market/0 STOP且未尝试exchange mutation；不得强制首单。
-  当前`0.2.13`受控artifact为`completed`且`exchange_mutation_attempted=false`；历史recurring分支也已实跑为
+  当日`0.2.13`受控artifact为`completed`且`exchange_mutation_attempted=false`；历史recurring分支也已实跑为
   `duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
   真实fill/fee/slippage/STOP/UNKNOWN恢复样本仍为0，禁止扩到1000 USDT或增加其它live sleeve。
 - 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
@@ -227,9 +228,23 @@ ssh qount-vps 'systemctl list-timers qount-phase-b-readonly.timer --no-pager'
 ```
 
 非阻塞观测进度：3/30（前两批历史验证 + 2026-07-23 自然批次）。不要为了累计样本手工补跑或提高频率；timer每日自然运行。
-生产`0.2.14`下一周期仍会先产生旧schema；本地后续schema v2改为`cycles/*.json`、`progress/*.json`、
+生产`0.2.15`已使用schema v2；后续周期写入`cycles/*.json`、`progress/*.json`、
 `latest_progress.json`，达到30时生成`milestones/phase_b_observation_target.json`。机器字段固定
 `blocks_local_progress=false/blocks_research=false/authority_effect=none`；30不是退出门，也不改变dispatcher、registry或权限。
+
+Base standard-production 与首单观察：
+
+```bash
+ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python - <<"PY"
+from qount.operations import read_base_standard_production_status
+print(read_base_standard_production_status("state/mini_trend/standard-production"))
+PY'
+ssh qount-vps 'systemctl show qount-mini-trend-live.service -p Result -p ExecMainStatus -p ActiveState -p SubState'
+ssh qount-vps 'systemctl list-timers --all qount-mini-trend-live.timer qount-phase-b-readonly.timer --no-pager'
+```
+
+当前 status 预期为`runtime_mode=standard_production`、`first_fill_observation=awaiting_natural_fill`、`sample_count=0`；自然成交后
+再检查 `samples/<sample_id>.json`，不要手工创建样本或复制旧认证 evidence。
 
 Phase B 本地测试：
 
@@ -267,7 +282,7 @@ Phase C 本地测试：
 ## Phase D 证据与归因
 
 首次真实 `real_ack_fill` 已完成且 arm 已消费。不要重复真钱认证。历史 run 只落了摘要，不能追溯生成完整 12 成员包；
-`0.2.14` 已把新 `CertificationArtifactStore` 部署到 VPS，只保证后续 run。最新 Phase B archive 没有 trades/income，
+`0.2.15` 已把新 `CertificationArtifactStore` 和 Base standard-production observer 部署到 VPS，只保证后续 run。最新 Phase B archive 没有 trades/income，
 优先等待下一次自然 archive 覆盖首次 fill，然后离线回填。
 
 离线 dry-run（本地，不下真单）：
@@ -307,7 +322,7 @@ Phase D 本地测试：
 
 ## Research R0
 
-R0 记录合同已随 `0.2.14` 同步到 VPS，但未接 allocator，也未在 VPS 运行候选 PnL：
+R0 记录合同已随 `0.2.15` 同步到 VPS；allocator 仍只在本地运行，VPS不运行候选 PnL：
 
 ```bash
 PYTHONPATH=src ./.venv/bin/python scripts/research/run_multi_sleeve_virtual_runtime.py
@@ -373,8 +388,9 @@ Phase A 架构演进合同与离线认证验证：
 
 当前读法：Phase B/C/D dispatcher已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
 `SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。manual arm已执行并把同一hash绑定的registry
-提升为`minimal_live`；当前`0.2.13` release回归为Mac全仓`1561 OK`、VPS production `338 OK`。更早的`1542/328/29/1488/299/71/37/101 OK`
-等读数只保留历史语境，不覆盖当前release。NotificationStore、incident sync、DailyBrief、Daily Intelligence、个人微信transport和
+提升为`minimal_live`；当前`0.2.15` release已迁入`standard_production`，回归为Mac全仓`1911 OK`、VPS生产链聚焦`71 OK`。
+更早的`0.2.13`/`0.2.14`及`1542/328/29/1488/299/71/37/101 OK`等读数只保留历史语境，不覆盖当前release。
+NotificationStore、incident sync、DailyBrief、Daily Intelligence、个人微信transport和
 Dashboard v1均已在生产运行，但都不能直接赋予订单权；publisher只读标准source，不查询交易所。不要用fixture创建生产DB/read model，
 不要手工洗新authority，也不要绕过arm/registry/readiness打开其它策略。
 最新read-model QA使用Playwright 1.60 + Chromium 1223，桌面`1440x1000`和移动`390x844`检查Live、Positions到Decisions点击追踪、
