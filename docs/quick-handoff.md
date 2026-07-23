@@ -216,23 +216,25 @@ private API、手工补文件、复制fixture或恢复forward timer。authority 
 
 ## Phase B 只读并行
 
-Phase B（只读生产并行）管道已建成，初期手动 SSH 触发。全部只读，不改 dispatcher/订单/HALT 文件。
+Phase B（只读生产并行）管道已建成，`qount-phase-b-readonly.timer` 已安装并 enabled/active。
+每日 UTC 04:00（live timer 03:20 后 40 分钟）自动运行。全部只读，不改 dispatcher/订单/HALT 文件。
 归档落 `state/phase_b/`。
 
+手动触发（调试用）：
+
 ```bash
-ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
-  scripts/operations/phase_b_readonly_run.py \
-  --mode all \
-  --symbols BTCUSDT ETHUSDT BNBUSDT \
-  --runtime-ledger-path /root/qount/state/mini_trend/forward/latest/runtime.sqlite3 \
-  --halt-path /root/qount/state/mini_trend/HALT \
-  --state-dir /root/qount/state/phase_b \
-  --live-cycle-completed-at 2026-07-23T00:00:00+00:00'
+ssh qount-vps 'systemctl start qount-phase-b-readonly.service'
+ssh qount-vps 'journalctl -u qount-phase-b-readonly.service -n 30 --no-pager'
 ```
 
-`--mode` 可选 `shadow`/`venue`/`halt`/`all`。30 批次退出门从 VPS 首次运行开始计数。
+检查 timer 状态：
+
+```bash
+ssh qount-vps 'systemctl list-timers qount-phase-b-readonly.timer --no-pager'
+```
+
+30 批次退出门进度：2/30（batch #1 手动 + batch #2 timer 触发）。
 当前 0 成交期间 shadow 只验证空状态一致性；真实重建能力要等首笔成交。
-不建新 systemd timer，待 30 批次验证后另获 owner 授权。
 
 Phase B 本地测试：
 
@@ -860,7 +862,7 @@ python -m qount.main walk-forward \
 
 - 不把 `QOUNT_LIVE_ENABLE` 改成 `true`。
 - 不安装production crontab，不enable新的qount systemd timer，不手工强制订单或真实notification transport；已授权的
-  publisher、Daily Intelligence和MiniTrend live timer保持现状。
+  publisher、Daily Intelligence、MiniTrend live和phase-b-readonly timer保持现状。
 - 不在 WSL 启动或 enable `qount-runner.timer`。
 - 不把旧 `wf-*` 窗口当 validation。
 - 不把 2026-06-01..2026-06-04 已看过窗口当新的 promotion 验证。

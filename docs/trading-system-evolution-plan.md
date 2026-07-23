@@ -641,11 +641,22 @@ ssh qount-vps 'cd /root/qount && PYTHONPATH=src ./.venv/bin/python \
 - 归档落 `state/phase_b/shadow_accounting/runs/20260722T170922Z/`、`state/phase_b/venue_snapshots/`。
 - 未修改 dispatcher/订单/HALT 文件/timer/arm/registry。生产状态 `0.2.13` 不变。
 
-30 批次退出门开始计数（batch #1/30）。
+### 13.7 systemd timer 安装与 batch #2 验证
 
-### 13.7 下一步
+owner 授权后，已安装 `qount-phase-b-readonly.timer`（每日 UTC 04:00，live timer 03:20 后 40 分钟）：
 
-1. 在每个日线 live cycle 后手动运行 `phase_b_readonly_run.py`，积累剩余 29 批次。
+- `deploy/systemd/qount-phase-b-readonly.service`：oneshot，加载 .env + mini-trend-live.env，
+  bypass proxy，`ProtectSystem=full`，`ReadWritePaths=/root/qount/state/phase_b`，`CPUQuota=50%`，`MemoryMax=512M`。
+- `deploy/systemd/qount-phase-b-readonly.timer`：`OnCalendar=*-*-* 04:00:00 UTC`，`RandomizedDelaySec=5m`，`Persistent=true`。
+- `scripts/operations/phase_b_readonly_cycle.sh`：wrapper 脚本，从环境变量解析路径。
+- `systemd-analyze verify` 通过；`systemctl enable --start` 成功。
+- 手动触发 batch #2：exit=0、约 3 秒完成；shadow diff=0 block、venue=pass、halt=0 events。
+- 归档落 `state/phase_b/shadow_accounting/runs/20260723T040843Z/`。
+
+30 批次退出门进度：batch #2/30（timer 自动运行中）。
+
+### 13.8 下一步
+
+1. timer 每日自动运行，积累剩余 28 批次。
 2. 30 批次无无法解释 diff 后，Phase B 退出门通过。
-3. 可选：建 `qount-phase-b-readonly.timer`（需 owner 对新 timer 的单独授权）。
-4. Dashboard 只读状态（`phase_b_observability` read model）作为后续工作。
+3. Dashboard 只读状态（`phase_b_observability` read model）作为后续工作。
