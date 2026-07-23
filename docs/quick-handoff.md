@@ -248,6 +248,87 @@ Phase B 本地测试：
   tests.test_venue_fetch
 ```
 
+## Phase C 认证与 Phase D 准备
+
+Phase C §3.4 两个 FAIL 已本地修复（local gateway 4/4 PASS、GATE: PASS），待真实 testnet 重跑确认。
+
+本地 local-run（offline，不需 testnet）：
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_c_testnet_run.py local-run
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_c_testnet_run.py scorecard
+```
+
+真实 testnet 重跑（owner 已授权 testnet mutation，需 `~/.qount/testnet.env`）：
+
+```bash
+source ~/.qount/testnet.env
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_c_testnet_run.py testnet-run
+```
+
+注意：ccxt 对 STOP_MARKET algo 响应的实际格式可能与 mock 假设不同；若 `info.algoId` 提取不到，
+检查 ccxt 返回的 `algoId` 字段位置并调整 `testnet_client.submit` 的提取逻辑后重跑。
+
+Phase D plan 模板（draft，`orders_authorized=false`，不下单）：
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_c_testnet_run.py real-plan \
+  --symbol BTCUSDT --venue-semantic real_ack_fill --max-notional 20 --max-fee 0.5 --max-holding-time 120
+```
+
+Phase D 真实认证仍需 C 真实 testnet 重跑通过 + 独立 owner 授权，当前未授权；`real-plan` 模板只是 draft。
+
+Phase C 本地测试：
+
+```bash
+./.venv/bin/python -m unittest \
+  tests.test_certification_contracts \
+  tests.test_certification_gateway \
+  tests.test_certification_runner \
+  tests.test_certification_testnet
+```
+
+## Phase D 真实认证基建
+
+Phase D 工程基建已就绪（CertificationArm + RealVenueClient + `phase_d_real_run.py`）。owner 已确认授权参数
+（BTCUSDT / real_ack_fill / 120 USDT / 1.0 USDT / 120s）。真实执行需 VPS 生产 keys + owner 在场，当前未下真单。
+
+离线 dry-run（本地，不下真单）：
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_d_real_run.py dry-run
+```
+
+生成 real_minimum plan + 独立 certification arm（0600）：
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_d_real_run.py make-plan \
+  --owner-hash <owner_authorization_sha256> --symbol BTCUSDT --venue-semantic real_ack_fill
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_d_real_run.py make-arm \
+  --plan-path state/certification/plans/<plan_id>.json \
+  --arm-token-hash <independent_arm_token_sha256> --ttl-hours 1
+```
+
+真实执行（需 VPS 生产 keys + owner 在场；归零失败需人工处置）：
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_d_real_run.py run \
+  --plan-path state/certification/plans/<plan_id>.json \
+  --arm-path state/certification/arms/<arm_id>.json
+PYTHONPATH=src ./.venv/bin/python scripts/operations/phase_d_real_run.py scorecard
+```
+
+关键约束：arm 单次消费（`mark_used` 后不可复用）；归零失败残余仓位不归入 Base；认证成本独立归档不进策略 PnL；
+`orders_authorized=false` 在所有合同中恒定（真实下单由独立 arm 门控，非 plan 字段）。
+
+Phase D 本地测试：
+
+```bash
+./.venv/bin/python -m unittest \
+  tests.test_certification_arm \
+  tests.test_certification_real_client
+```
+
 ## 本地与 VPS 验证
 
 本地测试：

@@ -8,8 +8,10 @@ from qount.certification.fault_injection import FaultScenario
 from qount.certification.gateway import GatewayAckLoss
 from qount.certification.gateway import GatewayCrash
 from qount.certification.gateway import GatewayError
+from qount.certification.gateway import GatewayFilterError
 from qount.certification.gateway import GatewayTimeout
 from qount.certification.gateway import LocalVenueGateway
+from qount.certification.gateway import SymbolRules
 from qount.certification.replay import recover_orders
 from qount.certification.replay import rest_snapshot_recovery
 from qount.certification.replay import verify_no_replacement_orders
@@ -284,6 +286,116 @@ class FaultScenarioValidationTest(unittest.TestCase):
             injector.check("cert-001", "submit")
         )
         self.assertEqual(injector.fired_count, 1)
+
+
+class RoundingFilterTest(unittest.TestCase):
+    """Section 3.4: rounding/filter -- minQty, minNotional, stepSize, tickSize."""
+
+    def setUp(self):
+        self.gw = LocalVenueGateway()
+        self.gw.set_symbol_rules({
+            "BTCUSDT": SymbolRules(
+                min_qty=0.001,
+                min_notional=100.0,
+                step_size=0.001,
+                tick_size=0.10,
+            ),
+        })
+
+    def test_qty_rounded_to_step_size(self):
+        result = self.gw.submit(
+            client_order_id="cert-rnd-001", symbol="BTCUSDT",
+            side="BUY", qty=0.00149,
+        )
+        self.assertEqual(float(result["origQty"]), 0.001)
+
+    def test_qty_below_min_qty_rejected(self):
+        with self.assertRaises(GatewayFilterError) as ctx:
+            self.gw.submit(
+                client_order_id="cert-rnd-002", symbol="BTCUSDT",
+                side="BUY", qty=0.0005,
+            )
+        self.assertIn("min_qty_violation", str(ctx.exception))
+
+    def test_notional_below_min_notional_rejected(self):
+        gw = LocalVenueGateway()
+        gw.set_symbol_rules({
+            "BTCUSDT": SymbolRules(
+                min_qty=0.001,
+                min_notional=200.0,
+                step_size=0.001,
+                tick_size=0.10,
+            ),
+        })
+        with self.assertRaises(GatewayFilterError) as ctx:
+            gw.submit(
+                client_order_id="cert-rnd-003", symbol="BTCUSDT",
+                side="BUY", qty=0.001,
+            )
+        self.assertIn("min_notional_violation", str(ctx.exception))
+
+    def test_stop_price_rounded_to_tick_size(self):
+        result = self.gw.submit(
+            client_order_id="cert-rnd-004", symbol="BTCUSDT",
+            side="SELL", qty=0.002, order_type="STOP_MARKET",
+            stop_price=95000.07, reduce_only=True,
+        )
+        self.assertEqual(float(result["stopPrice"]), 95000.10)
+
+    def test_no_rules_skips_validation(self):
+        gw = LocalVenueGateway()
+        result = gw.submit(
+            client_order_id="cert-rnd-005", symbol="ETHUSDT",
+            side="BUY", qty=0.0000001,
+        )
+        self.assertEqual(result["status"], "FILLED")
+
+    def test_rounded_qty_passes_min_notional(self):
+        result = self.gw.submit(
+            client_order_id="cert-rnd-006", symbol="BTCUSDT",
+            side="BUY", qty=0.002,
+        )
+        self.assertEqual(float(result["origQty"]), 0.002)
+        self.assertEqual(result["status"], "FILLED")
+
+
+class FundingIncomeTest(unittest.TestCase):
+    """Section 3.4: funding/income fixture."""
+
+    def test_positive_rate_longs_pay(self):
+        gw = LocalVenueGateway()
+        gw.submit(
+            client_order_id="cert-fund-001", symbol="BTCUSDT",
+            side="BUY", qty=0.001,
+        )
+        record = gw.simulate_funding("BTCUSDT", 0.0001)
+        self.assertLess(record["funding_payment"], 0.0)
+        self.assertEqual(record["position"], 0.001)
+
+    def test_negative_rate_longs_receive(self):
+        gw = LocalVenueGateway()
+        gw.submit(
+            client_order_id="cert-fund-002", symbol="BTCUSDT",
+            side="BUY", qty=0.001,
+        )
+        record = gw.simulate_funding("BTCUSDT", -0.0001)
+        self.assertGreater(record["funding_payment"], 0.0)
+
+    def test_zero_position_zero_funding(self):
+        gw = LocalVenueGateway()
+        record = gw.simulate_funding("BTCUSDT", 0.0001)
+        self.assertEqual(record["funding_payment"], 0.0)
+
+    def test_funding_in_snapshot(self):
+        gw = LocalVenueGateway()
+        gw.submit(
+            client_order_id="cert-fund-003", symbol="BTCUSDT",
+            side="BUY", qty=0.001,
+        )
+        gw.simulate_funding("BTCUSDT", 0.0001)
+        snap = gw.snapshot()
+        self.assertEqual(len(snap["funding_payments"]), 1)
+        self.assertIn("BTCUSDT", snap["positions"])
 
 
 if __name__ == "__main__":

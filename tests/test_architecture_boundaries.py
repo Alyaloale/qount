@@ -118,6 +118,7 @@ CERTIFICATION_GATEWAY_MODULES = (
     "src/qount/certification/gateway.py",
     "src/qount/certification/fault_injection.py",
     "src/qount/certification/replay.py",
+    "src/qount/certification/runner.py",
 )
 FORBIDDEN_GATEWAY_IMPORTS = (
     "qount.mini_trend.pilot_dispatcher",

@@ -136,6 +136,47 @@ def build_exchange(settings: Settings, private: bool = False):
     return exchange
 
 
+def build_testnet_exchange(
+    api_key: str | None,
+    api_secret: str | None,
+    *,
+    default_type: str = "future",
+) -> Any:
+    """Build a ccxt Binance client pointed at the USD-M testnet.
+
+    Testnet keys are strictly separate from production keys.
+    Manually sets testnet URLs (ccxt set_sandbox_mode is deprecated
+    for USD-M futures since ccxt 4.5.x).
+    """
+    exchange_options: dict[str, Any] = {
+        "defaultType": default_type,
+        "fetchCurrencies": False,
+    }
+    if default_type == "future":
+        exchange_options["defaultSubType"] = "linear"
+        exchange_options["fetchMarkets"] = {"types": ["linear"]}
+    options: dict[str, Any] = {
+        "enableRateLimit": True,
+        "timeout": _ccxt_timeout_ms(),
+        "options": exchange_options,
+    }
+    if api_key and api_secret:
+        options["apiKey"] = api_key
+        options["secret"] = api_secret
+    exchange = getattr(ccxt, "binance")(options)
+    testnet_base = "https://testnet.binancefuture.com"
+    api = exchange.urls.get("api", {})
+    if isinstance(api, dict):
+        for key in list(api.keys()):
+            if "fapi" in key:
+                version = key.replace("fapiPublic", "").replace("fapiPrivate", "")
+                if version:
+                    api[key] = f"{testnet_base}/fapi/{version.lower()}"
+                else:
+                    api[key] = f"{testnet_base}/fapi/v1"
+    return exchange
+
+
 def _ccxt_timeout_ms() -> int:
     raw = os.getenv("QOUNT_CCXT_TIMEOUT_MS", "10000")
     try:

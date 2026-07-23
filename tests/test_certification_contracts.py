@@ -408,5 +408,57 @@ class CertificationArtifactImmutableTest(unittest.TestCase):
         self.assertIn("artifact_type_unknown", str(cm.exception))
 
 
+class RealMinimumPlanTest(unittest.TestCase):
+    """Phase D readiness: real_minimum plan contracts (sections 3.1, 9, 9.1).
+
+    The contract layer must accept real_minimum certification plans with
+    real_pending_owner status.  orders_authorized is always False; plan
+    creation implies no real order.
+    """
+
+    def test_real_minimum_plan_creates_with_pending_owner(self):
+        plan = _make_plan(
+            certification_type="real_minimum",
+            venue_semantic="real_ack_fill",
+            certification_status="real_pending_owner",
+        )
+        self.assertEqual(plan.certification_type, "real_minimum")
+        self.assertEqual(plan.certification_status, "real_pending_owner")
+        self.assertFalse(plan.orders_authorized)
+        self.assertIsNone(plan.strategy_id)
+        self.assertEqual(plan.portfolio_nav, "excluded")
+        self.assertEqual(plan.batch_type, "venue_certification")
+        self.assertEqual(plan.pnl_attribution, "operational_certification_cost")
+
+    def test_all_real_venue_semantics_accepted(self):
+        for semantic in (
+            "real_ack_fill",
+            "real_rounding",
+            "real_fee_maker_taker",
+            "real_stop_algo",
+            "real_funding_income",
+            "real_reconciliation",
+        ):
+            with self.subTest(semantic=semantic):
+                plan = _make_plan(
+                    certification_type="real_minimum",
+                    venue_semantic=semantic,
+                    certification_status="real_pending_owner",
+                )
+                self.assertEqual(plan.venue_semantic, semantic)
+                self.assertFalse(plan.orders_authorized)
+
+    def test_real_event_source_accepted(self):
+        plan = _make_plan(
+            certification_type="real_minimum",
+            venue_semantic="real_ack_fill",
+            certification_status="real_pending_owner",
+        )
+        run = _make_run(plan, certification_type="real_minimum")
+        event = _make_event(run, event_type="submit", source="real")
+        self.assertEqual(event.source, "real")
+        self.assertFalse(run.orders_authorized)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -660,3 +660,236 @@ owner 授权后，已安装 `qount-phase-b-readonly.timer`（每日 UTC 04:00，
 1. timer 每日自动运行，积累剩余 28 批次。
 2. 30 批次无无法解释 diff 后，Phase B 退出门通过。
 3. Dashboard 只读状态（`phase_b_observability` read model）作为后续工作。
+
+## 14. Phase C 推进记录（2026-07-23）
+
+### 14.1 完成状态
+
+Phase C（§9 testnet 认证）的基建与首轮 testnet 实测已完成。owner 已授权 testnet mutation。
+前置条件满足：A 通过 ✓、testnet 明确授权 ✓。生产状态不变：`0.2.13`、唯一真钱策略
+`MiniTrend-UM-Base-v0.2`、所有 timer/arm/registry/cron 不变。
+
+### 14.2 交付物与证据
+
+Phase A 交付了独立的"积木"（contracts + gateway + fault injection + replay + attribution），
+Phase C 建设了"胶水"层（runner + testnet client + 脚本），把积木拼成端到端认证运行。
+
+| 交付物 | 落点 | 测试数 | 关键不变量 |
+| --- | --- | ---: | --- |
+| CertificationRunner | `src/qount/certification/runner.py` | 18 | VenueAdapter Protocol 统一 local gateway + testnet；Plan->Run->Event->Result 全链路；12 artifact 成员 + `completed` 计算判定；`orders_authorized=False` 恒定 |
+| TestnetVenueClient | `src/qount/certification/testnet_client.py` | 15 | ccxt Binance USD-M testnet 实现 VenueAdapter；submit/cancel/query/snapshot；key 与生产隔离 |
+| Gateway §3.4 补全 | `src/qount/certification/gateway.py` | +10 | SymbolRules(minQty/minNotional/stepSize/tickSize) + GatewayFilterError + funding fixture |
+| Settings testnet 隔离 | `src/qount/settings.py` + `exchange_utils.py` | 4 | `QOUNT_TESTNET_ENABLE/API_KEY/API_SECRET`；加入 `PRODUCTION_CRITICAL_FIELDS`；`build_testnet_exchange` 手动设 testnet URL |
+| phase_c 脚本入口 | `scripts/operations/phase_c_testnet_run.py` | - | `local-run`/`testnet-run`/`scorecard` 三子命令；artifact 落 `state/certification/runs/` |
+| Import boundary 扩展 | `tests/test_architecture_boundaries.py` | +1 | `runner.py` 加入 `CERTIFICATION_GATEWAY_MODULES`（禁止 ccxt/exchange_utils/executor） |
+
+新增 2 个源文件、1 个脚本、2 个测试文件；Mac 全仓 `1827/1827 OK`（0 errors、0 failures、0 skips）。
+现有 golden hash 不变；`orders_authorized=False` 在所有 certification 合同中恒定；
+runner/contracts 不 import ccxt（import boundary 通过）。
+
+### 14.3 新增包与文件
+
+- `src/qount/certification/runner.py` — VenueAdapter Protocol + CertificationRunner + artifact 组装
+- `src/qount/certification/testnet_client.py` — TestnetVenueClient（ccxt Binance testnet）
+- `scripts/operations/phase_c_testnet_run.py` — 统一认证脚本入口
+- `tests/test_certification_runner.py` — 18 条端到端测试
+- `tests/test_certification_testnet.py` — 16 条 testnet infra 测试（含 settings 隔离）
+
+修改的现有文件：
+- `src/qount/certification/gateway.py` — +SymbolRules +GatewayFilterError +rounding/filter +funding
+- `src/qount/certification/__init__.py` — 导出 CertificationRunner, VenueAdapter
+- `src/qount/settings.py` — +testnet_enable/api_key/api_secret +PRODUCTION_CRITICAL_FIELDS
+- `src/qount/exchange_utils.py` — +build_testnet_exchange（手动设 testnet URL，不用已废弃的 set_sandbox_mode）
+- `tests/test_architecture_boundaries.py` — runner.py 加入 boundary
+- `tests/test_certification_gateway.py` — +10 条 rounding/filter + funding 测试
+
+### 14.4 Testnet 认证结果
+
+对 Binance USD-M testnet（testnet.binancefuture.com）跑 §3.4 必须矩阵 4 项。
+testnet 账户余额 5000 USDT，标的 BTCUSDT，每笔 0.002 BTC。
+
+| 场景 | testnet 要求 | 结果 | 发现 |
+| --- | --- | --- | --- |
+| client ID 幂等 | 必须 | **FAIL** | testnet **不强制** `newClientOrderId` 唯一性：重复提交同一 client ID 创造了第二个订单（不同 exchange order ID），两笔均成交 |
+| STOP/Algo 语义 | 必须 | **FAIL** | STOP_MARKET 走 **Algo Order 服务**（`POST /fapi/v1/algo/order`），返回 `algoId` 而非 `orderId`；常规 `/fapi/v1/order` 查询/撤销端点不认识 Algo 订单（`-2013`/`-2011`） |
+| rounding/filter | 必须 | **PASS** | MARKET 订单正常接受、成交、归零 |
+| 崩溃恢复 | 必须 | **PASS** | query 恢复无替代单，UNKNOWN 闭合 |
+
+退出门状态：
+
+| 退出门 | 结果 |
+| --- | --- |
+| 重放无重复单 | ✓（crash_recovery 场景无替代订单） |
+| UNKNOWN 闭合或正确 HALT | ✓ |
+| REST 重建覆盖 gap | ✓ |
+| 零仓位 | ✓（所有场景最终归零） |
+| 全部 completed | ✓ |
+| 场景通过率 | **2/4** |
+
+**GATE: FAIL**（2/4 场景失败）。失败原因是真实的 testnet 行为差异，不是代码 bug。
+
+### 14.5 关键发现详解
+
+#### 发现 1：testnet 不强制 client ID 幂等
+
+直接 API 验证：用同一 `newClientOrderId=verify-idem-001` 连续提交两笔 MARKET BUY 0.001，
+testnet 返回了两个不同的 exchange order ID（23491125564 vs 23491127040），两笔均成交，
+最终仓位 0.002。通过 `origClientOrderId` 查询只返回第二笔订单。
+
+生产 Binance 预期行为不同：重复 `newClientOrderId` 应被拒绝或返回原始订单。testnet 的
+宽松行为意味着认证不能假设交易所层面强制幂等，系统自身必须防止重复提交。
+
+#### 发现 2：STOP_MARKET 使用 Algo Order 服务
+
+直接 API 验证：`create_order(type='STOP_MARKET')` 在 testnet 上走了 Algo Order API
+（`POST /fapi/v1/algo/order`），返回 `algoId`（如 1000000143008333）和 `algoType=CONDITIONAL`，
+而非常规 `orderId`。常规 Order 端点（`GET/DELETE /fapi/v1/order`）不认识 Algo 订单。
+
+Algo Order 的正确查询/撤销方式（经 native API 验证）：
+
+| 操作 | 端点 | 参数 | 结果 |
+| --- | --- | --- | --- |
+| 查询 | `GET /fapi/v1/algo/order` | `clientAlgoId` | ✓ 成功返回 |
+| 查询 | `GET /fapi/v1/algo/order` | `algoId` | ✗ `-2013` |
+| 撤销 | `DELETE /fapi/v1/algo/order` | `algoId` | ✓ `code:200` |
+| 撤销 | `DELETE /fapi/v1/algo/order` | `clientAlgoId` | ✗ `-2011` |
+
+这正是 §6 预见的场景："STOP/TAKE_PROFIT等条件单必须按当前普通订单与Algo Service能力矩阵
+验证，不能只因历史endpoint仍返回成功就判兼容"。认证发现了普通订单与 Algo Service 的能力矩阵
+差异，TestnetVenueClient 需对 STOP_MARKET 使用 Algo 专用端点（query by `clientAlgoId`、
+cancel by `algoId`）。
+
+### 14.6 ccxt testnet 兼容性备注
+
+ccxt 4.5.x 废弃了 Binance USD-M futures 的 `set_sandbox_mode(True)`（抛 `NotSupported`）。
+`build_testnet_exchange` 改为手动设置 testnet URL（`testnet.binancefuture.com/fapi/v*`），
+不触发 ccxt 的 sandbox flag。`fetchCurrencies: False` 防止 ccxt 在创建期货订单前调用 spot
+`/sapi/v1/capital/config/getall` 导致超时。
+
+### 14.7 下一步
+
+1. **修复 STOP_MARKET Algo 端点**（已完成 2026-07-23，见 §15）：TestnetVenueClient 的 `query()`/`cancel()`
+   对 STOP_MARKET 切换到 `fapiPrivateGetAlgoOrder`（by `clientAlgoId`）/ `fapiPrivateDeleteAlgoOrder`
+   （by `algoId`）；submit 检测 algo 响应并记录 `algo_id`/`client_algo_id`。本地 mock + 真实 testnet 4/4 通过。
+2. **client ID 幂等**（已完成 2026-07-23，见 §15）：CertificationRunner 的 `submit_order` 在
+   `known_order_ids` 命中时 fail-closed 拒绝重复提交（`duplicate_client_order_id_blocked`），
+   不再转发第二单到场所。testnet 不强制幂等的行为记录为场所限制，由系统层防重覆盖。
+3. **Phase B 退出门**：30 批次进度 2/30，timer 自动运行中；Phase C 不阻塞 Phase B。
+4. **Phase D（真实最小认证）**：合同层已就绪（`real_minimum` 类型 + `real_pending_owner` 状态 +
+   6 个 `real_*` 语义），`real-plan` 子命令可生成 draft plan 模板；C 已通过（真实 testnet 4/4 PASS），
+   但仍需独立 owner 授权，当前未授权。详见 §15。
+
+## 15. Phase C FAIL 修复与 Phase D 准备（2026-07-23）
+
+### 15.1 完成状态
+
+Phase C（§9 testnet 认证）§3.4 验收矩阵的两个 FAIL 已修复，local gateway 与真实 Binance USD-M testnet
+均 4/4 PASS、GATE: PASS。Phase D（§9 真实最小认证）合同层已就绪，`real-plan` plan 模板入口已建。
+真实认证仍需独立 owner 授权，当前未授权。生产状态不变：`0.2.13`、唯一真钱策略
+`MiniTrend-UM-Base-v0.2`、所有 timer/arm/registry/cron 不变。
+
+### 15.2 FAIL 修复
+
+| FAIL | 根因 | 修复 | 验证 |
+| --- | --- | --- | --- |
+| stop_algo | STOP_MARKET 走 Algo Order 服务返回 `algoId`，常规 `fetch_order`/`cancel_order` 查不到 | TestnetVenueClient submit 检测 algo 响应（`info.algoId`）记录 `is_algo`/`algo_id`/`client_algo_id`；query 走 `fapiPrivateGetAlgoOrder`（by `clientAlgoId`）；cancel 走 `fapiPrivateDeleteAlgoOrder`（by `algoId`） | 4 条 mock 测试；local-run + 真实 testnet stop_algo PASS |
+| client_id_idempotency | runner `submit_order` 的 `_known_order_ids` 只跟踪不阻止，重复 cid 直接打到 testnet（不强制幂等）创建第二单 | runner `submit_order` 在 cid 已在 `_known_order_ids` 时 fail-closed 抛 `duplicate_client_order_id_blocked`，不转发第二单 | 3 条测试；local-run + 真实 testnet client_id_idempotency PASS |
+
+### 15.3 Phase D 合同就绪
+
+合同层（`src/qount/certification/contracts.py`）已为 Phase D 完整就绪：
+
+- `CERTIFICATION_TYPES` 含 `real_minimum`；
+- `CERTIFICATION_STATUSES` 含 `real_pending_owner` / `real_authorized`；
+- `VENUE_SEMANTICS` 含 6 个 `real_*` 语义（real_ack_fill / real_rounding / real_fee_maker_taker / real_stop_algo / real_funding_income / real_reconciliation）；
+- `CERTIFICATION_EVENT_SOURCES` 含 `real`；
+- `orders_authorized` 由 `validate()` 强制 False（`certification_plan_cannot_authorize_orders`）。
+
+`scripts/operations/phase_c_testnet_run.py real-plan` 子命令生成 `real_minimum` draft plan 模板
+（`certification_status=real_pending_owner`、占位 hash、`orders_authorized=false`），落
+`state/certification/plans/<plan_id>.json`，不执行任何下单。模板供 owner 审阅后授权。
+
+### 15.4 新增/修改文件
+
+修改：
+
+- `src/qount/certification/runner.py` - submit_order fail-closed 防重（重复 cid 阻断）
+- `src/qount/certification/testnet_client.py` - STOP_MARKET Algo 端点（submit 检测 algo 响应 + query/cancel 分支）
+- `scripts/operations/phase_c_testnet_run.py` - `real-plan` 子命令 + `build_real_plan_template`
+- `tests/test_certification_runner.py` - +3 防重测试（DuplicateClientIdBlockedTest）
+- `tests/test_certification_testnet.py` - +4 Algo 端点测试 + MockExchange algo 扩展
+- `tests/test_certification_contracts.py` - +3 RealMinimumPlanTest（Phase D 合同就绪）
+
+Mac 全仓 `1837/1837 OK`（Phase C 修复前 1827，+10 新测试）。现有 golden hash 不变；
+`orders_authorized=false` 在所有 certification 合同中恒定；未访问 VPS、私有 API、交易所、订单接口；
+未修改 timer、arm、registry、cron 或 live 开关。
+
+### 15.5 下一步
+
+1. ✅ **真实 testnet 重跑**（已完成 2026-07-23）：用 `~/.qount/testnet.env` 跑
+   `phase_c_testnet_run.py testnet-run`，4/4 PASS、GATE: PASS。ccxt 对 STOP_MARKET 的 algo 响应
+   `info.algoId` 提取路径正确，无需调整。Phase C 退出门（§9.1）满足：重放无重复单、UNKNOWN 闭合、
+   REST 重建覆盖 gap、零仓位、全部 completed、4/4 场景通过。
+2. **Phase D 真实认证**：前置 C 已通过，工程基建已就绪（§16：CertificationArm + RealVenueClient
+   + `phase_d_real_run.py`）。owner 已确认授权参数（BTCUSDT / `real_ack_fill` / max_notional 120 USDT
+   / max_fee 1.0 USDT / max_holding 120s）。真实执行仍需 VPS 生产 keys + owner 在场（归零失败人工处置，
+   §3.2）。当前未下真单；`orders_authorized=false` 在所有合同中恒定。
+3. **Phase B 退出门**：30 批次进度 2/30，timer 自动运行中。
+
+## 16. Phase D 工程基建（2026-07-23）
+
+### 16.1 完成状态
+
+Phase D（§9 真实最小认证）工程基建已就绪：独立 certification arm、真实 venue client、`phase_d_real_run.py`
+脚本入口。owner 已确认授权参数（BTCUSDT / `real_ack_fill` / 120 USDT / 1.0 USDT / 120s）。真实执行仍需
+VPS 生产 keys + owner 在场。生产状态不变：`0.2.13`、唯一真钱策略 `MiniTrend-UM-Base-v0.2`、
+所有 timer/arm/registry/cron 不变。
+
+### 16.2 交付物
+
+| 交付物 | 落点 | 测试数 | 关键不变量 |
+| --- | --- | ---: | --- |
+| CertificationArm 合同 | `src/qount/certification/arm.py` | 20 | 独立、单次（`mark_used`）、带失效时间；不复用 Base arm/token；`orders_authorized` 反映 `real_authorized` 状态；hash/id tamper 检测 |
+| RealVenueClient | `src/qount/certification/real_client.py` | 8 | 继承 TestnetVenueClient（含 Algo 端点）；`submit` 受 arm 门控（`CertificationArmNotAuthorized` fail-closed）；`query`/`cancel` 不受 arm 门控（归零/恢复必须可用） |
+| phase_d 脚本入口 | `scripts/operations/phase_d_real_run.py` | - | `make-plan`/`make-arm`（0600）/`dry-run`/`run`/`scorecard`；`run` 真实下单后 `mark_used` 消费 arm；失败保留证据不归入 Base |
+
+### 16.3 真实认证执行合同（§3.1/§3.2/§9）
+
+`phase_d_real_run.py run` 子命令的执行流程：
+
+1. 加载 `real_minimum` plan + CertificationArm（0600 文件）；
+2. 校验 arm `status=real_authorized` + `plan_id` 匹配 + 未过期；
+3. `Settings.from_env()` 取生产 keys（`QOUNT_BINANCE_API_KEY/SECRET`）；
+4. `build_exchange(settings, private=True)` 连真实 Binance USD-M；
+5. `RealVenueClient(exchange, arm)` -- `submit` 受 arm 门控；
+6. `CertificationRunner` 走 `start -> submit MARKET buy -> submit MARKET sell -> generate_result`；
+7. 成功后 `arm.mark_used()` 覆盖 0600 文件（`status=used`，单次消费）；
+8. 12 artifact 成员 + 双会计对账 + 零仓位证明；失败保留证据、不消费 arm、提示人工归零。
+
+关键约束（§11）：
+- 归零失败时残余仓位**不归入 Base**，不以"等下一次策略信号"处置；
+- 不主动制造 UNKNOWN/断网/部分成交（只在 testnet 做）；
+- 认证成本独立归档，不进策略 PnL；
+- artifact 完整 ≠ Base 或新策略获得扩容资格。
+
+### 16.4 新增文件
+
+- `src/qount/certification/arm.py` - CertificationArm 合同（独立 0600 arm）
+- `src/qount/certification/real_client.py` - RealVenueClient（真实 Binance + arm 门控）
+- `scripts/operations/phase_d_real_run.py` - Phase D 脚本入口
+- `tests/test_certification_arm.py` - 20 条 arm 合同测试
+- `tests/test_certification_real_client.py` - 8 条 real client arm 门控测试
+
+Mac 全仓 `1865/1865 OK`（Phase D 基建前 1837，+28 新测试）。现有 golden hash 不变；
+`orders_authorized=false` 在所有 certification 合同中恒定；arm 0600 文件权限验证；
+未访问 VPS/私有 API/交易所/订单接口；未修改 timer/arm/registry/cron/live 开关。
+`dry-run` 验证完整流程（12 artifact + 零仓位 + completed）。
+
+### 16.5 下一步
+
+1. **VPS 部署 + 真实执行**：`phase_d_real_run.py run` 需要 VPS 生产 keys + owner 在场。
+   执行顺序：`make-plan`（绑定 owner hash）-> `make-arm`（0600，1h 失效）-> `run`（真实 buy/sell，
+   120s 内归零）-> `scorecard`。归零失败需人工处置。
+2. **ExecutionAttributionReport**（§4.4）：真实 fill 产生后，从逐笔 trade 填充
+   `submit_to_ack_ms`/`ack_to_fill_ms`/`adverse_slippage`/`maker_or_taker`/`fee` 等字段（不用回测常数）。
+3. **Phase B 退出门**：30 批次进度 2/30，timer 自动运行中。

@@ -16,6 +16,36 @@ source tree=`21ddfb09...3705`，production provenance=`8141d31a...f205`
 [research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
+- **2026-07-23 Phase D 真实认证工程基建就绪。** 新增 CertificationArm（`src/qount/certification/arm.py`，
+  独立、单次、带失效时间的 0600 arm，不复用 Base arm/token）+ RealVenueClient（`real_client.py`，连真实
+  Binance USD-M，`submit` 受 arm 门控 fail-closed，`query`/`cancel` 不受门控以支持归零恢复）+
+  `phase_d_real_run.py`（make-plan/make-arm/dry-run/run/scorecard；`run` 真实下单后 `mark_used` 消费 arm，
+  失败保留证据不归入 Base）。owner 已确认授权参数（BTCUSDT / real_ack_fill / 120 USDT / 1.0 USDT / 120s）。
+  dry-run 验证完整流程（12 artifact + 零仓位 + completed）；Mac 全仓 `1865/1865 OK`（+28 新测试）。
+  真实执行仍需 VPS 生产 keys + owner 在场，当前未下真单。详见
+  [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §16。生产状态`0.2.13`不变。
+
+- **2026-07-23 Phase C 两个 FAIL 已修复、真实 testnet 4/4 PASS、Phase D 合同就绪。** §3.4 验收矩阵两个 FAIL 已修复：
+  ① stop_algo--TestnetVenueClient query/cancel 对 STOP_MARKET 切到 Algo 端点
+  （`fapiPrivateGetAlgoOrder` by `clientAlgoId` / `fapiPrivateDeleteAlgoOrder` by `algoId`），
+  submit 检测 `info.algoId` 记录 algo meta；② client_id_idempotency--CertificationRunner `submit_order`
+  重复 `client_order_id` 时 fail-closed 阻断（`duplicate_client_order_id_blocked`），不再转发第二单到
+  不强制幂等的 testnet。local gateway 与真实 Binance USD-M testnet 均 4/4 PASS、GATE: PASS；
+  Mac 全仓 `1837/1837 OK`（+10 新测试）。Phase D 合同层已就绪（`real_minimum` 类型 + `real_pending_owner`
+  状态 + 6 个 `real_*` 语义），`phase_c_testnet_run.py real-plan` 生成 draft plan 模板
+  （`orders_authorized=false`、不下单）。Phase C 前置已通过，Phase D 真实认证仍需独立 owner 授权，
+  当前未授权。详见 [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §15。生产状态`0.2.13`不变。
+
+- **2026-07-23 Phase C（testnet 认证）基建与首轮实测完成。** owner 已授权 testnet mutation。
+  Phase A 的"积木"扩展为"胶水"层：CertificationRunner（VenueAdapter Protocol 统一 local gateway + testnet，
+  Plan->Run->Event->Result 全链路，12 artifact 成员 + `completed` 计算判定）+ TestnetVenueClient（ccxt Binance
+  testnet）+ Gateway §3.4 补全（SymbolRules rounding/filter + funding fixture）+ `build_testnet_exchange`（手动设
+  testnet URL）+ `phase_c_testnet_run.py` 脚本（local-run/testnet-run/scorecard）。新增2源文件+1脚本+2测试文件，
+  Mac全仓`1827/1827 OK`。对 Binance USD-M testnet 跑 §3.4 必须矩阵4项：rounding_filter PASS、crash_recovery PASS、
+  **client_id_idempotency FAIL**（testnet 不强制 `newClientOrderId` 唯一性）、**stop_algo FAIL**（STOP_MARKET 走
+  Algo Order 服务，常规端点查不到）。GATE: FAIL（2/4），失败为真实 testnet 行为差异非代码 bug。详见
+  [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §14。生产状态`0.2.13`不变。
+
 - **2026-07-23 Phase B（只读生产并行）管道建设完成、timer 已安装、batch #1-2 验证通过。** owner 已授权 VPS 只读并行和
   `qount-phase-b-readonly.timer`。Phase A 的纯函数"数学引擎"扩展为"管道"层：shadow accountant 抓取器+归档器+编排层+
   主账本独立提取器+HALT 旁路观测+venue snapshot 抓取器+统一脚本入口。新增1个独立包、6个源文件、5个测试文件、61条新测试；

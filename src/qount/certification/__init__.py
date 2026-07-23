@@ -22,6 +22,8 @@ from qount.certification.contracts import CertificationEvent
 from qount.certification.contracts import CertificationPlan
 from qount.certification.contracts import CertificationResult
 from qount.certification.contracts import CertificationRun
+from qount.certification.runner import CertificationRunner
+from qount.certification.runner import VenueAdapter
 
 __all__ = [
     "ATTRIBUTION_SCHEMA_VERSION",
@@ -40,5 +42,7 @@ __all__ = [
     "CertificationPlan",
     "CertificationResult",
     "CertificationRun",
+    "CertificationRunner",
     "ExecutionAttributionReport",
+    "VenueAdapter",
 ]

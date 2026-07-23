@@ -136,6 +136,9 @@ class Settings:
     contract_margin_mode: str
     notify_webhook_url: str | None
     tiingo_api_key: str | None = None
+    testnet_enable: bool = False
+    testnet_api_key: str | None = None
+    testnet_api_secret: str | None = None
 
     @property
     def paper_mode(self) -> bool:
@@ -249,6 +252,9 @@ class Settings:
             contract_margin_mode=_normalize_margin_mode(_env("QOUNT_CONTRACT_MARGIN_MODE", "isolated")),
             notify_webhook_url=_env("QOUNT_NOTIFY_WEBHOOK_URL"),
             tiingo_api_key=_env("QOUNT_TIINGO_API_KEY"),
+            testnet_enable=_env_bool("QOUNT_TESTNET_ENABLE", False),
+            testnet_api_key=_env("QOUNT_TESTNET_API_KEY"),
+            testnet_api_secret=_env("QOUNT_TESTNET_API_SECRET"),
         )
 
     def ensure_directories(self) -> None:
@@ -268,6 +274,9 @@ PRODUCTION_CRITICAL_FIELDS = frozenset(
         "contract_margin_mode",
         "mode",
         "market_type",
+        "testnet_enable",
+        "testnet_api_key",
+        "testnet_api_secret",
     }
 )
 
