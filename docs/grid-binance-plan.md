@@ -1,5 +1,7 @@
 # Grid-Binance 网格策略系统设计:单边做多 + 趋势滤网
 
+> **状态**：archived/falsified（GRID-B 已收口 2026-06-11，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:草案 v0.1 · 创建 2026-06-09 · 代号 **GRID-B**
 
 > 本文件把「单边做多网格 + 趋势滤网 + 等比网格 + 破网/飞网风控」这套设计落成一个

@@ -1,5 +1,7 @@
 # GRID-B 优化设计 v0.4(条件化):挂在 H1/H2 存活路径上的优化方向与措施
 
+> **状态**：archived/falsified（GRID-B 已收口 2026-06-11，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:设计稿 v0.4 · 创建 2026-06-11 · 代号 **GRID-B**
 上游:[grid-binance-next.md](grid-binance-next.md)(v0.3 推进方向)· 前代:[grid-binance-optim.md](grid-binance-optim.md)(v0.2,挂在已死基线上)
 

@@ -1,5 +1,7 @@
 # L6 微观结构信息边 —— 全程方案
 
+> **状态**：frozen/falsified（重启线，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 重启线 L6:把信息源换成 **A股 逐笔委托级 Level-2(Wind 三件套)**,攻基本定律
 `IR = IC × √BR` 的 **IC 项**,主目标 **T+0 ETF**(可日内回转、免印花税;个股 T+1 大半 alpha
 不可兑现)。数据资产见 `memory/ashare-l2-tick-data.md`;全量 ~6TB 在网盘(逐日 × 全市场)。

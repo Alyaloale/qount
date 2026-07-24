@@ -1,5 +1,7 @@
 # L4 跨所套利计划：换「游戏」——市场中性,不预测方向
 
+> **状态**：frozen/falsified（重启线，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 本文件是 §7 诚实止盈、L3 证伪、L1 固化暂停之后的**第三条重启线**。合法性同样来自
 [profit-engineering-plan.md](profit-engineering-plan.md) §11.8 的「结构性新输入」——
 L4 的结构性新输入是:**不再预测方向(IC 那条线已被广度天花板封死),改赚跨交易所之间的

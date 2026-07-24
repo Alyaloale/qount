@@ -1,5 +1,7 @@
 # GRID-B H3 预注册实施计划 v0.6:Delta-neutral 资金费 Carry —— 网格族最深一层 kill-test
 
+> **状态**：archived/falsified（GRID-B 已收口 2026-06-11，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:**已实现 + 已判生死(2026-06-11)** · v0.6 · 代号 **GRID-B** · **H3-A FAIL(物理尾部门),网格族最深一层证伪,线 B 彻底收口(§8.6)**
 上游:[grid-binance-next.md](grid-binance-next.md)(S1/S1c/S1d/S1e 全证伪 + §5 收口)·
 [grid-binance-s1e-plan.md](grid-binance-s1e-plan.md)(H1 最深操作化)

@@ -1,5 +1,7 @@
 # X4 实盘仓位管理 — 历史优化分析与回测文档（线 D）
 
+> **状态**：archived（线 D，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 > 状态：archived / legacy。X4/C×D当前已关闭，本文运行态示例、余额、cron和`QOUNT_X4_*`开关均为历史记录，
 > 不得据此判断当前账户或执行任何生产操作。当前唯一生产策略与状态以`docs/current.md`和VPS只读核查为准。
 

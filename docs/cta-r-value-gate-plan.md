@@ -1,5 +1,7 @@
 # CTA-R 估值过滤门 预注册计划 v0.1:P/E·P/B 分位剔除 kill-test
 
+> **状态**：frozen（CTA-R blueprint/guarded，历史研究线原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:**v0.1 已实现 + J0 判死收口(2026-06-12)** · 代号 **V-GATE**(线 A · CTA-R 增量)· 见 §6 终判
 上游事实:[rebuild-plan.md](rebuild-plan.md)(CTA-R 跨资产趋势主线,OOS Sharpe 0.84,诚实 ~7-9%/yr)
 上游教训:`cta-r-commodity-breadth-falsified`(过门控后加广度≠加收益,edge 量级被 2020-26 窗口封在 ~0.4)

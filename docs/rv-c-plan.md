@@ -1,5 +1,7 @@
 # RV-C 预注册计划 v0.1:硬锚相对价值 —— dated-futures 基差收敛 kill-test
 
+> **状态**：frozen（RV-C research-only / carry disabled，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态：archived / research-only / carry disabled。RV-C不获得当前生产订单权；当前唯一生产线见`docs/current.md`。
 原始预注册计划 v0.1 · 创建 2026-06-11 · 代号 **RV-C**(线 C) · 仅保留历史研究证据。
 上游教训:[grid-binance-h3-plan.md](grid-binance-h3-plan.md)(H3 delta-neutral carry 死于永续无到期锚 +

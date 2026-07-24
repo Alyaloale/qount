@@ -1,5 +1,9 @@
 # qount 快速接手手册
 
+> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-23
+> **本文回答**：接手命令、跨主机操作、VPS 运维坑、sync/test 脚本、artifact 规则。
+> **TL;DR**：生产真相在 VPS `/root/qount`；只读探针查 timer/service；不手工触发订单路径。
+
 更新时间：2026-07-23
 
 VPS生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，

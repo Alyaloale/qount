@@ -1,5 +1,7 @@
 # A股 ETF 20 日战术研究线
 
+> **状态**：frozen / owner-deprioritized（原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 更新时间：2026-07-16
 
 状态：`frozen / owner-deprioritized / evidence gate block`

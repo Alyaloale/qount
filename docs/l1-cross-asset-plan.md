@@ -1,5 +1,7 @@
 # L1 跨资产趋势计划：正面攻 BR(广度)
 
+> **状态**：frozen/falsified（重启线，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 本文件是 §7 诚实止盈 + L3 证伪之后的**第二条重启线**。合法性同样来自
 [profit-engineering-plan.md](profit-engineering-plan.md) §11.8 的「结构性新输入」——
 L1 的结构性新输入是:**把 universe 从同涨同跌的 crypto majors 换成真正低相关的跨资产

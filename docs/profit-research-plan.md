@@ -1,5 +1,7 @@
 # qount 盈利优化 / 研究方案
 
+> **状态**：frozen（line A legacy，历史研究线原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 创建时间：2026-05-30
 
 目标：把 qount 从当前 **research-only、整体不盈利** 的状态，推进到一个

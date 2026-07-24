@@ -1,10 +1,29 @@
 # qount 个人量化交易系统架构设计
 
-版本：`v1.2`
+> **状态**：active｜**权威**：L2 架构主设计｜**最后更新**：2026-07-22
+> **本文回答**：统一合同、策略→订单权威链、账本/对账、故障恢复、通知/日报、Dashboard、LLM 边界、渐进迁移顺序。
+> **TL;DR**：见下方「架构一页总览」；细节看正文各节。
 
-更新时间：`2026-07-22`
+## 架构一页总览（TL;DR）
 
-状态：目标架构与渐进迁移合同；单策略Base minimal-live已落地。本文本身不构成新的充值、扩容或策略晋级授权。
+**标准权威链**（所有真钱决策必走）：
+```
+MarketSnapshot → StrategyIntent → allocator → RiskDecision → OrderPlan
+              → RuntimeLedger → reconciliation → ExecutionAttributionReport
+```
+MiniTrend projection/dispatcher 只是策略输入与场所适配器，必须与标准 batch/plan 经济行为 parity；订单身份/registry/
+ledger/reconciliation 均由标准合同绑定。
+
+**节点拓扑**（细节见 §主机职责 / `storage-topology.md`）：
+- Mac＝研究/git/文档/轻验证；Windows 外置盘＝数据与 artifact 存储真相；WSL＝CPU/GPU 计算与权威复跑；
+  VPS `/root/qount`＝唯一 live/paper/dashboard 生产真相。
+
+**生产 vs 研究边界**：
+- 唯一真钱＝`MiniTrend-UM-Base-v0.2`（100 USDT、USD-M TOP3、long/cash、one-way、isolated 1x、gross≤1）。
+- 研究一律 `orders_authorized=false`、`research_only`；不碰 VPS/paper/live/forward timer/production cron。
+- 订单权限只来自 MiniTrend 独立 `0600` arm/env + `minimal_live` registry + 当前 readiness + `qount-mini-trend-live.timer` 的组合门。
+
+**LLM 硬边界**：LLM/agent 只产出 research/日报文本，**不输出订单、目标权重、live 配置或风控 override**。
 
 ## 0. 文档定位
 

@@ -1,5 +1,7 @@
 # qount 架构评审与下一步优化计划
 
+> **状态**：frozen（line A legacy，历史研究线原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 创建时间：2026-05-31
 
 这份文档不替代 [current.md](current.md)（当前结论）和

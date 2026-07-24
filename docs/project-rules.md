@@ -1,5 +1,9 @@
 # qount 项目规则与文档分类
 
+> **状态**：active｜**权威**：L1 规则（#2）｜**最后更新**：2026-07-25
+> **本文回答**：项目规则、文档分类、研究线隔离、反过拟合、代码架构、清理与文档维护纪律。
+> **TL;DR**：权威顺序 current>本文>quick-handoff>线文档>update-log；遗留文档原地保留；清理=移动不删除。
+
 更新时间：2026-07-23
 
 这份文档定义项目级规则、文档分类、研究线隔离和代码整理纪律。它不替代
@@ -15,6 +19,9 @@
 4. 各研究线主文档：只约束本线，不能越权改变其他线或生产状态。
 5. [update-log.md](update-log.md)：证据链、artifact、执行记录。
 6. 历史计划文档：仅作为背景，除非被 `current.md` 或本文件重新引用。
+
+`CLAUDE.md`（仓库根）是给接手模型的**导航入口**：只做文档地图与纪律提要，不是事实真相；它与本文冲突时，
+以 `current.md` 和本文为准。
 
 旧文档里凡是写“WSL 是生产真相”的内容，自 2026-07-07 起只按历史语境读取。当前
 live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
@@ -52,6 +59,8 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | 重构蓝图 | `rebuild-plan.md` | CTA-R / A股系统化思路 | 蓝图变化；不得覆盖当前生产事实 |
 | Alpha Agents | `alpha-agent-plan.md` | 多 agent 研究组织、资料搜集、量化接入骨架 | 角色、任务、source book、agent 边界变化 |
 | 系统演进 / 研究路线 | `trading-system-evolution-plan.md`, `research-advancement-roadmap.md` | 跨线生产控制面演进、全局实验治理和情报来源路线 | owner方向、架构阶段门、跨线研究优先级变化；不得直接改变任一线promotion/live状态 |
+| 加密研究草稿 / 外部拆解 | `carry-active-basis-hypothesis.md`, `crypto-vol-crisis-state-preregistration.md`, `external-bot-cra-teardown.md` | 加密研究假设、无结果预登记草稿、外部来源(T4)拆解；均 research-only、`orders_authorized=false` | 假设/预登记/外部来源变化；不构成 promotion/paper/live，不改 Base |
+| 接手导航（Claude） | `CLAUDE.md`（仓库根） | 接手模型的文档地图与纪律提要 | 文档分类、权威顺序、主机/工具/纪律边界变化 |
 
 新增文档前先判断是否能放进现有分类。新策略计划文件只有在 owner 明确授权新研究线时创建。
 
@@ -170,3 +179,24 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 - 组合权重和参数选择必须 OOS 复核：D4 in-sample 组合提升被 purged-CV 推翻，应作为模板教训。
 - 数据源换新不等于约束解除：L3/L6 找到新信号后仍要重新过 breadth、cost、timing、capacity。
 - 生产真相必须单一：Mac研究、外置盘数据、WSL计算、VPS运行，不能跨节点混读不同state后下结论。
+
+## 10. 文档维护规则
+
+为让接手模型最快定位信息并避免文档漂移，所有文档改动遵守：
+
+1. **文档头模板（强制）**：每份活跃文档 H1 标题下加统一状态头，遗留文档加一行 frozen 标签指向 `archive/README.md`：
+   ```
+   > **状态**：active|frozen|draft｜**权威**：L0接手/L1事实/L2架构/L3研究/L4运维/L5记录/L6归档｜**最后更新**：YYYY-MM-DD
+   > **本文回答**：<一句话>
+   > **TL;DR**：<3 行内结论>
+   ```
+   新文档必须带头。分层：L0=`CLAUDE.md`；L1=`current.md`/`project-rules.md`/`holdout.md`；L2=`system-architecture-design.md`；
+   L3=`research-advancement-roadmap.md` + 研究草稿；L4=`quick-handoff.md`/`storage-topology.md`；L5=`update-log.md`；
+   L6=`archive/`。
+2. **单一事实源（防漂移）**：
+   - 硬边界、生产事实只写在 `current.md`；`CLAUDE.md`/`README.md`/`archive` 一律**指针化引用**，不复述具体数值。
+   - family 状态只在 `research-advancement-roadmap.md` R1.1 表；`update-log.md` 只记事件，不重复状态表。
+   - 命令/运维只在 `quick-handoff.md`；架构权威链只在 `system-architecture-design.md`。
+3. **清理=移动不删除**（重申 §8）：过时内容移入 `docs/archive/` 并在原位留指针，逐行守恒（`原 = 主文件 + 归档`），
+   `git diff --check` 干净，链接不断。遗留研究线文档正文一律**原地保留**（每份被引用多处），不移动不删除。
+4. **接手可达性**：从 `CLAUDE.md` 出发应能 3 步内定位：当前生产事实、硬边界、当前研究状态、运维命令、架构骨架。

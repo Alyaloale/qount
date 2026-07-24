@@ -222,6 +222,11 @@ pip install -e .
 cp .env.example .env
 ```
 
+> **注意（line A 历史 CLI）**：以下 `python -m qount.main ...`（healthcheck/run-once/backtest/walk-forward/
+> `--research-profile eth-only` 等）属于旧 **line A `qount.main`** 研究链，**不是当前 MiniTrend 生产路径**。
+> 当前唯一真钱链是 VPS 上的 `MiniTrend-UM-Base-v0.2`（100 USDT）；运维/命令入口看
+> [docs/quick-handoff.md](docs/quick-handoff.md)，接手导航看 [CLAUDE.md](CLAUDE.md)。本节保留仅供历史代码测试。
+
 首版建议先跑：
 
 ```bash
@@ -383,6 +388,9 @@ python -m qount.main clear-halt
 
 ## Review 工具
 
+> **注意（line A 历史工具）**：`signal-review` / `paper-replay` / `backtest` 是 line A `qount.main` 研究复盘工具，
+> 面向旧 5m eth-only 决策链，非当前 MiniTrend（1d TOP3）生产路径。仅供历史代码复盘。
+
 - `signal-review`
   - 批量回看已记录的最终风控动作
   - 输出 `gross_future_return_pct / estimated_cost_pct / net_edge_pct`
@@ -436,6 +444,7 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 
 ## 当前文档入口
 
+- 接手模型导航入口：[CLAUDE.md](CLAUDE.md)，文档地图 + 主机/工具/研究纪律提要。
 - 当前事实：[docs/current.md](docs/current.md)。
 - 项目规则、文档分类、研究线隔离和代码清理纪律：
   [docs/project-rules.md](docs/project-rules.md)。
@@ -449,8 +458,12 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 - 生产控制面演进：[docs/trading-system-evolution-plan.md](docs/trading-system-evolution-plan.md)，定义独立执行认证、
   shadow accountant、分层HALT、venue capability provenance和多sleeve接入前置门。
 - 研究与情报路线：[docs/research-advancement-roadmap.md](docs/research-advancement-roadmap.md)，定义全局实验账本、
-  文献/研报来源、LLM旁路、多速度趋势及后续候选的阶段门。
+  文献/研报来源、LLM旁路、多速度趋势及后续候选的阶段门；§11 为下一轮执行步骤。
+- 当前加密研究草稿：[docs/carry-active-basis-hypothesis.md](docs/carry-active-basis-hypothesis.md)（carry 新假设）、
+  [docs/crypto-vol-crisis-state-preregistration.md](docs/crypto-vol-crisis-state-preregistration.md)（危机状态预登记草稿）、
+  [docs/external-bot-cra-teardown.md](docs/external-bot-cra-teardown.md)（外部机器人 CRA 拆解，T4）。
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
+- 历史执行记录（2026-07-14 及更早）：[docs/archive/update-log-archive.md](docs/archive/update-log-archive.md)。
 
 当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一可运行的真钱链为VPS `/root/qount` 上固定100 USDT的
 MiniTrend Base standard-production（registry仍为`minimal_live`）。Dashboard静态前端已部署，
@@ -476,6 +489,9 @@ Mac
 [docs/update-log.md](docs/update-log.md)，以及必要时的 [docs/current.md](docs/current.md)。
 
 ## 当前流程
+
+> **注意**：下面是 line A `qount.main` 的 5m AI 决策流；当前 MiniTrend 生产是 1d TOP3 规则链，标准权威链见
+> [docs/system-architecture-design.md](docs/system-architecture-design.md)（顶部 TL;DR）。
 
 ```text
 closed 5m bar -> snapshot -> candidate_filter -> AI -> validate -> risk -> executor -> journal -> review

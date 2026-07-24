@@ -1,5 +1,9 @@
 # qount Holdout 与 Promotion Gate
 
+> **状态**：active（冻结边界）｜**权威**：L1 验证边界｜**最后更新**：2026-05-31
+> **本文回答**：discovery_pool / validation_pool_v1 与 G_paper / G_live 的边界与 once-only 规则。
+> **TL;DR**：已看过窗口只算 discovery；promotion 必须从 validation_pool_v1 once-only 验证。
+
 创建时间：2026-05-31
 
 这份文档冻结 research-only 工作的发现/验证边界。它不替代

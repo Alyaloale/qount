@@ -5,11 +5,20 @@
 
 ## 当前入口
 
+- [../../CLAUDE.md](../../CLAUDE.md)：接手模型的导航入口（文档地图 + 纪律提要）。
 - [current.md](../current.md)：当前事实、VPS 生产状态和下一步。
 - [quick-handoff.md](../quick-handoff.md)：当前接手命令和运维边界。
 - [system-architecture-design.md](../system-architecture-design.md)：当前系统工程架构。
 - [crypto-portfolio-system-plan.md](../crypto-portfolio-system-plan.md)：100 USDT Base minimal-live 与未来组合目标。
 - [project-rules.md](../project-rules.md)：文档分类、研究线隔离和清理规则。
+- [research-advancement-roadmap.md](../research-advancement-roadmap.md)：加密研究路线、全局实验账本和 §11 下一轮执行步骤。
+
+## 历史记录归档
+
+- [update-log-archive.md](update-log-archive.md)：`update-log.md` 中 2026-07-14 及更早的历史证据链（含 line A / GRID-B /
+  加密重启前）。当前近期记录仍在 [../update-log.md](../update-log.md)。
+- [current-archive-line-a-readings.md](current-archive-line-a-readings.md)：`current.md` 移出的 line A `最新策略读数 /
+  WS-1..WS-4 / T-B / T-G / T-C` 历史 discovery 读数。当前事实仍在 [../current.md](../current.md)。
 
 ## Legacy 生产线
 

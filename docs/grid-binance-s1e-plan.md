@@ -1,5 +1,7 @@
 # GRID-B S1e 实施计划 v0.5:三态混合构型的工程落地与预注册判生死
 
+> **状态**：archived/falsified（GRID-B 已收口 2026-06-11，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:实施计划 v0.5 · 创建 2026-06-11 · 代号 **GRID-B**
 上游:[grid-binance-next.md](grid-binance-next.md)(v0.3 推进方向 + D0/D1/D2 实测)·
 [grid-binance-optim2.md](grid-binance-optim2.md)(v0.4 条件化优化,Track A 挂本文件宿主)

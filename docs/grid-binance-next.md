@@ -1,5 +1,7 @@
 # GRID-B 推进方向 v0.3:S1 证伪之后——主场假设的收尾验证 vs 收口
 
+> **状态**：archived/falsified（GRID-B 已收口 2026-06-11，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:设计稿 v0.3 · 创建 2026-06-11 · 代号 **GRID-B** · 上游:[grid-binance-plan.md](grid-binance-plan.md)(v0.1 + S1 结果)/ [grid-binance-optim.md](grid-binance-optim.md)(v0.2)
 
 > 本文件是 v0.1 §「S1 结果」末尾承诺的「下一步决策 update」。属线 B,隔离边界见

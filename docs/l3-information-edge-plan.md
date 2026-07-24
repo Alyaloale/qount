@@ -1,5 +1,7 @@
 # L3 信息源边际计划：用非价量慢数据 + AI 攻 IC
 
+> **状态**：frozen/falsified（重启线，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 > **状态(2026-06-06):L3 已按 §8 整体证伪。** S0.1 数据层落地;S1 kill-test 两条子路均证伪——
 > **L3a**(稳定币供给→BTC 周线择时)无稳定样本外 IC(全窗口 |IC| 0.054 < 0.083、子窗口符号翻转
 > + PBO 0.64);**L3b**(链 TVL 横截面)找到真实显著弱信号(|IC| 0.075、t=3.5、符号稳定、DSR/PBO 过)

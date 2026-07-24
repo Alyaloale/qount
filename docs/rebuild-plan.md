@@ -1,5 +1,7 @@
 # qount 重构计划:跨资产多策略系统化交易系统(CTA-R)
 
+> **状态**：blueprint/guarded（重构蓝图，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:草案 v0.1 · 创建 2026-06-06
 
 > 本文件是一个**全新架构**的设计计划,**目标只有一个:在零售/小资本可及的范围内,搭一个期望盈利概率最高的全自动量化系统**。它不受现有 `docs/current.md` 的 §7 止盈纪律约束(那是旧研究线的边界);但保留旧项目里唯一被证据背书的 edge(L1 跨资产趋势)和最值钱的资产(反过拟合 harness)。代号 **CTA-R**(Cross-asset Trend-and-carry, Rebuilt)。

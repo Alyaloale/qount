@@ -1,5 +1,9 @@
 # qount 交易系统架构优化与扩展计划
 
+> **状态**：active｜**权威**：L2/L3 控制面演进｜**最后更新**：2026-07-23
+> **本文回答**：独立执行认证、shadow accountant、分层 HALT、venue capability provenance、多 sleeve 前置门。
+> **TL;DR**：定义生产控制面演进阶段门，不直接改任一线 promotion/live 状态。
+
 版本：`v0.3`
 
 更新时间：`2026-07-23`

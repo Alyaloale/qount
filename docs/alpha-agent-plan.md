@@ -1,5 +1,9 @@
 # Alpha Agents 多智能体研究架构
 
+> **状态**：active research-only｜**权威**：L3 研究（多 agent）｜**最后更新**：2026-07-22
+> **本文回答**：多 agent 资料搜集、只读日报生产、source book、后续量化接入边界。
+> **TL;DR**：LLM 只写 research/日报，不出订单/目标权重/live 配置。
+
 状态：active research-only + 只读日报生产闭环。Owner 于 2026-07-08 授权先搭建多 agent 架构，用于搜集资料、优化方案和后续接入
 量化训练；2026-07-22已完成免费官方feed发现、详情复抓、TOP3行情、六角色中文LLM、不可覆盖归档、Dashboard和个人微信真实投递，
 并启用每日timer。手机入站/通道回发、context刷新和Qount正整数`message_id`均已验证；当前仍不写paper/live state、不arm live，LLM报告不提供策略promotion或订单权限。
@@ -1553,6 +1557,76 @@ rows推断“无事件”。artifact `20260719T065611Z-equity-mapping-source-cap
 `transport_unavailable`；Nasdaq quote/split/earnings均语义阻断，stress source未分配，所以7/8 required roles失败。
 这不能证明不可达provider永久不可用，也不能用HTTP receipt time代替market quote time；cash premarket leg仍是
 首个真实窗口的绑定阻断，未运行collector、未创建market event、未授权shadow/paper/live/order。
+
+## 2026-07-25 Crypto-First Factor Expansion And Trial 145
+
+Owner将主动研究预算切回加密因子拓展。Alpha Agents后续只负责假设提案、数据源图、反例和结果审查；确定性代码
+继续生成特征、权重、成本、funding、NAV、beta residual和trial verdict。CTA-R与C×D证据冻结保留，不再是当前P0。
+
+2026-07-25后续文档修订把研究队列扩展为四个工作篮子；这只是设计更新，没有新实现、回测、trial或artifact：
+
+- **现有低频核心**：`multi_speed_trend_v1`、`market_breadth_dispersion_v1`、
+  `liquidity_capacity_meta_v1`、`cross_sectional_residual_momentum_v1`、`crypto_vol_crisis_state_v1`、
+  `funding_crowding_meta_v1`。
+- **当前起点前向结构**：`oi_flow_forward_v1`、`basis_curve_dislocation_v1`、
+  `liquidation_cascade_forward_v1`、`cross_venue_price_discovery_v1`。官方OI仅最近1个月，basis、taker和long/short ratio
+  仅最近30天；agent不得建议把它们拼成长历史。
+- **外部PIT与事件**：`stablecoin_liquidity_impulse_v1`、`token_supply_event_v1`、
+  `network_adoption_quality_v1`、`venue_rule_event_v1`、`calendar_session_v1`。总稳定币供应和hashrate已有本地负证据，
+  新proposal必须改变信息集、vintage或经济目标，不能只换字段名。
+- **执行与组合条件项**：`execution_fill_cost_v1`、`options_surface_state_v1`、`regime_allocator_meta_v1`。
+  options-DVOL与surface容量仍被阻断；allocator必须等至少两条冻结Standalone NAV，不得先优化权重制造组合收益。
+
+每个family由Agent生成的唯一可接受交付是`ResearchCard`草案，至少包含：
+
+```text
+economic mechanism and causal sign
+novelty versus qount negative evidence
+official/primary sources and exact identity
+event/published/available/observed decision clock
+history availability and revision policy
+independence unit and outcome horizon
+features, missingness and eligibility
+baseline, primary metric and beta residual
+cost/stress plan and kill tests
+allowed sensitivities and family trial budget
+capacity and promotion blockers
+```
+
+Agent输出按以下审查链流转：
+
+```text
+Hypothesis Miner
+-> Source Librarian
+-> Data/Clock Skeptic
+-> Economic Reviewer
+-> Replication Designer
+-> Red Team
+-> owner/deterministic preregistration
+```
+
+- Hypothesis Miner每次只提出一个可与旧失败区分的因果问题，不输出参数网格；
+- Source Librarian优先正式DOI、NBER/BIS和交易所官方仓库，Crossref只做身份发现；
+- Data/Clock Skeptic对最新vintage回填、幸存者偏差、事件修订、30日短历史和重叠标签有否决权；
+- Economic Reviewer强制说明收益是market beta、momentum、size、carry、liquidity补偿还是无法解释残差；
+- Replication Designer给出最便宜的G0或kill test，不以“完整模型”作为第一步；
+- Red Team必须列出能够推翻假设的结果，不能只给改参数建议。
+
+一手来源种子已核对到TSMOM、trend century、momentum crash、volatility-managed portfolios、crypto market/size/momentum、
+crypto network/attention、cross-venue segmentation、BIS Crypto Carry、Amihud/Corwin-Schultz、DSR/PBO和Gu-Kelly-Xiu。
+这些来源只支持机制/方法；任何agent不得把论文中的Sharpe、显著性或结论改写成qount可复制alpha。Binance官方Public Data
+和模块化connector只支持字段、archive和历史限制事实；本地实际dataset仍须独立hash、缺口、revision和PIT审计。
+
+Trial 145已先写无结果预登记protocol=`304bc24d...14ec7`，再读取本地TOP3 UM `2020-02..2026-06`缓存。
+方向一致性候选的Standalone proxy NAV/CAGR/Sharpe/maxDD为`2.7966x/19.25%/1.399/11.20%`，同窗Base为
+`2.8836x/19.88%/1.416/16.18%`。候选降低回撤`4.98pp`，TOP3 beta-residual CAGR=`10.91%`，双倍成本和
+一根延迟仍为正，但turnover约为Base的2.15倍且主指标未超过Base，因此8/9门通过仍拒绝。bundle=
+`d4ca0c3eaa82e15674a1d83bf803aa7078f730d00856670451767577b1d50cb8`，formal strategy trial累计为145。
+
+Agent不得建议修改Trial 145的20/60/120、投票或慢门救援。下一项允许提案的是Trial 146连续forecast的固定尺度、
+标准化、裁剪和权重，以及breadth、liquidity、residual momentum、危机和funding五个G0的数据/容量kill tests。
+前向篮子只允许schema、source和独立窗口设计；外部PIT篮子只允许source-capacity。任何报告仍固定
+`orders_allowed=false/live_changes_allowed=false`。
 
 ## 红队补丁队列
 

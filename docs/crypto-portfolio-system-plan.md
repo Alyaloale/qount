@@ -1,11 +1,17 @@
 # qount 加密多策略组合系统计划
 
-更新时间：2026-07-22
+> **状态**：active｜**权威**：L3 MiniTrend 计划｜**最后更新**：2026-07-25
+> **本文回答**：100 USDT Base minimal-live 合同与未来多策略组合目标。
+> **TL;DR**：Base 是唯一真钱策略；多策略部分仍 research_sandbox，不获真钱订单权。
 
-状态：源码与VPS生产版本`0.2.12`已完成完整升级验收；多策略部分仍为`research_sandbox`；
+更新时间：2026-07-25
+
+状态：源码与VPS生产版本`0.2.15`已完成完整升级验收；多策略部分仍为`research_sandbox`；
 唯一允许在升级验收后恢复的例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
 `1000 USDT`目标架构，不构成扩容或其它sleeve下单授权。60/10 forward、30 paper days和7 dry days仍是观察项；
 账户、订单、funding、标准authority/RuntimeLedger/对账、HALT和arm继续是每轮硬门。RiskTier与FundingVeto只做shadow。
+
+2026-07-25本轮只扩展研究设计和策略候选地图；没有实现新sleeve、运行试验、读取新结果或改变任何生产权限。
 
 本文负责策略sleeve、研究合同和晋级顺序。跨策略通用的运行架构、账本/对账、故障恢复、通知、Dashboard和LLM
 边界以 [system-architecture-design.md](system-architecture-design.md) 为主设计，避免在策略计划中重复维护第二套
@@ -18,6 +24,19 @@
 | Sleeve | 任务 | 当前角色 | 主要失败方式 |
 | --- | --- | --- | --- |
 | Base v0.2 | 低频趋势参与与熊市现金保护 | 控制组 | 牛市参与不足、震荡反复 |
+| Multi-Speed Trend | 多速度forecast降低单点依赖 | Trial 145基线已拒绝，余2个冻结trial | 换手过高、不同速度重复表达同一beta |
+| Residual Momentum | PIT流动池内的相对趋势 | G0待启动 | 有效广度不足、幸存者偏差、残差化失真 |
+| Vol Crisis State | 只输出风险倍率和危机降险 | G0待启动 | 少赚过多、仅拟合单次崩盘 |
+| Funding Crowding Meta | 拥挤状态与趋势条件交互 | 新family待预登记 | 与旧Funding Veto重复、事件少、路径依赖 |
+| Liquidity Capacity Meta | eligibility、容量和成本预测 | G0待启动 | rules/depth缺失、成本误差大于edge |
+| OI/Flow Forward | 当前起点的衍生品状态增量 | 只允许前向采集 | 把近期状态伪造成长历史、时点泄漏 |
+| Basis Curve State | perp/dated basis曲线与拥挤/尾部状态 | 只允许前向/短窗研究 | 官方basis仅30日、与funding重复 |
+| Liquidation Cascade | 强平强度、流动性退化和恢复状态 | 只允许前向采集 | 重复事件、延迟后失效、变成抄底救援 |
+| Cross-Venue Discovery | 场所分割与低频lead-lag | source-capacity待审计 | 时钟skew、双边成本和转移约束 |
+| Breadth/Dispersion State | 趋势扩散、残差分散和相关性压缩 | G0待启动 | 仍是BTC beta或有效广度不足 |
+| Stablecoin/Token/Network | 边际资金供给、可交易供给和网络需求 | 外部PIT capacity lane | 最新vintage回填、旧失败换名、事件时点不可信 |
+| Venue/Calendar Events | listing/rules/funding interval/session事件 | 低预算event lane | 多重检验、公告时点和独立日期不足 |
+| Execution Fill/Cost | maker成交率、等待成本和逆向选择 | 执行研究 | 理论maker费用无法兑现 |
 | Equity Mapping Alpha | 美股休市/跨场所/开盘收敛 | 新结构研究 | 锚定错误、样本少、交易成本 |
 | LiquidTrend | 高流动性币横截面相对趋势 | G0容量审计 | 高相关导致虚假广度、幸存者偏差 |
 | Funding Event | 拥挤状态与趋势条件交互 | 事件研究 | 极端样本少、反向信号过早 |
@@ -169,6 +188,73 @@ scale_i = min(1, 0.015 / ATR14pct_i)
 
 所有新策略必须以Base净收益路径为共同对照。Risk2和Funding Veto继续是shadow，不改变Base订单。
 
+### 5.1-A 加密因子拓展合同
+
+2026-07-25起主动研究预算优先投向加密。每个family使用独立`GlobalExperimentRecord`，第3个正式trial强制复盘；
+同一失败机制不得通过换名、扩币、扫SMA/EMA或提高风险目标救援。详细ResearchCard、来源矩阵和一手文献见
+[research-advancement-roadmap.md](research-advancement-roadmap.md) R1.1-R1.3和§9；本文件只定义策略层接口与依赖。
+
+| Family | 冻结trial预算 | 策略层输出 | 必须先通过 | 当前状态 |
+| --- | ---: | --- | --- | --- |
+| `multi_speed_trend_v1` | 3 | 连续target forecast或分层trend state | Base同窗、成本/funding、beta residual | 已用1；Trial 145拒绝 |
+| `market_breadth_dispersion_v1` | 3 | `TrendHealthState`，先不直接给方向 | PIT universe、breadth/cluster G0 | P0 G0待启动 |
+| `liquidity_capacity_meta_v1` | 3 | `EligibilityMask`、`CapacityEstimate`、`CostEstimate` | rules revision、spread/depth校准、缺失fail-closed | P0 G0待启动 |
+| `cross_sectional_residual_momentum_v1` | 3 | long/cash相对权重 | PIT/rules/effective breadth>=预登记门 | P1条件项 |
+| `crypto_vol_crisis_state_v1` | 3 | `RiskMultiplier [0,1]` | 与既有vol/HMM/RF失败明确区分 | P1待预登记 |
+| `funding_crowding_meta_v1` | 3 | trend条件状态或entry veto | 与旧50% Funding Veto做合同差异审计 | P1待预登记 |
+| `basis_curve_dislocation_v1` | 2 | `CrowdingTailState`，不做carry | premium/basis/funding clock和短历史审计 | 前向/30日短窗 |
+| `oi_flow_forward_v1` | 2 | `PositioningState` | append-only、gap、时点、基线 | 只采未来数据 |
+| `liquidation_cascade_forward_v1` | 2 | `CascadeRiskState` | realtime去重、断线和OI归一化 | 只采未来数据 |
+| `cross_venue_price_discovery_v1` | 2 | 低频laggard residual forecast | 多场所同步、费用、clock和可转移性 | source-capacity待审计 |
+| `stablecoin_liquidity_impulse_v1` | 2 | market liquidity/risk state | 新信息区别于已失败aggregate supply | P2 capacity lane |
+| `token_supply_event_v1` | 2 | event eligibility/risk discount | official schedule + chain execution + venue availability | P2 capacity lane |
+| `network_adoption_quality_v1` | 2 | 周/月频residual score | PIT vintage；区别于已失败hashrate | P2 capacity lane |
+| `venue_rule_event_v1` | 2 | eligibility/cost revision | official published/available time + snapshot chain | P2 event lane |
+| `calendar_session_v1` | 2 | session mask或cost prior | 独立日期、DST/calendar、仅2个预登记问题 | P2低预算 |
+| `execution_fill_cost_v1` | 3 | fill probability/cost，不输出方向 | fixture或真实execution evidence | P2执行线 |
+| `options_surface_state_v1` | 2 | tail/vol state | 完整PIT chain、bid/ask、Greeks、保证金 | P3 capacity blocked |
+| `regime_allocator_meta_v1` | 2 | sleeve risk scalar | 至少2条独立冻结Standalone NAV | P3尚未满足 |
+
+Trial 145的无结果预登记protocol=`304bc24d...14ec7`。在`2020-02-10..2026-06-30`同窗，Base的Standalone
+proxy NAV/CAGR/Sharpe/maxDD=`2.8836x/19.88%/1.416/16.18%`，20/60/120全方向一致候选=
+`2.7966x/19.25%/1.399/11.20%`。候选降低回撤`4.98pp`，TOP3 beta-residual CAGR=`10.91%`，双倍成本和
+额外一根延迟后CAGR仍为`16.62%/16.31%`；但turnover=`108.91`、约为Base的2.15倍，且全窗CAGR低Base
+`0.63pp`，所以8/9门通过仍拒绝。bundle=`d4ca0c3e...50cb8`，不调整lookback或投票救援。
+
+下一顺序是：Trial 146固定连续multi-speed forecast；Trial 147固定`slow regime + medium position + fast de-risk`。
+并行只做breadth/dispersion、liquidity、残差横截面、危机状态和funding拥挤的G0。OI/flow、basis、liquidation和
+cross-venue必须从当前起append-only；stablecoin/token/network/venue-rule必须先证明PIT source capacity。funding不得做carry，
+options不得恢复DVOL变体。只有至少两条Standalone候选独立成立，才测试regime allocator，且组合netting不能回记为单腿alpha。
+
+每条family进入实验前必须形成一个完整ResearchPacket：
+
+```text
+ResearchCard.json
+source-capacity.json
+preregistration.json
+baseline-spec.json
+cost-and-beta-residual-spec.json
+kill-tests.json
+```
+
+这些名称描述未来artifact接口，不表示当前文件已经存在。ResearchPacket只授权确定性实验，不授权StrategyIntent、allocator输入或订单。
+
+### 5.1-B 因子到策略的组合边界
+
+因子不等于sleeve。第一阶段按以下层级装配，避免把十几个弱feature一次性塞进模型后无法归因：
+
+```text
+raw factor -> standalone diagnostic -> state/forecast contract -> single-family NAV
+           -> control and ablation -> frozen candidate -> optional multi-family composition
+```
+
+- `EligibilityMask/CapacityEstimate/CostEstimate`只改变“能否研究/能否成交”的合同，不记为alpha；
+- `TrendHealthState/CrowdingTailState/PositioningState/CascadeRiskState`先与Base或multi-speed单独交互，每次只加入一个state；
+- residual momentum先单独生成Standalone NAV，不允许用vol/funding/liquidity组合救出一个非正单腿；
+- 外部PIT和event family按独立事件日期聚类，不用逐币观测数夸大样本；
+- ML只能在单因素和简单线性/规则baseline后做meta-model，并保留完整ablation；
+- 组合层只消费冻结的strategy return和stress metadata，不消费LLM文本或未验证factor score。
+
 ### 5.2 Equity Mapping Alpha
 
 产品层分开：Binance/Bybit映射spot、xStocks、股票perpetual/linear不能混用同一成本或托管假设。
@@ -312,26 +398,37 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
 
 ## 8. 90天推进顺序
 
-| 时间 | Base/Production | Equity Mapping | LiquidTrend | LLM信息 |
-| --- | --- | --- | --- | --- |
-| 第1-2周 | Key只读门、幂等、恢复、对账、1000规则模拟 | 只持续采集raw | 不推进PnL | schema/validator/allowlist |
-| 第3-4周 | order-free paper | symbol/time/calendar/corporate-action合同 | G0数据审计 | 5-10个fixture和泄漏单测 |
-| 第5-8周 | 达门才shadow/最小实盘 | 冻结唯一一个正式trial | 最多一个预注册trial | 不做收益特征研究 |
-| 第9-12周 | 不因盈亏改参数 | 累积独立交易日期 | shadow或关闭假设族 | 只维护fixture基础层 |
+| 时间 | 核心趋势/广度 | 横截面/流动性 | 衍生品前向 | 外部PIT/事件 | 方法与组合 |
+| --- | --- | --- | --- | --- | --- |
+| 第1-2周 | Trial 145归档；冻结Trial 146；breadth/dispersion ResearchCard | PIT/rules/effective-breadth与cost G0 | 冻结OI/basis/liquidation/venue的raw schema、clock和gap规则，不读PnL | stablecoin/token/network/venue-rule只做source inventory | 建baseline、trial预算、独立样本和kill-test模板 |
+| 第3-4周 | owner运行Trial 146；不调Trial 145；breadth只做state增量 | 容量通过才预登记residual momentum Trial 1 | append-only采集；检查30日/1月官方窗口、重复和断线 | 只选择能证明PIT revision的一条做G0 | 统一raw/TOP3 beta residual、成本翻倍、延迟和漏单压力 |
+| 第5-8周 | owner运行Trial 147并完成multi-speed复盘 | 测long/cash残差排名；liquidity仍单独归因 | 窗口达到预登记独立单位后，每family最多读取一个首批结果 | event family按独立日期聚类，不按币数膨胀样本 | 危机/funding各只加入一个state；保留单因素和消融 |
+| 第9-12周 | 只保留通过复盘的冻结版本 | 通过才形成独立Standalone候选 | 不足窗口继续`continue_collection`，不写0 alpha | source/PIT失败记`block_capacity`并停止 | 只有2条独立Standalone成立才设计allocator；CTA-R/C×D继续冻结 |
 
-资源分配目标为：Base/执行30%，Equity Mapping 35%，LiquidTrend 25%，Funding/LLM 10%。这不是日历硬承诺；
-新数据和实际结果优先于计划。
+建议研究资源上限：核心趋势/广度25%，横截面/流动性25%，危机/funding15%，前向衍生品20%，外部PIT/事件10%，
+方法/执行5%。这是防止同时铺开全部family的预算上限，不是强制完成率；G0失败应立即释放预算。Base生产维护独立于研究预算。
 
 ## 9. 第一批执行任务
 
-1. 生成LiquidTrend10 G0容量artifact：10币日线、funding、quote-volume、相关矩阵、有效广度和1000 USDT过滤器。
-2. 建立Equity Mapping跨场所symbol contract，下一版补真实premarket锚和公司行动日历。
-3. 为LLM事件层实现schema/validator/fixture，不接交易或权重。
-4. Binance生产端已接受owner指定的现有Key并通过私有只读预检；2026-07-21/22 owner要求固定100 USDT并直接推进B/C/D与minimal-live。
+1. Trial 146在读取结果前冻结连续forecast的尺度、标准化、裁剪和权重；只允许双成本、一根延迟和固定分段压力。
+2. 为`market_breadth_dispersion_v1`写无PnL G0：PIT成分、残差dispersion、第一主成分、相关簇和下一期state目标；先判断它是否只是BTC beta。
+3. 为`liquidity_capacity_meta_v1`写PIT rules/volume/Amihud/Corwin-Schultz/book校准计划；cost model误差未过门前不把liquidity当alpha。
+4. 构建`cross_sectional_residual_momentum_v1` G0：PIT universe、BTC/TOP3 residual、rules覆盖、相关簇和有效广度；breadth或规则失败时不读PnL。
+5. 分别预登记`crypto_vol_crisis_state_v1`和`funding_crowding_meta_v1`，并明确与既有vol缩放、50% Funding Veto、HMM/RF失败的差异。
+6. 为OI/flow、basis、liquidation和cross-venue建立四套独立append-only schema；官方短历史不拼接为多年样本，未达窗口只继续采集。
+7. stablecoin、token supply、network和venue-rule先做source-capacity/PIT revision表；只有一条通过后才进入首个正式外部因子trial。
+8. calendar/session最多预登记两个问题；execution fill/cost只评价implementation shortfall，不产生方向信号。
+9. Equity Mapping和LLM事件层降为低资源旁路，只维护已有raw/schema/validator，不在当前阶段扩展叙事收益trial。
+10. Binance生产端已接受owner指定的现有Key并通过私有只读预检；2026-07-21/22 owner要求固定100 USDT并直接推进B/C/D与minimal-live。
    forward/paper/dry日历值继续观察但不阻断；有效arm、当前标准authority、账本/对账和账户安全门仍阻断每轮订单，
    旧交易cron不恢复。
 
-执行进度（2026-07-22）：
+执行进度（2026-07-25）：
+
+- 本次只完成上述全面研究设计扩展，没有实现新family、运行新回测或增加formal trial；策略trial累计仍为145。
+
+- 加密因子拓展已启动。Trial 145按无结果预登记运行并因全窗CAGR低于Base而拒绝；其降回撤、beta residual、双成本和
+  延迟证据保留，但不接shadow/paper/live。formal strategy trial累计从144增至145；下一个结果读取必须来自另行冻结的Trial 146。
 
 - `0.2.12`修复了live oneshot执行期间health probe把自身`activating`态误判为execution block的自检循环，并用正反回归保留
   forward timer阻断。Mac全仓`1553 OK`、VPS production`335 OK`。最终run
@@ -410,7 +507,7 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
   `state/research_runs/20260719T054823Z-equity-mapping-collection-readiness/equity_mapping_collection_readiness.json`，
   SHA-256 `b8576583...d463`；目标现金日`2026-07-20`，纽约窗口`09:24:30-09:25:00`（UTC
   `13:24:30-13:25:00`），当前状态`await_collection_window`。它没有raw market observation、PnL或strategy
-  trial；该时点累计策略trial为143，随后Capitulation Rebound正式trial使当前总数变为144。只有真实窗口到来且
+  trial；该时点累计策略trial为143，随后Capitulation Rebound使总数变为144，2026-07-25 Trial 145后当前为145。只有真实窗口到来且
   八类输入齐全时才能seal第一批。
 - raw intake CLI仍只是provider-neutral sealing，不主动联网抓报价。其外新增
   `equity_mapping_source_capacity_v0.1`：bounded no-proxy fetcher验证初始/最终host并限制2 MiB，parser只接受

@@ -1,5 +1,7 @@
 # Grid-Binance 优化设计 v0.2:四个进攻性优化方向
 
+> **状态**：archived/falsified（GRID-B 已收口 2026-06-11，原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 状态:草案 v0.2 · 创建 2026-06-09 · 代号 **GRID-B**
 
 > 本文件是 [grid-binance-plan.md](grid-binance-plan.md)(v0.1 基线)的优化扩展,落地四个

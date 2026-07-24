@@ -1,5 +1,7 @@
 # qount 盈利工程方案（架构天花板与现代量化 ML 升级）
 
+> **状态**：frozen（line A legacy，历史研究线原地保留）｜索引见 [archive/README.md](archive/README.md)｜当前事实以 [current.md](current.md) 为准。
+
 创建时间：2026-06-05
 
 这份文档不替代任何现有文档，它解决的是一个不同层级的问题。
