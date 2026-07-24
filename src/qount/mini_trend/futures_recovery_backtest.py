@@ -41,6 +41,15 @@ DesiredWeightsTransform = Callable[
     ],
     Mapping[str, float],
 ]
+DesiredWeightsSelector = Callable[
+    [
+        Mapping[str, Sequence[Bar]],
+        Mapping[str, Mapping[str, Any]],
+        float,
+        MiniTrendConfig,
+    ],
+    tuple[Mapping[str, float], str, bool],
+]
 
 
 def _std_returns(bars: Sequence[Bar], lookback: int = 20) -> float:
@@ -187,16 +196,23 @@ def run_variant(
     base_config: MiniTrendConfig | None = None,
     base_config_selector: BaseConfigSelector | None = None,
     base_config_feedback: BaseConfigFeedback | None = None,
+    desired_weights_selector: DesiredWeightsSelector | None = None,
     desired_weights_transform: DesiredWeightsTransform | None = None,
     daily_chandelier_atr_multiple: float | None = None,
     stop_cooldown_completed_bars: int | None = None,
     gross_cap_policy: str = "fail_closed",
     capital_usdt: float | None = None,
+    transaction_cost_multiplier: float = 1.0,
+    funding_multiplier: float = 1.0,
 ) -> VariantResult:
     protocol = FUTURES_RECOVERY_PROTOCOL
     initial_capital = protocol.capital_usdt if capital_usdt is None else float(capital_usdt)
     if not math.isfinite(initial_capital) or initial_capital <= 0.0:
         raise ValueError("initial capital must be positive and finite")
+    if not math.isfinite(transaction_cost_multiplier) or transaction_cost_multiplier < 0.0:
+        raise ValueError("transaction cost multiplier must be finite and non-negative")
+    if not math.isfinite(funding_multiplier) or funding_multiplier < 0.0:
+        raise ValueError("funding multiplier must be finite and non-negative")
     cfg = base_config or frozen_top3_config()
     chandelier_multiple = (
         protocol.daily_chandelier_atr_multiple
@@ -230,13 +246,26 @@ def run_variant(
         )
         if not risk_stage:
             raise ValueError("base config selector returned an empty risk stage")
-        desired, mode, feasible = desired_weights(
-            window,
-            rules,
-            equity,
-            recovery_enabled=recovery_enabled,
-            base_config=active_cfg,
-        )
+        if desired_weights_selector is None:
+            desired, mode, feasible = desired_weights(
+                window,
+                rules,
+                equity,
+                recovery_enabled=recovery_enabled,
+                base_config=active_cfg,
+            )
+        else:
+            selected, mode, feasible = desired_weights_selector(
+                window,
+                rules,
+                equity,
+                active_cfg,
+            )
+            desired = {symbol: float(selected.get(symbol, 0.0)) for symbol in TOP3}
+            if set(selected) != set(TOP3):
+                raise ValueError("desired weights selector must return exactly TOP3")
+            if any(not math.isfinite(value) or value < 0.0 for value in desired.values()):
+                raise ValueError("desired weights selector returned an invalid target")
         if desired_weights_transform is not None:
             desired = dict(
                 desired_weights_transform(window, active_cfg, desired, previous)
@@ -300,8 +329,16 @@ def run_variant(
             bars["BTCUSDT"][index].ts_ms + _DAY_MS,
             bars["BTCUSDT"][index + 1].ts_ms + _DAY_MS,
         )
-        funding_return = -sum(target[symbol] * funding_rates[symbol] for symbol in TOP3)
-        trading_cost = turnover * (protocol.taker_fee_bps + protocol.slippage_bps) / 10_000.0
+        funding_return = (
+            -sum(target[symbol] * funding_rates[symbol] for symbol in TOP3)
+            * funding_multiplier
+        )
+        trading_cost = (
+            turnover
+            * (protocol.taker_fee_bps + protocol.slippage_bps)
+            / 10_000.0
+            * transaction_cost_multiplier
+        )
         before = equity
         net_return = gross_return + funding_return - trading_cost
         equity *= 1.0 + net_return
@@ -372,5 +409,7 @@ def run_variant(
         "runtime_filter_coverage": 1.0,
         "trading_cost_usdt": round(cost_usdt, 8),
         "funding_pnl_usdt": round(funding_usdt, 8),
+        "transaction_cost_multiplier": transaction_cost_multiplier,
+        "funding_multiplier": funding_multiplier,
     }
     return VariantResult(metrics=metrics, equity=rows)

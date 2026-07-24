@@ -133,6 +133,10 @@ class RunGateScanTest(unittest.TestCase):
     def test_default_grid_size(self) -> None:
         self.assertEqual(len(default_grid()), 12)
 
+    def test_default_grid_propagates_frozen_cost(self) -> None:
+        grid = default_grid(cost_per_side_pct=0.001)
+        self.assertTrue(all(config.cost_per_side_pct == 0.001 for config in grid))
+
 
 class WalkForwardEvalTest(unittest.TestCase):
     def test_structure_and_choices_on_trending_panel(self) -> None:
@@ -157,6 +161,17 @@ class WalkForwardEvalTest(unittest.TestCase):
         prices = generate_synthetic_panel(DEFAULT_UNIVERSE, n_days=130, seed=1)
         result = run_walkforward_eval(prices)
         self.assertEqual(result["decision"], "insufficient_configs")
+
+    def test_frozen_cost_is_applied_to_all_selection_free_paths(self) -> None:
+        prices = generate_synthetic_panel(DEFAULT_UNIVERSE, n_days=2200, seed=9)
+        low_cost = run_walkforward_eval(prices, cost_per_side_pct=0.0)
+        high_cost = run_walkforward_eval(prices, cost_per_side_pct=0.002)
+        self.assertEqual(high_cost["mode"]["cost_per_side_pct"], 0.002)
+        for key in ("ensemble", "walk_forward", "fixed"):
+            self.assertLess(
+                high_cost[key]["total_return_pct"],
+                low_cost[key]["total_return_pct"],
+            )
 
 
 class CarryGateTest(unittest.TestCase):

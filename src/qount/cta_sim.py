@@ -801,6 +801,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - exercised 
             long_only=eff_long_only,
             max_leverage=eff_max_leverage,
             max_weight=eff_max_weight,
+            cost_per_side_pct=args.cost_per_side_pct,
         )
         result["data_source"] = data_source
         summary = render_walkforward_summary(result)
@@ -814,6 +815,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - exercised 
             long_only=eff_long_only,
             max_leverage=eff_max_leverage,
             max_weight=eff_max_weight,
+            cost_per_side_pct=args.cost_per_side_pct,
         )
         result["data_source"] = data_source
         summary = render_gate_summary(result)

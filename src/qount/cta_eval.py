@@ -206,7 +206,11 @@ def time_fold_sharpes(net_daily: list[float], n_folds: int) -> list[float | None
 
 
 def default_grid(
-    *, long_only: bool = False, max_leverage: float = 3.0, max_weight: float = 1.0
+    *,
+    long_only: bool = False,
+    max_leverage: float = 3.0,
+    max_weight: float = 1.0,
+    cost_per_side_pct: float = 0.0002,
 ) -> list[SimConfig]:
     """A small, deliberately coarse grid -- DSR penalizes every extra trial.
 
@@ -227,13 +231,18 @@ def default_grid(
                         max_leverage=max_leverage,
                         long_only=long_only,
                         max_weight=max_weight,
+                        cost_per_side_pct=cost_per_side_pct,
                     )
                 )
     return grid
 
 
 def default_carry_grid(
-    *, long_only: bool = False, max_leverage: float = 3.0, max_weight: float = 1.0
+    *,
+    long_only: bool = False,
+    max_leverage: float = 3.0,
+    max_weight: float = 1.0,
+    cost_per_side_pct: float = 0.0002,
 ) -> list[SimConfig]:
     """Coarse carry-sleeve grid (carry smoothing x vol x rebalance), mirroring ``default_grid``.
 
@@ -257,6 +266,7 @@ def default_carry_grid(
                         max_leverage=max_leverage,
                         long_only=long_only,
                         max_weight=max_weight,
+                        cost_per_side_pct=cost_per_side_pct,
                     )
                 )
     return grid
@@ -271,6 +281,7 @@ def run_gate_scan(
     long_only: bool = False,
     max_leverage: float = 3.0,
     max_weight: float = 1.0,
+    cost_per_side_pct: float = 0.0002,
     carry: dict[str, list[float | None]] | None = None,
 ) -> dict[str, Any]:
     """Run the grid, apply DSR/PBO/folds, and return a pass/fail verdict.
@@ -282,9 +293,19 @@ def run_gate_scan(
 
     if grid is None:
         grid = (
-            default_carry_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
+            default_carry_grid(
+                long_only=long_only,
+                max_leverage=max_leverage,
+                max_weight=max_weight,
+                cost_per_side_pct=cost_per_side_pct,
+            )
             if carry is not None
-            else default_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
+            else default_grid(
+                long_only=long_only,
+                max_leverage=max_leverage,
+                max_weight=max_weight,
+                cost_per_side_pct=cost_per_side_pct,
+            )
         )
     cells: list[dict[str, Any]] = []
     returns_by_config: list[dict[int, float]] = []
@@ -349,7 +370,12 @@ def run_gate_scan(
     return {
         "version": "cta_eval_v1",
         "decision": "passes_gate" if passes_gate else "below_gate",
-        "mode": {"long_only": long_only, "max_leverage": max_leverage, "max_weight": max_weight},
+        "mode": {
+            "long_only": long_only,
+            "max_leverage": max_leverage,
+            "max_weight": max_weight,
+            "cost_per_side_pct": cost_per_side_pct,
+        },
         "evaluated_configs": len(cells),
         "skipped_configs": skipped,
         "effective_breadth": breadth,
@@ -455,6 +481,7 @@ def run_walkforward_eval(
     long_only: bool = False,
     max_leverage: float = 3.0,
     max_weight: float = 1.0,
+    cost_per_side_pct: float = 0.0002,
     fixed_config: SimConfig | None = None,
     carry: dict[str, list[float | None]] | None = None,
 ) -> dict[str, Any]:
@@ -465,9 +492,19 @@ def run_walkforward_eval(
     """
 
     grid = (
-        default_carry_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
+        default_carry_grid(
+            long_only=long_only,
+            max_leverage=max_leverage,
+            max_weight=max_weight,
+            cost_per_side_pct=cost_per_side_pct,
+        )
         if carry is not None
-        else default_grid(long_only=long_only, max_leverage=max_leverage, max_weight=max_weight)
+        else default_grid(
+            long_only=long_only,
+            max_leverage=max_leverage,
+            max_weight=max_weight,
+            cost_per_side_pct=cost_per_side_pct,
+        )
     )
     nets: list[list[float]] = []
     warmups: list[int] = []
@@ -527,6 +564,7 @@ def run_walkforward_eval(
             long_only=long_only,
             max_leverage=max_leverage,
             max_weight=max_weight,
+            cost_per_side_pct=cost_per_side_pct,
         )
     else:
         fixed = SimConfig(
@@ -536,6 +574,7 @@ def run_walkforward_eval(
             long_only=long_only,
             max_leverage=max_leverage,
             max_weight=max_weight,
+            cost_per_side_pct=cost_per_side_pct,
         )
     fixed_net = run_paper_sim(prices, fixed, carry)["net_daily_returns"][:length][start:]
 
@@ -556,7 +595,12 @@ def run_walkforward_eval(
 
     return {
         "version": "cta_walkforward_v1",
-        "mode": {"long_only": long_only, "max_leverage": max_leverage, "max_weight": max_weight},
+        "mode": {
+            "long_only": long_only,
+            "max_leverage": max_leverage,
+            "max_weight": max_weight,
+            "cost_per_side_pct": cost_per_side_pct,
+        },
         "configs": len(nets),
         "eval_days": span,
         "n_splits": n_splits,
