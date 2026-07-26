@@ -1,10 +1,10 @@
 # 200 USDT 个人事件右侧策略
 
-> **状态**：draft / research-only｜**权威**：L3 新策略合同｜**最后更新**：2026-07-26
+> **状态**：draft / research-only｜**权威**：L3 新策略合同｜**最后更新**：2026-07-27
 > **本文回答**：如何把 200 USDT、最大容忍回撤 40 USDT 的想法改造成可监控、可计算、可停止的个人交易系统。
-> **TL;DR**：只做一个 crypto-beta 方向；用完成 1h K 定方向、完成 15m K 做突破回踩；首个闭环风险 5 USDT、常规单笔及总并发风险上限 10 USDT；回撤 20 USDT 停止正常交易，32 USDT 紧急平仓，40 USDT 只作灾难红线。当前仅设计与 shadow，不授权 paper/live/订单。
+> **TL;DR**：只做一个 crypto-beta 方向；用完成 1h K 定方向、完成 15m K 做突破回踩；首个闭环风险 5 USDT、常规单笔及总并发风险上限 10 USDT；回撤 20 USDT 停止正常交易，32 USDT 紧急平仓，40 USDT 只作灾难红线。公共行情 shadow watcher已部署VPS，不授权 paper/live/订单。
 
-更新时间：2026-07-26
+更新时间：2026-07-27
 
 ## 1. 决策
 
@@ -26,6 +26,8 @@
 
 ### 2.1 已核验事实
 
+- `0.2.17/0a6915d`已把公共行情watcher和固定事件timer部署VPS；timer只覆盖本次窗口，所有结果固定
+  `orders_authorized=false/paper_or_live_allowed=false/private_api_used=false/exchange_mutation_attempted=false`。
 - Federal Reserve 官方日历确认 2026 年 7 月 FOMC 为 **7 月 28-29 日**，本次没有星号，因此没有预定 SEP/点阵图。
 - Fed 7 月日历列出的声明时间为 7 月 29 日 14:00 EDT、记者会为 14:30 EDT，即上海时间
   **7 月 30 日 02:00 / 02:30**，不是上海时间 7 月 29 日。

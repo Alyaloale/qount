@@ -1,14 +1,14 @@
 # qount 快速接手手册
 
-> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-26
+> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-27
 > **本文回答**：接手命令、跨主机操作、VPS 运维坑、sync/test 脚本、artifact 规则。
 > **TL;DR**：生产真相在 VPS `/root/qount`；只读探针查 timer/service；不手工触发订单路径。
 
-更新时间：2026-07-26
+更新时间：2026-07-27
 
-VPS基础生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
-production provenance=`80fb1c38...b745`；本地 `0.2.17` release已纳入FOMC不可下单标准链、公共行情watcher、
-Dashboard事件告警和有限事件窗口systemd模板，尚未部署或冒充覆盖该旧provenance。
+VPS生产版本：`0.2.17`，implementation commit=`0a6915d9f2c4ae37ade2e22e303f02d83b6eeb4f`，
+production provenance=`06af5c51...a697af`，source tree=`022dec86...d7b2fbb`。FOMC不可下单watcher、
+Dashboard事件告警和固定事件窗口timer已部署；timer只用公共行情，仍没有paper/live或订单权限。
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -42,8 +42,9 @@ Dashboard事件告警和有限事件窗口systemd模板，尚未部署或冒充�
   不要恢复旧X4/C×D、任何MiniTrend timer或production cron，也不要强制下单采样。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
-  `qount-dashboard-publisher.timer`和`qount-daily-intelligence.timer`已获授权并保持`enabled/active`；后者每日`04:30 UTC`抓免费官方feed、
-  运行六角色中文LLM、不可覆盖归档并发送个人微信。所有交易timer当前均停用；不得恢复live/paper cron、MiniTrend timer、
+  `qount-dashboard-publisher.timer`、`qount-daily-intelligence.timer`和固定窗口的`qount-fomc-shadow.timer`已获授权并保持`enabled/active`；
+  FOMC timer仅在`2026-07-29 17:00 UTC`至`2026-07-30 11:00 UTC`运行公共数据shadow，后者每日`04:30 UTC`抓免费官方feed、
+  运行六角色中文LLM、不可覆盖归档并发送个人微信。所有交易执行timer当前均停用；不得恢复live/paper cron、MiniTrend timer、
   X4/C×D或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
 - `qount-mini-trend-forward.timer`与live timer均保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；

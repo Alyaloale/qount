@@ -1,15 +1,38 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-26
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-27
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-14 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-07-26
+更新时间：2026-07-27
 
 这份文档只记录**近期**关键变更、验证结果和当前读法（2026-07-16 加密优先重启起）。
 **2026-07-14 及更早**的历史证据链移入 [archive/update-log-archive.md](archive/update-log-archive.md)。
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
+
+## 2026-07-27 (Round 22)
+
+### 0.2.17 FOMC order-free watcher已部署并启用固定事件窗口
+
+**Release与provenance**：实现提交`0a6915d9f2c4ae37ade2e22e303f02d83b6eeb4f`已push到
+`origin/crypto-lines-bcd`，并由干净工作区执行`./scripts/sync-to-vps.sh --install`。VPS安装版本=`0.2.17`、source tree=
+`022dec86...d7b2fbb`、production provenance=`06af5c51...a697af`；逐文件验证无mismatch/unexpected，verification hash=
+`f48cd775...2f82fc7`。
+
+**Watcher部署**：`/var/lib/qount/fomc`为`0700 root:root`，run/latest为`0600`；service/timer安装hash与release模板一致。
+当前时刻手工smoke为`SCHEDULED`、result=`019019be...3727d0`、service success，五个权限/副作用字段全部false，0 signal、0 batch、
+0 order。`qount-fomc-shadow.timer=enabled/active`，首次自动触发为上海时间`2026-07-30 01:00:13`，调度只覆盖
+`2026-07-29 17:00 UTC`至`2026-07-30 11:00 UTC`。MiniTrend live/forward timer仍为`disabled/inactive`，production cron仍无entry。
+
+**公共行情与Dashboard**：在显式移除代理和Binance凭据环境后，VPS collector成功读取BTCUSDT的`899`根完成1h K、`299`根完成15m K、
+ticker、funding和symbol rules，未写freeze/state。Dashboard三份静态资产已部署并逐项hash一致，旧版备份在
+`/root/qount-dashboard-static-backup-0.2.17-predeploy`；Caddy和Node检查通过，公网匿名访问保持Basic Auth `401`、`no-store`和安全响应头。
+production publisher随后成功发布并原子readback 11份model与19条既有alerts；事件仍为`SCHEDULED`，没有制造假FOMC告警。
+
+**验证与权限**：VPS FOMC聚焦`25/25 OK`，notifications/dashboard关联`49/49 OK`，标准production profile`343/343 OK`；
+systemd unit验证和三段UTC日历解析通过，仅报告VPS既有`cloudmonitor.service`警告。本轮没有读取私有账户/API、paper/live或下单，
+没有恢复任何交易执行timer；FOMC adapter虽能生成订单计划，仍缺exact account/side/notional/max-loss/manual arm和venue dispatcher授权。
 
 ## 2026-07-26 (Round 21)
 

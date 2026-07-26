@@ -6,9 +6,9 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前 VPS 基础生产版本为 `0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`、
-provenance=`80fb1c38...b745`，source tree=`c6577f36...e15bb`；本地 `0.2.17` release已纳入FOMC不可下单标准链、
-公共行情watcher、Dashboard事件告警和有限事件窗口systemd模板，尚未冒充覆盖VPS provenance。
+当前 VPS 生产版本为 `0.2.17`，implementation commit=`0a6915d9f2c4ae37ade2e22e303f02d83b6eeb4f`、
+provenance=`06af5c51...a697af`，source tree=`022dec86...d7b2fbb`。FOMC公共行情watcher、Dashboard事件告警和
+仅覆盖2026年7月事件窗口的systemd timer已部署；该timer固定不可下单，不读取私有账户或API。
 Base 已迁入 `standard_production`：曾获真钱授权的策略
 `MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，
 但 owner 已于 2026-07-26 因长期无订单停止实盘；live/forward timer 与 production cron 均关闭，RiskTier/FundingVeto仍为shadow。
@@ -49,7 +49,7 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
   - 不跑实盘执行器
 - `VPS`
   - 唯一实盘 / 模拟盘生产节点：`qount-vps:/root/qount`（SSH别名或仓库外`QOUNT_VPS_HOST`）
-  - 跑唯一的MiniTrend Base 100 USDT minimal-live周期、order-free refresh和dashboard发布；旧X4/C×D已停
+  - 保留已停用的MiniTrend Base 100 USDT生产状态，运行FOMC order-free watcher、只读refresh和dashboard发布；旧X4/C×D已停
   - Alpha S3 当前走 Mac 历史公开数据研究；冻结 trade-flow v1 的 ETH anchor 过 Q1/4 月历史 OOS，但
     BTC/BNB/SOL 复制全败，后续预注册的 flow/price absorption 与 premium dislocation 三币 discovery
     也均为 0/3 通过；固定的 depth + premium + price Logistic residual-trend 模型 March OOS 为 0/3，
