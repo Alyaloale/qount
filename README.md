@@ -7,8 +7,8 @@
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
 当前 VPS 基础生产版本为 `0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`、
-provenance=`80fb1c38...b745`，source tree=`c6577f36...e15bb`；本地 `0.2.16` release已纳入2026-07-26的
-Coding Plan聚焦补丁、跨资产有符号合同和research/shadow模块，尚未冒充覆盖VPS provenance。
+provenance=`80fb1c38...b745`，source tree=`c6577f36...e15bb`；本地 `0.2.17` release已纳入FOMC不可下单标准链、
+公共行情watcher、Dashboard事件告警和有限事件窗口systemd模板，尚未冒充覆盖VPS provenance。
 Base 已迁入 `standard_production`：曾获真钱授权的策略
 `MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，
 但 owner 已于 2026-07-26 因长期无订单停止实盘；live/forward timer 与 production cron 均关闭，RiskTier/FundingVeto仍为shadow。

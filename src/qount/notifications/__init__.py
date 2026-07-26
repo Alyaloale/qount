@@ -2,6 +2,7 @@
 
 from qount.notifications.contracts import ALERT_EVENT_SCHEMA_VERSION
 from qount.notifications.contracts import ALERT_SEVERITIES
+from qount.notifications.contracts import ALERT_SOURCE_TYPES
 from qount.notifications.contracts import AlertEvent
 from qount.notifications.contracts import NotificationContractError
 from qount.notifications.collector import SystemHealthCollectorError
@@ -61,6 +62,7 @@ from qount.notifications.weixin import parse_openclaw_weixin_credential
 __all__ = [
     "ALERT_EVENT_SCHEMA_VERSION",
     "ALERT_SEVERITIES",
+    "ALERT_SOURCE_TYPES",
     "ALERT_STATES",
     "ATTEMPT_STATES",
     "DELIVERY_STATES",

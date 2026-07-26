@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "event": {
+    "event_name": "FOMC-2026-07",
+    "strategy_id": "SmallAccount-FOMC-RightSide",
+    "strategy_version": "0.2",
+    "instrument_key": "binance|crypto|perpetual|BTCUSDT|USDT",
+    "symbol": "BTCUSDT",
+    "source_url": "https://www.federalreserve.gov/newsevents/2026-july.htm",
+    "source_hash": "7a2aa9a08cd03847bd8befc9aa73f5f7978217fdabc31d253b5659b2c94f16f2",
+    "cash_only_from": "2026-07-29T17:00:00Z",
+    "freeze_at": "2026-07-29T17:30:00Z",
+    "statement_at": "2026-07-29T18:00:00Z",
+    "press_conference_at": "2026-07-29T18:30:00Z",
+    "observation_starts_at": "2026-07-29T22:30:00Z",
+    "entry_cutoff_at": "2026-07-30T04:00:00Z",
+    "force_exit_at": "2026-07-30T11:00:00Z"
+  },
+  "source_evidence": {
+    "observed_at": "2026-07-26T13:15:47.126957Z",
+    "content_type": "text/html",
+    "title": "July 2026",
+    "parser_version": "official_source_parser_v0.2"
+  },
+  "permissions": {
+    "orders_authorized": false,
+    "paper_or_live_allowed": false,
+    "private_api_allowed": false
+  }
+}

@@ -83,7 +83,7 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | A股 ETF 20 日 | frozen / owner-deprioritized / discovery blocked | `ashare-etf-month-plan.md` | `src/qount/ashare_etf_month.py`, `scripts/research/ashare_etf_month.py` |
 | CTA-R rebuild | blueprint / guarded | `rebuild-plan.md`, `cta-r-value-gate-plan.md` | `src/qount/cta_*.py`, `scripts/research/cta_*.py` |
 | Alpha Agents | active research-only new-source restart | `alpha-agent-plan.md` | `src/qount/alpha_agents/`, `scripts/research/alpha_agent_*.py` |
-| 200U个人事件右侧 | draft / research-only / orders unauthorized | `personal-200u-event-strategy.md` | `src/qount/small_account/`；未来事件信号与watcher必须另立独立模块 |
+| 200U个人事件右侧 | shadow-ready local / orders unauthorized / VPS pending | `personal-200u-event-strategy.md` | `src/qount/small_account/`、`scripts/operations/run_fomc_shadow.py`、`deploy/events/` |
 
 隔离规则：
 

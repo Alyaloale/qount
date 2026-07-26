@@ -11,6 +11,25 @@
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
+## 2026-07-26 (Round 21)
+
+### 0.2.17完成FOMC不可下单标准链、公共watcher与VPS候选单元
+
+**范围与权限**：owner要求先把FOMC策略接入现有系统并部署VPS，另授权add、补丁版本提升和push；仍未绑定exact
+account/side/notional/max-loss/arm，因此没有paper/live或订单权限。包版本由`0.2.16`提升为`0.2.17`，所有新运行结果固定
+`orders_authorized=false/paper_or_live_allowed=false/private_api_used=false/exchange_mutation_attempted=false`。
+
+**实现**：新增不可变事件定义/冻结/扫描运行时与标准适配器，冻结72h range、ATR14、1h/15m V20和3/3 pivot，首个完成1h方向锚锁定；
+有符号long/short intent进入allocator/risk，5U canary全成本仓位输出MARKET入场与原生`STOP_MARKET closePosition`计划，未链接账户或manual arm
+时不可执行。公共watcher只调用Binance market/OHLCV/ticker/funding，严格排除观测边界K线，以`0700/0600`持久化不可改写freeze/run/
+decision batch，并把freeze/readiness/armed写入共享NotificationStore。新增固定Fed事件配置、薄CLI和仅覆盖7月29-30日的systemd oneshot/timer；
+unit无EnvironmentFile、移除所有Binance key/arm/live环境。Dashboard alerts新增`event_strategy`来源并突出FOMC类别、当前数量和响应式事件行。
+
+**验证与部署边界**：fake exchange覆盖冻结前零网络、freeze不可变、BLACKOUT、ARMED标准批次/告警和数据不足HALT；FOMC聚焦`25/25 OK`，
+Mac全仓`2302/2302 OK`，compileall、Node语法、Dashboard schema、diff和常见secret扫描通过，唯一warning仍为既有CTA UTC deprecation。
+Mac无凭据公共Binance探针因出口地区返回451；VPS同一`fapi/v1/exchangeInfo`返回200/1,042,597 bytes，且三条systemd日历均由VPS当前版本解析。
+本记录时`0.2.17`尚未同步、安装、reload或enable；MiniTrend live/forward timer和production cron保持关闭，未访问private API或下单。
+
 ## 2026-07-26 (Round 20)
 
 ### 0.2.16本地release基线完成全仓验证

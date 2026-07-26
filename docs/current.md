@@ -2,13 +2,13 @@
 
 > **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-26
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：真钱交易当前已停用；本地已具备跨资产 identity、产品级 long/short capability、有符号组合/风险/账本和 Binance Stocks 纯契约；这些能力仅限 research/shadow/virtual。200 USDT 事件策略尚未接入标准执行链，Direct Stocks 自动执行仍被账户库存事实缺口阻断。
+> **TL;DR**：真钱交易当前已停用；本地已具备跨资产 identity、产品级 long/short capability、有符号组合/风险/账本和 Binance Stocks 纯契约。200 USDT FOMC策略已接入不可下单标准链和公共行情watcher，但`0.2.17`尚待部署VPS；Direct Stocks自动执行仍被账户库存事实缺口阻断。
 
 更新时间：2026-07-26
 
 VPS基础生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
-source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`；本地 `0.2.16` release已纳入
-2026-07-26 Coding Plan聚焦补丁、跨资产有符号合同和research/shadow模块，尚未部署或冒充覆盖VPS provenance。
+source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`；本地 `0.2.17` release已纳入
+FOMC不可下单标准链、公共行情watcher、Dashboard事件告警和有限事件窗口systemd模板，尚未部署或冒充覆盖VPS provenance。
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -22,17 +22,24 @@ source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`；本�
 [personal-200u-event-strategy.md](personal-200u-event-strategy.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
 
-- **2026-07-26 owner基于两份策略评估把200 USDT个人事件右侧策略升级到v0.2，但未授权任何订单或生产变更。**
+- **2026-07-26 FOMC v0.2已在本地接入不可下单标准链和公共行情watcher，等待`0.2.17`部署。**
+  固定事件定义绑定Fed 7月官方日历、BTCUSDT USD-M、17:30 UTC冻结、18:00声明、22:30开始观察、次日04:00停止入场和
+  11:00强制退出边界。`fomc_runtime.py`冻结72h range、ATR14、V20和3/3 pivot，首个完成1h方向锚不可反转；
+  `fomc_adapter.py`输出有符号`MarketSnapshot -> StrategyIntent -> allocator -> RiskDecision -> OrderPlan`，入场MARKET与原生
+  `STOP_MARKET closePosition`均只作计划，未链接账户或manual arm时不可执行；`fomc_watcher.py`只调用公开market/OHLCV/ticker/funding，
+  以`0700/0600`保存不可变freeze/run/decision batch并写Dashboard告警。systemd模板无EnvironmentFile、显式移除Binance key/arm/live环境，
+  仅覆盖本次事件窗口；当前尚未安装或启用，`orders_authorized=false/private_api_used=false/exchange_mutation_attempted=false`。
+
+- **2026-07-26 owner基于两份策略评估把200 USDT个人事件右侧策略升级到v0.2，但未授权任何订单。**
   `SmallAccount-FOMC-RightSide-v0.2`仍为独立`draft/research/shadow-only`线；v0.1只作同事件冻结对照。资金合同不变：
   初始权益200U，首个受保护live闭环风险5U，常规单笔和总并发压力风险上限10U，20U停止、32U紧急flatten、40U灾难红线，
   同时最多一个crypto-beta方向；BTC USD-M仍限isolated 5x/40U保证金/200U名义，SOL现货只作互斥备选且名义上限40U。
   新信号用完成1h K作方向锚、完成15m K作放量突破和最多8根回踩重收；多头回踩不得低于`H0`、空头不得高于`L0`，
   计划成交仍受线外`0.25ATR0`、全成本`>=2R`和保护门约束。BLACKOUT约06:00-06:30后才可能结束，12:00后不新开、
   19:00前全平；`+2R`减1/3后尾仓采用净`+1R`底线与完成1h最有利收盘`1.0ATR`单向ratchet。
-  纯信号、风险和尾仓函数均无订单副作用；当前尚无 event calendar/frozen `MarketSnapshot` artifact、标准
-  `StrategyIntent` adapter、原生保护单 `OrderPlan` 或 venue execution 接入，因此只能用于 research/shadow，不能端到端进入
-  `MarketSnapshot -> StrategyIntent -> allocator -> RiskDecision -> OrderPlan`。当前`orders_authorized=false/paper_or_live_allowed=false`，
-  不恢复MiniTrend timer，不访问VPS私有API。
+  纯信号、风险和尾仓函数均无订单副作用；本地`0.2.17`已补event definition/freeze、标准`StrategyIntent` adapter与原生保护单
+  `OrderPlan`，但没有真实账户快照、manual arm、venue dispatcher、持仓管理或强平执行接入，因此仍只能用于research/shadow。
+  当前`orders_authorized=false/paper_or_live_allowed=false`，不恢复MiniTrend timer，不访问VPS私有API。
 
 - **2026-07-26 本地标准合同已升级为跨资产、有符号 exposure，但没有扩大生产权限。** 新增 canonical `InstrumentId` 与带
   source hash/observed time 的 `ProductCapability`，将 crypto spot/perpetual、Direct Stocks/ETF、tokenized equity 和 equity perpetual
@@ -1471,7 +1478,7 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
 
 - Direct Stocks/ETF 的可用账户资格、权威持仓/可卖数量读取、自动执行与真实对账。
 - Equity perpetual/tokenized equity 的完整symbol discovery、费用/结算、保护单和venue adapter。
-- `SmallAccount-FOMC-RightSide-v0.2` 到标准 snapshot/intent/protective-plan 链的端到端适配。
+- `SmallAccount-FOMC-RightSide-v0.2` 的真实账户只读preflight、manual arm、venue execution、保护单确认和退出对账闭环。
 - 稳定盈利能力证明。
 - forward paper 许可。
 - live 许可。
@@ -1592,12 +1599,12 @@ local unittest: PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests 
 VPS unittest:   ./scripts/run-vps-tests.sh
 ```
 
-2026-07-26 跨资产/signed exposure/Stocks纯契约与小账户v0.2合并后，本地全量
-`PYTHONPATH=src ./.venv/bin/python -B -m unittest discover -s tests -p 'test*.py' -q` 为 **2277 OK**；受影响链聚焦为
-`161 OK`。contracts/execution/governance/ledger/persistence/portfolio/risk/small_account/venue `compileall`通过，
-`git diff --check`通过。Binance Stocks OpenAPI snapshot由本机YAML解析为16 paths，日期化manifest中的3份参考文件
-bytes/SHA-256逐项闭合，保存的schema与owner提供的`/Users/alyaloale/Desktop/schema.yaml`字节一致。唯一warning仍是既存
-`src/qount/cta_data.py`对`utcfromtimestamp()`的deprecation；本轮没有VPS、private API、paper/live或订单验证。
+2026-07-26 FOMC标准链/watcher/Dashboard告警合并后，本地全量
+`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为 **2302 OK**；FOMC聚焦为`25 OK`。
+源码/operations `compileall`、Node语法、Dashboard JSON schema、`git diff --check`和常见API key/AWS key/private-key header扫描通过。
+Mac公共Binance探针按出口地区返回HTTP 451，VPS同一无凭据`fapi/v1/exchangeInfo`返回HTTP 200/1,042,597 bytes，因此Mac不作为事件行情源，
+VPS部署前提成立。唯一warning仍是既存`src/qount/cta_data.py`对`utcfromtimestamp()`的deprecation；本轮尚未部署VPS，未访问private API、
+未运行paper/live或订单路径。
 
 最近一次本地完整结果：2026-07-20 Phase B/C账户事实、健康合同、仓位/决策追踪、publisher运维层和前端替换完成后，
 `PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为`1488 OK`；本批
@@ -1625,9 +1632,9 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    NotificationStore与个人微信transport已完成真实`DELIVERED/SUCCEEDED`验证，后续只监控投递失败、限流和context token轮换；它不接
    legacy `Notifier`/shell ServerChan，也不赋予订单权限。VPS publisher仍只能读取完整batch/registry/ledger/notification/health/brief，
    不能读取legacy state JSON或复制fixture。
-2. 跨资产推进按可捕获性排序，而不是同时建设所有连接器。P0先做只读instrument catalog/capability snapshot和
-   crypto perpetual signed shadow replay；P1把FOMC v0.2接成不可下单的标准 snapshot/intent，并先补 protective order plan、
-   deadline flatten和部分成交保护合同；P2再做Direct Stocks read-only quote/rules/eligibility审计。没有权威holdings/
+2. 跨资产推进按可捕获性排序，而不是同时建设所有连接器。P0 signed contract和P1 FOMC不可下单标准链已在本地完成；当前先把
+   `0.2.17`公共行情watcher、有限事件timer和Dashboard告警部署VPS并做order-free smoke，再做真实账户只读preflight、manual arm、
+   deadline flatten、部分成交保护和venue execution合同。P2再做Direct Stocks read-only quote/rules/eligibility审计。没有权威holdings/
    `available_to_sell`、eligible account、已确认免责声明和完整venue reconciliation前，不建设Stocks自动SELL或live adapter。
    研究篮子从单一FOMC扩展到：FOMC/CPI/NFP/GDP/PCE事件后反应、美国cash/extended/overnight session错位、ETF/股票/
    tokenized/equity-perpetual mapping偏离、crypto funding/liquidation forced flow，以及跨资产趋势/风险状态。每条先回答谁被迫交易、

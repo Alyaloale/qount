@@ -138,6 +138,16 @@ function statusText(value) {
     protective: "保护",
     promoted: "已晋级",
     shadow: "影子运行",
+    SCHEDULED: "等待事件",
+    FREEZE_REQUIRED: "等待冻结",
+    EVENT_FROZEN: "事件已冻结",
+    BLACKOUT: "观察静默期",
+    OBSERVE: "观察中",
+    ARMED: "信号就绪",
+    NO_TRADE: "禁止入场",
+    HALTED: "已停机",
+    long: "做多",
+    short: "做空",
     paper: "模拟运行",
     research_only: "仅研究",
     read_model_ready: "读模型就绪",
@@ -187,6 +197,7 @@ function sourceText(value) {
     primary: "主要来源",
     decision_batch: "决策批次",
     decision_batch_manifest: "决策批次",
+    event_strategy: "事件策略",
     strategy_registry: "策略注册表",
     runtime_ledger: "运行账本",
     notification_store: "通知库",
@@ -195,6 +206,14 @@ function sourceText(value) {
     daily_intelligence: "每日情报",
     system_health: "系统观察",
     ops_observer: "Ops Observer",
+  })[value] || String(value || "-");
+}
+
+function alertCategoryText(value) {
+  return ({
+    fomc_event_freeze: "FOMC 区间冻结",
+    fomc_event_readiness: "FOMC 运行就绪",
+    fomc_event_signal: "FOMC 交易信号",
   })[value] || String(value || "-");
 }
 
@@ -526,10 +545,14 @@ function renderAlerts() {
   const summary = payload.summary;
   const openAlerts = payload.alerts.filter((row) => row.status === "OPEN");
   const resolvedAlerts = payload.alerts.filter((row) => row.status === "RESOLVED");
-  const incidentRows = (rows, empty) => rows.map((row) => `<article><div class="incident-status">${pill(row.severity)}${pill(row.status)}</div><div><strong>${escapeHtml(row.title)}</strong><p>${escapeHtml(row.summary)}</p><small>${escapeHtml(formatTime(row.occurred_at))} / ${escapeHtml(row.category)} / ${traceLink(row.trace_id || row.source_id)}</small></div><div class="delivery-list">${row.deliveries.map((delivery) => `<span>${escapeHtml(delivery.channel)} ${pill(delivery.status)} <small>${delivery.attempt_count}/${delivery.max_attempts}</small></span>`).join("") || "未配置投递通道"}</div></article>`).join("") || `<div class="empty-cell">${escapeHtml(empty)}</div>`;
+  const incidentRows = (rows, empty) => rows.map((row) => {
+    const eventClass = row.source_type === "event_strategy" ? " event-incident" : "";
+    return `<article class="${eventClass.trim()}"><div class="incident-status">${pill(row.severity)}${pill(row.status)}${row.source_type === "event_strategy" ? `<span class="source-badge">${escapeHtml(sourceText(row.source_type))}</span>` : ""}</div><div><strong>${escapeHtml(row.title)}</strong><p>${escapeHtml(row.summary)}</p><small>${escapeHtml(formatTime(row.occurred_at))} / ${escapeHtml(alertCategoryText(row.category))} / ${traceLink(row.trace_id || row.source_id)}</small></div><div class="delivery-list">${row.deliveries.map((delivery) => `<span>${escapeHtml(delivery.channel)} ${pill(delivery.status)} <small>${delivery.attempt_count}/${delivery.max_attempts}</small></span>`).join("") || "未配置投递通道"}</div></article>`;
+  }).join("") || `<div class="empty-cell">${escapeHtml(empty)}</div>`;
+  const openEventAlertCount = openAlerts.filter((row) => row.source_type === "event_strategy").length;
   const deliveryRows = payload.alerts.flatMap((row) => row.deliveries.map((delivery) => ({ alert: row, delivery })));
   $("view-alerts").innerHTML = `<div class="metrics metrics-four">${metric("当前待处理", String(summary.open_alert_count), `严重 ${summary.severity_counts.CRITICAL} / 停机 ${summary.severity_counts.HALT}`, summary.open_alert_count ? "bad" : "good")}${metric("已解决历史", String(summary.resolved_alert_count), `历史严重 ${summary.historical_severity_counts.CRITICAL} / 停机 ${summary.historical_severity_counts.HALT}`, "")}${metric("等待投递", String(summary.delivery_state_counts.PENDING + summary.delivery_state_counts.RETRY_WAIT), `等待重试 ${summary.delivery_state_counts.RETRY_WAIT}`, "")}${metric("投递失败", String(summary.delivery_state_counts.DEAD_LETTER), `已投递 ${summary.delivery_state_counts.DELIVERED}`, summary.delivery_state_counts.DEAD_LETTER ? "bad" : "good")}</div>
-    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>当前事件</h2><p>OPEN</p></div><span>${openAlerts.length}</span></header><div class="incident-list">${incidentRows(openAlerts, "当前无待处理事件")}</div></section><section class="panel"><header class="panel-head"><div><h2>已解决历史</h2><p>RESOLVED</p></div><span>${resolvedAlerts.length}</span></header><div class="incident-list compact-incidents">${incidentRows(resolvedAlerts, "暂无已解决历史")}</div></section></div>
+    <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>当前事件</h2><p>OPEN / FOMC ${openEventAlertCount}</p></div><span>${openAlerts.length}</span></header><div class="incident-list">${incidentRows(openAlerts, "当前无待处理事件")}</div></section><section class="panel"><header class="panel-head"><div><h2>已解决历史</h2><p>RESOLVED</p></div><span>${resolvedAlerts.length}</span></header><div class="incident-list compact-incidents">${incidentRows(resolvedAlerts, "暂无已解决历史")}</div></section></div>
     <section class="panel full-panel"><header class="panel-head"><div><h2>投递审计</h2><p>Outbox / ${escapeHtml(formatTime(summary.content_updated_at))}</p></div><span class="mono">${escapeHtml(shortHash(summary.audit_last_hash))}</span></header><div class="table-wrap"><table><thead><tr><th>事件</th><th>通道</th><th>状态</th><th>尝试</th><th>最近尝试</th><th>结果</th></tr></thead><tbody>${deliveryRows.map(({ alert, delivery }) => `<tr><td><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(shortHash(alert.alert_id))}</small></td><td>${escapeHtml(delivery.channel)}</td><td>${pill(delivery.status)}</td><td>${delivery.attempt_count}/${delivery.max_attempts}</td><td>${escapeHtml(formatTime(delivery.last_attempt_at))}</td><td><small>${escapeHtml(delivery.last_error || (delivery.delivered_at ? `已投递 ${formatTime(delivery.delivered_at)}` : "等待"))}</small></td></tr>`).join("") || `<tr><td colspan="6" class="empty-cell">无投递任务</td></tr>`}</tbody></table></div></section>`;
 }
 

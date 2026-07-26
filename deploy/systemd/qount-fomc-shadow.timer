@@ -1,0 +1,14 @@
+[Unit]
+Description=Observe the July 2026 FOMC window without order authority
+
+[Timer]
+OnCalendar=2026-07-29 17..23:0/5:00 UTC
+OnCalendar=2026-07-30 00..10:0/5:00 UTC
+OnCalendar=2026-07-30 11:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15s
+AccuracySec=1s
+Unit=qount-fomc-shadow.service
+
+[Install]
+WantedBy=timers.target

@@ -7,8 +7,8 @@
 更新时间：2026-07-26
 
 VPS基础生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
-production provenance=`80fb1c38...b745`；本地 `0.2.16` release已纳入2026-07-26 Coding Plan聚焦补丁、
-跨资产有符号合同和research/shadow模块，尚未部署或冒充覆盖该旧provenance。
+production provenance=`80fb1c38...b745`；本地 `0.2.17` release已纳入FOMC不可下单标准链、公共行情watcher、
+Dashboard事件告警和有限事件窗口systemd模板，尚未部署或冒充覆盖该旧provenance。
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看

@@ -246,9 +246,11 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
 .incident-list { padding: 0 15px; }
 .incident-list article { display: grid; min-height: 100px; grid-template-columns: 120px minmax(200px, 1fr) minmax(150px, .6fr); align-items: center; gap: 18px; border-bottom: 1px solid var(--line-soft); }
 .incident-list article:last-child { border-bottom: 0; }
+.incident-list .event-incident { margin: 0 -15px; padding: 0 15px; border-left: 2px solid var(--amber); background: color-mix(in srgb, var(--amber-bg) 36%, transparent); }
 .compact-incidents article { grid-template-columns: 100px minmax(180px, 1fr); }
 .compact-incidents .delivery-list { grid-column: 2; padding-bottom: 12px; }
 .incident-status { display: flex; flex-wrap: wrap; gap: 5px; }
+.source-badge { display: inline-flex; min-height: 24px; align-items: center; padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line)); border-radius: 3px; color: var(--amber); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .incident-list strong { font-size: 12px; }
 .incident-list p { margin: 7px 0 0; color: var(--text-2); font-size: 11px; line-height: 1.55; }
 .incident-list small { display: block; margin-top: 7px; overflow-wrap: anywhere; color: var(--text-3); font-size: 10px; }
@@ -362,6 +364,7 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
   .axis-band article:last-child { border-bottom: 0; }
   .conclusion-grid { grid-template-columns: 1fr; }
   .incident-list article { grid-template-columns: 1fr; gap: 10px; padding: 15px 0; }
+  .incident-list .event-incident { padding: 15px; }
   .delivery-list { grid-column: 1; padding-bottom: 0; }
   .offline-state { margin-top: 5vh; }
   .offline-state h2 { font-size: 23px; }
