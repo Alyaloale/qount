@@ -7,9 +7,11 @@ from decimal import Decimal, ROUND_DOWN
 from typing import Any, Mapping
 
 from qount.contracts import MarketSnapshot
+from qount.contracts import InstrumentId
 from qount.contracts import OrderPlan
 from qount.contracts import PlannedOrder
 from qount.contracts import PortfolioTarget
+from qount.contracts import ProductCapability
 from qount.contracts import RiskDecision
 from qount.contracts import canonical_hash
 
@@ -50,6 +52,8 @@ def build_portfolio_order_plan(
     current_positions: Mapping[str, float],
     account_equity_usdt: float,
     symbol_rules: Mapping[str, Mapping[str, float]],
+    instruments: Mapping[str, InstrumentId] | None = None,
+    product_capabilities: Mapping[str, ProductCapability] | None = None,
 ) -> OrderPlan:
     """Build deterministic reduce-before-increase market orders.
 
@@ -74,13 +78,42 @@ def build_portfolio_order_plan(
     if not math.isfinite(equity) or equity <= 0.0:
         blockers.append("order_planner_account_equity_invalid")
 
+    normalized_instruments: dict[str, InstrumentId] = {}
+    for raw_key, instrument in sorted(
+        (instruments or {}).items(), key=lambda item: str(item[0])
+    ):
+        key = str(raw_key)
+        if (
+            not isinstance(instrument, InstrumentId)
+            or instrument.validate()
+            or key != instrument.instrument_key
+        ):
+            blockers.append(f"order_planner_instrument_invalid:{key}")
+            continue
+        normalized_instruments[key] = instrument
+
+    normalized_capabilities: dict[str, ProductCapability] = {}
+    for raw_key, capability in sorted(
+        (product_capabilities or {}).items(), key=lambda item: str(item[0])
+    ):
+        key = str(raw_key)
+        if (
+            not isinstance(capability, ProductCapability)
+            or capability.validate()
+            or key != capability.instrument_key
+        ):
+            blockers.append(f"order_planner_product_capability_invalid:{key}")
+            continue
+        normalized_capabilities[key] = capability
+
+    explicit_product_contracts = instruments is not None or product_capabilities is not None
     current: dict[str, float] = {}
     for symbol, raw_quantity in current_positions.items():
         try:
             quantity = float(raw_quantity)
         except (TypeError, ValueError):
             quantity = math.nan
-        if not symbol or not math.isfinite(quantity) or quantity < 0.0:
+        if not symbol or not math.isfinite(quantity):
             blockers.append(f"order_planner_current_position_invalid:{symbol}")
         else:
             current[str(symbol)] = quantity
@@ -104,35 +137,99 @@ def build_portfolio_order_plan(
         if rule is None:
             continue
         step = rule["step_size"]
-        target_quantity = _floor_to_step(equity * weight / price, step)
-        delta = target_quantity - current.get(symbol, 0.0)
-        phase = "increase" if delta > 0.0 else "reduce"
-        quantity = _floor_to_step(abs(delta), step)
+        instrument = normalized_instruments.get(symbol)
+        multiplier = 1.0 if instrument is None else instrument.multiplier
+        target_quantity = math.copysign(
+            _floor_to_step(equity * abs(weight) / (price * multiplier), step),
+            weight,
+        )
+        if abs(target_quantity) <= 1e-15:
+            target_quantity = 0.0
+        projected_quantity = current.get(symbol, 0.0)
         tolerances[symbol] = step
-        if quantity <= 1e-15:
-            expected[symbol] = current.get(symbol, 0.0)
-            continue
-        if quantity + 1e-12 < rule["minimum_quantity"]:
-            blockers.append(f"order_quantity_below_minimum:{symbol}")
-        if quantity * price + 1e-12 < rule["minimum_notional"]:
-            blockers.append(f"order_notional_below_minimum:{symbol}")
-        if phase == "increase" and not risk.increase_risk_allowed:
-            blockers.append(f"risk_increase_not_allowed:{symbol}")
-        if phase == "reduce" and not risk.reduce_risk_allowed:
-            blockers.append(f"risk_reduction_not_allowed:{symbol}")
-        rows.append(
-            {
-                "symbol": symbol,
-                "side": "buy" if phase == "increase" else "sell",
-                "quantity": quantity,
-                "phase": phase,
-            }
-        )
-        expected[symbol] = (
-            current.get(symbol, 0.0) + quantity
-            if phase == "increase"
-            else max(0.0, current.get(symbol, 0.0) - quantity)
-        )
+
+        def append_delta(
+            raw_delta: float,
+            *,
+            phase: str,
+            exposure_side: str | None = None,
+        ) -> None:
+            nonlocal projected_quantity
+            quantity = _floor_to_step(abs(raw_delta), step)
+            if quantity <= 1e-15:
+                return
+            side = "buy" if raw_delta > 0.0 else "sell"
+            if quantity + 1e-12 < rule["minimum_quantity"]:
+                blockers.append(f"order_quantity_below_minimum:{symbol}")
+            if quantity * price * multiplier + 1e-12 < rule["minimum_notional"]:
+                blockers.append(f"order_notional_below_minimum:{symbol}")
+            capability = normalized_capabilities.get(symbol)
+            if capability is not None:
+                if "MARKET" not in capability.order_types:
+                    blockers.append(f"market_order_not_supported:{symbol}")
+                if side == "buy" and not capability.buy_allowed:
+                    blockers.append(f"product_buy_not_allowed:{symbol}")
+                if side == "sell" and not capability.sell_allowed:
+                    blockers.append(f"product_sell_not_allowed:{symbol}")
+            if phase == "increase":
+                if not risk.increase_risk_allowed:
+                    blockers.append(f"risk_increase_not_allowed:{symbol}")
+                requires_contract = explicit_product_contracts or exposure_side == "short"
+                if requires_contract and instrument is None:
+                    blockers.append(f"product_instrument_missing:{symbol}")
+                if requires_contract and capability is None:
+                    blockers.append(f"product_capability_missing:{symbol}")
+                elif capability is not None and exposure_side == "long" and (
+                    not capability.long_allowed or not capability.buy_allowed
+                ):
+                    blockers.append(f"product_long_not_allowed:{symbol}")
+                elif capability is not None and exposure_side == "short" and (
+                    not capability.short_allowed
+                    or not capability.sell_allowed
+                    or capability.sell_close_only
+                ):
+                    blockers.append(f"product_short_not_allowed:{symbol}")
+            elif not risk.reduce_risk_allowed:
+                blockers.append(f"risk_reduction_not_allowed:{symbol}")
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": quantity,
+                    "phase": phase,
+                }
+            )
+            projected_quantity += quantity if side == "buy" else -quantity
+            if abs(projected_quantity) <= 1e-15:
+                projected_quantity = 0.0
+
+        current_quantity = current.get(symbol, 0.0)
+        if current_quantity * target_quantity < -1e-15:
+            append_delta(-current_quantity, phase="reduce")
+            append_delta(
+                target_quantity - projected_quantity,
+                phase="increase",
+                exposure_side="long" if target_quantity > 0.0 else "short",
+            )
+        else:
+            delta = target_quantity - current_quantity
+            phase = (
+                "increase"
+                if abs(target_quantity) > abs(current_quantity) + 1e-15
+                else "reduce"
+            )
+            append_delta(
+                delta,
+                phase=phase,
+                exposure_side=(
+                    "long"
+                    if phase == "increase" and target_quantity > 0.0
+                    else "short"
+                    if phase == "increase" and target_quantity < 0.0
+                    else None
+                ),
+            )
+        expected[symbol] = projected_quantity
 
     normalized_blockers = tuple(sorted(set(blockers)))
     current_position_hash = canonical_hash(
@@ -143,6 +240,14 @@ def build_portfolio_order_plan(
             "symbol_rules": {
                 symbol: dict(sorted(rule.items()))
                 for symbol, rule in sorted(symbol_rules.items())
+            },
+            "instruments": {
+                key: value.instrument_hash
+                for key, value in sorted(normalized_instruments.items())
+            },
+            "product_capabilities": {
+                key: value.capability_hash
+                for key, value in sorted(normalized_capabilities.items())
             },
         }
     )

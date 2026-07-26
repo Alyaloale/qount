@@ -73,7 +73,7 @@ def allocate_strategy_intents(
         for symbol, weight in scaled.items():
             proposed[symbol] = proposed.get(symbol, 0.0) + float(weight)
             minimum = float(minimum_notionals.get(symbol, 0.0))
-            if weight > 0.0 and account_equity_usdt * weight < minimum:
+            if abs(weight) > 0.0 and account_equity_usdt * abs(weight) < minimum:
                 blockers.append(
                     f"sleeve_target_below_minimum_notional:{intent.strategy_id}:{symbol}"
                 )
@@ -98,14 +98,14 @@ def allocate_strategy_intents(
         minimum = float(minimum_notionals.get(symbol, 0.0))
         if not math.isfinite(maximum) or not 0.0 <= maximum <= maximum_portfolio_gross:
             blockers.append(f"symbol_weight_cap_invalid:{symbol}")
-        elif weight > maximum + 1e-12:
+        elif abs(weight) > maximum + 1e-12:
             blockers.append(f"symbol_weight_cap_exceeded:{symbol}")
         if not math.isfinite(minimum) or minimum < 0.0:
             blockers.append(f"minimum_notional_invalid:{symbol}")
-        elif weight > 0.0 and account_equity_usdt * weight < minimum:
+        elif abs(weight) > 0.0 and account_equity_usdt * abs(weight) < minimum:
             blockers.append(f"target_below_minimum_notional:{symbol}")
         cluster = clusters.get(symbol)
-        if weight > 0.0 and cluster:
+        if abs(weight) > 0.0 and cluster:
             cluster_symbols.setdefault(cluster, []).append(symbol)
     for cluster, symbols in cluster_symbols.items():
         if len(symbols) > maximum_positions_per_cluster:

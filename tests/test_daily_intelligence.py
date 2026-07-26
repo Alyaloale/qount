@@ -23,7 +23,16 @@ from qount.intelligence import run_daily_intelligence
 from qount.intelligence import summarize_trading_history
 from qount.ledger import build_runtime_ledger_snapshot
 from scripts.operations.run_daily_intelligence import (
+    DAILY_INTELLIGENCE_DEFAULT_LLM_BASE_URL,
+)
+from scripts.operations.run_daily_intelligence import (
+    DAILY_INTELLIGENCE_DEFAULT_LLM_MAX_TOKENS,
+)
+from scripts.operations.run_daily_intelligence import (
     DAILY_INTELLIGENCE_DEFAULT_LLM_MODEL,
+)
+from scripts.operations.run_daily_intelligence import (
+    DAILY_INTELLIGENCE_DEFAULT_LLM_PROVIDER_PROFILE,
 )
 from scripts.operations.run_daily_intelligence import _parser as daily_intelligence_parser
 from tests.test_ledger_dashboard_bridge import CAPTURED_AT
@@ -79,7 +88,7 @@ def _config():
 
 
 class DailyIntelligenceTest(unittest.TestCase):
-    def test_daily_cli_defaults_to_sol_without_changing_research_default(self) -> None:
+    def test_daily_cli_defaults_to_coding_plan(self) -> None:
         args = daily_intelligence_parser().parse_args(
             [
                 "--authority-root",
@@ -93,8 +102,23 @@ class DailyIntelligenceTest(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(DAILY_INTELLIGENCE_DEFAULT_LLM_MODEL, "gpt-5.6-sol")
-        self.assertEqual(args.llm_model, "gpt-5.6-sol")
+        self.assertEqual(DAILY_INTELLIGENCE_DEFAULT_LLM_MODEL, "glm-5-2-260617")
+        self.assertEqual(args.llm_model, "glm-5-2-260617")
+        self.assertEqual(
+            args.llm_base_url,
+            "https://ark.cn-beijing.volces.com/api/coding/v3",
+        )
+        self.assertEqual(
+            DAILY_INTELLIGENCE_DEFAULT_LLM_BASE_URL,
+            args.llm_base_url,
+        )
+        self.assertEqual(
+            DAILY_INTELLIGENCE_DEFAULT_LLM_PROVIDER_PROFILE,
+            "volc_coding_plan",
+        )
+        self.assertEqual(args.llm_provider_profile, "volc_coding_plan")
+        self.assertEqual(DAILY_INTELLIGENCE_DEFAULT_LLM_MAX_TOKENS, 8000)
+        self.assertEqual(args.llm_max_tokens, 8000)
 
     def test_offline_multi_agent_report_archives_source_bytes_and_is_read_only(self) -> None:
         body = b"<html><body>Binance official market notice.</body></html>"
@@ -471,8 +495,14 @@ class DailyIntelligenceTest(unittest.TestCase):
         self.assertIn("--search-provider official-feeds", service)
         self.assertNotIn("brave-search.key", service)
         self.assertNotIn("--search-credential-path", service)
-        self.assertIn("--llm-credential-path /etc/qount/intelligence/relay-station.key", service)
-        self.assertIn("--llm-model gpt-5.6-sol", service)
+        self.assertIn("--llm-credential-path /etc/qount/intelligence/coding-plan.key", service)
+        self.assertIn(
+            "--llm-base-url https://ark.cn-beijing.volces.com/api/coding/v3",
+            service,
+        )
+        self.assertIn("--llm-provider-profile volc_coding_plan", service)
+        self.assertIn("--llm-model glm-5-2-260617", service)
+        self.assertIn("--llm-max-tokens 8000", service)
         self.assertNotIn("--send-wecom", service)
         self.assertIn("--enqueue-personal-weixin", service)
         self.assertIn("--send-personal-weixin", service)

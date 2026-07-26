@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from qount.contracts import MarketSnapshot
+from qount.contracts import InstrumentId
+from qount.contracts import ProductCapability
 from qount.contracts import StrategyIntent
 from qount.contracts import canonical_hash
 from qount.execution import build_portfolio_order_plan
@@ -593,6 +595,8 @@ def run_multi_sleeve_virtual_runtime(
     allowed_strategy_ids: Sequence[str],
     maximum_weight_by_symbol: Mapping[str, float] | None = None,
     maximum_portfolio_gross: float = 1.0,
+    instruments: Mapping[str, InstrumentId] | None = None,
+    product_capabilities: Mapping[str, ProductCapability] | None = None,
 ) -> VerifiedMultiSleeveVirtualArtifact:
     """Run a complete standard decision and accounting chain locally."""
 
@@ -607,14 +611,36 @@ def run_multi_sleeve_virtual_runtime(
     if not math.isfinite(cash) or cash < 0.0:
         raise MultiSleeveVirtualRuntimeError("virtual_opening_cash_invalid")
     positions = {str(symbol): float(quantity) for symbol, quantity in current_positions.items()}
+    instrument_map = dict(instruments or {})
+    capability_map = dict(product_capabilities or {})
+    for key, instrument in instrument_map.items():
+        if (
+            not isinstance(instrument, InstrumentId)
+            or instrument.validate()
+            or key != instrument.instrument_key
+        ):
+            raise MultiSleeveVirtualRuntimeError(
+                f"virtual_instrument_invalid:{key}"
+            )
+    for key, capability in capability_map.items():
+        if (
+            not isinstance(capability, ProductCapability)
+            or capability.validate()
+            or key != capability.instrument_key
+        ):
+            raise MultiSleeveVirtualRuntimeError(
+                f"virtual_product_capability_invalid:{key}"
+            )
     symbols = sorted(set(positions) | {symbol for intent in intents for symbol in intent.target_weights})
     opening_equity = cash
     for symbol, quantity in positions.items():
-        if not math.isfinite(quantity) or quantity < 0.0 or symbol not in snapshot.prices:
+        if not math.isfinite(quantity) or symbol not in snapshot.prices:
             raise MultiSleeveVirtualRuntimeError(
                 f"virtual_opening_position_invalid:{symbol}"
             )
-        opening_equity += quantity * float(snapshot.prices[symbol])
+        instrument = instrument_map.get(symbol)
+        multiplier = 1.0 if instrument is None else instrument.multiplier
+        opening_equity += quantity * float(snapshot.prices[symbol]) * multiplier
     if opening_equity <= 0.0:
         raise MultiSleeveVirtualRuntimeError("virtual_opening_equity_invalid")
 
@@ -643,6 +669,8 @@ def run_multi_sleeve_virtual_runtime(
             "cost_model": cost_model.model_hash,
             "symbol_rules": canonical_hash({"symbol_rules": symbol_rules}),
         },
+        instruments=instruments,
+        product_capabilities=product_capabilities,
     )
     plan = build_portfolio_order_plan(
         snapshot,
@@ -651,6 +679,8 @@ def run_multi_sleeve_virtual_runtime(
         current_positions=positions,
         account_equity_usdt=opening_equity,
         symbol_rules=symbol_rules,
+        instruments=instruments,
+        product_capabilities=product_capabilities,
     )
     if not target.allocatable or not risk.approved or not plan.executable:
         blockers = tuple(target.blockers) + tuple(risk.violations) + tuple(plan.blockers)
@@ -695,7 +725,9 @@ def run_multi_sleeve_virtual_runtime(
             ledger.record_position_snapshot(
                 symbol=symbol,
                 quantity=quantity,
-                average_cost=float(snapshot.prices[symbol]) if quantity > 0.0 else 0.0,
+                average_cost=(
+                    float(snapshot.prices[symbol]) if abs(quantity) > 0.0 else 0.0
+                ),
                 realized_trading_pnl=0.0,
                 occurred_at=snapshot.decision_time,
                 source_hash=source_hash,
@@ -709,13 +741,15 @@ def run_multi_sleeve_virtual_runtime(
         for order in plan.orders:
             quantity = float(order.quantity or 0.0)
             reference_price = float(snapshot.prices[order.symbol])
+            instrument = instrument_map.get(order.symbol)
+            multiplier = 1.0 if instrument is None else instrument.multiplier
             slippage_fraction = cost_model.slippage_bps / 10_000.0
             fill_price = reference_price * (
                 1.0 + slippage_fraction
                 if order.side == "buy"
                 else 1.0 - slippage_fraction
             )
-            fee = quantity * fill_price * cost_model.taker_fee_rate
+            fee = quantity * fill_price * multiplier * cost_model.taker_fee_rate
             exchange_order_id = f"virtual-{order.client_order_id}"
             cursor += 1
             submitted_at = _at(start, cursor)
@@ -781,13 +815,13 @@ def run_multi_sleeve_virtual_runtime(
                 occurred_at=filled_at,
                 source_hash=fill_hash,
             )
-            signed_notional = quantity * fill_price
+            signed_notional = quantity * fill_price * multiplier
             if order.side == "buy":
                 virtual_cash -= signed_notional + fee
-                trading_pnl += quantity * (reference_price - fill_price)
+                trading_pnl += quantity * multiplier * (reference_price - fill_price)
             else:
                 virtual_cash += signed_notional - fee
-                trading_pnl += quantity * (fill_price - reference_price)
+                trading_pnl += quantity * multiplier * (fill_price - reference_price)
             total_fees += fee
             executions.append(
                 {
@@ -810,7 +844,10 @@ def run_multi_sleeve_virtual_runtime(
         final_positions = ledger.position_quantities()
         funding_total = 0.0
         for symbol, quantity in sorted(final_positions.items()):
-            if quantity <= 0.0:
+            if abs(quantity) <= 0.0:
+                continue
+            capability = capability_map.get(symbol)
+            if capability is not None and not capability.funding_applicable:
                 continue
             if symbol not in snapshot.funding:
                 raise MultiSleeveVirtualRuntimeError(
@@ -819,6 +856,11 @@ def run_multi_sleeve_virtual_runtime(
             amount = (
                 -quantity
                 * float(snapshot.prices[symbol])
+                * (
+                    1.0
+                    if instrument_map.get(symbol) is None
+                    else instrument_map[symbol].multiplier
+                )
                 * float(snapshot.funding[symbol])
                 * cost_model.funding_multiplier
             )
@@ -849,10 +891,26 @@ def run_multi_sleeve_virtual_runtime(
             funding_total += amount
 
         gross_notional = sum(
-            quantity * float(snapshot.prices[symbol])
+            abs(quantity)
+            * float(snapshot.prices[symbol])
+            * (
+                1.0
+                if instrument_map.get(symbol) is None
+                else instrument_map[symbol].multiplier
+            )
             for symbol, quantity in final_positions.items()
         )
-        final_equity = virtual_cash + gross_notional
+        market_value = sum(
+            quantity
+            * float(snapshot.prices[symbol])
+            * (
+                1.0
+                if instrument_map.get(symbol) is None
+                else instrument_map[symbol].multiplier
+            )
+            for symbol, quantity in final_positions.items()
+        )
+        final_equity = virtual_cash + market_value
         expected_equity = opening_equity + trading_pnl + funding_total - total_fees
         if not math.isclose(final_equity, expected_equity, abs_tol=1e-9, rel_tol=0.0):
             raise MultiSleeveVirtualRuntimeError(
@@ -886,7 +944,7 @@ def run_multi_sleeve_virtual_runtime(
             observed_at=marked_at,
             quote_asset="USDT",
             wallet_balance=final_equity,
-            available_balance=max(0.0, virtual_cash),
+            available_balance=max(0.0, min(final_equity, virtual_cash)),
             actual_gross_notional=gross_notional,
             margin_used=0.0,
             source_id=canonical_hash(
@@ -926,15 +984,17 @@ def run_multi_sleeve_virtual_runtime(
             sleeve_funding = 0.0
             for symbol, weight in weights.items():
                 notional = opening_equity * float(weight)
-                sleeve_cost += notional * (
+                sleeve_cost += abs(notional) * (
                     cost_model.taker_fee_rate
                     + cost_model.slippage_bps / 10_000.0
                 )
-                sleeve_funding -= (
-                    notional
-                    * float(snapshot.funding.get(symbol, 0.0))
-                    * cost_model.funding_multiplier
-                )
+                capability = capability_map.get(symbol)
+                if capability is None or capability.funding_applicable:
+                    sleeve_funding -= (
+                        notional
+                        * float(snapshot.funding.get(symbol, 0.0))
+                        * cost_model.funding_multiplier
+                    )
             standalone_nav = 1.0 + (sleeve_funding - sleeve_cost) / opening_equity
             attribution = NavAttribution(
                 strategy_id=intent.strategy_id,
@@ -966,6 +1026,14 @@ def run_multi_sleeve_virtual_runtime(
             "trading_pnl_usdt": trading_pnl,
             "funding_usdt": funding_total,
             "fees_usdt": total_fees,
+            "instrument_hashes": {
+                key: value.instrument_hash
+                for key, value in sorted(instrument_map.items())
+            },
+            "product_capability_hashes": {
+                key: value.capability_hash
+                for key, value in sorted(capability_map.items())
+            },
             "executions": executions,
             "orders_authorized": False,
             "orders_routed": False,

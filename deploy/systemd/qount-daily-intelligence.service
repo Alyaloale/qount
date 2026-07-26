@@ -8,7 +8,7 @@ ConditionPathIsDirectory=/var/lib/qount/intelligence
 ConditionPathIsDirectory=/var/lib/qount/notifications
 ConditionPathIsDirectory=/etc/qount/intelligence
 ConditionPathIsDirectory=/root/.openclaw/openclaw-weixin/accounts
-ConditionPathExists=/etc/qount/intelligence/relay-station.key
+ConditionPathExists=/etc/qount/intelligence/coding-plan.key
 ConditionPathExists=/etc/qount/intelligence/openclaw-weixin.json
 
 [Service]
@@ -30,7 +30,7 @@ Environment=HTTP_PROXY=
 Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 UnsetEnvironment=QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN BINANCE_API_KEY BINANCE_SECRET QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_ALPHA_AGENT_API_KEY QOUNT_ALPHA_AGENT_BASE_URL QOUNT_ALPHA_AGENT_MODEL QOUNT_ALPHA_AGENT_PROVIDER_PROFILE QOUNT_ALPHA_AGENT_LLM_ENABLE QOUNT_ALPHA_AGENT_MAX_CONCURRENCY QOUNT_ALPHA_AGENT_MAX_RETRIES QOUNT_ALPHA_AGENT_RETRY_BASE_SECONDS QOUNT_ALPHA_AGENT_MAX_RETRY_DELAY_SECONDS
-ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_daily_intelligence.py --authority-root /var/lib/qount/dashboard-authority --archive-root /var/lib/qount/intelligence --notification-store /var/lib/qount/notifications/store.sqlite3 --search-provider official-feeds --with-llm --llm-credential-path /etc/qount/intelligence/relay-station.key --llm-model gpt-5.6-sol --enqueue-personal-weixin --send-personal-weixin --personal-weixin-credential-path /etc/qount/intelligence/openclaw-weixin.json --personal-weixin-context-token-directory /root/.openclaw/openclaw-weixin/accounts
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_daily_intelligence.py --authority-root /var/lib/qount/dashboard-authority --archive-root /var/lib/qount/intelligence --notification-store /var/lib/qount/notifications/store.sqlite3 --search-provider official-feeds --with-llm --llm-credential-path /etc/qount/intelligence/coding-plan.key --llm-base-url https://ark.cn-beijing.volces.com/api/coding/v3 --llm-provider-profile volc_coding_plan --llm-model glm-5-2-260617 --llm-max-tokens 8000 --enqueue-personal-weixin --send-personal-weixin --personal-weixin-credential-path /etc/qount/intelligence/openclaw-weixin.json --personal-weixin-context-token-directory /root/.openclaw/openclaw-weixin/accounts
 RuntimeDirectory=qount-intelligence
 RuntimeDirectoryMode=0700
 UMask=0077

@@ -10,6 +10,8 @@ from unittest.mock import patch
 from qount.alpha_agents.llm import AlphaLLMConfig
 from qount.alpha_agents.llm import RELAY_STATION_BASE_URL
 from qount.alpha_agents.llm import RELAY_STATION_DEFAULT_MODEL
+from qount.alpha_agents.llm import VOLC_CODING_PLAN_BASE_URL
+from qount.alpha_agents.llm import VOLC_CODING_PLAN_PROFILE
 from qount.alpha_agents.llm import request_agent_report
 from qount.alpha_agents.models import AgentRole
 from qount.alpha_agents.models import ResearchTask
@@ -90,12 +92,40 @@ class _FakeResponses:
         return types.SimpleNamespace(output_text=self.raw, status=self.status)
 
 
+class _FakeChatCompletions:
+    def __init__(
+        self,
+        raw: str,
+        calls: list[dict],
+        finish_reason: str | None,
+        failures: list[Exception],
+    ) -> None:
+        self.raw = raw
+        self.calls = calls
+        self.finish_reason = finish_reason
+        self.failures = failures
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.failures:
+            raise self.failures.pop(0)
+        return types.SimpleNamespace(
+            choices=(
+                types.SimpleNamespace(
+                    finish_reason=self.finish_reason,
+                    message=types.SimpleNamespace(content=self.raw),
+                ),
+            )
+        )
+
+
 def _fake_openai_module(
     raw: str,
     calls: list[dict],
     clients: list[dict],
     *,
     status: str = "completed",
+    chat_finish_reason: str | None = "stop",
     failures: list[Exception] | None = None,
 ):
     class FakeHttpClient:
@@ -105,7 +135,16 @@ def _fake_openai_module(
     class FakeOpenAI:
         def __init__(self, **kwargs) -> None:
             clients.append(kwargs)
-            self.responses = _FakeResponses(raw, calls, status, failures or [])
+            provider_failures = failures or []
+            self.responses = _FakeResponses(raw, calls, status, provider_failures)
+            self.chat = types.SimpleNamespace(
+                completions=_FakeChatCompletions(
+                    raw,
+                    calls,
+                    chat_finish_reason,
+                    provider_failures,
+                )
+            )
 
         def close(self) -> None:
             return None
@@ -199,6 +238,153 @@ class RelayStationLLMTests(unittest.TestCase):
         )
         self.assertEqual(clients[0]["max_retries"], 0)
         self.assertFalse(clients[0]["http_client"].kwargs["trust_env"])
+
+    def test_volc_coding_plan_uses_chat_json_object_and_local_validation(self) -> None:
+        raw = json.dumps(
+            {
+                "status": "ok",
+                "summary": "The supplied filing contains a research fact.",
+                "findings": ["The source is an official filing."],
+                "proposals": ["Validate the timestamp deterministically."],
+                "risks": ["The fixture does not establish alpha."],
+            }
+        )
+        calls: list[dict] = []
+        config = AlphaLLMConfig(
+            enabled=True,
+            base_url=VOLC_CODING_PLAN_BASE_URL,
+            api_key="fixture-secret",
+            model="glm-5-2-260617",
+            max_tokens=8000,
+            provider_profile=VOLC_CODING_PLAN_PROFILE,
+        )
+        with patch.dict(
+            sys.modules,
+            {"openai": _fake_openai_module(raw, calls, [])},
+        ):
+            report = request_agent_report(
+                config=config,
+                role=_role(),
+                task=_task(),
+                sources=_source(),
+                context={"fixture": True},
+            )
+        self.assertEqual(report.status, "ok")
+        self.assertEqual(calls[0]["model"], "glm-5-2-260617")
+        self.assertEqual(calls[0]["max_tokens"], 8000)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertEqual(calls[0]["messages"][0]["role"], "system")
+        self.assertNotIn("store", calls[0])
+        self.assertNotIn("tools", calls[0])
+
+    def test_volc_coding_plan_length_finish_is_blocked(self) -> None:
+        config = AlphaLLMConfig(
+            enabled=True,
+            base_url=VOLC_CODING_PLAN_BASE_URL,
+            api_key="fixture-secret",
+            model="glm-5-2-260617",
+            max_tokens=8000,
+            provider_profile=VOLC_CODING_PLAN_PROFILE,
+        )
+        with patch.dict(
+            sys.modules,
+            {
+                "openai": _fake_openai_module(
+                    "{}", [], [], chat_finish_reason="length"
+                )
+            },
+        ):
+            report = request_agent_report(
+                config=config,
+                role=_role(),
+                task=_task(),
+                sources=_source(),
+                context={"fixture": True},
+            )
+        self.assertEqual(report.status, "blocked")
+        self.assertIn("llm_response_status_invalid:length", report.risks)
+
+    def test_volc_coding_plan_accepts_one_json_fence_only(self) -> None:
+        payload = {
+            "status": "ok",
+            "summary": "The supplied filing contains a research fact.",
+            "findings": ["The source is an official filing."],
+            "proposals": ["Validate the timestamp deterministically."],
+            "risks": ["The fixture does not establish alpha."],
+        }
+        config = AlphaLLMConfig(
+            enabled=True,
+            base_url=VOLC_CODING_PLAN_BASE_URL,
+            api_key="fixture-secret",
+            model="glm-5-2-260617",
+            max_tokens=8000,
+            provider_profile=VOLC_CODING_PLAN_PROFILE,
+        )
+        with patch.dict(
+            sys.modules,
+            {
+                "openai": _fake_openai_module(
+                    f"```json\n{json.dumps(payload)}\n```", [], []
+                )
+            },
+        ):
+            report = request_agent_report(
+                config=config,
+                role=_role(),
+                task=_task(),
+                sources=_source(),
+                context={"fixture": True},
+            )
+        self.assertEqual(report.status, "ok")
+
+    def test_volc_coding_plan_rejects_text_around_json_fence(self) -> None:
+        config = AlphaLLMConfig(
+            enabled=True,
+            base_url=VOLC_CODING_PLAN_BASE_URL,
+            api_key="fixture-secret",
+            model="glm-5-2-260617",
+            max_tokens=8000,
+            provider_profile=VOLC_CODING_PLAN_PROFILE,
+        )
+        with patch.dict(
+            sys.modules,
+            {
+                "openai": _fake_openai_module(
+                    "Result:\n```json\n{}\n```", [], []
+                )
+            },
+        ):
+            report = request_agent_report(
+                config=config,
+                role=_role(),
+                task=_task(),
+                sources=_source(),
+                context={"fixture": True},
+            )
+        self.assertEqual(report.status, "blocked")
+        self.assertIn("llm_parse_error:JSONDecodeError", report.risks)
+
+    def test_volc_coding_plan_rejects_other_base_urls(self) -> None:
+        config = AlphaLLMConfig(
+            enabled=True,
+            base_url="https://example.com/api/coding/v3",
+            api_key="fixture-secret",
+            model="glm-5-2-260617",
+            provider_profile=VOLC_CODING_PLAN_PROFILE,
+        )
+        self.assertIn(
+            "volc_coding_plan_base_url_not_allowlisted", config.validate()
+        )
+
+    def test_unknown_provider_profile_is_rejected(self) -> None:
+        config = AlphaLLMConfig(
+            enabled=True,
+            base_url="https://example.com/v1",
+            api_key="fixture-secret",
+            model="fixture-model",
+            provider_profile="unknown",
+        )
+        self.assertIn("llm_provider_profile_unsupported", config.validate())
 
     def test_transient_provider_error_retries_once_and_honors_retry_after(self) -> None:
         raw = json.dumps(

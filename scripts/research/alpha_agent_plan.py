@@ -39,7 +39,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--with-llm",
         action="store_true",
-        help="Opt in to the relay-station ChatGPT research client.",
+        help="Opt in to the configured research LLM client.",
     )
     parser.add_argument("--print-json", action="store_true", help="Print the final artifact payload.")
     return parser.parse_args(argv)

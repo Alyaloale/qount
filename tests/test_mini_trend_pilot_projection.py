@@ -174,7 +174,7 @@ class MiniTrendPilotProjectionTest(unittest.TestCase):
             projection_evidence_hash="a" * 64,
         )
         self.assertEqual(snapshot.validate(), ())
-        self.assertEqual(intent.schema_version, 1)
+        self.assertEqual(intent.schema_version, 2)
         self.assertEqual(intent.strategy_version, "0.2.0")
         self.assertEqual(intent.decision_id, projection["decision"]["decision_id"])
         self.assertEqual(intent.snapshot_id, snapshot.snapshot_id)

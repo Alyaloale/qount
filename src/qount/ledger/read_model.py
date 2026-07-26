@@ -177,7 +177,7 @@ def _validate_position_fact(value: Mapping[str, Any]) -> None:
     _exact_fields(value, _POSITION_FIELDS, name="runtime_snapshot_position_fact")
     symbol = _nonempty_text(value["symbol"], name="runtime_snapshot_position_symbol")
     quantity = _finite(
-        value["quantity"], name=f"runtime_snapshot_position_quantity:{symbol}", minimum=0.0
+        value["quantity"], name=f"runtime_snapshot_position_quantity:{symbol}"
     )
     average_cost = _finite(
         value["average_cost"],
@@ -188,7 +188,7 @@ def _validate_position_fact(value: Mapping[str, Any]) -> None:
         value["realized_trading_pnl"],
         name=f"runtime_snapshot_position_realized_pnl:{symbol}",
     )
-    if (quantity > 0.0 and average_cost <= 0.0) or (
+    if (abs(quantity) > 0.0 and average_cost <= 0.0) or (
         quantity == 0.0 and average_cost != 0.0
     ):
         raise RuntimeLedgerSnapshotError("runtime_snapshot_position_cost_invalid")
@@ -706,7 +706,7 @@ class RuntimeLedgerSnapshot:
             if not isinstance(symbol, str) or not symbol:
                 raise RuntimeLedgerSnapshotError("runtime_snapshot_position_symbol_invalid")
             positions[symbol] = _finite(
-                raw, name=f"runtime_snapshot_position:{symbol}", minimum=0.0
+                raw, name=f"runtime_snapshot_position:{symbol}"
             )
         if list(self.positions) != sorted(self.positions):
             raise RuntimeLedgerSnapshotError("runtime_snapshot_positions_order_invalid")

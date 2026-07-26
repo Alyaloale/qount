@@ -6,20 +6,23 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前 VPS 生产版本为 `0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`、
-provenance=`80fb1c38...b745`，source tree=`c6577f36...e15bb`。Base 已迁入 `standard_production`：唯一真钱策略
-`MiniTrend-UM-Base-v0.2` 仍固定 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`；
-RiskTier/FundingVeto 仍为 shadow，X4/C×D/line A、forward timer 和 production cron 继续关闭。
+当前 VPS 基础生产版本为 `0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`、
+provenance=`80fb1c38...b745`，source tree=`c6577f36...e15bb`；本地 `0.2.16` release已纳入2026-07-26的
+Coding Plan聚焦补丁、跨资产有符号合同和research/shadow模块，尚未冒充覆盖VPS provenance。
+Base 已迁入 `standard_production`：曾获真钱授权的策略
+`MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，
+但 owner 已于 2026-07-26 因长期无订单停止实盘；live/forward timer 与 production cron 均关闭，RiskTier/FundingVeto仍为shadow。
 
 标准权威链为 `MarketSnapshot -> StrategyIntent -> allocator -> RiskDecision -> OrderPlan -> RuntimeLedger -> reconciliation ->
 ExecutionAttributionReport`。MiniTrend projection/dispatcher 只保留为策略输入与场所适配器，必须与标准 batch/plan 经济行为 parity；
-订单身份、registry、ledger 和 reconciliation 均由标准合同绑定。最新正式 cycle 为 `completed`、0 market/0 STOP、
-`exchange_mutation_attempted=false`，post-dispatch reconciliation passed，账户仍全平、普通/条件挂单均为 0；这不是未启动，也不得为了样本强制下单。
+订单身份、registry、ledger 和 reconciliation 均由标准合同绑定。停用前最新正式 cycle 为 `completed`、0 market/0 STOP、
+`exchange_mutation_attempted=false`，post-dispatch reconciliation passed；停用后只读preflight确认账户全平、普通挂单0、
+可用余额`464.0942153 USDT`。不得为了样本恢复timer或强制下单。
 
 `state/mini_trend/standard-production/status.json` 是首个自然成交观察的机器状态：migration=`d3668938...d51b`，当前
-`awaiting_natural_fill`、sample_count=0。每日 `qount-mini-trend-live.timer` 和 Phase B readonly timer 均为 `enabled/active`，
-只在自然 Base 决策出现真实 fill 时保存脱敏原始交易所证据与逐字段 attribution；无成交不生成样本。Mac 全仓 `1911/1911 OK`，VPS 生产链聚焦
-`71/71 OK`，release provenance 已在真实 cycle 后再次验证。
+`awaiting_natural_fill`、sample_count=0；该状态现已冻结，不再有自然成交调度。`qount-mini-trend-live.timer=disabled/inactive`，
+Phase B readonly timer仍为`enabled/active`。Daily Intelligence已切换到火山方舟Coding Plan `glm-5-2-260617`、`8000`输出上限，
+其研究报告固定不授予订单或live修改权限。
 
 本地研究已处于 research-ready：标准多sleeve virtual runtime 生成 manifest-last 不可变集成 artifact，R0 v4 bundle 已记录真实 family mapping、
 lifecycle/成本/Standalone NAV 的缺失项。R0 数据工程、CTA-R 与 C×D revalidation、真实 candidate virtual replay 可并行推进；首个 Base 成交样本
@@ -224,7 +227,7 @@ cp .env.example .env
 
 > **注意（line A 历史 CLI）**：以下 `python -m qount.main ...`（healthcheck/run-once/backtest/walk-forward/
 > `--research-profile eth-only` 等）属于旧 **line A `qount.main`** 研究链，**不是当前 MiniTrend 生产路径**。
-> 当前唯一真钱链是 VPS 上的 `MiniTrend-UM-Base-v0.2`（100 USDT）；运维/命令入口看
+> 最近一条真钱链是 VPS 上现已停用的 `MiniTrend-UM-Base-v0.2`（100 USDT）；运维/命令入口看
 > [docs/quick-handoff.md](docs/quick-handoff.md)，接手导航看 [CLAUDE.md](CLAUDE.md)。本节保留仅供历史代码测试。
 
 首版建议先跑：
@@ -265,9 +268,9 @@ ssh qount-vps 'systemctl show qount-mini-trend-live.service -p Result -p ExecMai
 ssh qount-vps 'crontab -l'
 ```
 
-生产调度不是隐含基础设施。当前唯一交易timer是`qount-mini-trend-live.timer`；forward timer和root crontab
-必须保持关闭，旧 X4/C×D cron 只能按历史证据读取，不能直接安装。live oneshot service 空闲时显示
-`inactive/dead`是正常的，最近结果必须为`Result=success`。完整运维读法见
+生产调度不是隐含基础设施。唯一已部署的交易timer是`qount-mini-trend-live.timer`，当前与forward timer及root crontab
+一并保持关闭；旧 X4/C×D cron 只能按历史证据读取，不能直接安装。停用状态以timer的`disabled/inactive`和无NEXT为准。
+完整运维读法见
 [docs/quick-handoff.md](docs/quick-handoff.md)，安全冻结的生产 crontab 模板见
 [deploy/cron/qount-production.crontab](deploy/cron/qount-production.crontab)。
 
@@ -459,6 +462,8 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
   shadow accountant、分层HALT、venue capability provenance和多sleeve接入前置门。
 - 研究与情报路线：[docs/research-advancement-roadmap.md](docs/research-advancement-roadmap.md)，定义全局实验账本、
   文献/研报来源、LLM旁路、多速度趋势及后续候选的阶段门；§11 为下一轮执行步骤。
+- 200 USDT个人事件右侧策略：[docs/personal-200u-event-strategy.md](docs/personal-200u-event-strategy.md)，定义
+  FOMC后1h方向锚与15m回踩确认、全成本仓位、单一crypto-beta暴露和20U/32U/40U分层停机；当前仅research/shadow。
 - 当前加密研究草稿：[docs/carry-active-basis-hypothesis.md](docs/carry-active-basis-hypothesis.md)（carry 新假设）、
   [docs/crypto-vol-crisis-state-preregistration.md](docs/crypto-vol-crisis-state-preregistration.md)（危机状态预登记草稿）、
   [docs/external-bot-cra-teardown.md](docs/external-bot-cra-teardown.md)（外部机器人 CRA 拆解，T4）。

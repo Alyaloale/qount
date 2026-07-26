@@ -6,7 +6,9 @@ import math
 from typing import Any, Mapping
 
 from qount.contracts import MarketSnapshot
+from qount.contracts import InstrumentId
 from qount.contracts import PortfolioTarget
+from qount.contracts import ProductCapability
 from qount.contracts import RiskDecision
 from qount.contracts import canonical_hash
 from qount.contracts import trace_id
@@ -21,6 +23,8 @@ def build_portfolio_risk_decision(
     maximum_portfolio_gross: float = 1.0,
     maximum_weight_by_symbol: Mapping[str, float] | None = None,
     risk_source_hashes: Mapping[str, str] | None = None,
+    instruments: Mapping[str, InstrumentId] | None = None,
+    product_capabilities: Mapping[str, ProductCapability] | None = None,
 ) -> RiskDecision:
     """Validate one allocated target without granting any order authority."""
 
@@ -52,6 +56,34 @@ def build_portfolio_risk_decision(
     if not math.isfinite(maximum_gross) or not 0.0 < maximum_gross <= 1.0:
         violations.append("maximum_portfolio_gross_invalid")
 
+    normalized_instruments: dict[str, InstrumentId] = {}
+    for raw_key, instrument in sorted(
+        (instruments or {}).items(), key=lambda item: str(item[0])
+    ):
+        key = str(raw_key)
+        if not isinstance(instrument, InstrumentId):
+            violations.append(f"portfolio_risk_instrument_invalid:{key}")
+            continue
+        errors = instrument.validate()
+        if errors or key != instrument.instrument_key:
+            violations.append(f"portfolio_risk_instrument_invalid:{key}")
+            continue
+        normalized_instruments[key] = instrument
+
+    normalized_capabilities: dict[str, ProductCapability] = {}
+    for raw_key, capability in sorted(
+        (product_capabilities or {}).items(), key=lambda item: str(item[0])
+    ):
+        key = str(raw_key)
+        if not isinstance(capability, ProductCapability):
+            violations.append(f"portfolio_risk_product_capability_invalid:{key}")
+            continue
+        errors = capability.validate()
+        if errors or key != capability.instrument_key:
+            violations.append(f"portfolio_risk_product_capability_invalid:{key}")
+            continue
+        normalized_capabilities[key] = capability
+
     positions: dict[str, float] = {}
     current_gross_notional = 0.0
     for symbol, raw_quantity in current_positions.items():
@@ -64,14 +96,16 @@ def build_portfolio_risk_decision(
         if (
             not symbol
             or not math.isfinite(quantity)
-            or quantity < 0.0
             or not math.isfinite(price)
             or price <= 0.0
         ):
             violations.append(f"current_position_invalid:{symbol}")
             continue
         positions[str(symbol)] = quantity
-        current_gross_notional += quantity * price
+        multiplier = normalized_instruments.get(str(symbol))
+        current_gross_notional += abs(
+            quantity * price * (1.0 if multiplier is None else multiplier.multiplier)
+        )
 
     target_gross = sum(abs(float(weight)) for weight in target.target_weights.values())
     if math.isfinite(maximum_gross) and target_gross > maximum_gross + 1e-12:
@@ -103,8 +137,43 @@ def build_portfolio_risk_decision(
         cap = normalized_symbol_caps.get(symbol, maximum_gross)
         if cap is None or not math.isfinite(maximum_gross):
             violations.append(f"portfolio_risk_symbol_cap_invalid:{symbol}")
-        elif float(raw_weight) > cap + 1e-12:
+        elif abs(float(raw_weight)) > cap + 1e-12:
             violations.append(f"portfolio_risk_symbol_cap_exceeded:{symbol}")
+
+    explicit_product_contracts = instruments is not None or product_capabilities is not None
+    if math.isfinite(equity) and equity > 0.0:
+        for symbol, raw_target_weight in target.target_weights.items():
+            try:
+                target_weight = float(raw_target_weight)
+                price = float(snapshot.prices[symbol])
+            except (KeyError, TypeError, ValueError):
+                continue
+            instrument = normalized_instruments.get(symbol)
+            multiplier = 1.0 if instrument is None else instrument.multiplier
+            current_weight = positions.get(symbol, 0.0) * price * multiplier / equity
+            long_increase = max(target_weight, 0.0) > max(current_weight, 0.0) + 1e-12
+            short_increase = max(-target_weight, 0.0) > max(-current_weight, 0.0) + 1e-12
+            if not long_increase and not short_increase:
+                continue
+            requires_contract = explicit_product_contracts or short_increase
+            capability = normalized_capabilities.get(symbol)
+            if requires_contract and instrument is None:
+                violations.append(f"portfolio_risk_instrument_missing:{symbol}")
+            if requires_contract and capability is None:
+                violations.append(f"portfolio_risk_product_capability_missing:{symbol}")
+                continue
+            if capability is None:
+                continue
+            if long_increase and (
+                not capability.long_allowed or not capability.buy_allowed
+            ):
+                violations.append(f"portfolio_risk_long_not_allowed:{symbol}")
+            if short_increase and (
+                not capability.short_allowed
+                or not capability.sell_allowed
+                or capability.sell_close_only
+            ):
+                violations.append(f"portfolio_risk_short_not_allowed:{symbol}")
 
     current_gross_fraction = (
         current_gross_notional / equity
@@ -142,6 +211,14 @@ def build_portfolio_risk_decision(
         "current_gross_fraction": current_gross_fraction,
         "policy": policy,
         "risk_source_hashes": dict(sorted((risk_source_hashes or {}).items())),
+        "instruments": {
+            key: value.instrument_hash
+            for key, value in sorted(normalized_instruments.items())
+        },
+        "product_capabilities": {
+            key: value.capability_hash
+            for key, value in sorted(normalized_capabilities.items())
+        },
     }
     risk_state_hash = canonical_hash(state)
     batch_id = trace_id(

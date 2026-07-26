@@ -1,13 +1,14 @@
 # qount 当前状态
 
-> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-25
+> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-26
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：唯一真钱=`MiniTrend-UM-Base-v0.2`（100 USDT、USD-M TOP3、long/cash、one-way、isolated 1x、gross≤1）；其余线全 frozen；主动研究加密优先。
+> **TL;DR**：真钱交易当前已停用；本地已具备跨资产 identity、产品级 long/short capability、有符号组合/风险/账本和 Binance Stocks 纯契约；这些能力仅限 research/shadow/virtual。200 USDT 事件策略尚未接入标准执行链，Direct Stocks 自动执行仍被账户库存事实缺口阻断。
 
-更新时间：2026-07-25
+更新时间：2026-07-26
 
-VPS生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
-source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`
+VPS基础生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
+source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`；本地 `0.2.16` release已纳入
+2026-07-26 Coding Plan聚焦补丁、跨资产有符号合同和research/shadow模块，尚未部署或冒充覆盖VPS provenance。
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -17,8 +18,78 @@ source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`
 [crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)，Alpha Agents研究层看
 [alpha-agent-plan.md](alpha-agent-plan.md)，生产控制面演进看
 [trading-system-evolution-plan.md](trading-system-evolution-plan.md)，研究与文献情报路线看
-[research-advancement-roadmap.md](research-advancement-roadmap.md)。旧研究线、历史计划和legacy运行手册统一从
+[research-advancement-roadmap.md](research-advancement-roadmap.md)，200 USDT个人事件策略看
+[personal-200u-event-strategy.md](personal-200u-event-strategy.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
+
+- **2026-07-26 owner基于两份策略评估把200 USDT个人事件右侧策略升级到v0.2，但未授权任何订单或生产变更。**
+  `SmallAccount-FOMC-RightSide-v0.2`仍为独立`draft/research/shadow-only`线；v0.1只作同事件冻结对照。资金合同不变：
+  初始权益200U，首个受保护live闭环风险5U，常规单笔和总并发压力风险上限10U，20U停止、32U紧急flatten、40U灾难红线，
+  同时最多一个crypto-beta方向；BTC USD-M仍限isolated 5x/40U保证金/200U名义，SOL现货只作互斥备选且名义上限40U。
+  新信号用完成1h K作方向锚、完成15m K作放量突破和最多8根回踩重收；多头回踩不得低于`H0`、空头不得高于`L0`，
+  计划成交仍受线外`0.25ATR0`、全成本`>=2R`和保护门约束。BLACKOUT约06:00-06:30后才可能结束，12:00后不新开、
+  19:00前全平；`+2R`减1/3后尾仓采用净`+1R`底线与完成1h最有利收盘`1.0ATR`单向ratchet。
+  纯信号、风险和尾仓函数均无订单副作用；当前尚无 event calendar/frozen `MarketSnapshot` artifact、标准
+  `StrategyIntent` adapter、原生保护单 `OrderPlan` 或 venue execution 接入，因此只能用于 research/shadow，不能端到端进入
+  `MarketSnapshot -> StrategyIntent -> allocator -> RiskDecision -> OrderPlan`。当前`orders_authorized=false/paper_or_live_allowed=false`，
+  不恢复MiniTrend timer，不访问VPS私有API。
+
+- **2026-07-26 本地标准合同已升级为跨资产、有符号 exposure，但没有扩大生产权限。** 新增 canonical `InstrumentId` 与带
+  source hash/observed time 的 `ProductCapability`，将 crypto spot/perpetual、Direct Stocks/ETF、tokenized equity 和 equity perpetual
+  分为不同产品身份；`StrategyIntent` v2允许负权重，allocator/risk/planner/ledger/virtual runtime 的gross、限额、成本均按绝对
+  exposure，PnL/权益/funding按有符号仓位处理。开空必须显式匹配 exact instrument 且`short_allowed=true`；减既有空头仍允许，
+  跨零翻转强制 reduce-first。Direct Stocks `BUY_SELL`只表示可买/可卖库存，SELL为close-only，不能推导成short。
+  Binance Stocks官方schema的规则、订单字段矩阵、精度/session/fractional/disclaimer/tokenize校验已实现为无HTTP副作用的纯契约；
+  官方16端点没有闭合权威holdings/`available_to_sell`读取，账户资格、地区、免责声明状态和symbol availability也未从eligible route核验，
+  因此自动执行保持阻断。官方文档已日期化保存在`state/reference/binance-developer-docs/2026-07-26/`。
+
+- **2026-07-26 owner因策略长期未产生订单，决定停止MiniTrend实盘。** VPS
+  `qount-mini-trend-live.timer`与`qount-mini-trend-forward.timer`均为`disabled/inactive`，live timer无下一次计划运行，
+  production cron仍为0 entry；旧oneshot失败标记已用`systemctl reset-failed`清理为`inactive/dead`、`Result=success`，journal保留，
+  没有启动、重启或手工触发订单路径。停用后的私有只读preflight为
+  `account_preflight_pass`：USD-M可用/钱包余额=`464.0942153 USDT`，one-way、TOP3 isolated 1x、持仓0、普通挂单0、
+  unmanaged position 0，且`mutating_account_method_attempted=false/private_api_order_attempted=false`。持久证据为
+  `/root/qount/state/research_runs/20260726T121029Z-mini-trend-um-pilot-preflight-qount-stop-preflight-20260726/`
+  `qount-stop-preflight-20260726.json`。Phase B readonly、Dashboard publisher和Daily Intelligence继续独立运行，不授予交易权限。
+- **2026-07-26 Alpha Agent与生产Daily Intelligence LLM已切换到火山方舟Coding Plan。** Console名称`glm-5.2`
+  使用API模型ID=`glm-5-2-260617`、base URL=`https://ark.cn-beijing.volces.com/api/coding/v3`、provider=
+  `volc_coding_plan`、输出上限=`8000`。Coding Plan走Chat Completions `json_object`；仅兼容“单一JSON代码围栏且无前后附文”，
+  去围栏后仍执行严格五字段、简体中文、越权词和本地报告合同校验。凭据只在Mac仓库外`~/.qount/alpha-agent.env`及VPS
+  `/etc/qount/intelligence/coding-plan.key`，后者为`0600 root:root`；仓库、artifact和日志均不含密钥。本机官方feed单角色
+  artifact=`/private/tmp/qount-coding-plan-smoke-20260726-r4.json`、SHA=`4545fe5b...fb8`、status=`ok`；VPS不落盘中文
+  单角色探针同为`ok`。Mac/VPS聚焦回归各`28 OK`，部署的LLM、runner、unit与两份测试文件SHA逐项一致。
+  `qount-daily-intelligence.timer`保持`enabled/active`，下一次自然调度才运行完整六角色、归档和个人微信流程；本次没有手工补发日报。
+
+- **2026-07-26 `stablecoin_liquidity_impulse_v1` 三源 no-PnL G0 已通过 source/clock/semantics 门，formal strategy trial 仍为 148。**
+  新不可变 collection `v0.3/20260726T101608Z` 保留 USDT Ethereum/USDT TRON/USDC Ethereum
+  `6,893/2,007/2,710,040` 条 lineage，manifest=`859a4904...458f`；47 个成员、12 个 gzip 的成员 SHA、记录数和解压
+  SHA 已独立全量回读。USDT Ethereum owner proof 完整扫描 deployment..activation 的 `111` 个块和 `11,199` 笔交易，
+  核验 `2` 笔 owner->token receipt，并从 Sourcify ABI/verified source 完整枚举 multisig `5,544` 个 transaction slot；
+  `5,191` 个已执行，执行的 `transferOwnership` 为 `0`。activation/observed 两高度链上 runtime 全字节相同；与 Sourcify
+  `runtimeMatch=match` 的差异仅在 Solidity CBOR metadata，可执行 bytecode SHA 精确一致。owner proof file SHA=
+  `14abab4a...fcc6`，由三份 raw sidecar 重建后的 canonical hash 完全一致。
+  TRON 的 `991` 条零金额 `Transfer`（988 zero-address、3 treasury）按预登记合同保留 raw/finality lineage，但不进入
+  economic flow/count；因此 lineage/economic/zero-excluded=`2,007/1,016/991`，treasury=`383/380/3`，三者均闭合。
+  三源 semantics、ABI/proxy/owner history 与 exact availability 全为 true，remaining blockers=`[]`。
+  冻结 G0 得到 `376/376` 周锚点、`209/209` aggregate 对照、classification coverage=`1.0`，mint/burn/treasury/
+  cross-chain/unknown=`1,688,417/1,028,517/679/18/0`，transaction semantic duplicate=`318`、跨链 cluster=`9`。
+  marginal flow 仍不等价 aggregate supply（Spearman=`0.6479546769`、R²=`0.4186931641`、offsetting ratio=`1.0`），
+  exact delay 中位/p99/max=`768/979/1701s`。verdict=`pass_to_market_state_design`；bundle=`e725e66a...95b7`、
+  manifest=`3b1b0c3e...3252`、result=`d72b82d0...f760`。本轮仍未读市场价格/PnL/方向/权重，family trial=`0`，
+  `candidate_pnl_ready=false`，不产生 promotion、paper/live 或订单权限。v0.2/r2 及更早失败 bundle 原样保留为历史证据。
+
+- **2026-07-25 `liquidity_capacity_meta_v1` capacity calibration 首轮完成（成本基础设施，非策略候选）。**
+  新增 `src/qount/mini_trend/liquidity_capacity_calibration.py`（冻结 protocol + 可单测纯函数，21 单测 OK）与薄脚本
+  `scripts/research/run_liquidity_capacity_calibration.py`，消费已通过的冻结 G0 artifact（SHA `fa02ed8b...bf95`，10/10
+  `pass_to_capacity_calibration`），产出不可变 scorecard `state/research_runs/20260724T184308-liquidity-capacity-meta-calibration/`
+  （SHA `bad32d63...72b4`，contract `01f3c651...12a9`，`0700/0600`）。成本模型：half-spread=CS/2、impact=`amihud_x_1e6·N/100`
+  （线性 Amihud 上界代理）、friction=half-spread+impact（不含费）、total 另加 Binance UM 官方 taker 4bps。
+  **读数**：①robust participation-only 全宇宙容量≈**21.3M USDT**（LTC 绑定=213M 日成交额×1%）；②Amihud 冲击可忽略——
+  1% participation 下仅 1.7–6.6bps，非绑定约束；③**CS 日高低价差代理对全部 10 币系统性高估**（half-spread 11.6–44.5bps
+  vs 真实 perp <1bp），使 5/10/25bps 成本预算容量塌成 0，属 proxy-limited 而非 liquidity-limited。**cost-error**：
+  无真实 fill/盘口，ground_truth 不可得，已如实标记；下一步是 WSL 侧采集真实 book depth 校准价差并做全逐日滚动/分段容量。
+  全程 `orders_authorized=false`、无方向、无 PnL、`candidate_pnl_ready=false`；`data_role=consumed_historical_discovery_pool`，
+  未触碰 VPS/paper/live。它服务其它研究线的成本口径，本身不是收益证据。formal strategy trial 计数不变（仍 148）。
 
 - **2026-07-25 owner将主动研究优先级切换为加密因子拓展；formal trial已推进到148。**
   `multi_speed_trend_v1`家族3/3完成并关闭（Trial 145/146/147均REJECT，主指标全败）。
@@ -186,7 +257,7 @@ source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`
   @ ~65394 USDT，fee 0.0654 USDT（认证成本独立归档不进 Base PnL，在 max_fee 1.0 内）；余额
   486.1597 -> 486.0942（-0.0655 = fee）；归零确认 active positions=[]。认证订单用独立 `cert-xxx`
   client_order_id，不影响 Base live（Base 权重 0/0/0 全平）。§9 完成标准：artifact 完整 ≠ Base 扩容资格，
-  Base 仍是唯一真钱策略。详见 [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §16.5。生产状态`0.2.13`不变。
+  Base 当时仍是唯一真钱策略。详见 [trading-system-evolution-plan.md](trading-system-evolution-plan.md) §16.5。生产状态`0.2.13`不变。
 
 - **2026-07-23 Phase D 真实认证工程基建就绪。** 新增 CertificationArm（`src/qount/certification/arm.py`，
   独立、单次、带失效时间的 0600 arm，不复用 Base arm/token）+ RealVenueClient（`real_client.py`，连真实
@@ -236,7 +307,7 @@ source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`
   shadow accountant、Operational/Strategy/Portfolio三层HALT和venue capability provenance，但只授权设计与离线验证；
   真实最小认证仍需逐次owner授权。研究路线现把edge储备重认证列为高优先级：C×D只作历史组合数学候选，CTA-R只作跨资产
   selection-free重新认证候选，随后才是多速度趋势、执行经济学和条件性新family；旧X4/C×D/RV-C/CTA-R结果不继承promotion资格，
-  carry/short/杠杆/VRP仍关闭，唯一真钱策略和生产状态不变。
+  carry/short/杠杆/VRP当时仍关闭，唯一真钱策略和生产状态不变。
 
 - **2026-07-22 0.2.13已完成VPS部署与受控生产验收。** 最近已完成UTC日线硬门、LLM flat仓位计数和中文越权扫描之外，
   部署探针还发现并修复了`latest_date`字符串与`datetime.date`比较，以及live wrapper按历史completed状态错误刷新当前arm绑定两个问题。
@@ -281,7 +352,7 @@ source tree=`c6577f36...e15bb`，production provenance=`80fb1c38...b745`
   `0.147028/+55.411085%`。剔除新增beta字段及时间/路径元数据后，新旧报告规范化hash同为`d4bec779...00d91`。
   固定20日块、5000路径Bootstrap也精确重现，收益/Sharpe/更低回撤胜率`58.90%/86.82%/75.72%`，收益增量中位数
   只有`+0.462935pp`；规范化hash同为`6c00d310...f1c81`。这些仍是`consumed_historical_discovery_pool`，trial不增加，
-  Base v0.2继续是唯一真钱策略，Funding Veto继续shadow-only；下一有效证据只能来自补齐官方funding后的原冻结时间顺序前向。
+  Base v0.2当时继续是唯一真钱策略，Funding Veto继续shadow-only；下一有效证据只能来自补齐官方funding后的原冻结时间顺序前向。
 
 - **2026-07-22 0.2.12已完成全套恢复验收。** `0.2.11`实机live cycle暴露一个自检循环：live oneshot运行期间
   `qount-mini-trend-live.service`的正常`activating`态被health probe误判为execution block，导致刷新后的readiness只剩
@@ -1314,6 +1385,10 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
 
 已经具备：
 
+- 跨资产标准合同：canonical `InstrumentId`、产品级 `ProductCapability`、signed `StrategyIntent` v2、绝对gross的
+  allocator/risk/planner、signed ledger v3与virtual accounting；cash stock/tokenized stock/equity perpetual不会因ticker相同而混仓。
+- Binance Stocks纯契约：严格解析`exchangeInfo`，验证四种官方order字段组合、两位限价精度、quantity/notional/session/fractional规则、
+  disclaimer和tokenize identity；SELL必须提供权威`available_to_sell`且永不视为开空。该层不包含HTTP/private client。
 - 运行链路：`snapshot -> candidate_filter -> AI -> validate -> risk -> paper/live executor -> journal`。
 - Binance USDT 合约执行骨架、live guard、runtime halt、日内权益隔离。
 - `signal-review` / `paper-replay` / `backtest` / `walk-forward`。
@@ -1394,6 +1469,9 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
 
 当前还不具备：
 
+- Direct Stocks/ETF 的可用账户资格、权威持仓/可卖数量读取、自动执行与真实对账。
+- Equity perpetual/tokenized equity 的完整symbol discovery、费用/结算、保护单和venue adapter。
+- `SmallAccount-FOMC-RightSide-v0.2` 到标准 snapshot/intent/protective-plan 链的端到端适配。
 - 稳定盈利能力证明。
 - forward paper 许可。
 - live 许可。
@@ -1514,6 +1592,13 @@ local unittest: PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests 
 VPS unittest:   ./scripts/run-vps-tests.sh
 ```
 
+2026-07-26 跨资产/signed exposure/Stocks纯契约与小账户v0.2合并后，本地全量
+`PYTHONPATH=src ./.venv/bin/python -B -m unittest discover -s tests -p 'test*.py' -q` 为 **2277 OK**；受影响链聚焦为
+`161 OK`。contracts/execution/governance/ledger/persistence/portfolio/risk/small_account/venue `compileall`通过，
+`git diff --check`通过。Binance Stocks OpenAPI snapshot由本机YAML解析为16 paths，日期化manifest中的3份参考文件
+bytes/SHA-256逐项闭合，保存的schema与owner提供的`/Users/alyaloale/Desktop/schema.yaml`字节一致。唯一warning仍是既存
+`src/qount/cta_data.py`对`utcfromtimestamp()`的deprecation；本轮没有VPS、private API、paper/live或订单验证。
+
 最近一次本地完整结果：2026-07-20 Phase B/C账户事实、健康合同、仓位/决策追踪、publisher运维层和前端替换完成后，
 `PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为`1488 OK`；本批
 operations/health/publisher/authority/system-health 聚焦为`29 OK`，唯一warning仍为既有
@@ -1534,30 +1619,20 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
 按最新 owner 决策排序：
 
 1. production publisher、authority writer、真实OS/systemd/backup探针、单写者、同盘原子release、有界release/backup保留和恢复演练
-   已在VPS闭合；publisher与Daily Intelligence timer保持`enabled/active`，authority unit保持`static/inactive`，MiniTrend live timer
-   保持`enabled/active`，forward timer和production cron保持关闭。publisher只刷新系统健康、release和备份，不查询交易所；账户/决策
-   authority只由已授权live cycle刷新，并会在两次日线周期之间按15分钟规则自然stale。不得通过提高阈值、复制旧JSON或手工调用交易路径洗新。
+   已在VPS闭合；publisher与Daily Intelligence timer保持`enabled/active`，authority unit保持`static/inactive`，MiniTrend live/forward timer
+   和production cron均保持关闭。publisher只刷新系统健康、release和备份，不查询交易所；账户/决策 authority在交易停用后应自然stale，
+   不得通过提高阈值、复制旧JSON、恢复timer或手工调用交易路径洗新。
    NotificationStore与个人微信transport已完成真实`DELIVERED/SUCCEEDED`验证，后续只监控投递失败、限流和context token轮换；它不接
    legacy `Notifier`/shell ServerChan，也不赋予订单权限。VPS publisher仍只能读取完整batch/registry/ledger/notification/health/brief，
    不能读取legacy state JSON或复制fixture。
-2. 当前主动路线保留三条隔离的 research-only 记录：spot TOP3 forward 继续只追加完成的 spot 1d bars；
-   UM base-trend v0.2 已完成完整 forward preregistration，等待新的完整 UM 日线后再收集；Equity Mapping
-   只在纽约`09:24:30-09:25:00`冻结窗口追加有raw readback hash的同步三腿/日历/公司行动/压力证据。
-   这些research/shadow记录都不改参数、不获得paper/live权限；spot forward 至少累计60根且10根active前保持`collect_forward`。
-   当前Base 100 USDT standard-production（`minimal_live` registry）是独立例外，不能把它的授权扩散给RiskTier、FundingVeto或其它研究线。
-   已拒绝的 UM 2.0% 全局档、三阶段 overlay 和stop-latch都不进入forward；funding-veto虽通过历史门和
-   条件Bootstrap稳健门，也只冻结为首选 consumed-history 候选，不调50%阈值、不自动获得paper/live资格。
-   双状态shadow-forward已从`2026-07-19`预登记；WSL外置盘canonical现有价格与funding完整的2个pair，verdict=
-   `collect_shadow_forward`，两路径仍全现金、0 active/0收益且尚无veto。MiniTrend forward timer保持关闭；后续公开数据只在
-   Windows/WSL侧通过直连或仓库外良心云代理追加，并且只在价格与每日三次funding同时完整后更新两套权益、仓位/
-   deadband/latch状态，首次权重同步不能作为停止跟踪条件。禁止使用苏菲家宽代理，缺失funding禁止填0。
-   Equity Mapping首个目标现金日是`2026-07-20`，当前`await_collection_window`；窗口前不得生成伪样本，窗口
-   错过后不得用异步历史报价补写。只有同现金日sealed manifest逐项覆盖8类source hash，G0 v0.4才允许声称
-   point-in-time market evidence；当前source-capacity只有cash calendar通过，必须先取得带source event timestamp的
-   可执行cash premarket bid/ask，并补齐mapping、mapped quote、USDTUSD、公司行动、事件上下文和stress来源。
-   Nasdaq当前delayed quote不能代替现金腿，也不得用HTTP接收时点冒充市场quote时点。仍需累计30个独立现金交易日，
-   且不因此进入shadow/paper/live。
-3. 一个月小资金实盘已进入`standard_production`，registry保持`minimal_live`；下一步是等待自然信号并收集真实执行样本。
+2. 跨资产推进按可捕获性排序，而不是同时建设所有连接器。P0先做只读instrument catalog/capability snapshot和
+   crypto perpetual signed shadow replay；P1把FOMC v0.2接成不可下单的标准 snapshot/intent，并先补 protective order plan、
+   deadline flatten和部分成交保护合同；P2再做Direct Stocks read-only quote/rules/eligibility审计。没有权威holdings/
+   `available_to_sell`、eligible account、已确认免责声明和完整venue reconciliation前，不建设Stocks自动SELL或live adapter。
+   研究篮子从单一FOMC扩展到：FOMC/CPI/NFP/GDP/PCE事件后反应、美国cash/extended/overnight session错位、ETF/股票/
+   tokenized/equity-perpetual mapping偏离、crypto funding/liquidation forced flow，以及跨资产趋势/风险状态。每条先回答谁被迫交易、
+   扣成本后如何退出和什么现象证伪；一次性机会优先manual alert或script-assisted，不强塞进永久daemon。
+3. 历史阶段中，一个月小资金实盘曾进入`standard_production`且registry为`minimal_live`；该路径现已由owner停止。
    2026-07-21 owner已把本金严格固定为
    `100 USDT`并要求直接推进Phase B/C/D，不等待约两个月日历累积。`60 forward pairs / 10 active bars / 30 paper days /
    7 unique dry days`现为Dashboard/readiness非阻断观察指标；它们当前为0只表示尚无时间样本，不等于策略0收益或系统错误。Funding完整性、
@@ -1570,7 +1645,8 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    dispatcher和live journal均要求精确`100 USDT`。
    2026-07-22最终已由owner既有明确授权完成manual arm、`minimal_live` promotion、首次live闭环和recurring幂等复跑；
    2026-07-23已完成`0.2.15` standard-production迁移、新arm绑定和order-free验收。
-   `qount-mini-trend-live.timer`现为`enabled/active`，forward timer和production cron保持关闭。当前信号全现金，所以没有真实订单或成交；不得为采集样本强制下单。
+   2026-07-26 owner因长期无订单将`qount-mini-trend-live.timer`停为`disabled/inactive`；forward timer和production cron继续关闭。
+   冻结样本仍为0，不得为采集样本恢复timer或强制下单。
    旧X4/C×D cron与forward timer继续关闭，全局2.0%风险档和Funding Veto只能做shadow，不能控制真钱订单。
 
    当前`0.2.15` release回归为Mac全仓`1911 OK`、VPS生产链聚焦`71 OK`。Python compileall、Bash语法、release provenance、

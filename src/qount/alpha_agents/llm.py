@@ -19,6 +19,10 @@ from .validators import validate_agent_report
 RELAY_STATION_CHATGPT_PROFILE = "relay_station_chatgpt"
 RELAY_STATION_BASE_URL = "https://llm.alyaloale.com/v1"
 RELAY_STATION_DEFAULT_MODEL = "gpt-5.6-terra"
+VOLC_CODING_PLAN_PROFILE = "volc_coding_plan"
+VOLC_CODING_PLAN_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3"
+VOLC_CODING_PLAN_DEFAULT_MODEL = "glm-5-2-260617"
+VOLC_CODING_PLAN_DEFAULT_MAX_TOKENS = 8_000
 _REPORT_KEYS = frozenset({"status", "summary", "findings", "proposals", "risks"})
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 524})
 _REPORT_JSON_SCHEMA = {
@@ -163,6 +167,13 @@ class AlphaLLMConfig:
                 errors.append("relay_station_base_path_must_be_v1")
             if not self.model.startswith("gpt-") and self.model != "codex-auto-review":
                 errors.append("relay_station_chatgpt_model_required")
+        elif self.provider_profile == VOLC_CODING_PLAN_PROFILE:
+            if self.base_url.rstrip("/") != VOLC_CODING_PLAN_BASE_URL:
+                errors.append("volc_coding_plan_base_url_not_allowlisted")
+            if not self.model.strip():
+                errors.append("volc_coding_plan_model_required")
+        else:
+            errors.append("llm_provider_profile_unsupported")
         if self.timeout_seconds <= 0:
             errors.append("llm_timeout_invalid")
         if self.max_tokens <= 0:
@@ -250,6 +261,22 @@ def _validate_report_payload(parsed: Any) -> tuple[dict[str, Any] | None, str | 
         if any(not isinstance(item, str) or not item.strip() for item in value):
             return None, f"llm_payload_{name}_items_invalid"
     return parsed, None
+
+
+def _parse_report_json(raw: str, provider_profile: str) -> Any:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        if provider_profile != VOLC_CODING_PLAN_PROFILE:
+            raise
+        lines = raw.strip().splitlines()
+        if (
+            len(lines) < 3
+            or lines[0].strip().casefold() != "```json"
+            or lines[-1].strip() != "```"
+        ):
+            raise
+        return json.loads("\n".join(lines[1:-1]))
 
 
 def _exception_status(exc: Exception) -> int | None:
@@ -359,8 +386,8 @@ def request_agent_report(
             status="blocked",
             summary=_localized(
                 output_language,
-                zh="LLM 配置未通过 relay-station 研究边界校验。",
-                en="LLM configuration failed the relay-station research boundary.",
+                zh="LLM 配置未通过研究边界校验。",
+                en="LLM configuration failed the research boundary.",
             ),
             risks=config_errors,
             sources=sources,
@@ -447,21 +474,30 @@ def request_agent_report(
     last_reason = "unknown_error"
     for attempt in range(config.max_retries + 1):
         try:
-            response = client.responses.create(
-                model=config.model,
-                input=messages,
-                temperature=config.temperature,
-                max_output_tokens=config.max_tokens,
-                store=False,
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": "qount_agent_report",
-                        "strict": True,
-                        "schema": _REPORT_JSON_SCHEMA,
-                    }
-                },
-            )
+            if config.provider_profile == VOLC_CODING_PLAN_PROFILE:
+                response = client.chat.completions.create(
+                    model=config.model,
+                    messages=messages,
+                    temperature=config.temperature,
+                    max_tokens=config.max_tokens,
+                    response_format={"type": "json_object"},
+                )
+            else:
+                response = client.responses.create(
+                    model=config.model,
+                    input=messages,
+                    temperature=config.temperature,
+                    max_output_tokens=config.max_tokens,
+                    store=False,
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "qount_agent_report",
+                            "strict": True,
+                            "schema": _REPORT_JSON_SCHEMA,
+                        }
+                    },
+                )
         except Exception as exc:
             if attempt < config.max_retries and _is_transient_request_error(exc):
                 time.sleep(_retry_delay(config, exc, attempt))
@@ -480,17 +516,33 @@ def request_agent_report(
                 risks=(_request_error_reason(exc, attempt + 1),),
                 sources=sources,
             )
-        response_status = getattr(response, "status", "completed")
-        if response_status != "completed":
-            last_reason = f"llm_response_status_invalid:{response_status}"
+        if config.provider_profile == VOLC_CODING_PLAN_PROFILE:
+            choices = getattr(response, "choices", ())
+            if len(choices) != 1:
+                last_reason = "llm_chat_choices_invalid"
+                break
+            choice = choices[0]
+            finish_reason = getattr(choice, "finish_reason", None)
+            if finish_reason != "stop":
+                last_reason = f"llm_response_status_invalid:{finish_reason}"
+                break
+            message = getattr(choice, "message", None)
+            raw = getattr(message, "content", "") or "{}"
+        else:
+            response_status = getattr(response, "status", "completed")
+            if response_status != "completed":
+                last_reason = f"llm_response_status_invalid:{response_status}"
+                break
+            raw = getattr(response, "output_text", "") or "{}"
+        if not isinstance(raw, str):
+            last_reason = "llm_response_text_invalid"
             break
-        raw = getattr(response, "output_text", "") or "{}"
         last_raw = raw
         if len(raw) > config.max_response_chars:
             last_reason = "llm_response_too_large"
             break
         try:
-            parsed = json.loads(raw)
+            parsed = _parse_report_json(raw, config.provider_profile)
         except json.JSONDecodeError as exc:
             last_reason = f"llm_parse_error:{exc.__class__.__name__}"
             break

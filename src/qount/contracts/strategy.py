@@ -50,6 +50,7 @@ class StrategyIntent:
         reason_codes: Sequence[str],
         evidence_hash: str,
         state_hash: str,
+        schema_version: int = 2,
         decision_id: str | None = None,
     ) -> StrategyIntent:
         normalized_reasons = tuple(reason_codes)
@@ -57,7 +58,7 @@ class StrategyIntent:
         resolved_decision_id = decision_id or trace_id(
             "strategy_decision",
             {
-                "schema_version": 1,
+                "schema_version": schema_version,
                 "strategy_id": strategy_id,
                 "strategy_version": strategy_version,
                 "snapshot_id": snapshot_id,
@@ -72,7 +73,7 @@ class StrategyIntent:
             },
         )
         trace_core = {
-            "schema_version": 1,
+            "schema_version": schema_version,
             "strategy_id": strategy_id,
             "strategy_version": strategy_version,
             "decision_id": resolved_decision_id,
@@ -95,7 +96,7 @@ class StrategyIntent:
             target_stress_loss_fraction=target_stress_loss_fraction,
             evidence_hash=evidence_hash,
             state_hash=state_hash,
-            schema_version=1,
+            schema_version=schema_version,
             strategy_version=strategy_version,
             decision_id=resolved_decision_id,
             snapshot_id=snapshot_id,
@@ -163,7 +164,7 @@ class StrategyIntent:
                 errors.append(f"{name}_invalid")
 
         if self.traced:
-            if self.schema_version != 1:
+            if self.schema_version not in {1, 2}:
                 errors.append("strategy_intent_schema_version_invalid")
             if not _STRATEGY_VERSION_RE.fullmatch(self.strategy_version):
                 errors.append("strategy_version_invalid")
@@ -192,10 +193,10 @@ class StrategyIntent:
                 continue
             if not symbol or not math.isfinite(weight):
                 errors.append(f"target_weight_invalid:{symbol}")
-            elif weight < 0.0:
+            elif weight < 0.0 and self.schema_version < 2:
                 errors.append(f"short_target_forbidden:{symbol}")
             else:
-                gross += weight
+                gross += abs(weight)
         if gross > 1.0 + 1e-12:
             errors.append("standalone_target_gross_exceeds_one")
         return tuple(errors)

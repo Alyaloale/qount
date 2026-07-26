@@ -1,6 +1,6 @@
 # Alpha Agents 多智能体研究架构
 
-> **状态**：active research-only｜**权威**：L3 研究（多 agent）｜**最后更新**：2026-07-22
+> **状态**：active research-only｜**权威**：L3 研究（多 agent）｜**最后更新**：2026-07-26
 > **本文回答**：多 agent 资料搜集、只读日报生产、source book、后续量化接入边界。
 > **TL;DR**：LLM 只写 research/日报，不出订单/目标权重/live 配置。
 
@@ -10,6 +10,13 @@
 
 更准确的定位：这是 `deterministic quant harness + LLM 研究/审计外壳`，不是“多 agent 本身产生
 alpha”。relay-station ChatGPT、历史GLM和计算节点都只是研究吞吐工具，不是 alpha 来源。
+
+2026-07-26 的 `stablecoin_liquidity_impulse_v1` v0.3 remediation + G0 说明这条边界的实际用法：确定性 collector/G0
+以 EOA 全块/receipt、Sourcify verified source/ABI/runtime、multisig state 全枚举和 exact confirmation 闭合三源证据；TRON
+`991` 条零值 Transfer 只保留 lineage/finality，不进入 economic flow。LLM不参与事件分类、PIT时钟、去重或 verdict。
+新 G0 为 `376/376` 共同周样本、`209/209` aggregate anchors、coverage=`1.0`、unknown=`0`，8 个 kill test 全 false，
+verdict=`pass_to_market_state_design`；marginal flow 仍不等价 aggregate supply。该 verdict 只解除下一份 market-state 设计的
+source gate，Agent 仍只能提出/审计预登记与反例，不能把它升级为 alpha、PnL、paper/live 或订单建议。
 
 ## 目标
 
@@ -116,14 +123,16 @@ PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_plan.py \
   --task-id beta_residual_target_v0 --print-json
 ```
 
-接 relay-station ChatGPT 时显式opt-in。凭据优先放在权限`0600`的仓库外
+接火山方舟Coding Plan时显式opt-in。凭据优先放在权限`0600`的仓库外
 `~/.qount/alpha-agent.env`，不要在shell历史中导出真实token：
 
 ```bash
 export QOUNT_ALPHA_AGENT_LLM_ENABLE=true
-export QOUNT_ALPHA_AGENT_BASE_URL=https://llm.alyaloale.com/v1
-export QOUNT_ALPHA_AGENT_MODEL=gpt-5.6-terra
+export QOUNT_ALPHA_AGENT_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
+export QOUNT_ALPHA_AGENT_PROVIDER_PROFILE=volc_coding_plan
+export QOUNT_ALPHA_AGENT_MODEL=glm-5-2-260617
 export QOUNT_ALPHA_AGENT_MAX_CONCURRENCY=1
+export QOUNT_ALPHA_AGENT_MAX_TOKENS=8000
 export QOUNT_ALPHA_AGENT_MAX_RETRIES=1
 export QOUNT_ALPHA_AGENT_RETRY_BASE_SECONDS=10
 export QOUNT_ALPHA_AGENT_MAX_RETRY_DELAY_SECONDS=60
@@ -194,11 +203,11 @@ red-team/editor只接收前序报告压缩字段；原文归档和全局上限�
 `context_token`后仍由新架构验证job `6d51a764...4324`一次投递为`DELIVERED/SUCCEEDED`；store为5 event/job/attempt和20行audit chain。
 Mac扩大回归`75 OK`、VPS部署聚焦`24 OK`。
 
-真实依赖状态：relay与个人微信凭据已在VPS以独立`0600 root:root`文件接入，生产搜索不需要付费Key。通用研究客户端继续默认
-`gpt-5.6-terra`；Daily Intelligence单独显式使用`gpt-5.6-sol`，两者都走Responses API，SDK重试0。New-API已经删除，account 25也不再
-绑定proxy 6；生产请求由TokenRouter转到Docker内网`aishenji-normalizer`，再由nginx/OpenSSL以固定TLS、SNI、Host和browser User-Agent
-特征访问aishenji上游。该路径修复了TokenRouter Go HTTP/TLS特征触发的Cloudflare 403，qount-vps真实非流式与流式Responses均已返回
-`completed/OK`，account 25为`active/schedulable`，TokenRouter和normalizer均healthy且未重启TokenRouter。
+当前真实依赖状态（2026-07-26）：通用Alpha Agent与Daily Intelligence均使用火山方舟Coding Plan，Console名称`glm-5.2`
+映射API模型ID=`glm-5-2-260617`，base URL=`https://ark.cn-beijing.volces.com/api/coding/v3`，输出上限=`8000`。
+Coding Plan走Chat Completions `json_object`；方舟在复杂提示下可能返回单一JSON代码围栏，客户端只接受无前后附文的精确围栏，
+随后仍执行标准JSON解析、严格五字段、语言和越权校验。VPS凭据为独立`0600 root:root`
+`/etc/qount/intelligence/coding-plan.key`，生产搜索不需要付费Key；旧relay/TokenRouter路径保留为历史，不再被production unit引用。
 
 `2026-07-21T13:23:23.472311+00:00`按一次真实研究任务完成TOP3首角色严格Schema中文分析，耗时约`26.5s`；pulse/ticker/premium原始
 证据hash为`e991a4a3...04c` / `df89881f...787` / `30a0ddfe...eee`，五字段、中文、越权语言和source hash校验通过。它只证明单角色LLM
@@ -207,7 +216,7 @@ Mac扩大回归`75 OK`、VPS部署聚焦`24 OK`。
 并映射为502，两次随后均恢复200。应用仅对瞬时状态和显式`retryable=true`最多退避重试一次，支持错误体`retry_after`；只有
 `owner_action_required`而无可重试标记时立即失败关闭。任何失败日报仍单独归档和通知，不覆盖最后一份历史报告。
 
-`gpt-5.6-terra`是当前relay目录中实测存在的私有模型名，不在本地公共OpenAI模型指引中。它不自动代表已联网：
+历史relay使用的`gpt-5.6-terra`是当时目录中实测存在的私有模型名，不在本地公共OpenAI模型指引中。它不自动代表已联网：
 任何当前网页事实必须先由`official_sources.py`获取原文字节并记录hash/observed time，再作为有界context提交。
 
 ## 角色替换

@@ -313,9 +313,16 @@ class PortfolioTarget:
                 self.proposed_target_weights,
                 prefix="proposed_target",
                 maximum_gross=None,
+                allow_short=True,
             )
         )
-        errors.extend(weight_errors(self.target_weights, prefix="portfolio_target"))
+        errors.extend(
+            weight_errors(
+                self.target_weights,
+                prefix="portfolio_target",
+                allow_short=True,
+            )
+        )
         for strategy_id, weights in self.sleeve_contributions.items():
             if not strategy_id:
                 errors.append("portfolio_target_sleeve_id_empty")
@@ -324,6 +331,7 @@ class PortfolioTarget:
                     weights,
                     prefix=f"sleeve:{strategy_id}",
                     maximum_gross=None,
+                    allow_short=True,
                 )
             )
         if not self.sleeve_contributions:
@@ -451,8 +459,20 @@ class RiskDecision:
             aware_datetime(self.decision_time)
         except (AttributeError, TypeError, ValueError):
             errors.append("risk_decision_time_invalid")
-        errors.extend(weight_errors(self.input_target, prefix="risk_input_target"))
-        errors.extend(weight_errors(self.approved_target, prefix="risk_approved_target"))
+        errors.extend(
+            weight_errors(
+                self.input_target,
+                prefix="risk_input_target",
+                allow_short=True,
+            )
+        )
+        errors.extend(
+            weight_errors(
+                self.approved_target,
+                prefix="risk_approved_target",
+                allow_short=True,
+            )
+        )
         if self.approved and self.violations:
             errors.append("risk_approved_with_violations")
         for name in (
@@ -828,7 +848,13 @@ class OrderPlan:
             aware_datetime(self.created_at)
         except (AttributeError, TypeError, ValueError):
             errors.append("order_plan_created_at_invalid")
-        errors.extend(weight_errors(self.approved_target, prefix="order_plan_target"))
+        errors.extend(
+            weight_errors(
+                self.approved_target,
+                prefix="order_plan_target",
+                allow_short=True,
+            )
+        )
         client_ids = [order.client_order_id for order in self.orders]
         if len(client_ids) != len(set(client_ids)):
             errors.append("order_plan_client_order_id_duplicate")
@@ -895,7 +921,11 @@ class OrderPlan:
                     value = float(raw_value)
                 except (TypeError, ValueError):
                     value = math.nan
-                if not symbol or not math.isfinite(value) or value < 0.0:
+                if (
+                    not symbol
+                    or not math.isfinite(value)
+                    or (name == "reconciliation_tolerance" and value < 0.0)
+                ):
                     errors.append(f"order_plan_{name}_invalid:{symbol}")
         if not isinstance(self.executable, bool):
             errors.append("order_plan_executable_invalid")

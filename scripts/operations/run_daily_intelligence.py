@@ -14,6 +14,10 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from qount.alpha_agents.llm import AlphaLLMConfig  # noqa: E402
+from qount.alpha_agents.llm import VOLC_CODING_PLAN_BASE_URL  # noqa: E402
+from qount.alpha_agents.llm import VOLC_CODING_PLAN_DEFAULT_MAX_TOKENS  # noqa: E402
+from qount.alpha_agents.llm import VOLC_CODING_PLAN_DEFAULT_MODEL  # noqa: E402
+from qount.alpha_agents.llm import VOLC_CODING_PLAN_PROFILE  # noqa: E402
 from qount.intelligence import BraveSearchProvider  # noqa: E402
 from qount.intelligence import OfficialFeedSearchProvider  # noqa: E402
 from qount.intelligence import alert_from_daily_intelligence  # noqa: E402
@@ -31,7 +35,10 @@ from qount.notifications import load_provider_credential  # noqa: E402
 from qount.reporting import read_vps_authority_bundle  # noqa: E402
 
 
-DAILY_INTELLIGENCE_DEFAULT_LLM_MODEL = "gpt-5.6-sol"
+DAILY_INTELLIGENCE_DEFAULT_LLM_MODEL = VOLC_CODING_PLAN_DEFAULT_MODEL
+DAILY_INTELLIGENCE_DEFAULT_LLM_BASE_URL = VOLC_CODING_PLAN_BASE_URL
+DAILY_INTELLIGENCE_DEFAULT_LLM_PROVIDER_PROFILE = VOLC_CODING_PLAN_PROFILE
+DAILY_INTELLIGENCE_DEFAULT_LLM_MAX_TOKENS = VOLC_CODING_PLAN_DEFAULT_MAX_TOKENS
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -48,9 +55,22 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--with-llm", action="store_true")
     parser.add_argument("--llm-credential-path", type=Path)
     parser.add_argument(
+        "--llm-base-url",
+        default=DAILY_INTELLIGENCE_DEFAULT_LLM_BASE_URL,
+    )
+    parser.add_argument(
+        "--llm-provider-profile",
+        default=DAILY_INTELLIGENCE_DEFAULT_LLM_PROVIDER_PROFILE,
+    )
+    parser.add_argument(
         "--llm-model",
         default=DAILY_INTELLIGENCE_DEFAULT_LLM_MODEL,
-        help="Relay model dedicated to the daily intelligence workflow.",
+        help="Provider model dedicated to the daily intelligence workflow.",
+    )
+    parser.add_argument(
+        "--llm-max-tokens",
+        type=int,
+        default=DAILY_INTELLIGENCE_DEFAULT_LLM_MAX_TOKENS,
     )
     parser.add_argument("--enqueue-wecom", action="store_true")
     parser.add_argument("--send-wecom", action="store_true")
@@ -87,14 +107,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.llm_credential_path is None:
             raise ValueError("llm_credential_path_required")
         llm_credential = load_provider_credential(
-            args.llm_credential_path.resolve(), provider="relay_station_chatgpt"
+            args.llm_credential_path.resolve(),
+            provider=args.llm_provider_profile,
         )
         if llm_credential is None:
             raise ValueError("llm_credential_required")
         llm_config = replace(
             llm_config,
+            base_url=args.llm_base_url,
             api_key=llm_credential,
             model=args.llm_model,
+            max_tokens=args.llm_max_tokens,
+            provider_profile=args.llm_provider_profile,
         )
     market = fetch_binance_market_pulse(observed_at=now)
     run = run_daily_intelligence(

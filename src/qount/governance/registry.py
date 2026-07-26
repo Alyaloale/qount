@@ -494,7 +494,7 @@ def validate_registered_intents(
             )
         if entry.promotion_status == "halted":
             continue
-        gross = sum(_number(weight) for weight in intent.target_weights.values())
+        gross = sum(abs(_number(weight)) for weight in intent.target_weights.values())
         if gross > entry.maximum_gross + 1e-12:
             errors.append(f"intent:{index}:registered_maximum_gross_exceeded")
         if (

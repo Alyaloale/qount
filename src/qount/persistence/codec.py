@@ -14,11 +14,13 @@ from qount.certification.contracts import CertificationRun
 from qount.certification.attribution import ExecutionAttributionReport
 from qount.contracts import ArtifactReference
 from qount.contracts import DecisionBatchManifest
+from qount.contracts import InstrumentId
 from qount.contracts import MarketSnapshot
 from qount.contracts import OrderPlan
 from qount.contracts import PlannedCancellation
 from qount.contracts import PlannedOrder
 from qount.contracts import PortfolioTarget
+from qount.contracts import ProductCapability
 from qount.contracts import RiskDecision
 from qount.contracts import StrategyIntent
 from qount.contracts import is_sha256
@@ -40,6 +42,8 @@ _ENVELOPE_FIELDS = {
     "artifact_hash",
 }
 _TYPE_BY_CLASS = {
+    InstrumentId: "instrument_id",
+    ProductCapability: "product_capability",
     StrategyIntent: "strategy_intent",
     MarketSnapshot: "market_snapshot",
     PortfolioTarget: "portfolio_target",
@@ -122,6 +126,8 @@ def artifact_type_for(value: object) -> str:
 
 def _object_id(value: object) -> str:
     fields = {
+        InstrumentId: "instrument_id",
+        ProductCapability: "capability_id",
         StrategyIntent: "decision_id",
         MarketSnapshot: "snapshot_id",
         PortfolioTarget: "portfolio_target_id",
@@ -209,6 +215,41 @@ def _payload(value: object) -> dict[str, Any]:
         return _planned_order_payload(value)
     if isinstance(value, PlannedCancellation):
         return _planned_cancellation_payload(value)
+    if isinstance(value, InstrumentId):
+        return {
+            "schema_version": value.schema_version,
+            "instrument_id": value.instrument_id,
+            "instrument_key": value.instrument_key,
+            "venue": value.venue,
+            "symbol": value.symbol,
+            "asset_class": value.asset_class,
+            "product_kind": value.product_kind,
+            "underlying": value.underlying,
+            "price_currency": value.price_currency,
+            "settlement_asset": value.settlement_asset,
+            "multiplier": value.multiplier,
+            "session_calendar": value.session_calendar,
+            "instrument_hash": value.instrument_hash,
+        }
+    if isinstance(value, ProductCapability):
+        return {
+            "schema_version": value.schema_version,
+            "capability_id": value.capability_id,
+            "instrument_key": value.instrument_key,
+            "observed_at": value.observed_at,
+            "source_hash": value.source_hash,
+            "long_allowed": value.long_allowed,
+            "short_allowed": value.short_allowed,
+            "buy_allowed": value.buy_allowed,
+            "sell_allowed": value.sell_allowed,
+            "sell_close_only": value.sell_close_only,
+            "reduce_only_supported": value.reduce_only_supported,
+            "fractional_supported": value.fractional_supported,
+            "funding_applicable": value.funding_applicable,
+            "order_types": list(value.order_types),
+            "trading_sessions": list(value.trading_sessions),
+            "capability_hash": value.capability_hash,
+        }
     if isinstance(value, DecisionBatchManifest):
         return {
             "schema_version": value.schema_version,
@@ -690,7 +731,75 @@ def _decode_artifact_reference(
 
 
 def _decode_payload(artifact_type: str, payload: Mapping[str, Any]) -> object:
-    if artifact_type == "decision_batch_manifest":
+    if artifact_type == "instrument_id":
+        expected = {
+            "schema_version",
+            "instrument_id",
+            "instrument_key",
+            "venue",
+            "symbol",
+            "asset_class",
+            "product_kind",
+            "underlying",
+            "price_currency",
+            "settlement_asset",
+            "multiplier",
+            "session_calendar",
+            "instrument_hash",
+        }
+        _exact_fields(payload, expected, name="instrument_id_payload")
+        value = InstrumentId.create(
+            venue=payload["venue"],
+            symbol=payload["symbol"],
+            asset_class=payload["asset_class"],
+            product_kind=payload["product_kind"],
+            underlying=payload["underlying"],
+            price_currency=payload["price_currency"],
+            settlement_asset=payload["settlement_asset"],
+            multiplier=payload["multiplier"],
+            session_calendar=payload["session_calendar"],
+        )
+    elif artifact_type == "product_capability":
+        expected = {
+            "schema_version",
+            "capability_id",
+            "instrument_key",
+            "observed_at",
+            "source_hash",
+            "long_allowed",
+            "short_allowed",
+            "buy_allowed",
+            "sell_allowed",
+            "sell_close_only",
+            "reduce_only_supported",
+            "fractional_supported",
+            "funding_applicable",
+            "order_types",
+            "trading_sessions",
+            "capability_hash",
+        }
+        _exact_fields(payload, expected, name="product_capability_payload")
+        value = ProductCapability.create(
+            instrument_key=payload["instrument_key"],
+            observed_at=payload["observed_at"],
+            source_hash=payload["source_hash"],
+            long_allowed=payload["long_allowed"],
+            short_allowed=payload["short_allowed"],
+            buy_allowed=payload["buy_allowed"],
+            sell_allowed=payload["sell_allowed"],
+            sell_close_only=payload["sell_close_only"],
+            reduce_only_supported=payload["reduce_only_supported"],
+            fractional_supported=payload["fractional_supported"],
+            funding_applicable=payload["funding_applicable"],
+            order_types=_sequence(
+                payload["order_types"], name="product_capability_order_types"
+            ),
+            trading_sessions=_sequence(
+                payload["trading_sessions"],
+                name="product_capability_trading_sessions",
+            ),
+        )
+    elif artifact_type == "decision_batch_manifest":
         expected = {
             "schema_version",
             "decision_batch_manifest_id",
@@ -785,6 +894,7 @@ def _decode_payload(artifact_type: str, payload: Mapping[str, Any]) -> object:
             ),
             evidence_hash=payload["evidence_hash"],
             state_hash=payload["state_hash"],
+            schema_version=payload["schema_version"],
         )
     elif artifact_type == "market_snapshot":
         expected = {

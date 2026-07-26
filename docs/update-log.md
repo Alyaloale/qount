@@ -1,15 +1,249 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-25
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-26
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-14 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-07-25
+更新时间：2026-07-26
 
 这份文档只记录**近期**关键变更、验证结果和当前读法（2026-07-16 加密优先重启起）。
 **2026-07-14 及更早**的历史证据链移入 [archive/update-log-archive.md](archive/update-log-archive.md)。
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
+
+## 2026-07-26 (Round 20)
+
+### 0.2.16本地release基线完成全仓验证
+
+**范围与权限**：owner授权对当前工作区执行add、补丁版本提升和push，以建立后续FOMC VPS接入所需的干净release基线。
+包版本由`0.2.15`提升为`0.2.16`；该release归档本日已记录的Coding Plan聚焦补丁、跨资产有符号合同、Binance Stocks纯契约、
+stablecoin/liquidity研究模块和`SmallAccount-FOMC-RightSide-v0.2`纯信号/风险/管理代码。它不恢复任何交易timer、cron或订单权限，
+也不把本地版本冒充为已部署VPS provenance。
+
+**验证**：Mac执行`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'`，结果`2277/2277 OK`；
+`git diff --check`与仓库源码/文档/脚本的常见API key、AWS key和private-key header扫描通过。后续FOMC标准链、shadow watcher、
+告警和待命systemd单元作为独立release增量实现与部署。
+
+## 2026-07-26 (Round 19)
+
+### 200 USDT FOMC策略按两份评估升级为v0.2混合周期shadow合同
+
+**决策与权限**：owner要求结合两份评估优化`SmallAccount-FOMC-RightSide-v0.1`。两份报告分别主张15m提速和更晚观察，
+且都没有本账户成交或事件样本，因此没有把任一报告整体视为收益证据。合同升级为
+`SmallAccount-FOMC-RightSide-v0.2`的`draft/research/shadow-only`版本，v0.1只作冻结对照；风险、账户与订单权限不变，
+`orders_authorized=false/paper_or_live_allowed=false`。本轮未访问VPS、私有API、timer、paper/live或订单路径。
+
+**信号优化**：事件前继续冻结72根完成1h的`H0/L0/ATR0`，新增冻结`V20_15m`；BLACKOUT后先等一根完成1h K收在
+`H0+0.25ATR0`或`L0-0.25ATR0`外，再由完成15m K确认。突破K要求`>=1.5x V20_15m`、实体占比`>=60%`，
+多头/空头close-location分别`>=0.80/<=0.20`；其后最多8根15m必须触及线外`0.10ATR0`范围并重收，重收量
+`>=80%`突破量。多头任一回踩低点`<H0`或空头任一高点`>L0`即整次事件`NO_TRADE`；计划入场不得伸出突破线
+`0.25ATR0`，冻结结构障碍前仍须满足全成本净`>=2R`。这既减少原两根1h加四根1h的延迟，也没有放弃1h方向过滤。
+
+**时钟与退出**：本sleeve在上海时间01:00前必须CASH；记者会结束且声明后至少四根完整1h前继续BLACKOUT，
+不无证据地硬等07:00/08:00，但shadow记录这两个反事实时间标签。最晚开仓从14:30提前到12:00，主动强制全平从20:00提前到19:00。
+净`+1R`改由完成15m确认后推全成本保本；净`+2R`减1/3并完成fill/数量对账后，尾仓止损取旧止损、净`+1R`价格、
+完成1h最有利收盘回撤`1.0ATR`中最保护利润的一侧，只能收紧。`0.5ATR`和前一根1h高低点只记录为反事实，不直接使用。
+
+**实现**：新增`src/qount/small_account/event_signal.py`，纯函数输出`OBSERVE/ARMED/NO_TRADE`与稳定reason codes；新增
+`src/qount/small_account/management.py`实现`+2R`后的单向tail-stop ratchet。新增信号/管理聚焦测试20个，覆盖多空对称、
+原区间边界、深回踩失效、量能/实体/收盘位置、8根时限、12:00截止、完成K时序、部分退出确认和利润底线；连同原风险测试的
+`small_account`聚焦回归为`45/45 OK`。
+
+## 2026-07-26 (Round 18)
+
+### 200 USDT个人事件右侧策略完成设计与确定性风险边界
+
+**owner目标与权限**：owner明确以200 USDT、最大容忍回撤40 USDT设计个人交易系统，允许研究合约/short/事件策略，
+但本轮没有绑定exact account/symbol/side/notional或下单时刻，因此只创建
+`SmallAccount-FOMC-RightSide-v0.1`的`draft/research-only`合同与纯风险代码；
+`orders_authorized=false/paper_or_live_allowed=false`。未访问VPS私有API、未恢复MiniTrend live/forward timer、未发订单。
+
+**事实核验**：Fed官方FOMC日历与2026年7月日历确认会议为7月28-29日，声明/记者会为14:00/14:30 EDT，
+即上海时间7月30日02:00/02:30；本次无预定SEP。BEA官方日历确认Q2 GDP初值与6月PCE均在同日08:30 EDT，
+即上海时间20:30。因此特别版约06:00-06:30后才可进入观察、14:30后不新开FOMC仓位、20:00前强制全平。
+CoinGecko `2026-07-26T13:07:10Z`快照为BTC 64,380、ETH 1,883.27、SOL 74.76 USDT；
+固定67,200/64,000相对BTC现价约`+4.38%/-0.59%`，存在明显非对称，降级为观察参考而非订单阈值。
+
+**策略与风险决策**：40U改为灾难缓冲，不再拆成两个20U正常止损。首个受保护live round trip全成本风险5U；
+常规单笔及open+pending总压力风险上限10U；滚动24h亏损10U停机、正常策略高水位回撤20U停止、32U紧急flatten、
+40U灾难红线。同时只允许一个crypto-beta方向，BTC合约与SOL现货互斥。BTC首版限制one-way/isolated/
+`autoAddMargin=false`、杠杆`<=5x`、isolated margin`<=40U`、notional`<=200U`；严格40U tail模式下SOL现货
+notional同样`<=40U`。仓位由结构失效价、压力越价、双边fee/slippage和funding反推，净计划收益必须`>=2R`。
+
+**事件规则**：事件前冻结72根完成1h K的`H0/L0`、ATR14与20根成交量中位数；声明后至少4根完成1h K且记者会已结束前保持
+BLACKOUT。方向只由连续两根完成K突破、第二根`>=1.5x`中位量、4根内回踩重收和全成本可执行性确认，
+宏观/LLM文本只能veto/reduce/halt。达到`+1R`后才推到含成本的净保本，`+2R`减1/3并以1.5ATR追踪；
+8根1h未到`+1R`退出，同一FOMC最多一次尝试。
+
+**实现与验证**：策略全文见`docs/personal-200u-event-strategy.md`。纯风险模块位于`src/qount/small_account/`，
+覆盖账户guard、首单降险、全成本仓位、quantity step、spot/futures硬上限与净`2R`门；聚焦测试见
+`tests/test_small_account_risk.py`。风险模块自身`25/25 OK`；连同portfolio governance、标准runtime contracts、MiniTrend
+preflight/dispatcher、RuntimeLedger、notification和system health的聚焦回归为`104/104 OK`，`py_compile`与
+`git diff --check`通过。本轮不实现event watcher或执行适配器；后者必须先shadow并另获生产与manual arm授权。
+
+## 2026-07-26 (Round 17)
+
+### Owner停用MiniTrend实盘；Alpha Agent与生产日报切换方舟Coding Plan
+
+**停盘与账户事实**：owner确认资金已从资金账号划回，并因策略长期不下单决定先停用。VPS
+`qount-mini-trend-live.timer`与forward timer均为`disabled/inactive`，live无NEXT，production cron仍为0 entry；未触发订单路径。
+旧oneshot失败标记已清为`inactive/dead`、`Result=success`，未删除journal，也未启动service。
+停用后私有只读preflight为`account_preflight_pass`：可用/钱包余额=`464.0942153 USDT`、one-way、TOP3 isolated 1x、
+持仓0、普通挂单0、unmanaged position 0，且没有账户变更或订单API调用。证据保存在
+`20260726T121029Z-mini-trend-um-pilot-preflight-qount-stop-preflight-20260726`。
+
+**Coding Plan接入**：Console名称`glm-5.2`映射API ID=`glm-5-2-260617`，base URL=
+`https://ark.cn-beijing.volces.com/api/coding/v3`，provider=`volc_coding_plan`，输出上限从`2000`提高到`8000`。
+首轮Responses在2000上限返回`incomplete`；提高上限后完整返回，但复杂提示即使声明`json_object`仍带单一Markdown围栏。
+最小探针确认Chat Completions `response_format=json_object`可用，因此Coding Plan改走该接口；客户端只解包无前后附文的单一
+JSON围栏，之后仍用标准JSON解析并执行严格五字段、简体中文、越权词和AgentReport合同。relay provider继续走原严格
+Responses `json_schema`路径，未知provider和非allowlist base URL失败关闭。
+
+**部署与验证**：Mac仓库外`~/.qount/alpha-agent.env`已设`8000`；VPS key通过stdin写入
+`/etc/qount/intelligence/coding-plan.key`并保持`0600 root:root`，未回显、归档或提交。production unit显式冻结base/provider/
+model/max tokens，日报timer保持`enabled/active`；本次没有手工运行完整日报或发送微信。Mac官方Fed feed单角色artifact
+`/private/tmp/qount-coding-plan-smoke-20260726-r4.json`为`status=ok`；VPS不落盘中文单角色探针同为`ok`、五字段各有内容。
+Mac/VPS聚焦回归各`28 OK`，compileall、CLI help、`git diff --check`和systemd verify通过；systemd仅报告宿主机无关
+`cloudmonitor.service`旧警告。部署的LLM/runner/unit/两份测试文件SHA逐项相等；该精确运行补丁基于`0.2.15`，原release
+provenance不冒充覆盖本次未提交补丁。
+
+## 2026-07-26 (Round 16)
+
+### Stablecoin v0.3 三源证据闭合 + 冻结 no-PnL G0 通过
+
+**范围、文献与权限**：`research_sandbox`；owner 提供的 6 项 T1 proposal 已按可核实/未核实边界记录到
+`research-advancement-roadmap.md` §9.1，未补写作者、DOI 或数字结论。stablecoin 本轮未读取市场价格、收益、PnL、方向或权重，
+未碰 VPS/private API/paper/live/订单；formal strategy trial 保持 `148`，family trial 保持 `0`。冻结 preregistration 的
+protocol=`5c48cc7ce78889c3eae288c0bdf8210640bccfbb57914eb8a11eb0c8bd8420dc`、contract=
+`38ab023545cd4dc027e0b319ce0909e23f666c1729ed30a5ef6b1d67f25df539`、file SHA=
+`8e1b143bd4c3d57dc1432170db48118ab7e2fa8f8763be61552738228b0189a5`；本地重新校验合法。
+
+**v0.3 collection 与零值合同**：不可变 collection=
+`/mnt/e/qount_data/qount/datasets/stablecoin_chain_events/v0.3/20260726T101608Z`，manifest=
+`859a4904ad4eb2be6c1d81a79c252754fd01824405741f5e69dc40138638458f`。USDT Ethereum、USDT TRON、
+USDC Ethereum 的 lineage/economic/zero-excluded 分别为 `6,893/6,893/0`、`2,007/1,016/991`、
+`2,710,040/2,710,040/0`；TRON treasury 为 `383/380/3`。991 条零金额 Transfer 保留 raw/finality lineage，
+但不进入 economic flow/count，不再把 lineage 数与正金额经济事件数错误比较。三源均为
+`stablecoin_chain_event_source_v0.3`，`semantics_verified=true`、`exact_availability=true`、blockers=`[]`。
+manifest 共 47 个 member、12 个 gzip；成员 size/SHA 全匹配，全部 gzip 完整解压，record count 与 uncompressed SHA 全匹配。
+旧 v0.2 collection manifest 仍为
+`7b57486ed19e0d9c21dd95583b208a50fc0b6f96725672914fdecc43f048ac65`，未覆盖或改写。
+
+**USDT Ethereum zero-address/treasury、ABI/proxy/owner proof**：initial EOA 从 deployment 到 activation 完整扫描
+`111` blocks / `11,199` transactions，核验 owner->token receipts=`2`。Sourcify multisig verified source SHA=
+`6eec72c23a95a15c2c60865f3f7e2fd8f044cc81a7d8e69e0f0347e1401e002d`，ABI SHA=
+`39401071b306d13610235a62ad470c3b172220f0edf0e2d714caa5cdb2b92e98`；`transactionCount()` 与全部
+`transactions(id)` 枚举得到 `5,544` slots，其中 executed=`5,191`、token destination=`5,390`、executed
+`transferOwnership=0`。owner proof file SHA=
+`14abab4a961e6cc330ec4f15c54da55a005446b001002751273b7bb464f0fcc6`，内嵌 proof hash=
+`659fd5f0165a13f1951a0acd773725598202d8e5365626aea38eb0c58d977fd2`；三份 raw sidecar 可独立重建出 canonical-equal proof。
+
+**Runtime 证据读法**：activation/observed 两个链上高度的 full runtime 完全一致。Sourcify
+`runtimeMatch=match` 通过 Solidity CBOR metadata 边界解释：compiled full runtime SHA=
+`86ea62e9028d124c7515206fe9baf5af56549a16ed5c09e428afce2b4ba30e37`，on-chain full runtime SHA=
+`a658996593d84755b24195fc9c863efc567cd43610e736c461a85a229671eac2`，二者只在 metadata 不同；去 metadata 后
+executable runtime SHA 均为 `2d4ae76b055a10b02052423062532dc954bd51caa4ceb90c72537d8a0889e2c9`。未将这一
+`match` 写成 `exact_match`；后者仍要求 full runtime hash 完全相同。
+
+**冻结 G0 重跑**：不可变 bundle=
+`/mnt/e/qount_data/qount/artifacts/experiments/stablecoin-liquidity-impulse-g0-v03/bundles/`
+`e725e66a4fd215d5aa71a43c0d21e54efa0db9229c17c911e6353028ce8695b7`。六组 hash 为 manifest=
+`3b1b0c3e1f636534853cd7ce212d644c1a5f14e5479ac8907698b606a08b3252`、result=
+`d72b82d05c0243e522da15d1ec84bf90bd982b50d7a92cbe6fd47f112063f760`、weekly=
+`965dd20381a0712af9aa1dfffb86919dd8d1ddc57a86e33cb30a146c3b8e3c4e`、source inventory=
+`92e55f8cf8577678a6929aeb0640f846ba5e786b862a88394b417219bcbd6b0e`、code=
+`3f32da6e0525682a66d7ee94755edb2445cc80a5317b061e93045ef64cb8999e`、bundle id 即目录名。52 个输入、4 个成员及
+全部 canonical hash 独立重算一致。
+
+**G0 读数与边界**：verdict=`pass_to_market_state_design`，weekly anchors=`376/376`、aggregate anchors=`209/209`、
+classification coverage=`1.0`、remaining blockers=`[]`，8 个 kill test 全 false。mint/burn/treasury/cross-chain/unknown=
+`1,688,417/1,028,517/679/18/0`，transaction semantic duplicates=`318`，cross-chain clusters=`9`，zero lineage
+excluded=`991`。aggregate 对照 Spearman=`0.6479546769020453`、R²=`0.4186931641216695`、offsetting ratio=`1.0`，
+`equivalent_to_aggregate_supply=false`；exact finality median/p99/max=`768/979/1701s`。`market_data_read`、
+`strategy_results_read`、`pnl_evaluated`、`formal_strategy_trial_created`、`promotion_evidence`、`orders_authorized` 全为 false，
+`candidate_pnl_ready=false`；该 pass 只允许另立结果前 market-state 合同，不授权策略 PnL、promotion、paper/live 或订单。
+
+**RPC 与实现诊断**：有界 retry/pacing 下，PublicNode 缺所需 archive state，dRPC 返回 HTTP 429/500，Merkle 返回 429；
+最终 BlastAPI 完成公开历史证据获取。当前关键实现 SHA：chain event=`63c898e0...7980`、remediation=
+`ec120120...19b9`、G0=`7fb6f3d9...42cb`、remediation runner=`783d4226...b26d`、G0 runner=
+`8aeb13b0...e560`。Mac 项目 `.venv` 与 WSL 分别 **34/34 OK**，两端 focused `py_compile` 通过；外置盘 collection/G0
+全量只读复核通过，`git diff --check` 通过。
+
+## 2026-07-26 (Round 15)
+
+### Stablecoin 三源 evidence remediation + no-PnL G0 rerun：exact confirmation 闭合，容量仍阻断
+
+**范围与权限**：`research_sandbox`；复用冻结 preregistration `e1dd4a4a...ba37`、source-capacity
+`69463c84...bea`、DefiLlama aggregate baseline `e93067db...bd3`。未读市场价格、收益、PnL、方向或权重，未碰
+VPS/private API/paper/live/订单；formal strategy trial=`148`、family trial=`0`。
+
+**Remediation collection**：固定 run-id=`20260725T171019Z`，output=
+`/mnt/e/qount_data/qount/datasets/stablecoin_chain_events/v0.2/20260725T171019Z`。USDT Ethereum/USDT TRON/USDC Ethereum
+事件数=`6,893/2,007/2,710,040`，implementation 数=`1/1/4`；USDC 3 次升级、TRON 两段 owner history 完整。三源均有
+exact confirmation sidecar：Ethereum `event block + 64 blocks`，TRON `event producer + 18 distinct subsequent SRs`。
+collection manifest=`7b57486e...ac65`；独立 verifier 重算 canonical manifest、42 个成员、4 个代码源，并完整解压 9 个 gzip
+校验 record count、compressed/uncompressed SHA，全部一致。唯一 source-level semantic blocker 是 USDT Ethereum
+`ethereum_owner_history_round_trip_absence_not_proven`，未将 451 个等值 checkpoints 写成无往返证明。
+
+**初跑与实现核验**：`stablecoin-g0-v02-r1` exit=`0`，bundle=`e9938c41...54d`。随后逐交易交叉核验发现 G0 的
+TRON zero-address 常量少一个 `k`（错误 `...h8unkh...`，正确 `...h8unkkh...`），使 318 条应与 native
+`Issue/Redeem` 配对的 zero-address `Transfer` 被误分为 treasury，transaction semantic duplicate 错报为 0。修复
+`stablecoin_impulse_g0.py` 并新增集成回归 `test_tron_zero_address_transfer_is_semantically_deduplicated`；r1 artifact 不覆盖，
+仅保留为实现缺陷的历史证据，不作为当前读数。
+
+**修正后 G0 r2**：job=`stablecoin-g0-v02-r2` exit=`0`；相同独立输出根=
+`/mnt/e/qount_data/qount/artifacts/experiments/stablecoin-liquidity-impulse-g0-v02` 下生成新 bundle=
+`2c1ed8cd68e20e0836477ef5a1bf51a9c1433a17bd525dd192e060a3865ecb6e`，manifest=
+`76c4fab962420fea85713e366f1a108d29f1cc56513210169dfbeb7f1874abd7`。4 个 member 的 size/SHA 逐项一致；
+manifest/result/weekly/source-inventory/code/bundle 六组 canonical hash 独立重算均匹配，bundle 目录名也匹配；r1 仍存在。
+运行代码 SHA=`e7ca6f18...3e4f`，结果 canonical hash=`7573db97...4ec3`。
+
+**读数**：共同窗口=`2019-04-17..2026-06-24`，weekly anchors=`376/376`；aggregate comparison=`209/209`，
+Spearman=`0.6479546769`、R²=`0.4186931641`、material offsetting ratio=`1.0`，因此
+`equivalent_to_aggregate_supply=false`。有效事件分类 mint/burn/treasury/cross-chain/unknown=
+`1,688,417/1,028,517/380/18/299`，coverage=`0.9998899777`；raw/transaction duplicates=`0/318`，跨链 cluster=`9`。
+validated-event exact delay 中位/p99/max=`768/979/1701s`，低于 6 小时门。
+
+**TRON 独立语义核验**：2,007 条 raw/finality rows 均通过 `producer + 18 distinct subsequent SRs` 检查且 raw identity
+duplicate=`0`；事件构成为 native=`318`、zero-address Transfer=`1,306`、treasury Transfer=`383`。其中零金额分别为
+zero-address=`988`、treasury=`3`，正金额事件=`1,016`；318 个 native key 与 318 个正金额 zero-address key 一一配对，
+与 r2 的 transaction semantic duplicate=`318` 一致。
+
+**阻断读法**：verdict 仍为`block_capacity`。USDT Ethereum owner-history 未闭合使 299 条 treasury 候选保持 unknown；
+USDT TRON 的 991 条零金额 Transfer（988 zero-address、3 treasury）被冻结的正金额事件校验判 invalid，使 exact-finality
+声明=`2,007`、G0 正金额有效事件=`1,016`，treasury 声明=`383`、G0 正金额有效事件=`380`，分别触发 finality/treasury
+count mismatch。当前 true kill tests 为 classification、event/treasury semantics、
+transaction audit、cross-chain audit 与 revision/finality count；source coverage、weekly/baseline 和 aggregate-equivalence
+均未触发。r1 和旧 Round 14 bundle 均不覆盖。下一次 remediation 必须先冻结零值 lineage/经济排除合同并取得 owner-history
+的完整状态变更证明；不得 post-hoc 过滤救援，也不得据非重包装结果跳到 market-state。
+
+## 2026-07-25 (Round 14)
+
+### Stablecoin marginal-flow G0 completed: data-capacity block, no strategy trial
+
+**范围**：`research_sandbox` no-PnL G0；所有历史=`consumed_historical_discovery_pool`，未读价格、收益、PnL、方向或权重，
+未碰 VPS/paper/live/订单。formal strategy trial 保持`148`，family trial=`0`。
+
+**冻结合同与采集**：预登记固定三源共同窗口、UTC周锚点、`2026-07-01T00:00:00Z` exclusive cutoff；aggregate baseline 比较
+固定为 2022-06 起的 209 anchors。公开端点重建的 full-history collection 位于
+`/mnt/e/qount_data/qount/datasets/stablecoin_chain_events/v0.1/20260725T133234/`，manifest hash=`7fce3d72...ca4c0`；
+USDT Ethereum=`243`（首事件 2017-11-28）、USDT Tron=`318`（2019-04-18）和 USDC Ethereum=`2,710,040`
+（2018-09-10）。9 个 manifest member 重算全部一致，6 个 gzip sidecar 通过完整性检查。
+
+**工程与可扩展性**：Tron Base58 地址改为大小写保真的原地址；Ethereum provider 的`blockTimestamp`优先使用，避免为每个
+事件块下载完整 block。原始 provider rows 与标准化事件改为确定性 gzip NDJSON sidecar，collection manifest-last；G0
+逐行消费 sidecar、使用紧凑事件对象，并把周频聚合改为单次有序游标。ExFAT 无法表达 POSIX mode，因此 bundle 改为唯一目录+
+`xb` write-once+fsync+SHA readback+manifest-last，不降低成员不可覆盖或完整性核验。
+
+**G0 读数**：共同窗口 `2019-04-24..2026-06-24`，weekly independent samples=`375/375`；classification coverage=`1.0`，
+raw/transaction duplicates=`0/0`，跨链 cluster=`9`（18 events）。aggregate comparison=`209/209`，Spearman=`0.647955`、
+R²=`0.418699`、material offsetting-flow ratio=`1.0`，故`equivalent_to_aggregate_supply=false`。但三源的 zero-address/
+treasury transfer、ABI/proxy/treasury 历史语义及 exact historical finality/available-at 均不完整；近似 Ethereum delay
+中位/p99/max 均为`768s`，不能冒充 exact clock。verdict=`block_capacity`，不是机制拒绝，也不产生 market-state。
+
+**证据与验证**：bundle=`17f6440a...06c58`，manifest=`8832719e...cf841`，5 个 bundle member hash 重算无差异；
+Mac `tests.test_stablecoin_impulse_g0 + tests.test_stablecoin_source_capacity`=`18 OK`，WSL G0 suite=`10 OK`，两端新增模块编译通过，
+`git diff --check`通过。下一步只允许补齐上述 source semantics/finality 证据后重跑 G0；不得以当前非重包装读数跳过容量门。
 
 ## 2026-07-25 (Round 13)
 

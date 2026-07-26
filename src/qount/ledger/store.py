@@ -33,7 +33,7 @@ from qount.persistence import VerifiedDecisionBatch
 from qount.persistence import artifact_envelope
 
 
-LEDGER_SCHEMA_VERSION = 2
+LEDGER_SCHEMA_VERSION = 3
 _ORDER_STATUS_SQL = (
     "'PLANNED','SUBMITTING','ACKNOWLEDGED','PARTIALLY_FILLED',"
     "'FILLED','REJECTED','CANCELED','EXPIRED','UNKNOWN'"
@@ -159,6 +159,44 @@ def _source_hash(value: str) -> str:
     if not is_sha256(value):
         raise RuntimeLedgerError("ledger_source_hash_invalid")
     return value
+
+
+def _apply_signed_fill(
+    *,
+    old_quantity: float,
+    old_cost: float,
+    old_realized: float,
+    side: str,
+    quantity: float,
+    price: float,
+) -> tuple[float, float, float]:
+    """Apply one fill to a signed position with positive average entry cost."""
+
+    signed_fill = quantity if side == "buy" else -quantity
+    if abs(old_quantity) <= 1e-15:
+        return signed_fill, price, old_realized
+    if old_cost <= 0.0:
+        raise RuntimeLedgerError("position_average_cost_missing")
+    if old_quantity * signed_fill > 0.0:
+        new_quantity = old_quantity + signed_fill
+        new_cost = (
+            abs(old_quantity) * old_cost + abs(signed_fill) * price
+        ) / abs(new_quantity)
+        return new_quantity, new_cost, old_realized
+
+    closed_quantity = min(abs(old_quantity), abs(signed_fill))
+    if old_quantity > 0.0:
+        realized_delta = (price - old_cost) * closed_quantity
+    else:
+        realized_delta = (old_cost - price) * closed_quantity
+    new_quantity = old_quantity + signed_fill
+    if abs(new_quantity) <= 1e-15:
+        return 0.0, 0.0, old_realized + realized_delta
+    if old_quantity * new_quantity > 0.0:
+        new_cost = old_cost
+    else:
+        new_cost = price
+    return new_quantity, new_cost, old_realized + realized_delta
 
 
 def _prepare_private_parent(path: Path) -> None:
@@ -402,7 +440,7 @@ class RuntimeLedger:
                 );
                 CREATE TABLE IF NOT EXISTS positions (
                     symbol TEXT PRIMARY KEY,
-                    quantity REAL NOT NULL CHECK(quantity >= 0),
+                    quantity REAL NOT NULL,
                     average_cost REAL NOT NULL CHECK(average_cost >= 0),
                     realized_trading_pnl REAL NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -489,13 +527,34 @@ class RuntimeLedger:
             schema_version = connection.execute(
                 "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
             ).fetchone()[0]
-            if schema_version == "1":
-                connection.execute("BEGIN IMMEDIATE")
-                connection.execute(
-                    "UPDATE schema_metadata SET value = ? WHERE key = 'schema_version'",
-                    (str(LEDGER_SCHEMA_VERSION),),
+            if schema_version in {"1", "2"}:
+                connection.executescript(
+                    f"""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE positions_signed_v3 (
+                        symbol TEXT PRIMARY KEY,
+                        quantity REAL NOT NULL,
+                        average_cost REAL NOT NULL CHECK(average_cost >= 0),
+                        realized_trading_pnl REAL NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        source_hash TEXT NOT NULL,
+                        position_hash TEXT NOT NULL
+                    );
+                    INSERT INTO positions_signed_v3(
+                        symbol,quantity,average_cost,realized_trading_pnl,
+                        updated_at,source_hash,position_hash
+                    )
+                    SELECT symbol,quantity,average_cost,realized_trading_pnl,
+                           updated_at,source_hash,position_hash
+                    FROM positions;
+                    DROP TABLE positions;
+                    ALTER TABLE positions_signed_v3 RENAME TO positions;
+                    UPDATE schema_metadata
+                    SET value = '{LEDGER_SCHEMA_VERSION}'
+                    WHERE key = 'schema_version';
+                    COMMIT;
+                    """
                 )
-                connection.commit()
                 schema_version = str(LEDGER_SCHEMA_VERSION)
             if schema_version != str(LEDGER_SCHEMA_VERSION):
                 raise RuntimeLedgerError("ledger_schema_version_invalid")
@@ -1020,10 +1079,10 @@ class RuntimeLedger:
     ) -> bool:
         if not symbol:
             raise RuntimeLedgerError("position_symbol_invalid")
-        quantity = _finite(quantity, name="position_quantity", minimum=0.0)
+        quantity = _finite(quantity, name="position_quantity")
         average_cost = _finite(average_cost, name="position_average_cost", minimum=0.0)
         realized = _finite(realized_trading_pnl, name="position_realized_pnl")
-        if quantity > 0.0 and average_cost <= 0.0:
+        if abs(quantity) > 0.0 and average_cost <= 0.0:
             raise RuntimeLedgerError("position_average_cost_missing")
         if quantity == 0.0 and average_cost != 0.0:
             raise RuntimeLedgerError("flat_position_average_cost_nonzero")
@@ -1166,16 +1225,22 @@ class RuntimeLedger:
             old_realized = (
                 0.0 if position is None else float(position["realized_trading_pnl"])
             )
-            if order["side"] == "buy":
-                new_quantity = old_quantity + quantity
-                new_cost = (old_quantity * old_cost + quantity * price) / new_quantity
-                new_realized = old_realized
-            else:
-                if quantity > old_quantity + 1e-12:
-                    raise RuntimeLedgerError("fill_would_create_short_position")
-                new_quantity = max(0.0, old_quantity - quantity)
-                new_cost = old_cost if new_quantity > 1e-12 else 0.0
-                new_realized = old_realized + (price - old_cost) * quantity
+            new_quantity, new_cost, new_realized = _apply_signed_fill(
+                old_quantity=old_quantity,
+                old_cost=old_cost,
+                old_realized=old_realized,
+                side=str(order["side"]),
+                quantity=quantity,
+                price=price,
+            )
+            if bool(order["reduce_only"] or order["close_position"]):
+                changed_side = (
+                    abs(old_quantity) <= 1e-15
+                    or old_quantity * new_quantity < -1e-15
+                )
+                increased_exposure = abs(new_quantity) > abs(old_quantity) + 1e-12
+                if changed_side or increased_exposure:
+                    raise RuntimeLedgerError("fill_reduce_only_would_increase_position")
             position_core = {
                 "symbol": str(order["symbol"]),
                 "quantity": new_quantity,

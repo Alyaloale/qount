@@ -1,12 +1,12 @@
 # qount 策略研究与情报推进路线
 
-> **状态**：active｜**权威**：L3 研究路线｜**最后更新**：2026-07-25
+> **状态**：active｜**权威**：L3 研究路线｜**最后更新**：2026-07-26
 > **本文回答**：全局实验账本、加密 family 图谱、来源矩阵、阶段门、§11 下一轮执行步骤。
-> **TL;DR**：加密优先；每 family 3 trial 强制复盘、不救援；multi_speed/breadth/residual 已关闭，liquidity/stablecoin 通过。
+> **TL;DR**：加密优先；每 family 3 trial 强制复盘、不救援；multi_speed/breadth/residual 已关闭，liquidity 已首轮 calibration，stablecoin 三源 no-PnL G0 已通过并只允许进入新的 market-state 预登记设计。
 
-版本：`v0.8`
+版本：`v0.12`
 
-更新时间：`2026-07-25`
+更新时间：`2026-07-26`
 
 状态：owner已把主动研究方向切换为加密优先，授权本地research_sandbox、historical discovery、因子工程、数据工程和
 virtual allocator并行推进。CTA-R与C×D既有证据冻结保留为次级旁路；该授权不构成promotion、paper、live、真实订单、
@@ -21,14 +21,33 @@ v0.6修订只扩展研究设计。v0.7记录2026-07-25执行批次。**v0.8记�
   verdict=`reject_crisis_state_mechanism_not_sufficient`（1/3）。
 - Track C：`stablecoin_liquidity_impulse_v1` source-capacity `pass_to_g0`。前向4 schema `continue_collection`。
 
+**v0.11补记 stablecoin remediation + G0 重跑**：collection `v0.2/20260725T171019Z` 已补齐三源 exact confirmation、
+USDC 4 段 implementation/proxy timeline 与 USDT TRON 两段 owner history；42 个成员和 9 个 gzip 全量核验通过。修正 TRON
+zero-address 常量后的 r2 得到共同周样本 `376/376`、aggregate comparison `209/209`，marginal flow 仍不等价 aggregate
+supply（Spearman `0.6479546769`、R² `0.4186931641`、offsetting ratio `1.0`）；同交易 native/zero Transfer 语义重复
+正确识别 `318` 条，treasury 计数从错误的 `698` 更正为 `380`。但 USDT Ethereum owner round-trip absence 未证明，且
+USDT TRON 的 991 条零金额 Transfer 与 G0 正金额事件合同造成 finality=`2,007 vs 1,016`、treasury=`383 vs 380`
+count mismatch；分类覆盖=`0.9998899777`，verdict 仍为 `block_capacity`。这不是策略 trial、PnL 或机制拒绝，formal
+trial=`148`、family trial=`0`。r2 bundle=`2c1ed8cd...ecb6e`；含错误常量的 r1 保留但不作为当前读数。
+
+**v0.12完成 stablecoin v0.3 确定性补证与 no-PnL G0**：新 collection `v0.3/20260726T101608Z`（manifest=
+`859a4904...458f`）以完整块/receipt、Sourcify ABI/verified source 和 multisig `transactionCount()/transactions(id)` 全枚举
+闭合 USDT Ethereum owner history；`111` blocks、`11,199` transactions、`5,544` multisig slots，执行的
+`transferOwnership=0`。链上 runtime 在 activation/observed 全字节一致，Sourcify `runtimeMatch=match` 只容许并明确记录
+CBOR metadata 差异，可执行 bytecode SHA 一致。TRON 991 条零值 Transfer 保留 lineage/finality、排除 economic flow/count；
+三源 semantics/finality 均 complete。冻结 G0 v0.2 的 8 个 kill test 全 false，coverage=`1.0`、unknown=`0`、
+`376/376` 周锚点、`209/209` aggregate anchors，verdict=`pass_to_market_state_design`，bundle=`e725e66a...95b7`。
+仍未读市场/PnL，formal trial=`148`、family trial=`0`，不授予 promotion/paper/live/order 权限；v0.2/r2 不覆盖。
+
 所有读数`orders_authorized=false`、`data_role=consumed_historical_discovery_pool`，未触碰生产/paper/live。formal trial累计`148`。
 
 **本轮最关键结论**：R0-DATA已闭合（10币全下载），横截面容量问题从"数据缺失"变成**真实容量限制**——10币相关有效广度
 `1.6602`（3币`1.225`/7币`1.474`/10币`1.660`；特征值广度`2.511`>2.0但相关广度不足；PC1`0.615`<0.85通过）。这与
 LiquidTrend10`1.438`同方向。按规则**不放宽广度门、不扩币救援**：`market_breadth_dispersion_v1`与传递依赖它的
 `cross_sectional_residual_momentum_v1`关闭；`liquidity_capacity_meta_v1`作为eligibility/cost基础设施继续。
-Trial 148也确认危机状态降险机制在尾部不够有效（呼应147低效降险）。下一轮不再是数据工程，而是在**已通过G0的线**上推进：
-liquidity capacity calibration、stablecoin impulse G0、carry active-basis、前向采集器启动决策。详见文末"下一轮执行步骤"（§11 已更新为 Track A/B/C 完成后的状态）。
+Trial 148也确认危机状态降险机制在尾部不够有效（呼应147低效降险）。下一轮在**已通过G0的线**上推进：
+liquidity真实盘口校准、stablecoin market-state 新预登记、carry active-basis 与前向采集器启动决策。详见文末
+"下一轮执行步骤"。
 
 ## 0. 研究定位
 
@@ -573,7 +592,7 @@ overlap with local negative evidence / promotion blockers
 
 | Family | 经济机制与首批因子 | 数据时钟与首个测试 | 基线、主指标与Kill test | 预算/状态 |
 | --- | --- | --- | --- | --- |
-| `liquidity_capacity_meta_v1` | 流动性决定可纳入宇宙、成本和容量，未必直接预测方向 | 决策前volume/quote turnover、Amihud、Corwin-Schultz、book spread/depth、规则与缺失；先校准eligibility/cost | 仅volume过滤和静态成本；主指标为PIT可交易覆盖、容量和成本误差；rules<100%、PIT不可重建、容量不足或误差大于edge即阻断 | **PASS→capacity calibration**；P0 |
+| `liquidity_capacity_meta_v1` | 流动性决定可纳入宇宙、成本和容量，未必直接预测方向 | 决策前volume/quote turnover、Amihud、Corwin-Schultz、book spread/depth、规则与缺失；先校准eligibility/cost | 仅volume过滤和静态成本；主指标为PIT可交易覆盖、容量和成本误差；rules<100%、PIT不可重建、容量不足或误差大于edge即阻断 | **calibration首轮完成**（robust容量≈21.3M USDT；CS价差代理全高估→待WSL盘口）；P0 |
 | `cross_venue_price_discovery_v1` | 场所分割、客户结构和套利资本约束可造成可预测的低频lead-lag，但名义价差不等于可交易套利 | 多场所同步trade/quote、mark/index、fee和可转移性；5m/1h聚合后预测laggard残差，不做低延迟抢单 | 单场所动量、共同market move和零成本价差；主指标为扣双边成本/延迟后的残差收益；时钟skew、venue outage、transfer/borrow/fee后非正即拒绝 | 2；P1前向/外部数据 |
 | `venue_rule_event_v1` | listing/delisting、filter、funding interval、合约状态和交易时段变化会改变流动性、容量和价格发现 | 官方公告published/available time + exchangeInfo快照revision；先做eligibility和event study | 同类非事件标的和市场残差；主指标为事件后流动性/成本变化，不先追公告动量；时点不可证、事件聚类过少或依赖幸存者样本即阻断 | 2；P2 |
 | `calendar_session_v1` | 24/7市场仍受周末、UTC结算、欧美/亚洲交易时段、月季末和传统市场开闭影响 | 1h/4h完成bar；只允许预登记2个时区/结算问题，按独立日或周聚类 | 全时段、相邻时段和BTC beta；主指标为扣成本后的独立日期均值；多重检验、DST/节假日错配或单一事件主导即拒绝 | 2；P2低预算 |
@@ -583,7 +602,7 @@ overlap with local negative evidence / promotion blockers
 
 | Family | 经济机制与首批因子 | 数据时钟与首个测试 | 基线、主指标与Kill test | 预算/状态 |
 | --- | --- | --- | --- | --- |
-| `stablecoin_liquidity_impulse_v1` | 铸造/赎回、交易所净流和peg压力可能代表边际加密资金供给；总供应增速本身已被本项目证伪 | official issuer/chain event + exchange inventory，按published/observed/available分时点；首测为market state，不直接下方向 | 已失败的DefiLlama aggregate supply、BTC趋势；主指标为未来market residual/流动性增量；若只是总供应重包装、vintage不可得或peg事件单点主导即拒绝 | 2；P2，需新信息 |
+| `stablecoin_liquidity_impulse_v1` | 铸造/赎回、交易所净流和peg压力可能代表边际加密资金供给；总供应增速本身已被本项目证伪 | 三源共同UTC周锚点；exact finality、ABI/proxy、owner history与“零值保留lineage/排除economic”合同均已闭合 | 已失败的DefiLlama aggregate supply、BTC趋势；G0已证实非 aggregate 重包装；下一合同先测market-state/residual增量，不直接跳策略PnL | **G0 v0.2 `pass_to_market_state_design`**；family trial `0/2`；P2，须新预登记 |
 | `token_supply_event_v1` | unlock、vesting、emission、burn和treasury transfer改变可交易供给和卖压风险 | 项目官方schedule、链上执行和交易所可用性三时钟；按事件/日期聚类，先做eligibility或风险折扣 | 市场/size/momentum控制及伪事件；主指标为事件后残差和流动性变化；公告修订不可追、执行量不可核验、样本幸存或只有事后日期即阻断 | 2；P2 |
 | `network_adoption_quality_v1` | 使用、费用、活跃实体和结算价值可能反映网络需求；生产成本/算力不必预测收益 | 带vintage的active entity、fees、transfer value、realized cap/settlement；周频/月频，先做横截面残差 | price-only、size/momentum、已失败hashrate因子；主指标为跨币残差rank IC；若只是价格变换、latest-vintage回填、覆盖太窄或策略层不增量即拒绝 | 2；P2 |
 
@@ -929,6 +948,35 @@ discovery
 | [Binance Public Data](https://github.com/binance/binance-public-data) | 官方GitHub `binance/binance-public-data` README | archive字段、可用频率、次日/月发布、`.CHECKSUM`和历史修订语义 | 不提供完整历史exchangeInfo/lifecycle，也不自动认证旧本地缓存 |
 | [Binance modular connector](https://github.com/binance/binance-connector-python/blob/15c2bfcbb9e9654d7186680a0dd32287a3285e11/clients/derivatives_trading_usds_futures/src/binance_sdk_derivatives_trading_usds_futures/rest_api/api/market_data_api.py) | 官方GitHub `binance/binance-connector-python`，核对commit `15c2bfcbb9e9654d7186680a0dd32287a3285e11` | USD-M endpoint、参数、当前规则字段及OI/basis/ratio的30日或1月历史限制 | connector定义不替代实际响应归档、source revision、断线和数据完整性审计 |
 
+### 9.1 2026-07-25 owner 提供的文献 proposal queue
+
+本批由owner基于可访问URL整理并送入队列；此处保留其访问状态和“不确定即未核实”的标记，不把摘要可访问写成全文已审计，
+也不补作者、DOI、版本或数值结论。正式`LiteratureRecord`仍须另存原文bytes/hash、`observed_at`和parser version。全部提案
+`orders_allowed=false`、`live_changes_allowed=false`、`holdout_role=discovery_pool`，triage=`accept_into_queue`只表示值得做下一道
+source-capacity/G0，不表示机制通过、策略trial开始或部署约束解除。
+
+| Proposal | 可核对身份与访问状态 | Family映射 | 机制增量与本地边界 |
+| --- | --- | --- | --- |
+| 1 | Maik Schmeling, Andreas Schrimpf, Karamfil Todorov, [*Crypto carry*](https://www.bis.org/publ/work1087.htm)，BIS WP 1087 / SSRN `4268371`；2023、2025-10修订；官方HTML/PDF可获取，版本=`BIS WP 1087, revised October 2025`；T1 | `carry_active_basis_v1` | 高carry、便利收益、杠杆趋势需求与有限套利资本支持“主动basis时序/crash state”假设；区别于已失败静态hold-to-convergence。真实delta-neutral腿仍涉及short、多腿费用、保证金和legging，超出当前部署约束，只做historical/discovery |
+| 2 | Daniele Bianchi, Luca Rossini, Matteo Iacopini, [*Stablecoins and cryptocurrency returns: What is the role of Tether?*](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3605451)，SSRN `3605451`；2020、2021修订；摘要可访问，全文/version未核实；T1 working paper | `stablecoin_liquidity_impulse_v1` | USDT/USD parity deviation是价格/边际流动性代理，不等于已失败aggregate supply；但论文不能替代链上mint/redeem PIT证据。v0.3 链上 no-PnL G0 已通过 source gate，market residual 仍未读取，须另立结果前合同 |
+| 3 | [*Liquidation Mechanisms and Price Impacts in DeFi*](https://www.bankofcanada.ca/2025/03/staff-working-paper-2025-12/)，Bank of Canada SWP 2025-12，DOI `10.34989/swp-2025-12`；2025；官方页/PDF可获取；作者名单未核实；T1 | `liquidation_driven_flow_v1`，与`liquidation_cascade_forward_v1`/`crypto_vol_crisis_state_v1`路由复核 | fixed-spread与auction的竞争/参与成本改变清算价格冲击，属于机制与事件信息，不是Trial 148对称vol缩放。只可用DeFi链上事件或真实前向CeFi流；不得由DeFi机制外推多年CeFi liquidation历史 |
+| 4 | Hugo E. Ramirez, Julián Fernando Sanchez, [*Optimal liquidation with temporary and permanent price impact, an application to cryptocurrencies*](https://arxiv.org/abs/2303.10043)，arXiv `2303.10043v1`；2023；摘要/PDF可获取；T1 | 用户标签`liquidity_capacity_v1`映射本地`liquidity_capacity_meta_v1` | BNB LOB用于估计temporary/permanent impact，直接服务真实book对CS日高低代理的校准；经济目标是成本/容量，不是方向alpha。长期LOB仍partial/昂贵，不得用近期样本拼成长期真值 |
+| 5 | [*Asymmetric volatility spillovers and interconnectedness in major cryptocurrencies: evidence across time horizons and turbulent periods*](https://link.springer.com/article/10.1007/s40821-026-00348-8)，Eurasian Business Review，2026；摘要可访问、全文可能付费墙；作者/version未核实；T1 | `crypto_vol_crisis_state_v1`新信息候选 | 负/正半方差的非对称溢出、频率分解和动荡期相关跃升可区别Trial 148对称状态；只有取得所需高频历史并冻结新信息合同才可占用Trial 2/3，日频近似不得冒充5-minute复现 |
+| 6 | Emre Inan, [*Predictability of Funding Rates*](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5576424)，SSRN `5576424`；2025；摘要可访问，全文/version未核实；T1 working paper | `carry_active_basis_v1` | DAR的funding OOS预测是active timing的前置可证伪问题，不证明basis策略扣成本后成立；本地funding容量ready，可先比较forecast error/no-change，再决定是否进入多腿状态机 |
+
+| Proposal | 最小首测、控制与指标 | Capacity / kill / trial治理 |
+| --- | --- | --- |
+| 1 | BTC/ETH spot、perp/dated basis与funding的PIT日/8h状态；对照Base v0.2与旧静态carry；主指标=真实成本后net Sharpe及BTC/TOP3 beta-residual、分段、DSR/PBO；显式计maker/taker、funding、滑点、换手和双腿费用 | 跨所basis/保证金历史`partial`；成本×2或延迟1 bar后≤0、crash尾残差恶化、3个trial主指标仍失败即关闭；预算3 |
+| 2 | v0.3 G0已确认真实链上边际flow不等价aggregate supply；下一合同把USDT parity deviation作为独立代理/控制，先测market-state与future residual增量、仍不读PnL；通过后才讨论纯现货成本和BTC/TOP3 residual | 三源严格mint/redeem PIT已ready，parity price可构建，但前向预测证据仍缺；无前向增量、与aggregate高度共线或成本/延迟后失效即拒绝；预算3，但当前family trial仍0 |
+| 3 | 链上清算事件、机制类型、参与/竞争代理和事件价格冲击；对照同幅度price shock、对称vol-target与Trial 148；主指标=尾残差改善/误杀成本，计高滑点 | DeFi可做event study；官方CeFi多年OI/liquidation blocked，只允许近窗+append-only；尾残差不改善、与对称vol无区别或有效样本/PBO不足即停；预算3且必须新信息 |
+| 4 | 真实LOB/trades估计effective spread及temporary/permanent impact，校准当前CS/Amihud成本；主指标=代理误差和capacity，不要求beta residual | 长期历史LOB partial；无法取得足够样本、校准后代理仍显著偏误或对低频成本无增量即停；预算3，属于成本基础设施而非strategy trial |
+| 5 | 多币realized semi-variance、负/正spillover与频率状态；对照Trial 148/简单对称vol；主指标=尾残差和非对称降险效率，低频实现必须标proxy | 5-minute历史partial；与对称vol无增量、尾残差无改善或高频不可复现即拒绝；占`crypto_vol_crisis_state_v1`剩余预算，不新开同义family |
+| 6 | Binance/Bybit BTC 8h funding，DAR对no-change的时间顺序OOS误差；只有forecast gate通过才测试active timing residual Sharpe；计funding与换手 | 本地funding`ready`；OOS预测不优、转策略后成本非正或分段不稳即拒绝；与Proposal 1共享`carry_active_basis_v1`总预算3，不各自获得3次 |
+
+未检出可靠T1/T2且不以T4凑数的缺口继续保留：严格PIT链上mint/redeem边际流对crypto residual的前向力、官方多年CeFi
+OI/basis term structure/liquidation历史、低频可用的长期真实book depth/impact公开集，以及独立于funding/basis/liquidation/price-only的
+新venue-event family。总供应、近期窗口拼接、缺失值填0或商业数据“可购买”都不能替代这些证据。
+
 仍保留但尚未升级为一手接受来源的metadata seeds：survivorship/delisting SSRN `4287573`、cross-sectional momentum
 SSRN `2949379`、用户提供的2026 Bitcoin ML SSRN `6795938`及任何2026新论文。必须先核对作者、标题、版本、样本、成本、
 代码/数据可得性和正文hash；未来论文的高Sharpe、token unlock或order-flow结论只能进入proposal queue。
@@ -951,7 +999,7 @@ SSRN `2949379`、用户提供的2026 Bitcoin ML SSRN `6795938`及任何2026新�
 - 不同时启动全部family的PnL网格；先做G0/source-capacity，再按Wave顺序读取结果；
 - 不因短期论文热点改变Base参数或跳过新时间证据。
 
-## 11. 下一轮执行步骤（2026-07-25 之后）
+## 11. 下一轮执行步骤（2026-07-26 之后）
 
 先读的文档：本文（尤其R0-DATA、R1.1的G0执行结果、R2）、`project-rules.md`§6数据边界、`current.md`下一步与硬边界。
 执行前提：所有步骤`orders_authorized=false`、不碰VPS/paper/live；大批量下载只在Windows/WSL侧直落外置盘
@@ -963,17 +1011,29 @@ SSRN `2949379`、用户提供的2026 Bitcoin ML SSRN `6795938`及任何2026新�
   （相关有效广度`1.6602`<2.0，真实容量限制）→ **关闭**，`cross_sectional_residual_momentum_v1` 传递 **关闭**；
   `liquidity_capacity_meta_v1` `pass_to_capacity_calibration` → **通过**。
 - **Track B（vol crisis）**：`crypto_vol_crisis_state_v1` Trial 148 REJECT（5/6门，尾残差恶化）；1/3已用。
-- **Track C**：`stablecoin_liquidity_impulse_v1` source-capacity `pass_to_g0`；前向4 schema `continue_collection`。
+- **Track C**：v0.2/r2 的 owner/零值阻断保留为历史；v0.3 已以 EOA 全块+receipt、Sourcify multisig source/ABI/
+  runtime 和 `5,544` slots 全枚举闭合 USDT Ethereum owner history，并把 TRON `991` 条零值事件保留 lineage、排除
+  economic flow/count。新 no-PnL G0 为 `376/376` 周锚点、`209/209` aggregate 对照、coverage=`1.0`、unknown=`0`，
+  8 个 kill test 全 false，verdict=`pass_to_market_state_design`；仍未读市场结果。前向4 schema `continue_collection`。
 
 ### 下一轮候选（按已通过的线）
 
 绑定约束不再是数据。可并行推进以下**已过G0/容量门**的线，每条仍 `orders_authorized=false`、预登记在前、看结果前冻结门：
 
-1. **`liquidity_capacity_meta_v1` capacity calibration**（P0，可立即）：把已通过的10币流动性用作 universe eligibility 与
-   execution-cost 基础设施——校准 Amihud/turnover/spread 代理到可执行成本，产出容量与成本误差 scorecard。它服务其它线的
-   成本口径，本身不预测方向。
-2. **`stablecoin_liquidity_impulse_v1` G0**（P2，source-capacity已过）：用链上 mint/redeem PIT 事件建无PnL G0，先输出
-   market-state；主指标为未来 market residual/流动性增量。与已失败的 aggregate supply 的区别是 marginal flow，不是总供应增速。
+1. **`liquidity_capacity_meta_v1` capacity calibration**（P0）-- ✅ **首轮完成（2026-07-25）**。
+   模块 `src/qount/mini_trend/liquidity_capacity_calibration.py`（21 单测）消费冻结 G0 artifact
+   （hash `fa02ed8b...bf95`，10/10 通过），脚本 `scripts/research/run_liquidity_capacity_calibration.py` 产出不可变
+   scorecard `state/research_runs/20260724T184308-liquidity-capacity-meta-calibration/`（SHA `bad32d63...72b4`，
+   contract `01f3c651...12a9`）。成本模型：half-spread=CS/2、impact=`amihud_x_1e6·N/100`（线性 Amihud 上界代理）、
+   friction=half-spread+impact（不含费）、total 另加 Binance UM taker 4bps。**读数**：①robust participation-only 全宇宙容量
+   ≈**21.3M USDT**（LTC 绑定，=213M 日成交额×1%）；②Amihud 冲击可忽略——即便 1% participation 冲击仅 1.7–6.6bps，
+   非绑定约束；③**CS 日高低价差代理对全部 10 币高估**（half-spread 11.6–44.5bps vs 真实 perp <1bp），5/10/25bps
+   预算容量因此塌成 0，属 proxy-limited 非 liquidity-limited。**cost-error 结论**：无真实 fill/盘口，ground_truth 不可得；
+   下一步是 WSL 侧采集真实 book depth 校准价差、并在全逐日序列上做滚动/分段容量。`orders_authorized=false`、无方向无 PnL。
+2. **`stablecoin_liquidity_impulse_v1` market-state design**（P2）-- ✅ **no-PnL G0 已通过（2026-07-26）**。
+   v0.3 collection 与 G0 bundle 已独立全量回读，v0.2/r2 保留不覆盖。下一步必须另立结果前预登记，只测试 weekly marginal
+   flow/分类状态对 aggregate supply、简单趋势与 BTC/TOP3 residual 的增量；先做无PnL预测/状态诊断，再决定是否占用 family
+   trial。不得把本次 `pass_to_market_state_design` 写成 alpha、候选PnL、promotion 或部署资格。
 3. **`crypto_vol_crisis_state_v1` Trial 2/3**（P1，可选）：148 已证明合成危机降险尾部不够有效。若继续，Trial 2/3 须引入
    与148不同的信息或目标（见 `docs/crypto-vol-crisis-state-preregistration.md`），否则按低效降险直接关闭family，不救援。
 4. **carry active-basis**（R5，可并行）：`docs/carry-active-basis-hypothesis.md`，做 historical/discovery，不进 paper/live。
@@ -982,6 +1042,8 @@ SSRN `2949379`、用户提供的2026 Bitcoin ML SSRN `6795938`及任何2026新�
 
 ### 优先级建议
 
-最便宜、最能解锁下游的是 **①liquidity capacity calibration**（成本基础设施，多条线复用）。**②stablecoin G0** 是当前唯一
-"新信息源"候选，值得尽早验证是否只是总供应重包装。vol-crisis（③）证据已偏负，除非有实质新信息不必强推。carry（④）与
-前向采集（⑤）可低成本并行。横截面（breadth/residual）已关闭，**不重开、不扩币**。
+最便宜、最能解锁下游的是 **①liquidity capacity calibration**（成本基础设施，多条线复用）-- **首轮已完成**（见上）；
+后续增量是 WSL 侧真实 book depth 采集（替代高估的 CS 价差）与全逐日滚动/分段容量，属数据采集非 Mac 编排。stablecoin
+G0 已证实“不只是 aggregate 重包装”且三源证据闭合；第2项现在只能先冻结 market-state 增量合同，不能借 G0 pass 直接读取
+策略PnL。vol-crisis（③）证据已偏负，除非有实质新信息不必强推。carry（④）与前向采集（⑤）可低成本并行。
+横截面（breadth/residual）已关闭，**不重开、不扩币**。

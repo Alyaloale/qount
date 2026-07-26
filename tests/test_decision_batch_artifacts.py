@@ -450,7 +450,7 @@ class DecisionBatchArtifactTest(unittest.TestCase):
         manifest = _manifest()
         self.assertEqual(
             artifact_envelope(manifest)["artifact_hash"],
-            "1f03366dc88619bc912dd0feff7a55875e83f325f7b2568f8f408c22c57166e8",
+            "79f597671fccc4d2e24d4ba879acb56608c9243b9eb9005fee7cb5269c39a2c4",
         )
 
 

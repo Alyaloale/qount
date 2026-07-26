@@ -1,6 +1,6 @@
 # qount 个人量化交易系统架构设计
 
-> **状态**：active｜**权威**：L2 架构主设计｜**最后更新**：2026-07-22
+> **状态**：active｜**权威**：L2 架构主设计｜**最后更新**：2026-07-26
 > **本文回答**：统一合同、策略→订单权威链、账本/对账、故障恢复、通知/日报、Dashboard、LLM 边界、渐进迁移顺序。
 > **TL;DR**：见下方「架构一页总览」；细节看正文各节。
 
@@ -19,9 +19,9 @@ ledger/reconciliation 均由标准合同绑定。
   VPS `/root/qount`＝唯一 live/paper/dashboard 生产真相。
 
 **生产 vs 研究边界**：
-- 唯一真钱＝`MiniTrend-UM-Base-v0.2`（100 USDT、USD-M TOP3、long/cash、one-way、isolated 1x、gross≤1）。
-- 研究一律 `orders_authorized=false`、`research_only`；不碰 VPS/paper/live/forward timer/production cron。
-- 订单权限只来自 MiniTrend 独立 `0600` arm/env + `minimal_live` registry + 当前 readiness + `qount-mini-trend-live.timer` 的组合门。
+- 当前没有真钱策略运行；`MiniTrend-UM-Base-v0.2` 的 live/forward timer 均已由 owner 停止，账户全平无挂单。
+- 本地合同已支持跨资产 identity、产品级 capability 和有符号目标；这只开放 research/shadow/virtual，不产生 paper/live 权限。
+- 任何未来订单仍必须同时具备精确产品能力、registry/promotion、当前账户事实、readiness、独立 arm 和 owner authorization。
 
 **LLM 硬边界**：LLM/agent 只产出 research/日报文本，**不输出订单、目标权重、live 配置或风控 override**。
 
@@ -86,7 +86,7 @@ qount.alyaloale.com
 
 ### 2.2 当前生产能力
 
-当前 VPS 已有 MiniTrend Base 的独立日线standard-production周期（registry仍为`minimal_live`）：
+VPS 曾具备 MiniTrend Base 的独立日线 standard-production 周期；owner 已于 2026-07-26 停止该路径，以下仅描述可复用的历史生产链：
 
 ```text
 runtime proof
@@ -114,9 +114,9 @@ runtime proof
 - 10%试点权益峰值回撤时 flatten-then-halt；当前没有独立账户单日损失线；
 - 独立 manual arm、live switch 和 confirmation 三重授权。
 
-`qount-mini-trend-live.timer`已恢复为`enabled/active`。`0.2.15` standard-production迁移已重新验证release provenance、
-standard batch/plan、registry、pre/post-dispatch账本与对账、legacy parity及自然成交观察路径。最新live cycle已完成，
-但Base信号为全现金，实际0订单、0成交；因此系统已获得标准生产运行证据，尚未获得自然真实fill/fee/slippage/STOP触发证据。
+`0.2.15` standard-production 迁移曾验证 release provenance、standard batch/plan、registry、pre/post-dispatch
+账本与对账及 legacy parity；自然周期一直是全现金、0订单、0成交。当前 `qount-mini-trend-live.timer` 与
+`qount-mini-trend-forward.timer` 均为 `disabled/inactive`，不得把历史 `minimal_live` registry 或旧 arm 当成当前订单权限。
 
 ### 2.3 当前代码问题
 
@@ -159,14 +159,33 @@ R0历史family mapping已由实际代码/文档hash确认，lifecycle/cost/NAV�
 Base 已在 `0.2.15` 迁入标准 production authority；兼容命名的 legacy dispatcher 只保留为 projection/venue adapter，并由标准 batch/plan parity
 约束。R0 actual point-in-time数据和候选Standalone NAV尚未产生，Base自然fill归因尚无样本。后续工作可以并行，不需要等待30天或第二个promotion sleeve。
 
+### 2.6 跨资产与双向合同状态
+
+跨资产扩展以“同一 underlying 不等于同一可交易产品”为前提。`AAPL` Direct Stock、`AAPLB` 代币化股票和
+`AAPL` equity perpetual 必须拥有不同的 `InstrumentId`；策略和账本不得只用裸 ticker 合并它们。
+
+| 产品 | 目标表达 | 做空语义 | 当前可用级别 | 关键阻断项 |
+| --- | --- | --- | --- | --- |
+| Crypto spot | long/cash；SELL 只减少库存 | 默认不允许 | research/shadow；既有单场所代码另行治理 | 尚未完成 canonical instrument key 的统一 venue dispatch |
+| Crypto USD-M perpetual | signed long/short | 精确 capability 允许时可开空 | contracts + shadow/virtual ready | signed live adapter、保护单和真实对账未获授权验证 |
+| Binance Direct Stocks / ETF | 碎股 long；SELL 只可卖出现有库存 | `BUY_SELL` 不代表 short | schema/parser/order validation ready | eligible route、免责声明状态、权威 holdings/available-to-sell、执行适配器均未闭合 |
+| Tokenized equity | 与 cash equity 分离的 mint/redeem 身份 | 不从转换能力推导 short | identity/research contract ready | inventory、转换状态、费用/结算和执行适配器未闭合 |
+| Equity perpetual | signed long/short | 仅在该 exact product 的 capability 明示允许 | identity + shadow/virtual contract ready | symbol discovery、账户资格、venue adapter 和保护/对账未闭合 |
+
+本地保存的 Binance 官方文档快照位于 `state/reference/binance-developer-docs/2026-07-26/`。股票官方 16 个 REST
+端点包含规则、报价、订单/成交、转换、免责声明和 user stream，但当前 schema 没有可独立作为权威持仓或
+`available_to_sell` 来源的账户端点。因此 Direct Stocks 自动 SELL 必须失败关闭，不能通过订单历史猜库存。
+
 ## 3. 架构原则与关键取舍
 
 ### 3.1 不变量
 
 ```text
 strategy_never_calls_exchange
-portfolio_gross <= 1.0
-no_unexpected_short
+portfolio_gross = sum(abs(weight)) <= 1.0
+instrument_identity_is_product_specific
+short_requires_exact_product_capability
+cash_sell_never_implies_short
 no_unmanaged_position
 one_completed_bar_one_decision
 one_decision_one_order_batch
@@ -360,7 +379,7 @@ class Strategy:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "strategy_id": "mini_trend_um_base",
   "strategy_version": "0.2.0",
   "decision_id": "...",
@@ -377,8 +396,9 @@ class Strategy:
 }
 ```
 
-`intent_hash`覆盖strategy version、snapshot/decision关联、目标、理由、状态和证据。迁移期旧调用可以继续构造
-`schema_version=0`的无trace intent，但这种对象不能生成标准`PortfolioTarget`，也不能进入未来production allowlist。
+`intent_hash`覆盖strategy version、snapshot/decision关联、目标、理由、状态和证据。`schema_version=2`允许负权重，
+gross 始终按`sum(abs(weight))`计算；v1及迁移期`schema_version=0`仍为long-only。跨资产 target key 使用精确
+`instrument_key`，而不是可能冲突的裸 ticker。无trace intent不能生成标准`PortfolioTarget`，也不能进入未来production allowlist。
 
 策略层禁止读取：API Key、真实余额、订单ID、重试状态、maker/taker实现和 arm token。
 
@@ -412,7 +432,7 @@ Portfolio 接收 allowlist 中同一决策时点的 `StrategyIntent[]`，输出�
 - 按冻结压力损失预算缩放；
 - 在独立sleeve层先检查最小名义价值；
 - 合并同标的目标和冲突信号；
-- 检查单币、相关簇、保证金和总gross；
+- 检查单标的、相关簇、保证金和绝对总gross；
 - 保存每个sleeve对最终目标的贡献。
 
 小账户规则保持：账户权益低于 `3000 USDT` 时，最多一个连续策略拥有live资格，最多一个事件策略
@@ -450,6 +470,10 @@ Risk 分四级：策略、标的、组合、账户。未知状态统一执行：
 ```
 
 减少风险也不能在未知订单状态下盲目重复下单，必须先完成订单和仓位查询。
+
+开仓或扩大空头时，Risk 必须同时收到与 target key 完全一致的 `InstrumentId` 和有 source hash/observed time 的
+`ProductCapability(short_allowed=true)`。减少既有空头不依赖新增开空权限，以免把账户困在风险中；跨零翻转必须先减到零、
+完成对账，再生成反向 increase。Direct Stocks 的 `sell_close_only=true` 永远不能通过负权重校验。
 
 ### 5.7 Execution
 
@@ -490,6 +514,10 @@ read current state
 每个`PlannedOrder`必须保存一个或多个source decision ID，并有唯一client ID和sequence。client ID由batch、
 source decisions、标的、阶段和sequence确定性生成；订单显式属于`reduce`、`increase`或`protective`阶段，合同禁止
 increase出现在reduce之前。`executable=true`只表示计划合同闭合，不代表live arm、账户状态或交易所发送授权。
+
+当前通用 planner 已支持 signed current/target position 和 reduce-first cross-zero 拆单，但只生成普通目标调整单。
+事件策略需要的交易所原生止损、部分成交后保护数量、stop replacement 和 deadline flatten 尚未进入标准 `OrderPlan`，
+所以 `SmallAccount-FOMC-RightSide-v0.2` 目前不能端到端接入可执行 authority chain。
 
 订单状态机：
 
@@ -1348,12 +1376,13 @@ order-free authority。publisher保留source time，authority在每次周期后�
 
 目标：以固定`100 USDT` canary完成Base最小实盘审查，不等待日历观察指标自然累积。
 
-状态：**Phase B/C/D工程链已部署，Base 100 USDT 已在 `0.2.15` 迁入 standard production**。Owner在2026-07-21/22明确授权跳过约两个月等待，
+历史状态：**Phase B/C/D工程链已部署，Base 100 USDT 曾在 `0.2.15` 迁入 standard production**。Owner在2026-07-21/22明确授权跳过约两个月等待，
 `60 forward pairs / 10 active bars / 30 paper days / 7 dry decision days`降为非阻断观察指标。它们继续出现在
 readiness与Dashboard中，用于解释样本成熟度，并纳入readiness hash防篡改，但不再决定`ready_for_manual_final_arm`。
-最新迁移 run `/root/qount/state/mini_trend/forward/runs/20260723T120610Z`以新 arm 绑定标准 batch/registry/ledger，
-registry为`minimal_live`，live timer为`enabled/active`。验收因目标权重全零而没有订单，但journal、standard parity、
-post-dispatch reconciliation与独立 production status 均完成；首个自然fill observer为`awaiting_natural_fill`。
+迁移 run `/root/qount/state/mini_trend/forward/runs/20260723T120610Z`曾以新 arm 绑定标准 batch/registry/ledger，
+当时 registry 为`minimal_live`、live timer为`enabled/active`。验收因目标权重全零而没有订单，但journal、standard parity、
+post-dispatch reconciliation与独立 production status 均完成；首个自然fill observer为`awaiting_natural_fill`。Owner已于
+2026-07-26停止该路径，当前live/forward timer均为`disabled/inactive`，本节不构成恢复权限。
 
 前置：
 

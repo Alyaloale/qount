@@ -1,13 +1,14 @@
 # qount 快速接手手册
 
-> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-23
+> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-26
 > **本文回答**：接手命令、跨主机操作、VPS 运维坑、sync/test 脚本、artifact 规则。
 > **TL;DR**：生产真相在 VPS `/root/qount`；只读探针查 timer/service；不手工触发订单路径。
 
-更新时间：2026-07-23
+更新时间：2026-07-26
 
-VPS生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
-production provenance=`80fb1c38...b745`
+VPS基础生产版本：`0.2.15`，implementation commit=`a8d12ca29266b5c787176368b05a4a78b7eaf608`，
+production provenance=`80fb1c38...b745`；本地 `0.2.16` release已纳入2026-07-26 Coding Plan聚焦补丁、
+跨资产有符号合同和research/shadow模块，尚未部署或冒充覆盖该旧provenance。
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -34,22 +35,25 @@ production provenance=`80fb1c38...b745`
 - VPS 是所有 live / paper forward / dashboard 的生产真相：`qount-vps:/root/qount`；真实host只存仓库外inventory。
 - WSL不作为当前实盘依据；完成数据必须发布到外置盘，WSL ext4只留可清理scratch。
 - 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
-- X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一生产交易入口是
-  `qount-mini-trend-live.timer` 与独立 Base arm/standard batch/registry/RuntimeLedger/reconciliation。
-- 当前`qount-mini-trend-live.timer=enabled/active`，`qount-mini-trend-forward.timer=disabled/inactive`。`0.2.15`已将 Base 迁为
-  `standard_production`；`state/mini_trend/standard-production/status.json` 是自然首单观察真相，当前为
-  `awaiting_natural_fill`、sample_count=0。不要恢复旧X4/C×D、forward timer或production cron，也不要强制下单采样。
+- X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一已部署的生产交易入口是
+  `qount-mini-trend-live.timer` 与独立 Base arm/standard batch/registry/RuntimeLedger/reconciliation，但owner已于2026-07-26停用。
+- 当前`qount-mini-trend-live.timer=disabled/inactive`、无NEXT，`qount-mini-trend-forward.timer=disabled/inactive`，production cron为0 entry。
+  `state/mini_trend/standard-production/status.json`的`awaiting_natural_fill/sample_count=0`现为冻结历史状态，不再表示正在等待调度。
+  不要恢复旧X4/C×D、任何MiniTrend timer或production cron，也不要强制下单采样。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
   `qount-dashboard-publisher.timer`和`qount-daily-intelligence.timer`已获授权并保持`enabled/active`；后者每日`04:30 UTC`抓免费官方feed、
-  运行六角色中文LLM、不可覆盖归档并发送个人微信。唯一交易timer是已授权的`qount-mini-trend-live.timer`；不得恢复
-  live/paper cron、MiniTrend forward timer、X4/C×D或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
+  运行六角色中文LLM、不可覆盖归档并发送个人微信。所有交易timer当前均停用；不得恢复live/paper cron、MiniTrend timer、
+  X4/C×D或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
-- `qount-mini-trend-forward.timer`保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
+- `qount-mini-trend-forward.timer`与live timer均保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
   publisher只读发布既有authority、系统健康和备份，不访问交易所、不刷新账户。Daily Intelligence unit显式移除Binance私钥和全部live
-  authority，只访问官方公开源、relay和个人微信；不要把它与MiniTrend live timer混淆。个人微信凭据只保留
+  authority，只访问官方公开源、火山方舟Coding Plan和个人微信；不要把它与MiniTrend live timer混淆。个人微信凭据只保留
   `account_id/base_url/recipient/token`，最新context token从`/root/.openclaw/openclaw-weixin/accounts`动态读取；unit依赖
   `openclaw-gateway.service`并只读挂载该目录。不要重新复制静态context token到Qount凭据。
+- 当前Alpha Agent与生产日报LLM为`volc_coding_plan`：base URL=`https://ark.cn-beijing.volces.com/api/coding/v3`、
+  Console名称`glm-5.2`对应API模型ID=`glm-5-2-260617`、输出上限=`8000`。VPS key只在
+  `/etc/qount/intelligence/coding-plan.key`，必须保持`0600 root:root`且不得回显；旧relay key不再被production unit引用。
 - 2026-07-22最新日报ID为`38985fe5...50d5fc`、report hash为`d42c851d...9e68`，3份feed、7份详情、2份行情和六角色请求均已归档；
   Dashboard `intelligence`为`fresh/attention_required`，微信任务为`DELIVERED/SUCCEEDED`。`pipeline=complete`但策略/红队/总编因事件窗口、
   成交样本和历史容量不足返回`needs_research`；5个研究提案均为`g0_status=blocked_history_capacity`，不是交易信号。
@@ -64,17 +68,17 @@ ssh -o ClearAllForwardings=yes qount-vps \
 - 最新动态会话验证job为`6d51a764...4324`，状态`DELIVERED/SUCCEEDED`；生产NotificationStore为5 event/job/attempt、20行audit chain。
   旧代码回滚目录为`/root/qount-notify-backup.rl6QL6`，其中不含凭据。不得用该代码回滚覆盖当前四字段凭据；若必须回滚provider，需同时恢复
   相容凭据合同并重新执行真实通知验证。
-- 2026-07-22固定`100 USDT` MiniTrend Base已完成manual arm并进入`minimal_live`。当日VPS release为`0.2.13`；当日run
+- 历史阶段：2026-07-22固定`100 USDT` MiniTrend Base曾完成manual arm并进入`minimal_live`。当日VPS release为`0.2.13`；当日run
   `/root/qount/state/mini_trend/forward/runs/20260722T133356Z`，readiness=`b25442fe...68fd`、batch=
   `092c95f9...a1f2`，最终live artifact SHA=`ae8cdc96...0900`，live与标准reconciliation passed。
   账户`486.15970914 USDT`、TOP3全平、普通/条件挂单0、HALT absent，arm/env均root `0600`。
-- `qount-mini-trend-live.timer`现为`enabled/active`；forward timer与legacy cron关闭。历史首次live artifact
+- 该历史阶段的live timer曾为`enabled/active`；2026-07-26 owner已将其停为`disabled/inactive`。历史首次live artifact
   `20260722T055437Z/live_dispatch-20260722T055659Z.json`完成`live_intent_locked -> live_completed`，post reconciliation
   `71c34b4d...0a01` passed。因Base权重`0/0/0`，0 market/0 STOP且未尝试exchange mutation；不得强制首单。
   当日`0.2.13`受控artifact为`completed`且`exchange_mutation_attempted=false`；历史recurring分支也已实跑为
   `duplicate_dry_noop -> authority written -> duplicate_decision_noop`且systemd success。
-  真实fill/fee/slippage/STOP/UNKNOWN恢复样本仍为0，禁止扩到1000 USDT或增加其它live sleeve。
-- 当前有效 AI 模型是 `QOUNT_AI_MODEL=gpt-5.5`；`gpt-5.4` 会导致当前 relay 502 / 全 hold。
+  真实fill/fee/slippage/STOP/UNKNOWN恢复样本仍为0；当前策略已停止，禁止恢复或增加其它live sleeve。
+- `QOUNT_AI_MODEL=gpt-5.5`只属于旧的非Alpha Agent决策客户端；当前Alpha Agent/日报配置以仓库外Coding Plan配置和systemd显式参数为准。
 - ETH-only 主线必须显式加 `--research-profile eth-only`。
 - 已看过窗口只算 `discovery_pool`；新 promotion 证据必须是 `validation_v1` once-only。
 - 当前盈利工程主线不是继续默认 5m 调参，而是先跑 S1' 频段 × 策略族选择扫描。

@@ -60,6 +60,7 @@ def weight_errors(
     *,
     prefix: str,
     maximum_gross: float | None = 1.0,
+    allow_short: bool = False,
 ) -> tuple[str, ...]:
     errors: list[str] = []
     gross = 0.0
@@ -75,10 +76,10 @@ def weight_errors(
             continue
         if not symbol or not math.isfinite(weight):
             errors.append(f"{prefix}_weight_invalid:{symbol}")
-        elif weight < 0.0:
+        elif weight < 0.0 and not allow_short:
             errors.append(f"{prefix}_short_target_forbidden:{symbol}")
         else:
-            gross += weight
+            gross += abs(weight)
     if maximum_gross is not None and gross > maximum_gross + 1e-12:
         errors.append(f"{prefix}_gross_exceeds_limit")
     return tuple(errors)
