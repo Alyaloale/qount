@@ -235,7 +235,11 @@ class ProviderTransportPolicyTest(unittest.TestCase):
             database_path = (
                 Path(temporary) / "private" / "notifications.sqlite3"
             )
-            first_store = NotificationStore(database_path)
+            claim_clock = [dt.datetime.fromisoformat(RECORDED_AT)]
+            first_store = NotificationStore(
+                database_path,
+                rate_limit_clock=lambda: claim_clock[0],
+            )
             for index in range(4):
                 first_store.enqueue(
                     _alert(f"shared-{index}"),
@@ -247,7 +251,10 @@ class ProviderTransportPolicyTest(unittest.TestCase):
             with closing(sqlite3.connect(database_path)) as connection:
                 connection.execute("DROP TABLE notification_provider_rate_slots")
                 connection.commit()
-            second_store = NotificationStore(database_path)
+            second_store = NotificationStore(
+                database_path,
+                rate_limit_clock=lambda: claim_clock[0],
+            )
             with closing(sqlite3.connect(database_path)) as connection:
                 self.assertEqual(
                     connection.execute(
@@ -307,6 +314,7 @@ class ProviderTransportPolicyTest(unittest.TestCase):
             )
 
             next_window = "2026-07-20T00:10:02+00:00"
+            claim_clock[0] = dt.datetime.fromisoformat(next_window)
             third = first_store.deliver_due(
                 attempted_at=next_window,
                 transport=first_transport,
@@ -352,6 +360,74 @@ class ProviderTransportPolicyTest(unittest.TestCase):
                 for event in first_transport.audit_events
                 + second_transport.audit_events
             },
+        )
+
+    def test_shared_rate_window_uses_claim_clock_not_batch_attempt_time(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = (
+                Path(temporary) / "private" / "notifications.sqlite3"
+            )
+            claim_clock = [dt.datetime.fromisoformat(RECORDED_AT)]
+            store = NotificationStore(
+                database_path,
+                rate_limit_clock=lambda: claim_clock[0],
+            )
+            for index in range(2):
+                store.enqueue(
+                    _alert(f"delayed-{index}"),
+                    recorded_at=RECORDED_AT,
+                    channels=("openclaw_weixin",),
+                )
+            first_transport = ProviderTransport(
+                FakeNotificationProvider(
+                    clock=lambda: dt.datetime.fromisoformat(RECEIVED_AT)
+                ),
+                provider_name="fake",
+                rate_limit=RateLimitPolicy(max_calls=1, window_seconds=1.0),
+                monotonic_clock=lambda: 10.0,
+            )
+            second_transport = ProviderTransport(
+                FakeNotificationProvider(
+                    clock=lambda: dt.datetime.fromisoformat(RECEIVED_AT)
+                ),
+                provider_name="fake",
+                rate_limit=RateLimitPolicy(max_calls=1, window_seconds=1.0),
+                monotonic_clock=lambda: 10.0,
+            )
+
+            first = store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=first_transport,
+                channel="openclaw_weixin",
+                limit=1,
+            )
+            claim_clock[0] = dt.datetime.fromisoformat(RECEIVED_AT)
+            second = store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=second_transport,
+                channel="openclaw_weixin",
+                limit=1,
+            )
+            rows = store.verified_rows()
+            with closing(sqlite3.connect(database_path)) as connection:
+                slots = connection.execute(
+                    """
+                    SELECT reserved_at,expires_at
+                    FROM notification_provider_rate_slots
+                    ORDER BY slot_id
+                    """
+                ).fetchall()
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 1)
+        self.assertEqual({row["status"] for row in rows["jobs"]}, {"DELIVERED"})
+        self.assertEqual(
+            {row["started_at"] for row in rows["attempts"]},
+            {RECORDED_AT},
+        )
+        self.assertEqual(
+            slots,
+            [(RECEIVED_AT, "2026-07-20T00:10:03+00:00")],
         )
 
     def test_timeout_is_local_and_audited(self) -> None:

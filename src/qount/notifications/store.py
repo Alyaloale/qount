@@ -186,12 +186,18 @@ class NotificationStore:
         *,
         busy_timeout_ms: int = 5_000,
         read_only: bool = False,
+        rate_limit_clock: Callable[[], dt.datetime] | None = None,
     ) -> None:
         self.database_path = Path(database_path)
         if busy_timeout_ms < 1:
             raise ValueError("notification_busy_timeout_invalid")
+        if rate_limit_clock is not None and not callable(rate_limit_clock):
+            raise ValueError("notification_rate_limit_clock_invalid")
         self.busy_timeout_ms = int(busy_timeout_ms)
         self.read_only = bool(read_only)
+        self._rate_limit_clock = rate_limit_clock or (
+            lambda: dt.datetime.now(dt.timezone.utc)
+        )
         if self.read_only:
             self._validate_read_only_path()
         else:
@@ -723,9 +729,19 @@ class NotificationStore:
         connection: sqlite3.Connection,
         *,
         policy: ProviderRateLimit,
-        reserved_at: str,
     ) -> bool:
         provider, max_calls, window_seconds = policy
+        try:
+            clock_value = self._rate_limit_clock()
+            if not isinstance(clock_value, dt.datetime):
+                raise TypeError("notification_rate_limit_clock_invalid")
+            reserved_at = aware_datetime(clock_value.isoformat()).astimezone(
+                dt.timezone.utc
+            ).isoformat()
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise NotificationStoreError(
+                "notification_rate_limit_clock_invalid"
+            ) from exc
         connection.execute(
             """
             DELETE FROM notification_provider_rate_slots
@@ -928,7 +944,6 @@ class NotificationStore:
             if provider_rate_limit is not None and not self._reserve_provider_rate_slot(
                 connection,
                 policy=provider_rate_limit,
-                reserved_at=attempted_at,
             ):
                 return None
             if started_attempt is not None:
