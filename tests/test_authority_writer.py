@@ -307,7 +307,9 @@ class AuthorityWriterTest(unittest.TestCase):
             blocked = AuthorityWriterBlocked(
                 (
                     "dispatch:critical_account_preflight_blocked",
+                    "dispatch:unmanaged_or_duplicate_conditional_order",
                     "preflight:no_unmanaged_positions",
+                    "account_snapshot_unmanaged_conditional_order",
                 ),
                 run_dir=run,
             )

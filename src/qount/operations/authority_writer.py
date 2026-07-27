@@ -178,17 +178,25 @@ def _blocked_observation(
     *,
     captured_at: str,
 ) -> dict[str, Any] | None:
-    allowed = {
+    allowed_dispatch = {
         "dispatch:critical_account_preflight_blocked",
         "dispatch:current_account_snapshot_blocked",
         "dispatch:unmanaged_or_short_position",
-        "preflight:no_unmanaged_positions",
-        "preflight:isolated_one_x_verified",
-        "account_snapshot:unmanaged_position_present",
-        "account_snapshot:isolated_one_x_not_verified",
-        "account_snapshot_unmanaged_or_short_position",
+        "dispatch:unmanaged_or_duplicate_conditional_order",
+        "dispatch:unresolved_regular_open_orders",
     }
-    if not blocked.blockers or any(value not in allowed for value in blocked.blockers):
+    allowed_exact = {
+        "account_snapshot_unmanaged_or_short_position",
+        "account_snapshot_regular_orders_present",
+        "account_snapshot_unmanaged_conditional_order",
+    }
+    if not blocked.blockers or any(
+        value not in allowed_dispatch
+        and value not in allowed_exact
+        and not value.startswith("preflight:")
+        and not value.startswith("account_snapshot:")
+        for value in blocked.blockers
+    ):
         return None
     values = {}
     hashes = {}
