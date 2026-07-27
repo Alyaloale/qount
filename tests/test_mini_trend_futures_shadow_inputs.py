@@ -13,6 +13,7 @@ from qount.grid.data import Funding
 from qount.mini_trend.futures_shadow_inputs import (
     _copy_seed,
     canonical_funding_settlement_timestamp,
+    parse_completed_daily_kline_api_response,
     load_funding_snapshots,
     merge_funding,
     parse_funding_api_response,
@@ -38,7 +39,71 @@ def _funding(timestamp: int = 1_767_254_400_000) -> bytes:
     return _zip("row.csv", f"{timestamp},8,0.0001\n")
 
 
+def _rest_kline(day: dt.date) -> bytes:
+    open_ms = int(dt.datetime.combine(day, dt.time(), dt.UTC).timestamp() * 1000)
+    return json.dumps(
+        [[open_ms, "100", "101", "99", "100", "10", open_ms + 86_399_999,
+          "1000", 5, "5", "500", "0"]]
+    ).encode()
+
+
+def _complete_funding_response(url: str, last_day: dt.date) -> bytes:
+    symbol = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["symbol"][0]
+    rows = []
+    day = last_day.replace(day=1)
+    while day <= last_day:
+        start_ms = int(dt.datetime.combine(day, dt.time(), dt.UTC).timestamp() * 1000)
+        for offset_hours in (8, 16, 24):
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "fundingTime": start_ms + offset_hours * 3_600_000,
+                    "fundingRate": "0.0001",
+                }
+            )
+        day += dt.timedelta(days=1)
+    return json.dumps(rows).encode()
+
+
 class MiniTrendFuturesShadowInputsTest(unittest.TestCase):
+    def test_latest_daily_archive_uses_completed_public_rest_fallback(self) -> None:
+        retrieved_at = dt.datetime(2026, 2, 3, 3, tzinfo=dt.UTC)
+        fallback_day = dt.date(2026, 2, 2)
+
+        def vision_fetch(url: str) -> bytes:
+            if "2026-02-02" in url:
+                raise RuntimeError("daily archive not published")
+            return _kline()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report = refresh_shadow_inputs(
+                cache_dir=root / "cache",
+                funding_snapshot_root=root / "snapshots",
+                start_month="2026-02",
+                end_date=fallback_day.isoformat(),
+                retrieved_at=retrieved_at,
+                vision_fetch=vision_fetch,
+                kline_fetch=lambda _: _rest_kline(fallback_day),
+                funding_fetch=lambda url: _complete_funding_response(url, fallback_day),
+            )
+        self.assertEqual(report["diagnostics"]["verdict"], "shadow_inputs_refreshed")
+        fallback = [
+            row for row in report["files"]
+            if row.get("source") == "binance_public_um_rest"
+        ]
+        self.assertEqual(len(fallback), 3)
+
+    def test_kline_rest_fallback_rejects_uncompleted_row(self) -> None:
+        day = dt.date(2026, 2, 2)
+        with self.assertRaisesRegex(ValueError, "not yet completed"):
+            parse_completed_daily_kline_api_response(
+                _rest_kline(day),
+                symbol="BTCUSDT",
+                day=day,
+                retrieved_at=dt.datetime(2026, 2, 2, 12, tzinfo=dt.UTC),
+            )
+
     def test_existing_canonical_cache_ignores_later_seed_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

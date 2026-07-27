@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import io
 import json
 import math
 import os
 import shutil
 import urllib.parse
 import urllib.request
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -24,8 +26,8 @@ from qount.models import utc_now
 from qount.settings import Settings
 
 
-SHADOW_INPUT_REFRESH_VERSION = "mini_trend_um_shadow_input_refresh_v0.1"
-FUNDING_API_BASE_URL = "https://fapi.binance.com"
+SHADOW_INPUT_REFRESH_VERSION = "mini_trend_um_shadow_input_refresh_v0.2"
+PUBLIC_UM_API_BASE_URL = "https://fapi.binance.com"
 _DAY_MS = 86_400_000
 _FUNDING_SETTLEMENT_ROUND_MS = 60_000
 _FUNDING_SETTLEMENT_MAX_JITTER_MS = 1_000
@@ -48,6 +50,9 @@ class ShadowInputRefreshConfig:
                 "config": asdict(self),
                 "sources": {
                     "klines_and_closed_funding_months": "data.binance.vision",
+                    "latest_completed_kline_fallback": (
+                        "Binance public USD-M klines REST"
+                    ),
                     "open_month_funding": "Binance public USD-M fundingRate REST",
                 },
                 "storage": "immutable cache files plus append-only funding snapshots",
@@ -142,7 +147,7 @@ def funding_api_url(
     start_ms: int,
     end_ms: int,
     limit: int,
-    base_url: str = FUNDING_API_BASE_URL,
+    base_url: str = PUBLIC_UM_API_BASE_URL,
 ) -> str:
     query = urllib.parse.urlencode(
         {
@@ -153,6 +158,71 @@ def funding_api_url(
         }
     )
     return f"{base_url.rstrip('/')}/fapi/v1/fundingRate?{query}"
+
+
+def kline_api_url(
+    symbol: str,
+    *,
+    interval: str,
+    open_time_ms: int,
+    base_url: str = PUBLIC_UM_API_BASE_URL,
+) -> str:
+    query = urllib.parse.urlencode(
+        {
+            "symbol": symbol,
+            "interval": interval,
+            "startTime": open_time_ms,
+            "endTime": open_time_ms + _DAY_MS - 1,
+            "limit": 1,
+        }
+    )
+    return f"{base_url.rstrip('/')}/fapi/v1/klines?{query}"
+
+
+def parse_completed_daily_kline_api_response(
+    raw: bytes,
+    *,
+    symbol: str,
+    day: dt.date,
+    retrieved_at: dt.datetime,
+) -> bytes:
+    payload = json.loads(raw)
+    if not isinstance(payload, list) or len(payload) != 1:
+        raise ValueError("Binance kline response must contain exactly one row")
+    row = payload[0]
+    if not isinstance(row, list) or len(row) < 12:
+        raise ValueError("invalid Binance kline response row")
+    expected_open_ms = int(
+        dt.datetime.combine(day, dt.time(), dt.UTC).timestamp() * 1000
+    )
+    expected_close_ms = expected_open_ms + _DAY_MS - 1
+    try:
+        open_ms = int(row[0])
+        close_ms = int(row[6])
+        numeric = [float(row[index]) for index in (1, 2, 3, 4, 5, 7, 9, 10)]
+        trade_count = int(row[8])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid Binance kline response value") from exc
+    retrieved_ms = int(retrieved_at.timestamp() * 1000)
+    if open_ms != expected_open_ms or close_ms != expected_close_ms:
+        raise ValueError("Binance kline response is outside the requested day")
+    if close_ms >= retrieved_ms:
+        raise ValueError("Binance kline response is not yet completed")
+    if not all(math.isfinite(value) for value in numeric) or trade_count < 0:
+        raise ValueError("Binance kline response contains invalid numeric data")
+
+    csv = ",".join(str(value) for value in row[:12]) + "\n"
+    buffer = io.BytesIO()
+    info = zipfile.ZipInfo(f"{symbol}-1d-{day.isoformat()}.csv")
+    info.date_time = (1980, 1, 1, 0, 0, 0)
+    info.compress_type = zipfile.ZIP_STORED
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(info, csv.encode("utf-8"))
+    result = buffer.getvalue()
+    parsed = parse_zip_bytes(result)
+    if len(parsed) != 1 or parsed[0].ts_ms != expected_open_ms:
+        raise ValueError("converted Binance kline response failed validation")
+    return result
 
 
 def parse_funding_api_response(
@@ -293,6 +363,7 @@ def refresh_shadow_inputs(
     seed_cache_dir: str | Path | None = None,
     config: ShadowInputRefreshConfig | None = None,
     vision_fetch: FetchBytes | None = None,
+    kline_fetch: FetchBytes | None = None,
     funding_fetch: FetchBytes | None = None,
     funding_transport: str = "direct_wsl",
 ) -> dict[str, Any]:
@@ -313,27 +384,62 @@ def refresh_shadow_inputs(
     actual_funding_fetch = funding_fetch or (
         lambda url: _direct_fetch(url, timeout_seconds=config.request_timeout_seconds)
     )
+    actual_kline_fetch = kline_fetch or actual_funding_fetch
     files: list[dict[str, Any]] = []
     unavailable: list[dict[str, Any]] = []
 
-    def obtain(name: str, url: str, *, kind: str, symbol: str, parser) -> None:
+    def obtain(
+        name: str,
+        url: str,
+        *,
+        kind: str,
+        symbol: str,
+        parser,
+        fallback_day: dt.date | None = None,
+    ) -> None:
         target = cache_root / name
         seeded = _copy_seed(target, seed_root / name) if seed_root else False
+        source = "data.binance.vision"
         try:
-            raw = target.read_bytes() if target.exists() else actual_vision_fetch(url)
+            if target.exists():
+                raw = target.read_bytes()
+                source = "immutable_cache"
+            else:
+                try:
+                    raw = actual_vision_fetch(url)
+                except Exception:
+                    if fallback_day != end:
+                        raise
+                    open_time_ms = int(
+                        dt.datetime.combine(fallback_day, dt.time(), dt.UTC).timestamp()
+                        * 1000
+                    )
+                    raw = parse_completed_daily_kline_api_response(
+                        actual_kline_fetch(
+                            kline_api_url(
+                                symbol,
+                                interval=config.interval,
+                                open_time_ms=open_time_ms,
+                            )
+                        ),
+                        symbol=symbol,
+                        day=fallback_day,
+                        retrieved_at=retrieved_at,
+                    )
+                    source = "binance_public_um_rest"
             parsed = parser(raw)
             if not parsed:
                 raise ValueError("public archive parsed to zero rows")
             cache_hit = target.exists()
             _write_immutable(target, raw)
-            files.append(
-                _cache_record(
-                    target,
-                    kind=kind,
-                    symbol=symbol,
-                    cache_hit=cache_hit or seeded,
-                )
+            record = _cache_record(
+                target,
+                kind=kind,
+                symbol=symbol,
+                cache_hit=cache_hit or seeded,
             )
+            record["source"] = source
+            files.append(record)
         except Exception as exc:
             unavailable.append(
                 {
@@ -364,6 +470,7 @@ def refresh_shadow_inputs(
                         kind="daily_kline",
                         symbol=symbol,
                         parser=parse_zip_bytes,
+                        fallback_day=dt.date(year, month, day),
                     )
                 continue
             kline_name = f"um-{symbol}-{config.interval}-{year:04d}-{month:02d}.zip"
