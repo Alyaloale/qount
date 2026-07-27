@@ -21,9 +21,11 @@ from qount.mini_trend.pilot_dispatcher import run_pilot_dispatch
 from qount.mini_trend.pilot_dispatcher import verify_dispatch_journal
 from qount.mini_trend.pilot_projection import PILOT_PROJECTION_VERSION
 from qount.operations.authority_writer import AuthorityWriterConfig
+from qount.operations.authority_writer import AuthorityWriterBlocked
 from qount.operations.authority_writer import authorize_minimal_live_authority_bundle
 from qount.operations.authority_writer import refresh_authority_bundle_from_runtime
 from qount.operations.authority_writer import write_order_free_authority_bundle
+from qount.operations.authority_writer import read_blocked_runtime_observation
 from qount.operations.health_probes import CommandResult
 from qount.operations.health_probes import HealthProbeDependencies
 from qount.notifications import SystemComponentObservation
@@ -257,6 +259,75 @@ def _live_standard_plan(bundle, run: Path) -> tuple[dict, StrategyRegistry]:
 
 
 class AuthorityWriterTest(unittest.TestCase):
+    def test_account_safety_block_writes_non_executable_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "state/mini_trend/forward/runs/20260802T000000Z"
+            run.mkdir(parents=True, mode=0o700)
+            os.chmod(run, 0o700)
+            common_meta = {
+                "orders_allowed": False,
+                "live_orders_allowed": False,
+                "private_api_order_attempted": False,
+                "mutating_account_method_attempted": False,
+            }
+            values = {
+                "account_preflight.json": {
+                    "created_at": "2026-08-02T00:01:00+00:00",
+                    "meta": common_meta | {"read_only": True},
+                },
+                "dispatch_readiness.json": {
+                    "created_at": "2026-08-02T00:01:10+00:00",
+                    "meta": common_meta,
+                },
+                "dry_dispatch.json": {
+                    "created_at": "2026-08-02T00:01:20+00:00",
+                    "meta": common_meta,
+                    "diagnostics": {"verdict": "blocked_dispatch"},
+                },
+                "exchange_rules.json": {"created_at": "2026-08-02T00:00:50+00:00"},
+                "latest_projection.json": {
+                    "created_at": "2026-08-02T00:01:15+00:00",
+                    "meta": common_meta,
+                    "decision": {"decision_id": "a" * 64},
+                    "diagnostics": {"projection_ready": True},
+                },
+            }
+            for name, value in values.items():
+                _write(run / name, value)
+            config = AuthorityWriterConfig(
+                repo_root=Path(__file__).parents[1],
+                source_root=root / "state/mini_trend/forward/latest",
+                authority_root=root / "authority",
+                runtime_root=root / "runtime",
+                backup_root=root / "backups",
+                dashboard_root=root / "dashboard",
+                lock_path=root / "lock/publisher.lock",
+            )
+            blocked = AuthorityWriterBlocked(
+                (
+                    "dispatch:critical_account_preflight_blocked",
+                    "preflight:no_unmanaged_positions",
+                ),
+                run_dir=run,
+            )
+            with mock.patch(
+                "qount.operations.authority_writer._validate_sources",
+                side_effect=blocked,
+            ):
+                result = write_order_free_authority_bundle(
+                    config, captured_at="2026-08-02T00:02:00+00:00"
+                )
+            observation = read_blocked_runtime_observation(
+                root / "blocked_runtime_observation.json"
+            )
+
+        self.assertEqual(result.status, "blocked_observation_written")
+        self.assertIsNotNone(observation)
+        self.assertFalse(observation["live_orders_allowed"])
+        self.assertFalse(observation["runtime_ledger_created"])
+        self.assertFalse((root / "runtime/runtime.sqlite3").exists())
+
     def test_legacy_run_without_preserved_dispatch_readiness_is_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

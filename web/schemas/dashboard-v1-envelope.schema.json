@@ -96,6 +96,16 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["decision_batch_manifest", "strategy_registry", "blocked_runtime_observation"],
+          "properties": {
+            "decision_batch_manifest": { "$ref": "#/$defs/hash" },
+            "strategy_registry": { "$ref": "#/$defs/hash" },
+            "blocked_runtime_observation": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["notification_store"],
           "properties": {
             "notification_store": { "$ref": "#/$defs/hash" }
@@ -135,6 +145,17 @@
             "decision_batch_manifest": { "$ref": "#/$defs/hash" },
             "strategy_registry": { "$ref": "#/$defs/hash" },
             "runtime_ledger": { "$ref": "#/$defs/hash" },
+            "system_health": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decision_batch_manifest", "strategy_registry", "blocked_runtime_observation", "system_health"],
+          "properties": {
+            "decision_batch_manifest": { "$ref": "#/$defs/hash" },
+            "strategy_registry": { "$ref": "#/$defs/hash" },
+            "blocked_runtime_observation": { "$ref": "#/$defs/hash" },
             "system_health": { "$ref": "#/$defs/hash" }
           }
         }

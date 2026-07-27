@@ -54,6 +54,7 @@ from qount.strategies import base_strategy_registration
 
 
 AUTHORITY_WRITER_SCHEMA_VERSION = 1
+BLOCKED_RUNTIME_OBSERVATION_SCHEMA_VERSION = 1
 _RUN_NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 _SOURCE_FILES = (
     "account_preflight.json",
@@ -165,6 +166,108 @@ class AuthorityWriterResult:
             "source_hashes": dict(self.source_hashes),
             "result_hash": self.result_hash,
         }
+
+
+def _blocked_observation_path(config: AuthorityWriterConfig) -> Path:
+    return config.authority_root.parent / "blocked_runtime_observation.json"
+
+
+def _blocked_observation(
+    config: AuthorityWriterConfig,
+    blocked: AuthorityWriterBlocked,
+    *,
+    captured_at: str,
+) -> dict[str, Any] | None:
+    allowed = {
+        "dispatch:critical_account_preflight_blocked",
+        "dispatch:current_account_snapshot_blocked",
+        "dispatch:unmanaged_or_short_position",
+        "preflight:no_unmanaged_positions",
+        "preflight:isolated_one_x_verified",
+        "account_snapshot:unmanaged_position_present",
+        "account_snapshot:isolated_one_x_not_verified",
+        "account_snapshot_unmanaged_or_short_position",
+    }
+    if not blocked.blockers or any(value not in allowed for value in blocked.blockers):
+        return None
+    values = {}
+    hashes = {}
+    for name in _SOURCE_FILES:
+        values[name], hashes[name] = _read_source(blocked.run_dir / name, name=name)
+    projection = values["latest_projection.json"]
+    preflight = values["account_preflight.json"]
+    dispatch = values["dry_dispatch.json"]
+    if (
+        projection.get("diagnostics", {}).get("projection_ready") is not True
+        or projection.get("decision") is None
+        or not all(
+            _order_free(values[name])
+            for name in (
+                "account_preflight.json",
+                "dispatch_readiness.json",
+                "dry_dispatch.json",
+                "latest_projection.json",
+            )
+        )
+        or preflight.get("meta", {}).get("read_only") is not True
+        or dispatch.get("diagnostics", {}).get("verdict") != "blocked_dispatch"
+    ):
+        return None
+    observed_at = max(
+        aware_datetime(str(value["created_at"]))
+        for value in (projection, preflight, dispatch)
+    ).isoformat()
+    core = {
+        "schema_version": BLOCKED_RUNTIME_OBSERVATION_SCHEMA_VERSION,
+        "artifact_type": "qount_blocked_runtime_observation",
+        "created_at": captured_at,
+        "observed_at": observed_at,
+        "status": "blocked",
+        "live_orders_allowed": False,
+        "runtime_ledger_created": False,
+        "blockers": list(blocked.blockers),
+        "run_id": blocked.run_dir.name,
+        "source_hashes": dict(sorted(hashes.items())),
+    }
+    return core | {"observation_hash": canonical_hash(core)}
+
+
+def read_blocked_runtime_observation(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    value, _ = _read_source(path, name=path.name)
+    core = {key: item for key, item in value.items() if key != "observation_hash"}
+    if (
+        set(value) != {
+            "schema_version", "artifact_type", "created_at", "observed_at",
+            "status", "live_orders_allowed", "runtime_ledger_created",
+            "blockers", "run_id", "source_hashes", "observation_hash",
+        }
+        or value.get("schema_version") != BLOCKED_RUNTIME_OBSERVATION_SCHEMA_VERSION
+        or value.get("artifact_type") != "qount_blocked_runtime_observation"
+        or value.get("status") != "blocked"
+        or value.get("live_orders_allowed") is not False
+        or value.get("runtime_ledger_created") is not False
+        or not isinstance(value.get("blockers"), list)
+        or not value["blockers"]
+        or value.get("observation_hash") != canonical_hash(core)
+    ):
+        raise AuthorityWriterError("blocked_runtime_observation_invalid")
+    aware_datetime(str(value["created_at"]))
+    aware_datetime(str(value["observed_at"]))
+    return value
+
+
+def _write_blocked_observation(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as handle:
+        handle.write(_canonical_bytes(value))
+        handle.flush()
+        os.fsync(handle.fileno())
+        temporary = Path(handle.name)
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
 
 
 @contextmanager
@@ -629,6 +732,21 @@ def write_order_free_authority_bundle(
     try:
         run_dir, sources, source_hashes = _validate_sources(config)
     except AuthorityWriterBlocked as exc:
+        observation = _blocked_observation(
+            config, exc, captured_at=captured_at
+        )
+        if observation is not None:
+            _write_blocked_observation(
+                _blocked_observation_path(config), observation
+            )
+            return AuthorityWriterResult.create(
+                status="blocked_observation_written",
+                generated_at=captured_at,
+                run_dir=exc.run_dir,
+                blockers=exc.blockers,
+                authority_hash=str(observation["observation_hash"]),
+                source_hashes=observation["source_hashes"],
+            )
         return AuthorityWriterResult.create(
             status="blocked",
             generated_at=captured_at,
@@ -820,6 +938,9 @@ def write_order_free_authority_bundle(
                 notification=notification,
                 brief=brief,
             )
+            blocked_path = _blocked_observation_path(config)
+            if blocked_path.exists() and not blocked_path.is_symlink():
+                blocked_path.unlink()
             return AuthorityWriterResult.create(
                 status="written",
                 generated_at=captured_at,
@@ -1063,11 +1184,13 @@ def authorize_minimal_live_authority_bundle(
 
 __all__ = [
     "AUTHORITY_WRITER_SCHEMA_VERSION",
+    "BLOCKED_RUNTIME_OBSERVATION_SCHEMA_VERSION",
     "AuthorityWriterBlocked",
     "AuthorityWriterConfig",
     "AuthorityWriterError",
     "AuthorityWriterResult",
     "authorize_minimal_live_authority_bundle",
     "refresh_authority_bundle_from_runtime",
+    "read_blocked_runtime_observation",
     "write_order_free_authority_bundle",
 ]

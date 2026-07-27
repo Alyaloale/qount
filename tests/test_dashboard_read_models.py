@@ -511,13 +511,15 @@ class DashboardReadModelTest(unittest.TestCase):
                 "intelligence",
             ],
         )
-        self.assertEqual(len(source_variants), 7)
+        self.assertEqual(len(source_variants), 9)
         self.assertIn("runtime_ledger", source_variants[1]["required"])
-        self.assertEqual(source_variants[2]["required"], ["notification_store"])
-        self.assertEqual(source_variants[3]["required"], ["daily_brief"])
-        self.assertEqual(source_variants[4]["required"], ["daily_intelligence"])
-        self.assertIn("system_health", source_variants[5]["required"])
-        self.assertIn("runtime_ledger", source_variants[6]["required"])
+        self.assertIn("blocked_runtime_observation", source_variants[2]["required"])
+        self.assertEqual(source_variants[3]["required"], ["notification_store"])
+        self.assertEqual(source_variants[4]["required"], ["daily_brief"])
+        self.assertEqual(source_variants[5]["required"], ["daily_intelligence"])
+        self.assertIn("system_health", source_variants[6]["required"])
+        self.assertIn("runtime_ledger", source_variants[7]["required"])
+        self.assertIn("blocked_runtime_observation", source_variants[8]["required"])
         self.assertEqual(
             set(
                 envelope["$defs"]["authority"]["properties"][

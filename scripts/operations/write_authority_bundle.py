@@ -68,7 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.result_path.write_text(result_json + "\n", encoding="ascii")
         args.result_path.chmod(0o600)
     print(result_json)
-    return 0 if result.status == "written" else 75
+    return 0 if result.status in {"written", "blocked_observation_written"} else 75
 
 
 if __name__ == "__main__":

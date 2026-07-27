@@ -37,6 +37,7 @@ from qount.operations.health_probes import HealthProbeConfig
 from qount.operations.health_probes import HealthProbeDependencies
 from qount.operations.health_probes import DEFAULT_ALLOWED_SERVICE_NAMES
 from qount.operations.health_probes import collect_os_system_health
+from qount.operations.authority_writer import read_blocked_runtime_observation
 from qount.reporting import DashboardPublication
 from qount.reporting import build_dashboard_v1
 from qount.reporting import publish_dashboard_v1
@@ -398,6 +399,9 @@ def run_dashboard_publisher(
     with single_writer_lock(config.lock_path):
         _prepare_output_paths(config)
         bundle = read_vps_authority_bundle(config.authority_root)
+        blocked_observation = read_blocked_runtime_observation(
+            config.authority_root.parent / "blocked_runtime_observation.json"
+        )
         notification_snapshot = (
             build_notification_snapshot(
                 NotificationStore(
@@ -439,6 +443,7 @@ def run_dashboard_publisher(
             daily_intelligence=intelligence,
             system_health=health,
             system_stale_after_seconds=config.system_stale_after_seconds,
+            blocked_runtime_observation=blocked_observation,
         )
         publication = publish_dashboard_v1(config.dashboard_root, models)
         read_models, read_publication = read_dashboard_v1(config.dashboard_root)

@@ -68,11 +68,13 @@ _READ_MODEL_FILES = {
 _PUBLICATION_FILE = "publication.json"
 _BASE_SOURCE_KEYS = {"decision_batch_manifest", "strategy_registry"}
 _RUNTIME_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"runtime_ledger"}
+_BLOCKED_RUNTIME_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"blocked_runtime_observation"}
 _NOTIFICATION_SOURCE_KEYS = {"notification_store"}
 _REPORT_SOURCE_KEYS = {"daily_brief"}
 _INTELLIGENCE_SOURCE_KEYS = {"daily_intelligence"}
 _SYSTEM_HEALTH_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"system_health"}
 _SYSTEM_RUNTIME_SOURCE_KEYS = _RUNTIME_SOURCE_KEYS | {"system_health"}
+_SYSTEM_BLOCKED_RUNTIME_SOURCE_KEYS = _BLOCKED_RUNTIME_SOURCE_KEYS | {"system_health"}
 _HEX_ID_LENGTH = 64
 
 
@@ -152,6 +154,7 @@ def _valid_source_hashes(
     return (
         keys == _BASE_SOURCE_KEYS
         or keys == _RUNTIME_SOURCE_KEYS
+        or keys == _BLOCKED_RUNTIME_SOURCE_KEYS
         or (
             read_model_type == "alerts"
             and keys == _NOTIFICATION_SOURCE_KEYS
@@ -169,6 +172,7 @@ def _valid_source_hashes(
             and (
                 keys == _SYSTEM_HEALTH_SOURCE_KEYS
                 or keys == _SYSTEM_RUNTIME_SOURCE_KEYS
+                or keys == _SYSTEM_BLOCKED_RUNTIME_SOURCE_KEYS
             )
         )
     ) and all(is_sha256(value) for value in source_hashes.values())
@@ -500,8 +504,11 @@ class DashboardReadModel:
                     "dashboard_latest_batch_data_cutoff_mismatch"
                 )
         if self.read_model_type == "readiness":
+            blocked_observation = "blocked_runtime_observation" in self.source_hashes
             if self.freshness["status"] == "stale":
                 expected_readiness = "stale"
+            elif blocked_observation:
+                expected_readiness = "blocked_runtime_state"
             elif not runtime_authoritative:
                 expected_readiness = "blocked_phase_b_required"
             else:
@@ -3105,6 +3112,7 @@ def _readiness_payload(
     stale: bool,
     ledger_snapshot: RuntimeLedgerSnapshot | None,
     system_health: SystemHealthSnapshot | None,
+    blocked_runtime_observation: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     intent_ids = {intent.strategy_id for intent in batch.intents}
     gates = [
@@ -3255,13 +3263,22 @@ def _readiness_payload(
         if registry_authorized
         else "disarmed"
     )
+    if blocked_runtime_observation is not None:
+        blocker_detail = ",".join(blocked_runtime_observation["blockers"])
+        for gate in gates:
+            if gate["gate"] == "runtime_ledger":
+                gate["detail"] = "not_created_blocked_observation:" + blocker_detail
+        trading_status = "blocked"
+        evidence_status = "complete"
+        evidence_detail = "blocked_runtime_observation_verified"
     return {
         "authority": _authority(ledger_snapshot),
         "status": (
             "stale"
             if stale
-            else "blocked_phase_b_required"
-            if ledger_snapshot is None
+            else "blocked_runtime_state"
+            if blocked_runtime_observation is not None
+            else "blocked_phase_b_required" if ledger_snapshot is None
             else "blocked_runtime_state"
             if ledger_snapshot.unresolved_order_ids
             or not ledger_snapshot.reconciliation["passed"]
@@ -3595,6 +3612,7 @@ def build_dashboard_v1(
     intelligence_stale_after_seconds: int | None = None,
     system_health: SystemHealthSnapshot | None = None,
     system_stale_after_seconds: int | None = None,
+    blocked_runtime_observation: Mapping[str, Any] | None = None,
 ) -> DashboardReadModelSet:
     """Build read models from verified decision, governance, and frozen ledger state."""
 
@@ -3622,6 +3640,16 @@ def build_dashboard_v1(
         ):
             raise DashboardReadModelError(
                 "dashboard_runtime_ledger_snapshot_batch_mismatch"
+            )
+    if blocked_runtime_observation is not None:
+        if (
+            blocked_runtime_observation.get("status") != "blocked"
+            or blocked_runtime_observation.get("live_orders_allowed") is not False
+            or blocked_runtime_observation.get("runtime_ledger_created") is not False
+            or not is_sha256(blocked_runtime_observation.get("observation_hash"))
+        ):
+            raise DashboardReadModelError(
+                "dashboard_blocked_runtime_observation_invalid"
             )
     if notification_snapshot is not None:
         if not isinstance(notification_snapshot, NotificationSnapshot):
@@ -3730,6 +3758,11 @@ def build_dashboard_v1(
         generated = aware_datetime(generated_at)
         evaluated = aware_datetime(evaluated_at)
         source_times_by_name = (
+            {"blocked_runtime_observation": aware_datetime(
+                str(blocked_runtime_observation["observed_at"])
+            )}
+            if blocked_runtime_observation is not None
+            else
             {
                 "runtime_ledger": aware_datetime(
                     ledger_snapshot.source_updated_at
@@ -3811,6 +3844,9 @@ def build_dashboard_v1(
         "decision_batch_manifest": batch.manifest.manifest_hash,
         "strategy_registry": registry.registry_hash,
         **(
+            {"blocked_runtime_observation": blocked_runtime_observation["observation_hash"]}
+            if blocked_runtime_observation is not None
+            else
             {"runtime_ledger": ledger_snapshot.snapshot_hash}
             if ledger_snapshot is not None
             else {}
@@ -3823,11 +3859,22 @@ def build_dashboard_v1(
         "stale_after_seconds": stale_after_seconds,
         "freshness": freshness,
     }
+    effective_ledger_snapshot = (
+        None if blocked_runtime_observation is not None else ledger_snapshot
+    )
     decision_source_updated_at = aware_datetime(
         batch.manifest.created_at
     ).isoformat()
     decision_common = {
         **common,
+        "source_hashes": (
+            source_hashes
+            if blocked_runtime_observation is None
+            else {
+                "decision_batch_manifest": batch.manifest.manifest_hash,
+                "strategy_registry": registry.registry_hash,
+            }
+        ),
         "freshness": _freshness(
             source_updated_at=decision_source_updated_at,
             evaluated_at=evaluated_at,
@@ -3920,32 +3967,32 @@ def build_dashboard_v1(
     models = DashboardReadModelSet(
         overview=DashboardReadModel.create(
             read_model_type="overview",
-            payload=_overview_payload(batch, ledger_snapshot),
+            payload=_overview_payload(batch, effective_ledger_snapshot),
             **common,
         ),
         positions=DashboardReadModel.create(
             read_model_type="positions",
-            payload=_positions_payload(batch, ledger_snapshot),
+            payload=_positions_payload(batch, effective_ledger_snapshot),
             **common,
         ),
         orders=DashboardReadModel.create(
             read_model_type="orders",
-            payload=_orders_payload(ledger_snapshot),
+            payload=_orders_payload(effective_ledger_snapshot),
             **common,
         ),
         strategies=DashboardReadModel.create(
             read_model_type="strategies",
-            payload=_strategy_payload(batch, registry, ledger_snapshot),
+            payload=_strategy_payload(batch, registry, effective_ledger_snapshot),
             **decision_common,
         ),
         decisions=DashboardReadModel.create(
             read_model_type="decisions",
-            payload=_decisions_payload(batch, ledger_snapshot),
+            payload=_decisions_payload(batch, effective_ledger_snapshot),
             **decision_common,
         ),
         risk=DashboardReadModel.create(
             read_model_type="risk",
-            payload=_risk_payload(batch, ledger_snapshot),
+            payload=_risk_payload(batch, effective_ledger_snapshot),
             **common,
         ),
         readiness=DashboardReadModel.create(
@@ -3954,14 +4001,15 @@ def build_dashboard_v1(
                 batch,
                 registry,
                 stale=freshness["status"] == "stale",
-                ledger_snapshot=ledger_snapshot,
+                ledger_snapshot=effective_ledger_snapshot,
                 system_health=system_health,
+                blocked_runtime_observation=blocked_runtime_observation,
             ),
             **common,
         ),
         system=DashboardReadModel.create(
             read_model_type="system",
-            payload=_system_payload(ledger_snapshot, system_health),
+            payload=_system_payload(effective_ledger_snapshot, system_health),
             **system_common,
         ),
         alerts=DashboardReadModel.create(

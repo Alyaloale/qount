@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from qount.contracts import canonical_hash
 from qount.operations.backups import BackupError
 from qount.operations.backups import read_latest_dashboard_backup
 from qount.operations.backups import verify_dashboard_restore_drill
@@ -392,6 +393,50 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertEqual(
             models.intelligence.payload["authority"]["intelligence"],
             "unavailable_until_daily_intelligence",
+        )
+
+    def test_blocked_runtime_observation_is_fresh_without_runtime_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _publish_authority_bundle(root)
+            core = {
+                "schema_version": 1,
+                "artifact_type": "qount_blocked_runtime_observation",
+                "created_at": "2026-07-20T00:09:10+00:00",
+                "observed_at": "2026-07-20T00:09:00+00:00",
+                "status": "blocked",
+                "live_orders_allowed": False,
+                "runtime_ledger_created": False,
+                "blockers": ["preflight:no_unmanaged_positions"],
+                "run_id": "20260720T000900Z",
+                "source_hashes": {"account_preflight.json": "a" * 64},
+            }
+            observation = core | {"observation_hash": canonical_hash(core)}
+            path = root / "blocked_runtime_observation.json"
+            path.write_text(json.dumps(observation), encoding="ascii")
+            os.chmod(path, 0o600)
+            config = _config(root)
+            result = run_dashboard_publisher(
+                config,
+                observed_at="2026-07-20T00:10:00+00:00",
+                dependencies=_dependencies(),
+            )
+            models, publication = read_dashboard_v1(config.dashboard_root)
+
+        self.assertEqual(publication.publication_id, result.publication_id)
+        self.assertEqual(models.overview.freshness["status"], "fresh")
+        self.assertIn(
+            "blocked_runtime_observation", models.overview.freshness["sources"]
+        )
+        self.assertEqual(
+            models.overview.payload["account"]["status"],
+            "unavailable_until_phase_b_ledger",
+        )
+        self.assertEqual(
+            models.readiness.payload["status"], "blocked_runtime_state"
+        )
+        self.assertFalse(
+            models.readiness.payload["strategies"][0]["live_orders_allowed"]
         )
 
     def test_invalid_latest_intelligence_is_scoped_to_unavailable_model(self) -> None:
