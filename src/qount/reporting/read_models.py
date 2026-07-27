@@ -508,7 +508,7 @@ class DashboardReadModel:
             if self.freshness["status"] == "stale":
                 expected_readiness = "stale"
             elif blocked_observation:
-                expected_readiness = "blocked_runtime_state"
+                expected_readiness = "read_only_observation_ready"
             elif not runtime_authoritative:
                 expected_readiness = "blocked_phase_b_required"
             else:
@@ -837,6 +837,7 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
         if value["status"] not in {
             "blocked_phase_b_required",
             "blocked_runtime_state",
+            "read_only_observation_ready",
             "read_model_ready",
             "stale",
         }:
@@ -3267,16 +3268,19 @@ def _readiness_payload(
         blocker_detail = ",".join(blocked_runtime_observation["blockers"])
         for gate in gates:
             if gate["gate"] == "runtime_ledger":
-                gate["detail"] = "not_created_blocked_observation:" + blocker_detail
-        trading_status = "blocked"
+                gate["detail"] = (
+                    "not_created_for_manual_account_observation;"
+                    "future_execution_prerequisites:" + blocker_detail
+                )
+        trading_status = "disarmed"
         evidence_status = "complete"
-        evidence_detail = "blocked_runtime_observation_verified"
+        evidence_detail = "read_only_account_observation_verified"
     return {
         "authority": _authority(ledger_snapshot),
         "status": (
             "stale"
             if stale
-            else "blocked_runtime_state"
+            else "read_only_observation_ready"
             if blocked_runtime_observation is not None
             else "blocked_phase_b_required" if ledger_snapshot is None
             else "blocked_runtime_state"

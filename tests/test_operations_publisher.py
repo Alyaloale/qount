@@ -433,7 +433,11 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
             "unavailable_until_phase_b_ledger",
         )
         self.assertEqual(
-            models.readiness.payload["status"], "blocked_runtime_state"
+            models.readiness.payload["status"], "read_only_observation_ready"
+        )
+        self.assertEqual(
+            models.readiness.payload["axes"]["trading_authority"]["status"],
+            "disarmed",
         )
         self.assertFalse(
             models.readiness.payload["strategies"][0]["live_orders_allowed"]
