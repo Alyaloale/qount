@@ -26,7 +26,7 @@
 
 ### 2.1 已核验事实
 
-- `0.2.17/0a6915d`已把公共行情watcher和固定事件timer部署VPS；timer只覆盖本次窗口，所有结果固定
+- `0.2.18/5fe2b91`已把公共行情watcher、现金窗口告警和固定事件timer部署VPS；timer只覆盖本次窗口，所有结果固定
   `orders_authorized=false/paper_or_live_allowed=false/private_api_used=false/exchange_mutation_attempted=false`。
 - Federal Reserve 官方日历确认 2026 年 7 月 FOMC 为 **7 月 28-29 日**，本次没有星号，因此没有预定 SEP/点阵图。
 - Fed 7 月日历列出的声明时间为 7 月 29 日 14:00 EDT、记者会为 14:30 EDT，即上海时间

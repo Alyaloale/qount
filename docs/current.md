@@ -2,13 +2,13 @@
 
 > **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-27
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：真钱交易当前已停用；系统已具备跨资产 identity、产品级 long/short capability、有符号组合/风险/账本和 Binance Stocks 纯契约。`0.2.17` FOMC公共行情shadow watcher与Dashboard事件告警已部署VPS，但没有账户、paper/live或订单权限；Direct Stocks自动执行仍被账户库存事实缺口阻断。
+> **TL;DR**：真钱交易当前已停用；系统已具备跨资产 identity、产品级 long/short capability、有符号组合/风险/账本和 Binance Stocks 纯契约。`0.2.18` FOMC公共行情shadow watcher与现金窗口/冻结/信号告警已部署VPS，但没有账户、paper/live或订单权限；Direct Stocks自动执行仍被账户库存事实缺口阻断。
 
 更新时间：2026-07-27
 
-VPS生产版本：`0.2.17`，implementation commit=`0a6915d9f2c4ae37ade2e22e303f02d83b6eeb4f`，
-source tree=`022dec86...d7b2fbb`，production provenance=`06af5c51...a697af`；逐文件verification hash=
-`f48cd775...2f82fc7`。FOMC watcher、有限事件timer和Dashboard静态告警界面均已部署，执行权限仍关闭。
+VPS生产版本：`0.2.18`，implementation commit=`5fe2b914fd832ba20a4b1a1ecc7daf6f8aac3e62`，
+source tree=`af137375...d20697`，production provenance=`7b28fd69...0a6bda3`；逐文件verification hash=
+`974512d2...7378a2`。FOMC watcher、有限事件timer和Dashboard静态告警界面均已部署，执行权限仍关闭。
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -21,6 +21,10 @@ source tree=`022dec86...d7b2fbb`，production provenance=`06af5c51...a697af`；�
 [research-advancement-roadmap.md](research-advancement-roadmap.md)，200 USDT个人事件策略看
 [personal-200u-event-strategy.md](personal-200u-event-strategy.md)。旧研究线、历史计划和legacy运行手册统一从
 [archive/README.md](archive/README.md)进入，不再混入当前生产导航。
+
+- **2026-07-27 `0.2.18`补齐FOMC现金窗口告警并已部署。** `cash_only_from <= observed_at < freeze_at`时，watcher保持
+  `SCHEDULED`和冻结前零网络，但在共享NotificationStore打开一条可去重`fomc_event_cash_only` WARNING；冻结开始后该incident自动
+  RESOLVED，并由freeze incident接力。VPS临时库两次轮询只生成1条OPEN告警，未向生产库制造未来告警；前端类别和cache key已同步。
 
 - **2026-07-27 FOMC v0.2不可下单标准链和公共行情watcher已随`0.2.17`部署VPS。**
   固定事件定义绑定Fed 7月官方日历、BTCUSDT USD-M、17:30 UTC冻结、18:00声明、22:30开始观察、次日04:00停止入场和
@@ -1600,11 +1604,11 @@ local unittest: PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests 
 VPS unittest:   ./scripts/run-vps-tests.sh
 ```
 
-2026-07-26 FOMC标准链/watcher/Dashboard告警合并后，本地全量
-`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为 **2302 OK**；FOMC聚焦为`25 OK`。
+2026-07-27 FOMC现金窗口告警合并后，本地全量
+`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` 为 **2303 OK**；FOMC聚焦为`26 OK`。
 源码/operations `compileall`、Node语法、Dashboard JSON schema、`git diff --check`和常见API key/AWS key/private-key header扫描通过。
 Mac公共Binance探针按出口地区返回HTTP 451，VPS同一无凭据`fapi/v1/exchangeInfo`返回HTTP 200/1,042,597 bytes，因此Mac不作为事件行情源，
-VPS部署前提成立。2026-07-27部署后，VPS FOMC聚焦`25 OK`、notifications/dashboard关联`49 OK`、标准production profile`343 OK`；
+VPS部署前提成立。`0.2.18`部署后，VPS FOMC聚焦`26 OK`、notifications/dashboard关联`49 OK`、标准production profile`343 OK`；
 release逐文件verification、systemd unit/calendar、公共collector、Dashboard原子readback和公网安全响应均通过。唯一unit warning是VPS既有
 `cloudmonitor.service`配置；本轮未访问private API，未运行paper/live或订单路径。
 

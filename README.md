@@ -6,8 +6,8 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前 VPS 生产版本为 `0.2.17`，implementation commit=`0a6915d9f2c4ae37ade2e22e303f02d83b6eeb4f`、
-provenance=`06af5c51...a697af`，source tree=`022dec86...d7b2fbb`。FOMC公共行情watcher、Dashboard事件告警和
+当前 VPS 生产版本为 `0.2.18`，implementation commit=`5fe2b914fd832ba20a4b1a1ecc7daf6f8aac3e62`、
+provenance=`7b28fd69...0a6bda3`，source tree=`af137375...d20697`。FOMC公共行情watcher、现金窗口/冻结/信号告警和
 仅覆盖2026年7月事件窗口的systemd timer已部署；该timer固定不可下单，不读取私有账户或API。
 Base 已迁入 `standard_production`：曾获真钱授权的策略
 `MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，

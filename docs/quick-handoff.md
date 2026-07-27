@@ -6,9 +6,9 @@
 
 更新时间：2026-07-27
 
-VPS生产版本：`0.2.17`，implementation commit=`0a6915d9f2c4ae37ade2e22e303f02d83b6eeb4f`，
-production provenance=`06af5c51...a697af`，source tree=`022dec86...d7b2fbb`。FOMC不可下单watcher、
-Dashboard事件告警和固定事件窗口timer已部署；timer只用公共行情，仍没有paper/live或订单权限。
+VPS生产版本：`0.2.18`，implementation commit=`5fe2b914fd832ba20a4b1a1ecc7daf6f8aac3e62`，
+production provenance=`7b28fd69...0a6bda3`，source tree=`af137375...d20697`。FOMC不可下单watcher、
+现金窗口/冻结/信号告警和固定事件窗口timer已部署；timer只用公共行情，仍没有paper/live或订单权限。
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看

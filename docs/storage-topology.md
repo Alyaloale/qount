@@ -9,7 +9,7 @@
 这份文档定义跨主机职责、权威数据位置、WSL计算流程和清理规则。策略结论仍以
 [current.md](current.md)为准，生产运行仍以VPS为准。
 
-本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前VPS版本为`0.2.17/0a6915d`；MiniTrend Base固定100 USDT并已迁入
+本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前VPS版本为`0.2.18/5fe2b91`；MiniTrend Base固定100 USDT并已迁入
 `standard_production`，但owner已停用live/forward timer。FOMC仅公共行情的固定事件window timer为`enabled/active`，不继承Base arm或订单权限。
 2026-07-22外置`E:`已完成保护性备份、文件系统修复和修复后逐文件校验。全新备份目录
 `D:\qount_data-recovery-20260722T120000Z`含`14,214`个文件、`34,096,177,913` bytes，源/目标SHA-256
@@ -27,7 +27,7 @@ manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功�
 | Mac | `/Users/alyaloale/Code/qount` | 研究设计、代码主仓、git、文档、轻量测试和任务编排 | 全量行情、训练集、模型批次、历史artifact |
 | Windows外置盘 | `E:\qount_data`；WSL见`/mnt/e/qount_data` | 大数据、不可变输入、最终artifact、环境锁和节点备份的存储真相 | `.env`、API密钥、活跃SQLite、venv |
 | WSL | `/home/alyaloale/Code/qount`；7945HX 32线程、RTX 4060 8GB | 大型CPU特征工程、表格模型、HMM、GPU训练和权威复跑 | 完成后的大数据副本、长期artifact、生产状态 |
-| VPS | `/root/qount` | `0.2.17`、停用的Base生产状态、FOMC order-free watcher、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
+| VPS | `/root/qount` | `0.2.18`、停用的Base生产状态、FOMC order-free watcher、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
 | 临时云GPU | disposable | 仅在4060显存或吞吐实测不足时临时训练 | 唯一数据副本、生产密钥、live state |
 
 WSL是正式计算节点，但不是实盘生产真相。Mac和WSL不要求每次全仓镜像；WSL基础计算接口变化时才显式

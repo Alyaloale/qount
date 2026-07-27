@@ -11,6 +11,25 @@
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
+## 2026-07-27 (Round 23)
+
+### 0.2.18补齐FOMC现金窗口告警并部署
+
+**缺口与实现**：固定timer从`17:00 UTC`开始，但`0.2.17`在`17:00-17:30`只写`SCHEDULED`结果，Dashboard没有明确的现金窗口告警。
+`0.2.18`新增`fomc_event_cash_only` WARNING：只在`cash_only_from <= observed_at < freeze_at`打开，identity绑定event/cash/freeze时钟，
+5分钟重复运行保持同一alert；冻结开始后由同一producer scope自动RESOLVED，并由freeze incident接力。运行结果仍为`SCHEDULED`，冻结前
+不访问交易所；告警只进入Dashboard channel，不声称账户已平仓或授予订单权限。前端增加`FOMC 现金窗口`分类，cache key升为`v=25`。
+
+**Release与部署**：实现提交`5fe2b914fd832ba20a4b1a1ecc7daf6f8aac3e62`已push并同步VPS。安装版本=`0.2.18`、source tree=
+`af137375...d20697`、production provenance=`7b28fd69...0a6bda3`；逐文件verification无mismatch/unexpected，verification hash=
+`974512d2...7378a2`。Dashboard served资产与release hash一致，旧版备份在`/root/qount-dashboard-static-backup-0.2.18-predeploy`；
+Node/Caddy和原子11-model readback通过，公网仍为Basic Auth `401`与`no-store`。
+
+**验证与边界**：本地FOMC`26/26 OK`、notifications/dashboard`49/49 OK`、全仓`2303/2303 OK`；VPS FOMC`26/26 OK`、
+production profile`343/343 OK`。VPS临时目录在`17:00/17:05`两轮后验证1条OPEN cash-only incident、全权限字段false，退出后自动删除；
+没有写生产NotificationStore、访问私有账户/API、运行paper/live或下单。FOMC timer保持`enabled/active`，MiniTrend live/forward仍为
+`disabled/inactive`，production cron仍无entry。
+
 ## 2026-07-27 (Round 22)
 
 ### 0.2.17 FOMC order-free watcher已部署并启用固定事件窗口
