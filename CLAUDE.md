@@ -11,9 +11,10 @@
 
 ## 一句话：这是什么
 
-`qount` 是「AI 决策 + 风控执行器 + Binance 执行」骨架。当前**唯一真钱策略**是
-`MiniTrend-UM-Base-v0.2`（VPS `standard_production`，固定 `100 USDT`，Binance USD-M TOP3=BTC/ETH/BNB，
-long/cash、one-way、isolated 1x、effective gross ≤ 1）。其余所有线（X4/C×D、RV-C、GRID-B、line A、L1/L3/L4/L6、
+`qount` 是「AI 决策 + 风控执行器 + Binance 执行」骨架。真钱状态（2026-07-27）：
+`MiniTrend-UM-Base-v0.2` 的 live/forward timer 已于 2026-07-26 由 owner 停用（`disabled/inactive`）；
+`SmallAccount-FOMC-RightSide-v0.2` 的受控 live runtime（`0.2.21`）已部署 VPS 但保持 order-disabled
+（未 prepare/arm/switch）；`SmallAccount-PreEvent-Range-v0.1` 为 plan-only + owner 手工执行。其余所有线（X4/C×D、RV-C、GRID-B、line A、L1/L3/L4/L6、
 A股ETF）均为 legacy/frozen/falsified，**不复活**。主动研究方向为**加密优先**（2026-07-16 起）。
 
 ## 权威顺序（冲突时按此判定，来自 project-rules §1）
@@ -47,6 +48,10 @@ A股ETF）均为 legacy/frozen/falsified，**不复活**。主动研究方向为
 - 生产控制面演进：`trading-system-evolution-plan.md`
 - 多智能体研究层：`alpha-agent-plan.md`
 - 记录链：`update-log.md`（近期）、`archive/update-log-archive.md`（历史）
+- 事件策略线：`personal-200u-event-strategy.md`（FOMC 右侧合同）、`pre-event-range-strategy.md`（事件前区间 fade）、
+  `fomc-trigger-study-and-v03-extension.md`（触发率 discovery + v0.3 提案）
+- 个人组合与新方向：`long-run-personal-strategy-design.md`（三层 sleeve 组合设计）、
+  `personal-strategy-research-directions.md`（D1-D5 候选，索引见 roadmap §12）
 - 当前研究草稿：`carry-active-basis-hypothesis.md`（R5 carry 新假设）、
   `crypto-vol-crisis-state-preregistration.md`（危机状态预登记草稿）、
   `external-bot-cra-teardown.md`（外部机器人 CRA 拆解，T4）

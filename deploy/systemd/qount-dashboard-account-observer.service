@@ -1,0 +1,51 @@
+[Unit]
+Description=Qount private account observer (read-only, orders impossible)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/root/qount/.env
+ConditionPathIsDirectory=/var/lib/qount
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+EnvironmentFile=/root/qount/.env
+EnvironmentFile=-/root/.config/qount/mini-trend-live.env
+Environment=PYTHONPATH=/root/qount/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=QOUNT_EXCHANGE_BYPASS_PROXY=true
+Environment=QOUNT_LIVE_ENABLE=false
+Environment=QOUNT_X4_LIVE_ENABLE=false
+Environment=QOUNT_RV_LIVE_ENABLE=false
+Environment=QOUNT_CXD_CARRY_ENABLE=false
+Environment=QOUNT_MINI_TREND_LIVE_ENABLE=false
+Environment=QOUNT_FOMC_LIVE_ENABLE=false
+Environment=http_proxy=
+Environment=https_proxy=
+Environment=all_proxy=
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+UnsetEnvironment=QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN QOUNT_FOMC_ARM_TOKEN
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/refresh_dashboard_account_observation.py --output-path /var/lib/qount/blocked_runtime_observation.json
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryHigh=192M
+MemoryMax=256M
+TasksMax=24
+TimeoutStartSec=2m
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

@@ -343,9 +343,16 @@ function validatePublication(publication) {
   assertObject(publication, "publication");
   assertObject(publication.read_models, "publication.read_models");
   if (publication.schema_version !== 1) throw new Error("publication schema 不匹配");
+  if (!/^[a-f0-9]{64}$/.test(publication.publication_id || "")) {
+    throw new Error("publication ID 不匹配");
+  }
   const expected = Object.keys(MODEL_PATHS).sort();
   const actual = Object.keys(publication.read_models).sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("read model 集合不完整");
+}
+
+function releaseModelPath(path, publicationId) {
+  return path.replace("data/v1/", `data/releases/${publicationId}/`);
 }
 
 function validateModel(model, type, publication) {
@@ -359,7 +366,10 @@ function validateModel(model, type, publication) {
     throw new Error(`${type} 与 publication 不一致`);
   }
   if (!["system", "alerts", "reports", "intelligence"].includes(type)) {
-    const sourcesMatch = Object.entries(model.source_hashes).every(
+    const sharedSources = Object.entries(model.source_hashes).filter(
+      ([name]) => Object.hasOwn(publication.source_hashes, name),
+    );
+    const sourcesMatch = sharedSources.length > 0 && sharedSources.every(
       ([name, hash]) => publication.source_hashes[name] === hash,
     );
     if (!sourcesMatch) throw new Error(`${type} 权威来源不一致`);
@@ -720,7 +730,10 @@ async function load() {
   try {
     const publication = await fetchJSON("data/v1/publication.json");
     validatePublication(publication);
-    const entries = await Promise.all(Object.entries(MODEL_PATHS).map(async ([type, path]) => [type, await fetchJSON(path)]));
+    const entries = await Promise.all(Object.entries(MODEL_PATHS).map(async ([type, path]) => [
+      type,
+      await fetchJSON(releaseModelPath(path, publication.publication_id)),
+    ]));
     const models = Object.fromEntries(entries);
     Object.entries(models).forEach(([type, model]) => validateModel(model, type, publication));
     state.status = "ready";

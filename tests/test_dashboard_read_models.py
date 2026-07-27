@@ -726,8 +726,12 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("currentHistoryAuthoritative", app)
         self.assertIn("旧报告缺少当前权威边界", app)
         self.assertIn('history.replaceState(null, "", "#/live")', app)
-        self.assertIn("Object.entries(model.source_hashes).every", app)
+        self.assertIn("Object.entries(model.source_hashes).filter", app)
+        self.assertIn("Object.hasOwn(publication.source_hashes, name)", app)
+        self.assertIn("sharedSources.length > 0", app)
         self.assertIn("publication.source_hashes[name] === hash", app)
+        self.assertIn("data/releases/${publicationId}/", app)
+        self.assertIn("releaseModelPath(path, publication.publication_id)", app)
         for legacy_source in (
             "x4_live.json",
             "x4_paper.json",

@@ -1,10 +1,10 @@
 # qount 项目规则与文档分类
 
-> **状态**：active｜**权威**：L1 规则（#2）｜**最后更新**：2026-07-26
+> **状态**：active｜**权威**：L1 规则（#2）｜**最后更新**：2026-07-27
 > **本文回答**：项目规则、文档分类、研究线隔离、反过拟合、代码架构、清理与文档维护纪律。
 > **TL;DR**：权威顺序 current>本文>quick-handoff>线文档>update-log；遗留文档原地保留；清理=移动不删除。
 
-更新时间：2026-07-26
+更新时间：2026-07-27
 
 这份文档定义项目级规则、文档分类、研究线隔离和代码整理纪律。它不替代
 [current.md](current.md)：`current.md` 仍是当前事实、生产状态和下一步的入口。
@@ -59,6 +59,8 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | 重构蓝图 | `rebuild-plan.md` | CTA-R / A股系统化思路 | 蓝图变化；不得覆盖当前生产事实 |
 | Alpha Agents | `alpha-agent-plan.md` | 多 agent 研究组织、资料搜集、量化接入骨架 | 角色、任务、source book、agent 边界变化 |
 | 200U个人事件策略 | `personal-200u-event-strategy.md` | FOMC/宏观事件后右侧确认、全成本仓位和小账户风险合同 | owner风险目标、事件规则、shadow证据或权限状态变化 |
+| 事件前区间 fade | `pre-event-range-strategy.md` | FOMC 前独立区间高抛低吸线，plan-only + owner 手工执行 | 事件窗口、风险预算、执行边界或 canary 证据变化 |
+| 个人组合设计 / 方向候选 | `long-run-personal-strategy-design.md`, `personal-strategy-research-directions.md`, `fomc-trigger-study-and-v03-extension.md` | 长期组合形态分析、低数据/厚利润新方向候选、FOMC 触发率 discovery 笔记；均分析级、`orders_authorized=false` | owner 方向决策、候选状态或 discovery 证据变化 |
 | 系统演进 / 研究路线 | `trading-system-evolution-plan.md`, `research-advancement-roadmap.md` | 跨线生产控制面演进、全局实验治理和情报来源路线 | owner方向、架构阶段门、跨线研究优先级变化；不得直接改变任一线promotion/live状态 |
 | 加密研究草稿 / 外部拆解 | `carry-active-basis-hypothesis.md`, `crypto-vol-crisis-state-preregistration.md`, `external-bot-cra-teardown.md` | 加密研究假设、无结果预登记草稿、外部来源(T4)拆解；均 research-only、`orders_authorized=false` | 假设/预登记/外部来源变化；不构成 promotion/paper/live，不改 Base |
 | 接手导航（Claude） | `CLAUDE.md`（仓库根） | 接手模型的文档地图与纪律提要 | 文档分类、权威顺序、主机/工具/纪律边界变化 |
@@ -84,6 +86,7 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | CTA-R rebuild | blueprint / guarded | `rebuild-plan.md`, `cta-r-value-gate-plan.md` | `src/qount/cta_*.py`, `scripts/research/cta_*.py` |
 | Alpha Agents | active research-only new-source restart | `alpha-agent-plan.md` | `src/qount/alpha_agents/`, `scripts/research/alpha_agent_*.py` |
 | 200U个人事件右侧 | shadow-ready local / orders unauthorized / VPS pending | `personal-200u-event-strategy.md` | `src/qount/small_account/`、`scripts/operations/run_fomc_shadow.py`、`deploy/events/` |
+| PreEvent-Range 区间 fade | draft / plan-only / owner 手工执行 canary | `pre-event-range-strategy.md` | `src/qount/small_account/range_signal.py`、`scripts/operations/run_pre_event_range_plan.py` |
 
 隔离规则：
 
