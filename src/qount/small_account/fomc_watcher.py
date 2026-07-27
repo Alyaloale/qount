@@ -15,6 +15,7 @@ from typing import Any, Mapping, Sequence
 
 from qount.contracts import canonical_hash
 from qount.contracts import is_sha256
+from qount.contracts.trace import aware_datetime
 from qount.exchange_utils import build_exchange
 from qount.notifications import AlertEvent
 from qount.notifications import NotificationStore
@@ -36,6 +37,7 @@ from qount.small_account.fomc_runtime import scan_fomc_hybrid_signal
 FOMC_WATCHER_SCHEMA_VERSION = 1
 FOMC_WATCHER_ARTIFACT_TYPE = "fomc_shadow_runtime"
 FOMC_ALERT_CATEGORIES = (
+    "fomc_event_cash_only",
     "fomc_event_freeze",
     "fomc_event_readiness",
     "fomc_event_signal",
@@ -517,6 +519,7 @@ def build_fomc_alerts(
 ) -> tuple[AlertEvent, ...]:
     stage = str(result.get("stage") or "")
     observed_at = str(result["observed_at"])
+    observed_time = aware_datetime(observed_at).astimezone(dt.timezone.utc)
     alerts: list[AlertEvent] = []
 
     def create(
@@ -544,6 +547,28 @@ def build_fomc_alerts(
             trace_id_value=trace_id_value,
         )
 
+    if event.cash_only_time <= observed_time < event.freeze_time:
+        identity = {
+            "event_id": event.event_id,
+            "cash_only_from": event.cash_only_from,
+            "freeze_at": event.freeze_at,
+        }
+        source_hash = canonical_hash(identity)
+        alerts.append(
+            create(
+                severity="WARNING",
+                category="fomc_event_cash_only",
+                title="FOMC cash-only window is active",
+                summary=(
+                    f"{event.symbol} new event risk must remain disabled until "
+                    f"the frozen event policy permits observation; "
+                    f"freeze_at={event.freeze_at}."
+                ),
+                occurred_at=event.cash_only_from,
+                identity=identity,
+                source_hash=source_hash,
+            )
+        )
     if stage in {"FREEZE_REQUIRED", "HALTED"}:
         blockers = tuple(str(value) for value in result.get("blockers") or ())
         source_hash = canonical_hash(

@@ -211,6 +211,7 @@ function sourceText(value) {
 
 function alertCategoryText(value) {
   return ({
+    fomc_event_cash_only: "FOMC 现金窗口",
     fomc_event_freeze: "FOMC 区间冻结",
     fomc_event_readiness: "FOMC 运行就绪",
     fomc_event_signal: "FOMC 交易信号",

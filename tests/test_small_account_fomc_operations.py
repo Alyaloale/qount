@@ -97,11 +97,13 @@ class FomcOperationsTest(unittest.TestCase):
         style = (ROOT / "web" / "site" / "style.css").read_text(encoding="utf-8")
 
         self.assertIn('event_strategy: "事件策略"', app)
+        self.assertIn('fomc_event_cash_only: "FOMC 现金窗口"', app)
         self.assertIn('fomc_event_signal: "FOMC 交易信号"', app)
         self.assertIn('row.source_type === "event_strategy"', app)
         self.assertIn("openEventAlertCount", app)
         self.assertIn(".event-incident", style)
         self.assertIn(".source-badge", style)
+        self.assertIn('app.js?v=25', (ROOT / "web" / "site" / "index.html").read_text())
 
 
 if __name__ == "__main__":

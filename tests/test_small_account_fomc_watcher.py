@@ -232,6 +232,70 @@ class FomcWatcherTest(unittest.TestCase):
             self.assertFalse(result["permissions"]["exchange_mutation_attempted"])
             self.assertTrue(store.latest_path.is_file())
 
+    def test_cash_only_alert_is_deduped_then_resolved_at_freeze(self) -> None:
+        class NoNetwork:
+            def __getattr__(self, name):
+                raise AssertionError(f"unexpected exchange access: {name}")
+
+        hourly, fifteen = _freeze_history()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            store = FomcStateStore(root / "fomc", _event().event_id)
+            notifications = NotificationStore(root / "notifications" / "store.sqlite3")
+            for observed_at in (
+                "2026-07-29T17:00:00+00:00",
+                "2026-07-29T17:05:00+00:00",
+            ):
+                result = run_fomc_shadow_cycle(
+                    _event(),
+                    store,
+                    observed_at=observed_at,
+                    exchange=NoNetwork(),
+                    notification_store=notifications,
+                )
+                self.assertEqual(result["stage"], "SCHEDULED")
+
+            cash_snapshot = build_notification_snapshot(
+                notifications,
+                captured_at="2026-07-29T17:05:00+00:00",
+            )
+            self.assertEqual(cash_snapshot.open_alert_count, 1)
+            self.assertEqual(cash_snapshot.resolved_alert_count, 0)
+            self.assertEqual(len(cash_snapshot.alerts), 1)
+            self.assertEqual(
+                cash_snapshot.alerts[0]["category"],
+                "fomc_event_cash_only",
+            )
+            self.assertEqual(cash_snapshot.alerts[0]["severity"], "WARNING")
+            self.assertEqual(
+                cash_snapshot.alerts[0]["occurred_at"],
+                _event().cash_only_from,
+            )
+
+            freeze_result = run_fomc_shadow_cycle(
+                _event(),
+                store,
+                observed_at=FREEZE_AT,
+                exchange=FakePublicExchange(hourly, fifteen),
+                notification_store=notifications,
+            )
+            self.assertEqual(freeze_result["stage"], "EVENT_FROZEN")
+            freeze_snapshot = build_notification_snapshot(
+                notifications,
+                captured_at=FREEZE_AT.isoformat(),
+            )
+            states = {
+                row["category"]: row["status"]
+                for row in freeze_snapshot.alerts
+            }
+            self.assertEqual(
+                states,
+                {
+                    "fomc_event_cash_only": "RESOLVED",
+                    "fomc_event_freeze": "OPEN",
+                },
+            )
+
     def test_freeze_is_owner_only_and_immutable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             store = FomcStateStore(temporary, _event().event_id)
