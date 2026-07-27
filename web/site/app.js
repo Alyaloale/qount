@@ -121,7 +121,7 @@ function statusText(value) {
     HALT: "停机",
     PENDING: "待投递",
     RETRY_WAIT: "等待重试",
-    DELIVERED: "已投递",
+    DELIVERED: "通道已接受",
     DEAD_LETTER: "投递失败",
     PLANNED: "已计划",
     SUBMITTING: "提交中",
@@ -601,9 +601,17 @@ function renderAlerts() {
   }).join("") || `<div class="empty-cell">${escapeHtml(empty)}</div>`;
   const openEventAlertCount = openAlerts.filter((row) => row.source_type === "event_strategy").length;
   const deliveryRows = payload.alerts.flatMap((row) => row.deliveries.map((delivery) => ({ alert: row, delivery })));
-  $("view-alerts").innerHTML = `<div class="metrics metrics-four">${metric("当前待处理", String(summary.open_alert_count), `严重 ${summary.severity_counts.CRITICAL} / 停机 ${summary.severity_counts.HALT}`, summary.open_alert_count ? "bad" : "good")}${metric("已解决历史", String(summary.resolved_alert_count), `历史严重 ${summary.historical_severity_counts.CRITICAL} / 停机 ${summary.historical_severity_counts.HALT}`, "")}${metric("等待投递", String(summary.delivery_state_counts.PENDING + summary.delivery_state_counts.RETRY_WAIT), `等待重试 ${summary.delivery_state_counts.RETRY_WAIT}`, "")}${metric("投递失败", String(summary.delivery_state_counts.DEAD_LETTER), `已投递 ${summary.delivery_state_counts.DELIVERED}`, summary.delivery_state_counts.DEAD_LETTER ? "bad" : "good")}</div>
+  const deliveryResult = (delivery) => {
+    if (delivery.last_error) return delivery.last_error;
+    if (!delivery.delivered_at) return "等待";
+    const label = delivery.channel === "openclaw_weixin"
+      ? "微信接口已接受（无客户端展示回执）"
+      : "通道已接受";
+    return `${label} ${formatTime(delivery.delivered_at)}`;
+  };
+  $("view-alerts").innerHTML = `<div class="metrics metrics-four">${metric("当前待处理", String(summary.open_alert_count), `严重 ${summary.severity_counts.CRITICAL} / 停机 ${summary.severity_counts.HALT}`, summary.open_alert_count ? "bad" : "good")}${metric("已解决历史", String(summary.resolved_alert_count), `历史严重 ${summary.historical_severity_counts.CRITICAL} / 停机 ${summary.historical_severity_counts.HALT}`, "")}${metric("等待投递", String(summary.delivery_state_counts.PENDING + summary.delivery_state_counts.RETRY_WAIT), `等待重试 ${summary.delivery_state_counts.RETRY_WAIT}`, "")}${metric("投递失败", String(summary.delivery_state_counts.DEAD_LETTER), `通道已接受 ${summary.delivery_state_counts.DELIVERED}`, summary.delivery_state_counts.DEAD_LETTER ? "bad" : "good")}</div>
     <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>当前事件</h2><p>OPEN / FOMC ${openEventAlertCount}</p></div><span>${openAlerts.length}</span></header><div class="incident-list">${incidentRows(openAlerts, "当前无待处理事件")}</div></section><section class="panel"><header class="panel-head"><div><h2>已解决历史</h2><p>RESOLVED</p></div><span>${resolvedAlerts.length}</span></header><div class="incident-list compact-incidents">${incidentRows(resolvedAlerts, "暂无已解决历史")}</div></section></div>
-    <section class="panel full-panel"><header class="panel-head"><div><h2>投递审计</h2><p>Outbox / ${escapeHtml(formatTime(summary.content_updated_at))}</p></div><span class="mono">${escapeHtml(shortHash(summary.audit_last_hash))}</span></header><div class="table-wrap"><table><thead><tr><th>事件</th><th>通道</th><th>状态</th><th>尝试</th><th>最近尝试</th><th>结果</th></tr></thead><tbody>${deliveryRows.map(({ alert, delivery }) => `<tr><td><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(shortHash(alert.alert_id))}</small></td><td>${escapeHtml(delivery.channel)}</td><td>${pill(delivery.status)}</td><td>${delivery.attempt_count}/${delivery.max_attempts}</td><td>${escapeHtml(formatTime(delivery.last_attempt_at))}</td><td><small>${escapeHtml(delivery.last_error || (delivery.delivered_at ? `已投递 ${formatTime(delivery.delivered_at)}` : "等待"))}</small></td></tr>`).join("") || `<tr><td colspan="6" class="empty-cell">无投递任务</td></tr>`}</tbody></table></div></section>`;
+    <section class="panel full-panel"><header class="panel-head"><div><h2>投递审计</h2><p>Outbox / ${escapeHtml(formatTime(summary.content_updated_at))}</p></div><span class="mono">${escapeHtml(shortHash(summary.audit_last_hash))}</span></header><div class="table-wrap"><table><thead><tr><th>事件</th><th>通道</th><th>状态</th><th>尝试</th><th>最近尝试</th><th>结果</th></tr></thead><tbody>${deliveryRows.map(({ alert, delivery }) => `<tr><td><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(shortHash(alert.alert_id))}</small></td><td>${escapeHtml(delivery.channel)}</td><td>${pill(delivery.status)}</td><td>${delivery.attempt_count}/${delivery.max_attempts}</td><td>${escapeHtml(formatTime(delivery.last_attempt_at))}</td><td><small>${escapeHtml(deliveryResult(delivery))}</small></td></tr>`).join("") || `<tr><td colspan="6" class="empty-cell">无投递任务</td></tr>`}</tbody></table></div></section>`;
 }
 
 function renderReports() {

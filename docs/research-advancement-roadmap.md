@@ -1047,3 +1047,22 @@ SSRN `2949379`、用户提供的2026 Bitcoin ML SSRN `6795938`及任何2026新�
 G0 已证实“不只是 aggregate 重包装”且三源证据闭合；第2项现在只能先冻结 market-state 增量合同，不能借 G0 pass 直接读取
 策略PnL。vol-crisis（③）证据已偏负，除非有实质新信息不必强推。carry（④）与前向采集（⑤）可低成本并行。
 横截面（breadth/residual）已关闭，**不重开、不扩币**。
+
+
+## 12. 个人策略新方向候选（2026-07-27，owner 要求：低数据/低硬件/厚利润）
+
+详见 [personal-strategy-research-directions.md](personal-strategy-research-directions.md)。四条候选均避开
+成本/延迟/执行/广度四堵已证伪墙，共享事件冻结 + 小额风险预算 + 原生保护单执行底座：
+
+```text
+D1 宏观事件右侧篮子扩展（CPI/NFP/PCE/GDP 复用 FOMC 链）  P0
+D3 跨资产趋势个人载体重新认证（R7 提级，评估基准改为个人默认持仓）  P0.5
+D2 极端 funding + 清算级联 forced-flow 均值回复（须先过与 Trial 144 的独立性 G0）  P1
+D4 已知事件前低波动区间 fade 泛化（依赖 7/30 PreEvent-Range canary 证据）  P2
+D5 美股行业 ETF 趋势轮动 + 受约束 ML 特征选择（owner 2026-07-27 提出；先过 11 行业有效广度 G0，
+   ML 仅限特征排序辅助且须过 purged-CV/DSR/PBO 对简单动量基线的显著性门）  P1
+```
+
+排除：币内横截面轮动（广度墙）、日内时段效应（成本墙）、期权 VRP（PIT 数据墙）、
+DCA 择时（已证伪）、网格/套利（薄利润）。所有候选仍从 G0/预登记开始，`orders_authorized=false`，
+不新增守护进程，不改变本路线既有 R0-R9 优先级中已冻结/关闭线的状态。

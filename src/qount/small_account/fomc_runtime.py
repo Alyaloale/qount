@@ -701,6 +701,72 @@ class FomcSignalScan:
         scan_hash = canonical_hash(core)
         return cls(**core, scan_hash=scan_hash)
 
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "FomcSignalScan":
+        try:
+            core = {
+                "schema_version": int(value["schema_version"]),
+                "event_id": str(value["event_id"]),
+                "evaluated_at": _iso(str(value["evaluated_at"]), name="evaluated_at"),
+                "state": str(value["state"]),
+                "side": str(value["side"]),
+                "reasons": tuple(str(item) for item in value["reasons"]),
+                "breakout_line": (
+                    float(value["breakout_line"])
+                    if value.get("breakout_line") is not None
+                    else None
+                ),
+                "retest_extreme": (
+                    float(value["retest_extreme"])
+                    if value.get("retest_extreme") is not None
+                    else None
+                ),
+                "structural_stop_price": (
+                    float(value["structural_stop_price"])
+                    if value.get("structural_stop_price") is not None
+                    else None
+                ),
+                "anchor_candle_id": (
+                    str(value["anchor_candle_id"])
+                    if value.get("anchor_candle_id") is not None
+                    else None
+                ),
+                "breakout_candle_id": (
+                    str(value["breakout_candle_id"])
+                    if value.get("breakout_candle_id") is not None
+                    else None
+                ),
+                "retest_candle_ids": tuple(
+                    str(item) for item in value["retest_candle_ids"]
+                ),
+                "signal_available_at": (
+                    _iso(str(value["signal_available_at"]), name="signal_available_at")
+                    if value.get("signal_available_at") is not None
+                    else None
+                ),
+            }
+            scan_hash = str(value["scan_hash"])
+        except (KeyError, TypeError, ValueError, FomcRuntimeError) as exc:
+            raise FomcRuntimeError("fomc_signal_scan_mapping_invalid") from exc
+        if core["schema_version"] != FOMC_SCAN_SCHEMA_VERSION:
+            raise FomcRuntimeError("fomc_signal_scan_schema_invalid")
+        if not is_sha256(core["event_id"]):
+            raise FomcRuntimeError("fomc_signal_scan_event_id_invalid")
+        if core["state"] not in {"OBSERVE", "ARMED", "NO_TRADE", "EXPIRED"}:
+            raise FomcRuntimeError("fomc_signal_scan_state_invalid")
+        if core["side"] not in {"long", "short", "none"}:
+            raise FomcRuntimeError("fomc_signal_scan_side_invalid")
+        identity_values = (
+            core["anchor_candle_id"],
+            core["breakout_candle_id"],
+            *core["retest_candle_ids"],
+        )
+        if any(item is not None and not is_sha256(item) for item in identity_values):
+            raise FomcRuntimeError("fomc_signal_scan_candle_id_invalid")
+        if canonical_hash(core) != scan_hash:
+            raise FomcRuntimeError("fomc_signal_scan_hash_invalid")
+        return cls(**core, scan_hash=scan_hash)
+
     @property
     def armed(self) -> bool:
         return self.state == "ARMED"

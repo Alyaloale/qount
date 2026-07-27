@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import asdict, dataclass, replace
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Any, Mapping, Sequence
 
 from qount.contracts import InstrumentId
@@ -39,7 +40,7 @@ from qount.small_account.risk import evaluate_account_guard
 from qount.small_account.risk import size_linear_usdt_futures
 
 
-FOMC_MARKET_OBSERVATION_SCHEMA_VERSION = 1
+FOMC_MARKET_OBSERVATION_SCHEMA_VERSION = 2
 FOMC_STANDARD_CHAIN_VERSION = 1
 DEFAULT_FOMC_COSTS = ExecutionCostRates(
     entry_fee_rate=0.0005,
@@ -90,6 +91,7 @@ class FomcMarketObservation:
     mark_price: float
     index_price: float
     funding_rate: float
+    price_tick: float
     quantity_step: float
     minimum_quantity: float
     minimum_notional_usdt: float
@@ -110,6 +112,7 @@ class FomcMarketObservation:
         mark_price: float,
         index_price: float,
         funding_rate: float,
+        price_tick: float,
         quantity_step: float,
         minimum_quantity: float,
         minimum_notional_usdt: float,
@@ -127,6 +130,7 @@ class FomcMarketObservation:
             "mark_price": float(mark_price),
             "index_price": float(index_price),
             "funding_rate": float(funding_rate),
+            "price_tick": float(price_tick),
             "quantity_step": float(quantity_step),
             "minimum_quantity": float(minimum_quantity),
             "minimum_notional_usdt": float(minimum_notional_usdt),
@@ -153,6 +157,38 @@ class FomcMarketObservation:
             )
         return observation
 
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "FomcMarketObservation":
+        try:
+            observation = cls(
+                schema_version=int(value["schema_version"]),
+                observation_id=str(value["observation_id"]),
+                symbol=str(value["symbol"]),
+                observed_at=str(value["observed_at"]),
+                data_cutoff=str(value["data_cutoff"]),
+                last_price=float(value["last_price"]),
+                bid_price=float(value["bid_price"]),
+                ask_price=float(value["ask_price"]),
+                mark_price=float(value["mark_price"]),
+                index_price=float(value["index_price"]),
+                funding_rate=float(value["funding_rate"]),
+                price_tick=float(value["price_tick"]),
+                quantity_step=float(value["quantity_step"]),
+                minimum_quantity=float(value["minimum_quantity"]),
+                minimum_notional_usdt=float(value["minimum_notional_usdt"]),
+                exchange_rules_hash=str(value["exchange_rules_hash"]),
+                source_hashes=dict(value["source_hashes"]),
+                observation_hash=str(value["observation_hash"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FomcRuntimeError("fomc_market_observation_mapping_invalid") from exc
+        errors = observation.validate()
+        if errors:
+            raise FomcRuntimeError(
+                "fomc_market_observation_invalid:" + ",".join(errors)
+            )
+        return observation
+
     def _core(self) -> dict[str, Any]:
         return {
             "schema_version": self.schema_version,
@@ -165,6 +201,7 @@ class FomcMarketObservation:
             "mark_price": self.mark_price,
             "index_price": self.index_price,
             "funding_rate": self.funding_rate,
+            "price_tick": self.price_tick,
             "quantity_step": self.quantity_step,
             "minimum_quantity": self.minimum_quantity,
             "minimum_notional_usdt": self.minimum_notional_usdt,
@@ -189,6 +226,7 @@ class FomcMarketObservation:
             "ask_price",
             "mark_price",
             "index_price",
+            "price_tick",
             "quantity_step",
             "minimum_quantity",
         ):
@@ -353,6 +391,16 @@ def _intent_reason_codes(
     return tuple(dict.fromkeys(reasons))
 
 
+def _stop_on_tick(value: float, *, side: str, tick: float) -> float:
+    if not math.isfinite(value) or value <= 0.0 or not math.isfinite(tick) or tick <= 0.0:
+        raise FomcRuntimeError("fomc_stop_tick_input_invalid")
+    rounding = ROUND_FLOOR if side == "long" else ROUND_CEILING
+    units = (Decimal(str(value)) / Decimal(str(tick))).to_integral_value(
+        rounding=rounding
+    )
+    return float(units * Decimal(str(tick)))
+
+
 def _blocked_order_plan(
     *,
     risk: RiskDecision,
@@ -390,6 +438,7 @@ def build_fomc_standard_chain(
     orders_authorized: bool = False,
     costs: ExecutionCostRates = DEFAULT_FOMC_COSTS,
     stop_gap_rate: float = DEFAULT_FOMC_STOP_GAP_RATE,
+    leverage: float | None = None,
 ) -> FomcStandardChain:
     """Build a complete signed decision batch without routing any order."""
 
@@ -412,10 +461,21 @@ def build_fomc_standard_chain(
         if signal.armed and side in {"long", "short"}
         else None
     )
+    effective_stop_price = (
+        _stop_on_tick(
+            signal.structural_stop_price,
+            side=side,
+            tick=market.price_tick,
+        )
+        if signal.armed
+        and side in {"long", "short"}
+        and signal.structural_stop_price is not None
+        else None
+    )
     sizing: PositionSizeDecision | None = None
     blockers: list[str] = []
     if signal.armed:
-        if signal.structural_stop_price is None:
+        if effective_stop_price is None:
             blockers.append("FOMC_STRUCTURAL_STOP_MISSING")
         elif target_price is None:
             blockers.append("FOMC_FROZEN_TARGET_MISSING")
@@ -423,12 +483,13 @@ def build_fomc_standard_chain(
             sizing = size_linear_usdt_futures(
                 side=side,
                 entry_price=entry_price,
-                stop_price=signal.structural_stop_price,
+                stop_price=effective_stop_price,
                 target_price=target_price,
                 stop_gap_rate=stop_gap_rate,
                 quantity_step=market.quantity_step,
                 minimum_notional_usdt=market.minimum_notional_usdt,
                 costs=costs,
+                leverage=leverage,
                 protective_cycle_verified=(
                     account_snapshot.protective_cycle_verified
                     if account_snapshot is not None
@@ -583,7 +644,7 @@ def build_fomc_standard_chain(
         if not orders_authorized:
             plan_blockers.append("FOMC_MANUAL_ARM_REQUIRED")
         assert sizing is not None
-        assert signal.structural_stop_price is not None
+        assert effective_stop_price is not None
         entry_side = "buy" if side == "long" else "sell"
         protective_side = "sell" if side == "long" else "buy"
         orders = (
@@ -609,7 +670,7 @@ def build_fomc_standard_chain(
                 sequence=2,
                 order_type="STOP_MARKET",
                 close_position=True,
-                stop_price=signal.structural_stop_price,
+                stop_price=effective_stop_price,
             ),
         )
         signed_quantity = sizing.quantity if side == "long" else -sizing.quantity

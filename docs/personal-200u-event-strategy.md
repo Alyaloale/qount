@@ -327,12 +327,14 @@ CASH
 
 ## 11. 上线顺序与验收
 
-当前 `orders_authorized=false`，不访问 VPS 私有 API，不恢复已关闭 timer，不产生 paper/live 订单。
+当前生产 `orders_authorized=false`；本地执行能力已实现，但尚未部署VPS、未访问私有API、未生成一次性arm、未启用live timer，也未产生
+paper/live订单。
 
-1. **现在至事件前**：纯风险、v0.2形态、事件时钟、冻结快照、不可下单标准决策批次、公共行情watcher和Dashboard告警已有确定性
-   代码与测试；先部署有限事件窗口的order-free timer并验证公开行情/持久化，不接私有API、账户或订单路径。
-2. **7 月 30 日 FOMC**：默认 shadow，对照 v0.1/v0.2。任何 live canary 必须另行绑定 exact account/symbol/side/notional、
-   `<=5U` 风险、失效价、保护单、最晚 19:00 平仓和单次 manual arm；本合同本身不是该授权。
+1. **现在至事件前**：公共行情shadow与告警已在VPS运行；本地live路径已实现账户预检、哈希readiness、一次性arm、幂等入场、原生保护、
+   保护失败紧急平仓、持仓回读和19:00硬退出。发布代码和安装disabled unit不等于允许私有API或订单。
+2. **7 月 30 日 FOMC**：默认 shadow。若owner另行授权canary，先显式运行`prepare`读取真实账户并冻结exact
+   account/symbol/side/notional/`<=5U`风险/止损/退出scope，再运行`arm`生成0600且默认off的短时单次环境文件；核对输出hash后，
+   唯一的最终动作才是对同一arm执行`switch --enable`。开关不能创建或放宽readiness，也不能复用已消费arm。
 3. **首个闭环后**：必须能从 order/trade/fee/funding/position/stop 证据重建净 PnL 与最大风险；否则保持 5U 或 HALT。
 4. **提高到 10U 前**：至少一个完整受保护 round trip、无 UNKNOWN、无未保护时间窗、实际压力损失未越过 canary 预算。
 5. **两次正常亏损或 20U 回撤**：停止本策略，不用“最后 20U”救援；复盘交易条件、成本与执行路径后另立版本。
@@ -348,5 +350,6 @@ entry/stop/pressure exit、fee/slippage/funding 假设、quantity step 前后数
 - 7 月 30 日 06:00-06:30 左右只是最早可能进入 `OBSERVE` 的时间，不是自动买卖时间。
 - 7 月 30 日 12:00 后不新开 FOMC 仓位，19:00 前全平，避免把单一事件策略带入 20:30 的 GDP/PCE。
 - 没有“完成 1h 方向锚 + 合格 15m 突破 + 未回旧区间的回踩重收 + 全成本 2R + 保护可用”，结果就是 **NO TRADE**。
+- live代码可用不等于本次已授权；生产unit/timer、私有预检、arm和开关当前全部未启用。
 
 该策略追求的是可重复的风险纪律和少量清晰机会，不宣称已有高胜率或正期望证据。

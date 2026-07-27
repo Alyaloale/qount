@@ -308,7 +308,9 @@ def _market_record(
     return candidates[0][1]
 
 
-def _symbol_rules(market: Mapping[str, Any]) -> tuple[float, float, float, str]:
+def _symbol_rules(
+    market: Mapping[str, Any],
+) -> tuple[float, float, float, float, str]:
     info = market.get("info") if isinstance(market.get("info"), Mapping) else {}
     filters = info.get("filters") if isinstance(info, Mapping) else ()
     by_type = {
@@ -317,11 +319,13 @@ def _symbol_rules(market: Mapping[str, Any]) -> tuple[float, float, float, str]:
         if isinstance(row, Mapping)
     }
     lot = by_type.get("LOT_SIZE", {})
+    price_filter = by_type.get("PRICE_FILTER", {})
     notional = by_type.get("MIN_NOTIONAL", by_type.get("NOTIONAL", {}))
     limits = market.get("limits") if isinstance(market.get("limits"), Mapping) else {}
     amount_limits = limits.get("amount") if isinstance(limits.get("amount"), Mapping) else {}
     cost_limits = limits.get("cost") if isinstance(limits.get("cost"), Mapping) else {}
     precision = market.get("precision") if isinstance(market.get("precision"), Mapping) else {}
+    price_tick = _number(price_filter.get("tickSize"), precision.get("price"))
     step = _number(lot.get("stepSize"), precision.get("amount"))
     minimum_quantity = _number(lot.get("minQty"), amount_limits.get("min"))
     minimum_notional = _number(
@@ -334,6 +338,7 @@ def _symbol_rules(market: Mapping[str, Any]) -> tuple[float, float, float, str]:
     rule_core = {
         "symbol": str(market.get("id") or ""),
         "step_size": step,
+        "price_tick": price_tick,
         "minimum_quantity": minimum_quantity,
         "minimum_notional": minimum_notional,
         "contract_size": contract_size,
@@ -343,14 +348,14 @@ def _symbol_rules(market: Mapping[str, Any]) -> tuple[float, float, float, str]:
     }
     if not all(
         math.isfinite(value) and value > 0.0
-        for value in (step, minimum_quantity)
+        for value in (price_tick, step, minimum_quantity)
     ):
         raise FomcWatcherError("fomc_public_symbol_rules_invalid")
     if not math.isfinite(minimum_notional) or minimum_notional < 0.0:
         raise FomcWatcherError("fomc_public_minimum_notional_invalid")
     if not math.isclose(contract_size, 1.0, rel_tol=0.0, abs_tol=1e-12):
         raise FomcWatcherError("fomc_public_contract_size_invalid")
-    return step, minimum_quantity, minimum_notional, canonical_hash(rule_core)
+    return price_tick, step, minimum_quantity, minimum_notional, canonical_hash(rule_core)
 
 
 def collect_fomc_public_market(
@@ -405,7 +410,7 @@ def collect_fomc_public_market(
     funding_rate = _number(
         funding.get("fundingRate"), funding_info.get("lastFundingRate"), 0.0
     )
-    step, minimum_quantity, minimum_notional, rules_hash = _symbol_rules(market)
+    price_tick, step, minimum_quantity, minimum_notional, rules_hash = _symbol_rules(market)
     hourly_hash = canonical_hash(
         {
             "interval": "1h",
@@ -460,6 +465,7 @@ def collect_fomc_public_market(
         mark_price=mark,
         index_price=index,
         funding_rate=funding_rate,
+        price_tick=price_tick,
         quantity_step=step,
         minimum_quantity=minimum_quantity,
         minimum_notional_usdt=minimum_notional,

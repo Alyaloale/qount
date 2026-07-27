@@ -6,9 +6,21 @@
 
 更新时间：2026-07-27
 
-VPS生产版本：`0.2.18`，implementation commit=`5fe2b914fd832ba20a4b1a1ecc7daf6f8aac3e62`，
-production provenance=`7b28fd69...0a6bda3`，source tree=`af137375...d20697`。FOMC不可下单watcher、
-现金窗口/冻结/信号告警和固定事件窗口timer已部署；timer只用公共行情，仍没有paper/live或订单权限。
+VPS生产版本：`0.2.21`；当前release的commit、source tree、provenance和逐文件verification保存在
+`/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`。FOMC不可下单watcher、
+现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；仍没有paper/live或订单权限。
+
+`0.2.21`的FOMC受控live runtime、CLI及`qount-fomc-live.service/.timer`已部署到VPS。VPS production profile为
+`360/360 OK`，模板与安装unit的SHA-256完全一致；timer明确保持`disabled/inactive`，无live环境文件、无arm。
+
+当前账户只读证据为run `20260727T073725Z` / observation `ac00bd58...7757`：BTC USD-M用户自有多仓`0.009`、名义约
+`587.62 USDT`，钱包`203.06011455 USDT`、可用`66.0921174 USDT`、普通挂单0、既有条件保护单2。不要撤改或把该仓位归给
+MiniTrend；Dashboard只可发布`available_readonly`，成本、PnL、NAV、订单沿袭和ledger reconciliation继续unavailable。
+`minimal_live`是registry历史状态，当前执行状态为`blocked`且`live_orders_allowed=false`。
+
+FOMC live runtime、CLI及`qount-fomc-live.service/.timer`已经形成VPS release并安装。生产仍不存在已授权的
+FOMC live arm/env；不要把已部署但`disabled/inactive`的timer解释成生产启用状态。当前用户自有BTC仓位和两张条件单
+必须由owner自行处理；账户平坦后，仍须在shadow信号`ARMED`且入场窗口内重新执行`prepare -> arm -> switch --enable`。
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -40,9 +52,12 @@ production provenance=`7b28fd69...0a6bda3`，source tree=`af137375...d20697`。F
 - 当前`qount-mini-trend-live.timer=disabled/inactive`、无NEXT，`qount-mini-trend-forward.timer=disabled/inactive`，production cron为0 entry。
   `state/mini_trend/standard-production/status.json`的`awaiting_natural_fill/sample_count=0`现为冻结历史状态，不再表示正在等待调度。
   不要恢复旧X4/C×D、任何MiniTrend timer或production cron，也不要强制下单采样。
+- FOMC live未来若得到精确授权，操作序列固定为`prepare -> arm -> switch --enable`；`prepare`会使用私有只读API，`arm`写0600且
+  默认off的短时单次env，`switch`只能修改匹配arm的布尔值。当前不要运行这三步，也不要enable仓库中的live timer模板。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
-  `qount-dashboard-publisher.timer`、`qount-daily-intelligence.timer`和固定窗口的`qount-fomc-shadow.timer`已获授权并保持`enabled/active`；
+  `qount-dashboard-publisher.timer`、`qount-daily-intelligence.timer`、`qount-notification-retry.timer`和固定窗口的
+  `qount-fomc-shadow.timer`已获授权并保持`enabled/active`；
   FOMC timer仅在`2026-07-29 17:00 UTC`至`2026-07-30 11:00 UTC`运行公共数据shadow，后者每日`04:30 UTC`抓免费官方feed、
   运行六角色中文LLM、不可覆盖归档并发送个人微信。所有交易执行timer当前均停用；不得恢复live/paper cron、MiniTrend timer、
   X4/C×D或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
@@ -55,7 +70,10 @@ production provenance=`7b28fd69...0a6bda3`，source tree=`af137375...d20697`。F
 - 当前Alpha Agent与生产日报LLM为`volc_coding_plan`：base URL=`https://ark.cn-beijing.volces.com/api/coding/v3`、
   Console名称`glm-5.2`对应API模型ID=`glm-5-2-260617`、输出上限=`8000`。VPS key只在
   `/etc/qount/intelligence/coding-plan.key`，必须保持`0600 root:root`且不得回显；旧relay key不再被production unit引用。
-- 2026-07-22最新日报ID为`38985fe5...50d5fc`、report hash为`d42c851d...9e68`，3份feed、7份详情、2份行情和六角色请求均已归档；
+- 最新正确日报为`29be08b6...6d8d`，report hash=`fc3f2e36...2018`；新微信job=`c8f11bf6...f4c9`为
+  `DELIVERED/SUCCEEDED`且response hash=`b10445d8...bdf1`。旧`3bce57fe...`与`cd650cee...`均为
+  `DEAD_LETTER/notification_delivery_superseded`。gateway active且新job成功时不要重新扫码；只有明确鉴权/断开错误才重绑。
+- 2026-07-22历史日报ID为`38985fe5...50d5fc`、report hash为`d42c851d...9e68`，3份feed、7份详情、2份行情和六角色请求均已归档；
   Dashboard `intelligence`为`fresh/attention_required`，微信任务为`DELIVERED/SUCCEEDED`。`pipeline=complete`但策略/红队/总编因事件窗口、
   成交样本和历史容量不足返回`needs_research`；5个研究提案均为`g0_status=blocked_history_capacity`，不是交易信号。
   检查命令：
@@ -66,7 +84,7 @@ ssh -o ClearAllForwardings=yes qount-vps \
 ssh -o ClearAllForwardings=yes qount-vps \
   'journalctl -u qount-daily-intelligence.service -n 40 --no-pager'
 ```
-- 最新动态会话验证job为`6d51a764...4324`，状态`DELIVERED/SUCCEEDED`；生产NotificationStore为5 event/job/attempt、20行audit chain。
+- 历史动态会话验证job为`6d51a764...4324`，状态`DELIVERED/SUCCEEDED`；当时生产NotificationStore为5 event/job/attempt、20行audit chain。
   旧代码回滚目录为`/root/qount-notify-backup.rl6QL6`，其中不含凭据。不得用该代码回滚覆盖当前四字段凭据；若必须回滚provider，需同时恢复
   相容凭据合同并重新执行真实通知验证。
 - 历史阶段：2026-07-22固定`100 USDT` MiniTrend Base曾完成manual arm并进入`minimal_live`。当日VPS release为`0.2.13`；当日run
@@ -196,7 +214,7 @@ private API、手工补文件、复制fixture或恢复forward timer。authority 
 常见读法：
 
 - `cxd_live_cron.sh`、`x4_live_cron.sh` 和旧 C×D/X4 状态文件均为 legacy，不是当前生产入口；不得恢复。
-- 当前只允许 MiniTrend Base `100 USDT`、long/cash、one-way、isolated 1x、gross<=1。
+- 当前不允许任何交易执行。MiniTrend Base的`100 USDT`、long/cash、one-way、isolated 1x、gross<=1只作为冻结历史合同保留。
 - `cron_guard.sh` 是未来若获授权后仍必须保留的脚本内防线：live 110 秒、publisher 90 秒、paper 1800 秒；
   crontab 外层 timeout 略大，只做最后兜底。`[SKIP] previous run still active` 是正常防重入，
   `[ALERT] exceeded ... runtime limit` 才是需要排查的超时。
@@ -211,23 +229,25 @@ private API、手工补文件、复制fixture或恢复forward timer。authority 
   `RuntimeLedgerSnapshot` schema v3用同一SQLite读事务冻结positions、orders/events、fills、cash、recoveries、完整NAV历史、账户观测和
   三方对账；balance/available、actual gross、margin和peak/current drawdown已有权威账本合同。`SystemHealthSnapshot`固定要求
   `clock/disk/service/backup`四项强类型观测并使用独立freshness。
-  Dashboard当前有`overview/positions/orders/strategies/decisions/risk/readiness/system/alerts/reports`十页，原子release为十份模型加
-  `publication.json`共11个JSON，静态schema共13份。positions可点击进入decision trace；浏览器不读取legacy JSON、生产SQLite或
-  交易所，也不重算PnL。最后一次授权账户快照为TOP3全平和`486.15970914 USDT`，但已按15分钟规则显示stale；system health
-  独立保持fresh。authority writer保持`static/inactive`，publisher不刷新账户；真实webhook未接，order latency/slippage继续显式unavailable。
+  Dashboard当前发布11个业务模型，原子release为这些模型加`publication.json`共12个JSON，静态schema共13份。positions可点击进入
+  decision trace；浏览器不读取legacy JSON、生产SQLite或交易所，也不重算PnL。2026-07-27最新order-free账户观察为用户自有BTC
+  USD-M多仓`0.009`、普通挂单0和两张既有条件保护单；它只可显示为`available_readonly`，ledger成本、Qount订单、PnL、NAV和当前对账
+  继续不可用。authority writer保持`static/inactive`，publisher不刷新账户；order latency/slippage继续显式unavailable。
+  站点整站受Caddy Basic Auth保护；匿名请求返回401是访问策略，不是publisher故障。2026-07-27 10:38 CST只读复核确认publisher
+  `enabled/active`、最近运行success、12份release JSON存在、restore drill与system health均通过。不要为消除401直接移除认证并公开账户数据。
 - `ledger/legacy_replay.py`只用于隔离的本地migration replay：输入必须是相互hash链接的projection与legacy dry plan，输出
   完整`VerifiedDecisionBatch`、仅`PLANNED`的临时账本和哈希报告。它不读取生产文件、不导入dispatcher或交易所adapter，
   也不能把已有transition/fill/cash/NAV/reconciliation状态重标成dry；不要把测试golden或临时SQLite复制到VPS当生产状态。
 - `notifications/store.py`只由注入transport发送，固定delivery idempotency key并持久化attempt/audit；
-  `notifications/transport.py`现有严格provider response、限流/超时、0600 credential和无key审计，但只提供fake provider，当前
-  transport和本地`alerts.json`都是fixture。旧CTA-R SwiftBar/Übersicht与`cta.json`前端推送已删除，`com.qount.dashboard`已从Mac
+  `notifications/transport.py`已有严格provider response、限流/超时、0600 credential和无key审计，生产使用腾讯个人微信iLink
+  `openclaw_weixin` provider。`DELIVERED/SUCCEEDED`只表示通道接受，不代表客户端已展示或用户已读。旧CTA-R SwiftBar/Übersicht与`cta.json`前端推送已删除，`com.qount.dashboard`已从Mac
   launchd卸载；`com.qount.ctar-daily`是独立研究任务，仍保留。
 - WSL 的 `7907` 代理、`.env`、`qount-runner.timer` 只属于历史 line A 运维链路。
 
 ## Phase B 只读并行
 
 Phase B（只读生产并行）管道已建成，`qount-phase-b-readonly.timer` 已安装并 enabled/active。
-每日 UTC 04:00（live timer 03:20 后 40 分钟）自动运行。全部只读，不改 dispatcher/订单/HALT 文件。
+每日 UTC 04:00独立运行；MiniTrend live timer已关闭。Phase B全部只读，不改 dispatcher/订单/HALT 文件。
 归档落 `state/phase_b/`。
 
 检查 timer 状态：
@@ -396,8 +416,8 @@ Phase A 架构演进合同与离线认证验证：
 ```
 
 当前读法：Phase B/C/D dispatcher已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
-`SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。manual arm已执行并把同一hash绑定的registry
-提升为`minimal_live`；当前`0.2.15` release已迁入`standard_production`，回归为Mac全仓`1911 OK`、VPS生产链聚焦`71 OK`。
+`SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。历史阶段manual arm曾把同一hash绑定的registry
+提升为`minimal_live`并在`0.2.15`迁入`standard_production`；该执行链现已停止。当前VPS为`0.2.20`，仓库为`0.2.21`。
 更早的`0.2.13`/`0.2.14`及`1542/328/29/1488/299/71/37/101 OK`等读数只保留历史语境，不覆盖当前release。
 NotificationStore、incident sync、DailyBrief、Daily Intelligence、个人微信transport和
 Dashboard v1均已在生产运行，但都不能直接赋予订单权；publisher只读标准source，不查询交易所。不要用fixture创建生产DB/read model，
@@ -963,8 +983,8 @@ python -m qount.main walk-forward \
 ## 当前禁止事项
 
 - 不把 `QOUNT_LIVE_ENABLE` 改成 `true`。
-- 不安装production crontab，不enable新的qount systemd timer，不手工强制订单或真实notification transport；已授权的
-  publisher、Daily Intelligence、MiniTrend live和phase-b-readonly timer保持现状。
+- 不安装production crontab，不enable新的qount systemd timer，不手工强制订单；publisher、Daily Intelligence和
+  phase-b-readonly timer保持现状，MiniTrend live/forward timer保持`disabled/inactive`。
 - 不在 WSL 启动或 enable `qount-runner.timer`。
 - 不把旧 `wf-*` 窗口当 validation。
 - 不把 2026-06-01..2026-06-04 已看过窗口当新的 promotion 验证。
@@ -991,9 +1011,9 @@ python -m qount.main walk-forward \
 预注册 anti-overfit/correlation-stress 证据，不借此恢复旧价格/频段扫描。
 
 架构支线已完成账户/回撤、四项健康和position/decision trace。腾讯个人微信adapter及日报发送已获只读情报范围内授权并形成真实
-`DELIVERED/SUCCEEDED`证据；legacy `Notifier`/shell ServerChan不得复用。production publisher、Daily Intelligence和MiniTrend live
-timer是当前active timers；只有MiniTrend在独立arm/registry/readiness门通过时具备订单权限。不要为了刷新页面调用私有API或恢复
-forward/cron；账户authority由已授权live cycle刷新并按15分钟规则自然stale。
+`DELIVERED/SUCCEEDED`证据；它只证明通道接受，不代表客户端展示或已读。legacy `Notifier`/shell ServerChan不得复用。production
+publisher、Daily Intelligence和phase-b-readonly是当前active timers；所有交易timer均关闭。不要为了刷新页面调用私有API或恢复
+MiniTrend timer/cron；账户authority只由显式order-free采样更新并按15分钟规则自然stale。
 
 1. **诚实停止 Alpha S3 trade-flow v1。** ETH Q1/April 为正，但 exact contract 在 BTC/BNB/SOL Q1 全败；
    不改 `z=2/hold=6/cooldown=18/polarity=momentum`，不下载复制 April，不事后造 candidate family，不做
@@ -1006,7 +1026,7 @@ forward/cron；账户authority由已授权live cycle刷新并按15分钟规则�
 4. 已证伪、**不要重复**：`4h xs_mom` 的 exit/regime/barrier/purged-CV 复核；funding/basis 作
    预测特征（xs_funding/xs_funding_rev）；WLD/SOL entry-only basis filter；top12 1d TS-MOM；
    S-CARRY 现金流。
-5. MiniTrend Base 的 `minimal_live` 只维持固定100 USDT合同；不因首个非零信号扩大本金或启用其它sleeve。
+5. MiniTrend Base 的 `minimal_live` 只保留冻结历史registry状态和固定100 USDT合同，当前执行blocked；不恢复调度、扩大本金或启用其它sleeve。
    RiskTier、FundingVeto和所有旧研究线继续shadow/research-only。
 6. Funding Veto冻结shadow已有2个完整pair，但两路径均全现金、0 active/0收益且尚无veto；继续按原合同追加，
    不改50%阈值、不把`collect_shadow_forward`解释为盈利或晋级。

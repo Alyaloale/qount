@@ -11,6 +11,128 @@
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
+## 2026-07-27 (Round 29)
+
+### `0.2.21` FOMC受控live runtime已部署，timer保持关闭
+
+**release与验证**：owner授权把当前工作区整理为一个干净的`0.2.21` release并同步VPS。Mac全仓`2370/2370 OK`，VPS
+production profile=`360/360 OK`，editable package安装为`qount==0.2.21`。VPS的`.qount-release-provenance.json`绑定
+本release commit和source tree；`.qount-release-verification.json`逐文件验证通过。FOMC live unit经`systemd-analyze verify`校验，
+其service/timer与`/etc/systemd/system`安装副本的SHA-256逐项一致。
+
+**状态边界**：`qount-fomc-live.timer=disabled/inactive`、无NEXT；`/root/.config/qount/fomc-live.env`不存在，未运行
+`prepare`、未创建arm、未开启live switch、未读取私有账户或下单。现有用户自有BTC USD-M仓位和两张条件单未作任何更改；owner平仓/撤单后，
+仍须等待shadow信号`ARMED`并在入场窗口内重新作私有readiness预检，`verdict=ready_for_fomc_live_arm`才可进入手工arm。
+
+## 2026-07-27 (Round 28)
+
+### 长期个人组合设计文档入库（分析文档，非预登记合同）
+
+owner 要求把长期可盈利策略设计分析写入文档：新增 `docs/long-run-personal-strategy-design.md`。
+内容：基于 148 次 formal trial 的证伪资产（短周期择时/微观结构/跨所套利/币内横截面四堵墙）与
+四项存活证据（L1 跨资产趋势 REAL、MiniTrend base=低 beta 风险包装器、Funding Veto 成本工程、
+事件/被迫流），提出三层 sleeve 组合：核心跨资产月度趋势配置（70-80%）+ 事件/被迫流卫星（10-15%）
++ 研究线（0% 真钱）。本文档不改变任何授权状态；任何落地仍须走 G0 → 预登记 → shadow/canary 纪律。
+
+### FOMC 触发率实证与 v0.3 延续持有扩展提案（同 Round，discovery 级）
+
+owner 询问 FOMC 是否会触发、效应不够大怎么办、只做一天是否太短。新增
+`docs/fomc-trigger-study-and-v03-extension.md`：用 OKX BTC/USDT 公共 K 线对 2024-01..2026-06 共
+20 次 FOMC 复现冻结口径的 1h 方向锚——锚触发率 11/20（55%，叠加 15m 确认后估计 25-40%）；
+D0 有利幅度 >=2 ATR 的 7/11，弱锚（<1.5 ATR）4 次中 3 次大幅反向，证明小效应事件不该降低门槛；
+强突破 D0->D+3 有利幅度普遍扩大 2-4 倍（如 3.58->11.93 ATR），当日 19:00 硬平仓截断了主要利润。
+提出 v0.3：19:00 检查点 >=2R 才转保本止损 + 3xATR 吊灯延续持有至 D+3，否则按 v0.2 全平。
+本笔记为 discovery 级（n=11、OKX 数据），7/30 canary 仍按 v0.2 执行；v0.3 须另行预登记并用
+Binance 数据复算。未 commit/push、未部署、未访问私有 API、未下单。
+
+### 个人策略新研究方向设计（同 Round，分析文档）
+
+owner 要求在低数据/低硬件/厚利润约束下设计新研究方向。新增
+`docs/personal-strategy-research-directions.md`（D1 宏观事件篮子扩展 P0、D3 跨资产个人载体重认证 P0.5、
+D2 forced-flow 均值回复 P1、D4 事件前区间 fade 泛化 P2），并在
+`docs/research-advancement-roadmap.md` 末尾追加 §12 索引。全部为分析/候选，未开任何 trial、
+未消费数据结果、未改变已冻结线状态。未 commit/push。
+
+### D5 行业 ETF 轮动方向追加（同 Round）
+
+owner 提出行业趋势 + 多 ETF 特征选择 ML。已在 `docs/personal-strategy-research-directions.md`
+追加 D5（P1）：11 个 SPDR 行业 ETF 月度轮动，先过 `_panel_effective_breadth` 广度 G0（<2.0 则降级，
+与加密横截面同尺）；ML 硬边界沿用 2026-07-19 证伪结论——只做特征排序辅助、简单动量基线先行、
+purged-CV+DSR/PBO 显著性门，不输出仓位/方向/权重。roadmap §12 已同步。未开 trial，未 commit/push。
+
+## 2026-07-27 (Round 27)
+
+### PreEvent-Range 区间 fade 线预登记与 plan-only 工具落地（仅本地，未提交）
+
+**owner 决定**：授权在 FOMC（7/30）前窗口以小额 canary 执行区间高抛低吸，明确接受本线跳过 shadow 晋级纪律（一次性豁免）。
+**落地内容**：新增预登记合同 `docs/pre-event-range-strategy.md`（`SmallAccount-PreEvent-Range-v0.1`）；纯函数信号模块
+`src/qount/small_account/range_signal.py`（冻结区间 fade 触发、破位/过窄/现金截止 fail-closed）及 15 项回归
+`tests/test_small_account_range_signal.py`（全部通过）；plan-only CLI `scripts/operations/run_pre_event_range_plan.py`
+（freeze 一次性不可覆盖 + scan 输出双向计划，复用 `size_linear_usdt_futures` 全成本 2R 门槛）。
+**边界**：全程 `orders_authorized=false`、零私有 API、零订单；真实入场由 owner 依据 scan 计划手工执行并先挂原生
+STOP_MARKET 保护；上海 7/30 01:00 前强制全平交还 FOMC 流程。本轮改动仅在本地工作区，未 commit/push、未部署 VPS。
+
+## 2026-07-27 (Round 26)
+
+### 0.2.21封装FOMC受控live能力并推送仓库
+
+**仓库发布**：包版本由`0.2.20`提升为`0.2.21`，收录Round 24已完成的FOMC私有预检、哈希readiness、短时单次arm、
+MARKET成交与逐笔fee确认、原生`STOP_MARKET closePosition`保护、紧急reduce-only平仓、硬截止退出及有限窗口systemd模板。
+这次只形成并推送仓库版本；未同步VPS、未安装或启用live timer、未读取生产私有账户、未创建arm、未调用订单接口。
+
+## 2026-07-27 (Round 25)
+
+### 0.2.20账户只读事实、Dashboard与个人微信全面修复并部署
+
+**根因与口径修复**：历史Dashboard只接受RuntimeLedger作为仓位/订单权威；当前用户自有BTC仓位未进入Qount ledger，因而仓位和订单
+模型都显示不可用，同时registry的`minimal_live`被误读成当前可下单。日报又把2026-07-23历史空仓对账当成当前事实。修复增加独立、
+不可授予订单权的blocked runtime account observation：交易所现时数量/名义/余额可显示为`available_readonly`，但平均成本、订单沿袭、
+PnL、NAV和ledger reconciliation必须继续unavailable；策略模型同时展示`registry_status=minimal_live`与
+`execution_status=blocked/live_orders_allowed=false`。日报在旧ledger与新交易所观察冲突或过期时fail closed，并明确历史时点。
+
+**低余额与执行安全**：旧forward shell在只读preflight后硬断言可用余额`>=100 USDT`，使账户观察无法发布。`0.2.20`允许低余额继续
+完成只读采样和authority publication；只有实际增仓BUY intent才触发`available_balance_below_pilot_capital`并移除买单，reduce-only SELL和
+后置对账语义不被误伤。所有路径仍由unit强制live开关false；未创建arm、未启用MiniTrend timer、未调用订单或账户变更API。
+
+**发布与实机证据**：clean release commit=`3a4fb404ecf870c67301b15ce71fed3ddcdd5faa`、version=`0.2.20`、source tree=
+`f38215708c3de6664f9d877bec680c4d0099b9840ddca652216f0cfff31103da`、provenance=
+`76ee714d0bd1049aa98a569204ac42589d458e82da788fc51e72cae8d426afbe`、verification=
+`565fe17b991f1a73f132a7b8ca89a4178290eb40eed89b97665ae2043c52b562`。只同步`52874a2..3a4fb40`七个修改文件与manifest，
+回滚目录=`/root/qount-repair-backup-0.2.20.SvlnYe`。VPS聚焦`132 OK`、production profile `360 OK`，compileall、Bash/Node语法、
+manifest SHA和editable package version均通过。
+
+**账户只读oneshot**：手工运行order-free forward service一次，run=`20260727T073725Z`成功。账户事实为BTC USD-M long `0.009`、
+名义`587.6163 USDT`、钱包`203.06011455 USDT`、可用`66.0921174 USDT`、普通挂单0；另有两张用户既有BTC条件保护单，
+未撤改。observation hash=`ac00bd58320628b333c901973ac198b3af8ce1b46a0250618cefe3fedf687757`，全部
+`private_api_order_attempted/exchange_mutation_attempted/live_orders_allowed=false`。live/forward timers始终`disabled/inactive`，
+production cron仍无active entry。
+
+**日报、微信和发布**：正确日报ID=`29be08b688941160ca82a4f9fe58253d3c4edd676419b3174ef319ef5f396d8d`、hash=
+`fc3f2e36d8cb381bcfef33822beff802b5c27feafe0235452354491bb8fa2018`，明确当前BTC观察未进入ledger。旧job
+`3bce57fe...`与`cd650cee...`各有唯一`delivery_cancelled`审计并转为`DEAD_LETTER/notification_delivery_superseded`；新job
+`c8f11bf6...f4c9`一次`DELIVERED/SUCCEEDED`，response hash=`b10445d8...bdf1`。这只证明腾讯通道已接受，不代表客户端已展示或用户已读；
+OpenClaw gateway保持active，无需扫码。
+retry timer恢复后自然轮询processed=0。静态app/index精确安装，已验证publication=`cee6e7dc...a656`、hash=`7533ccb7...e166`，
+positions为`available_readonly`、orders为ledger unavailable、strategy执行blocked，publisher restore drill和system health均healthy。
+
+## 2026-07-27 (Round 24)
+
+### FOMC受控live路径本地闭环，Dashboard 401根因复核
+
+**实现**：新增事件专用私有账户preflight、哈希readiness、10分钟内单次arm、0600 env与独立live switch；订单入口绑定事件、账户、
+信号candle identity、batch/plan、方向、数量、名义、`<=5 USDT`压力风险、止损和硬退出时间。MARKET入场要求order与逐笔trade/USDT fee
+共同确认，原生`STOP_MARKET closePosition`必须回读；保护失败后HALT并尝试幂等`reduceOnly MARKET`紧急平仓，只有账户flat且条件单清空
+才记为已平。持仓周期校验原生保护，到`11:00 UTC`取消保护并强平；歧义保持`halted_uncertain`。新增`prepare/arm/switch/cycle` CLI和
+只覆盖本次事件窗口的service/timer模板，生产默认未部署、未enable。
+
+**验证**：`PYTHONPATH=src .venv/bin/python -m unittest tests.test_small_account_fomc_live tests.test_small_account_fomc_runtime
+tests.test_small_account_fomc_adapter tests.test_small_account_fomc_watcher`为`37 OK`；全仓`2345 OK`，相关Python `compileall`、CLI help和
+`git diff --check`通过。没有访问私有账户、创建arm、写生产env、部署unit、启用timer或调用订单接口。
+
+**Dashboard只读生产核验**：2026-07-27 10:38 CST publisher timer为`enabled/active`，最近oneshot success；最新publication
+`3a58fee6...d6be`、hash=`27b1c01b...468`，12份JSON存在，restore drill和system health通过。公网匿名请求在HTML前被Caddy
+Basic Auth返回`401/WWW-Authenticate: Basic realm="restricted"`。结论是发布健康、访问受保护；未取消认证，避免公开账户与订单数据。
+
 ## 2026-07-27 (Round 23)
 
 ### 0.2.18补齐FOMC现金窗口告警并部署

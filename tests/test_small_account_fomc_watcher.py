@@ -184,6 +184,10 @@ class FakePublicExchange:
                 "info": {
                     "filters": [
                         {
+                            "filterType": "PRICE_FILTER",
+                            "tickSize": "0.1",
+                        },
+                        {
                             "filterType": "LOT_SIZE",
                             "stepSize": "0.001",
                             "minQty": "0.001",

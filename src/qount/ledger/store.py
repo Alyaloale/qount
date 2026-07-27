@@ -1302,6 +1302,24 @@ class RuntimeLedger:
         self._after_commit()
         return created
 
+    def has_fill(self, *, client_order_id: str, exchange_trade_id: str) -> bool:
+        """Return whether this immutable venue trade is already recorded."""
+
+        fill_id = trace_id(
+            "fill",
+            {
+                "client_order_id": client_order_id,
+                "exchange_trade_id": exchange_trade_id,
+            },
+        )
+        with self._connection() as connection:
+            return (
+                connection.execute(
+                    "SELECT 1 FROM fills WHERE fill_id = ?", (fill_id,)
+                ).fetchone()
+                is not None
+            )
+
     def record_cash_event(
         self,
         *,
@@ -1391,6 +1409,26 @@ class RuntimeLedger:
                 _OPEN_ORDER_STATUSES,
             ).fetchall()
         return tuple(str(row["client_order_id"]) for row in rows)
+
+    def fill_fee_total(self, *, after: str, through: str) -> float:
+        """Return fees for fills recorded in one open NAV period."""
+
+        return sum(self.fill_fee_totals(after=after, through=through).values())
+
+    def fill_fee_totals(self, *, after: str, through: str) -> dict[str, float]:
+        """Return fill fees by original asset for one open NAV period."""
+
+        after = _time(after, name="fill_fee_period_start")
+        through = _time(through, name="fill_fee_period_end")
+        if aware_datetime(through) <= aware_datetime(after):
+            raise RuntimeLedgerError("fill_fee_period_invalid")
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT fee_asset,COALESCE(SUM(fee),0) total FROM fills "
+                "WHERE occurred_at > ? AND occurred_at <= ? GROUP BY fee_asset ",
+                (after, through),
+            ).fetchall()
+        return {str(row["fee_asset"]): float(row["total"]) for row in rows}
 
     def _period_cash_components(
         self,

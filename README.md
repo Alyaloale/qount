@@ -2,12 +2,16 @@
 
 `qount` 是按当前真实机器拓扑设计的 `AI 决策系统 + 风控执行器 + Binance 执行` 骨架。
 
+仓库版本`0.2.21`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
+`STOP_MARKET closePosition`回读、保护失败紧急平仓和硬截止退出；VPS仍只部署公共行情shadow，live service/timer未部署、未启用，
+没有私有预检、arm或订单授权。Dashboard publisher健康；匿名打开`#/live`得到401是整站Basic Auth策略，不是发布器停止更新。
+
 系统工程主设计见 [docs/system-architecture-design.md](docs/system-architecture-design.md)：它定义统一合同、
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前 VPS 生产版本为 `0.2.18`，implementation commit=`5fe2b914fd832ba20a4b1a1ecc7daf6f8aac3e62`、
-provenance=`7b28fd69...0a6bda3`，source tree=`af137375...d20697`。FOMC公共行情watcher、现金窗口/冻结/信号告警和
+当前 VPS 生产版本为 `0.2.20`，implementation commit=`3a4fb404ecf870c67301b15ce71fed3ddcdd5faa`、
+provenance=`76ee714d...6afbe`，source tree=`f3821570...103da`。FOMC公共行情watcher、现金窗口/冻结/信号告警和
 仅覆盖2026年7月事件窗口的systemd timer已部署；该timer固定不可下单，不读取私有账户或API。
 Base 已迁入 `standard_production`：曾获真钱授权的策略
 `MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，
@@ -16,8 +20,9 @@ Base 已迁入 `standard_production`：曾获真钱授权的策略
 标准权威链为 `MarketSnapshot -> StrategyIntent -> allocator -> RiskDecision -> OrderPlan -> RuntimeLedger -> reconciliation ->
 ExecutionAttributionReport`。MiniTrend projection/dispatcher 只保留为策略输入与场所适配器，必须与标准 batch/plan 经济行为 parity；
 订单身份、registry、ledger 和 reconciliation 均由标准合同绑定。停用前最新正式 cycle 为 `completed`、0 market/0 STOP、
-`exchange_mutation_attempted=false`，post-dispatch reconciliation passed；停用后只读preflight确认账户全平、普通挂单0、
-可用余额`464.0942153 USDT`。不得为了样本恢复timer或强制下单。
+`exchange_mutation_attempted=false`，post-dispatch reconciliation passed；2026-07-26停用后的历史只读preflight曾确认账户全平、
+普通挂单0、可用余额`464.0942153 USDT`。2026-07-27最新order-free观察已显示用户自有BTC仓位；该仓位不属于Qount ledger，
+不得撤改、归因给MiniTrend，或为了样本恢复timer和强制下单。
 
 `state/mini_trend/standard-production/status.json` 是首个自然成交观察的机器状态：migration=`d3668938...d51b`，当前
 `awaiting_natural_fill`、sample_count=0；该状态现已冻结，不再有自然成交调度。`qount-mini-trend-live.timer=disabled/inactive`，
@@ -141,15 +146,14 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
   - UM shadow输入刷新层已落地：研究canonical仍由WSL直写外置盘`datasets/binance_um_shadow/v1`；VPS另只保留
     TOP3 production-minimum cache，每日直连刷新公开rules/bar/funding并离线回放，不作为批量研究中转。
     策略trial累计仍为143
-  - 一个月小资金实盘已由owner改为严格固定`100 USDT` canary；manual arm前只验证已审计USD-M可用余额不少于100，
-    manual arm后冻结该次本金。无账户单日止损，权益峰值回撤10%时
-    flatten+halt。Base v0.2仍是真钱控制；历史收益leader全局2.0%风险档弱市为负且59个独立30天窗有1次触发
-    10%线，只做首选shadow，Funding Veto为次级shadow
+  - 历史阶段一个月小资金实盘由owner改为严格固定`100 USDT` canary；manual arm前只验证已审计USD-M可用余额不少于100，
+    manual arm后冻结该次本金。无账户单日止损，权益峰值回撤10%时flatten+halt。当时仅Base v0.2控制真钱；owner已于
+    2026-07-26停止该执行链，registry中的`minimal_live`现只保留历史治理状态。全局2.0%风险档和Funding Veto仍仅为shadow
   - paper runtime v0.3已把全局2.0%风险档和Funding Veto完整状态并入Base的append-only shadow日志；两者
     都显式不控制订单。VPS当前因冻结起点尚无完成bar而0 pair/0 day/0 journal，`await_paper_inputs`不是0收益结论
-  - VPS绕开全部环境代理后的生产出口（具体IP仅存仓库外inventory）可访问Binance UM；owner接受当前credential
-    继续作为生产key。它只存VPS且Reading/Futures/IP限制开启、Withdrawals关闭；Spot/Margin开启按owner指令允许，
-    不再作为preflight/readiness blocker。TOP3现已全部为isolated 1x，账户全平且0挂单
+  - 历史连通性审计确认VPS绕开全部环境代理后的生产出口（具体IP仅存仓库外inventory）可访问Binance UM；credential
+    只存VPS且Reading/Futures/IP限制开启、Withdrawals关闭。2026-07-26历史快照曾为TOP3 isolated 1x、账户全平且0挂单；
+    它已被2026-07-27用户自有BTC只读观察取代，不能再当当前账户事实
   - VPS曾启用`qount-mini-trend-forward.timer`运行公开输入刷新、只读preflight、order-free paper、latest
     projection、当前账户/普通单/条件单对账、dry dispatcher和artifact-bound readiness；2026-07-20按安全要求已执行
     `systemctl disable --now`，当前为`disabled/inactive`。MiniTrend专用dispatcher已实现
@@ -189,8 +193,9 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
     归一化、压力场景血缘、经济事件/证据修订双hash和独立日期计数。当前仅2行合成fixture/1个独立日期，严格
     `collect`，不计算PnL，也没有shadow/paper/live/order资格
   - 站点：`https://qount.alyaloale.com/#/live`，Dashboard v1静态前端已接入真实order-free authority read model；
-    publisher每两分钟只读刷新系统健康、原子release和已验证备份。最后一次授权账户观测为TOP3全平、0挂单，但authority已按
-    15分钟规则标记stale；publisher不查询账户或交易所，也不赋予订单权限
+    publisher每两分钟只读刷新系统健康、原子release和已验证备份。2026-07-27最新账户观察为用户自有BTC USD-M多仓`0.009`、
+    普通挂单0及两张既有条件保护单；Dashboard只显示`available_readonly`，ledger成本、Qount订单、PnL、NAV和当前对账继续不可用。
+    publisher不查询账户或交易所，也不赋予订单权限
 - `Windows / WSL`
   - 正式CPU/GPU计算环境，代码路径`/home/alyaloale/Code/qount`
   - 大数据与最终artifact写外置盘`/mnt/e/qount_data/qount`；WSL ext4只作临时scratch
@@ -212,9 +217,8 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
 - 成本感知 `signal-review`
 - A股 ETF 20 日 research-only 状态判别、Tushare/公开复权数据和固定组合证据门（当前冻结保留）
 - VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher timer为`enabled/active`，
-  每轮验证authority、健康、恢复演练，并保留当前+4个release及latest+60个备份。authority oneshot保持`static/inactive`，
-  MiniTrend live timer为`enabled/active`，forward timer和production cron保持关闭；订单权限只存在于独立0600 arm/env与
-  `minimal_live` registry同时有效的MiniTrend service内
+  每轮验证authority、健康、恢复演练，并保留当前+4个release及latest+60个备份。authority oneshot保持`static/inactive`；
+  MiniTrend live/forward timer和production cron均关闭，当前没有订单权限。仓库FOMC live模板尚未部署、未arm、未启用
 
 ## 初始化
 
@@ -354,8 +358,8 @@ WSL 的 `HTTP_PROXY=http://192.168.128.1:7907` 等配置只属于历史研究 / 
 
 注意：本节是旧 `qount.main` line A 的通用保护，仅供历史代码测试。当前生产不通过
 `QOUNT_LIVE_ENABLE`、`QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`或`QOUNT_CXD_CARRY_ENABLE`开启；
-唯一生产订单权限来自 MiniTrend 独立 `0600` arm/env、`minimal_live` registry、当前 readiness 和
-`qount-mini-trend-live.timer` 的组合门。
+MiniTrend live timer已停用，registry中的`minimal_live`不构成订单权限。仓库FOMC live能力也尚未部署、arm或启用，
+所以当前没有生产订单入口。
 
 还必须满足：
 
@@ -442,8 +446,8 @@ ssh qount-vps 'systemctl show qount-mini-trend-live.service -p Result -p ExecMai
 ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1'
 ```
 
-读法：live timer 的 oneshot service 空闲时显示 `inactive/dead` 是正常的，最近一次结果需为
-`Result=success`；forward timer 和 legacy cron 必须保持关闭。不要恢复 X4/C×D 或用旧 dry 入口刷新生产状态。
+读法：当前live/forward timer都必须为`disabled/inactive`且无NEXT；oneshot service空闲时显示`inactive/dead`是正常的，
+历史最近一次结果可为`Result=success`，但不表示当前有订单权限。不要恢复 X4/C×D 或用旧 dry 入口刷新生产状态。
 
 ## 当前文档入口
 
@@ -470,20 +474,13 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 - 历史执行记录（2026-07-14 及更早）：[docs/archive/update-log-archive.md](docs/archive/update-log-archive.md)。
 
-当前基线：旧 line A `qount.main`、X4和C×D仍关闭；唯一可运行的真钱链为VPS `/root/qount` 上固定100 USDT的
-MiniTrend Base standard-production（registry仍为`minimal_live`）。Dashboard静态前端已部署，
-served root的`data/v1`已由真实order-free authority生成；authority/backup/web data目录按`0700/0700/0755`运行。
-publisher timer为`enabled/active`；它只读完整batch/registry/ledger/notification/health/brief，并每两分钟刷新系统健康、release、
-备份和恢复演练；release保留当前+4个，备份保留latest+60个。最后一次授权账户观测为`486.09421530 USDT`、TOP3全平、0挂单；
-recurring readiness已通过且registry为`minimal_live`。NotificationStore已接腾讯官方个人微信iLink provider，一条中文接入通知
-在VPS真实投递为`DELIVERED/SUCCEEDED`并通过audit-chain重放；WeCom只保留为未启用兼容adapter。authority writer保持
-`static/inactive`，MiniTrend forward timer和production cron保持关闭；live timer为`enabled/active`，publisher不查询交易所，也不授予订单权。
-只读日报生产默认使用Binance公告API、Federal Reserve RSS和SEC RSS，不需要Brave；六角色中文Responses经
-内网normalizer完成真实E2E。当前正式report=`38985fe5...50d5fc`、hash=`d42c851d...9e68`，保存3份feed、
-7份详情和2份行情，个人微信投递为`DELIVERED/SUCCEEDED`。Dashboard intelligence为`fresh/attention_required`；
-日报timer为`enabled/active`，每日`04:30 UTC`运行。旧报告的flat持仓误报已由0.2.13隔离复跑验证消失；
-`attention_required`仍表示研究证据/执行样本不足，不是基础设施失败或盈利信号。当前仅允许MiniTrend Base live timer运行，
-其它交易timer和production cron继续关闭。
+当前基线：VPS仍为`0.2.20`；旧 line A `qount.main`、X4、C×D以及MiniTrend live/forward timer和production cron全部关闭。
+MiniTrend registry仍保留`minimal_live`历史状态，但执行为`blocked/live_orders_allowed=false`；仓库`0.2.21`的FOMC live能力尚未部署、
+未arm、未启用。Dashboard静态前端已部署，publisher timer为`enabled/active`，只读完整authority并刷新系统健康、release、备份和恢复演练。
+2026-07-27最新order-free观察显示用户自有BTC USD-M多仓`0.009`、普通挂单0和两张既有条件保护单；该仓位未进入Qount ledger，
+因此成本、Qount订单、PnL、NAV与当前ledger reconciliation均明确不可用。NotificationStore通过腾讯个人微信iLink provider投递；
+`DELIVERED/SUCCEEDED`只证明通道已接受，不代表微信客户端已展示或用户已读，WeCom仅保留为未启用兼容adapter。
+Daily Intelligence timer每日`04:30 UTC`运行，最新日报明确区分历史ledger与当前用户仓位；情报与通知均不授予订单权限。
 Mac
 `/Users/alyaloale/Code/qount` 是编辑和 git 工作区。研究命令必须显式使用
 `--research-profile eth-only` 或 `--research-profile multi-symbol`；不要直接继承 WSL

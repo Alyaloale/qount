@@ -244,10 +244,14 @@ def _validate_order_fact(value: Mapping[str, Any]) -> None:
     )
     if planned is not None and executed > planned + 1e-12:
         raise RuntimeLedgerSnapshotError("runtime_snapshot_order_executed_quantity_invalid")
-    if value["status"] == "FILLED" and (
-        planned is None or abs(executed - planned) > 1e-12
-    ):
-        raise RuntimeLedgerSnapshotError("runtime_snapshot_order_fill_state_invalid")
+    if value["status"] == "FILLED":
+        close_position_fill = (
+            planned is None and value["close_position"] and executed > 0.0
+        )
+        if not close_position_fill and (
+            planned is None or abs(executed - planned) > 1e-12
+        ):
+            raise RuntimeLedgerSnapshotError("runtime_snapshot_order_fill_state_invalid")
     if value["status"] == "PARTIALLY_FILLED" and (
         executed <= 0.0 or (planned is not None and executed >= planned - 1e-12)
     ):

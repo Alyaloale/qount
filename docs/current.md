@@ -2,13 +2,52 @@
 
 > **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-27
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：真钱交易当前已停用；系统已具备跨资产 identity、产品级 long/short capability、有符号组合/风险/账本和 Binance Stocks 纯契约。`0.2.18` FOMC公共行情shadow watcher与现金窗口/冻结/信号告警已部署VPS，但没有账户、paper/live或订单权限；Direct Stocks自动执行仍被账户库存事实缺口阻断。
+> **TL;DR**：真钱交易当前未授权；`0.2.21`已部署至VPS，FOMC受控live unit已安装但保持`disabled/inactive`，未生成arm、未写live环境文件、未启用窗口开关。Dashboard可显示用户自有BTC仓位，但ledger成本、订单、PnL、NAV和当前对账仍明确不可用；`minimal_live`只代表历史注册状态且当前执行阻断。
 
 更新时间：2026-07-27
 
-VPS生产版本：`0.2.18`，implementation commit=`5fe2b914fd832ba20a4b1a1ecc7daf6f8aac3e62`，
-source tree=`af137375...d20697`，production provenance=`7b28fd69...0a6bda3`；逐文件verification hash=
-`974512d2...7378a2`。FOMC watcher、有限事件timer和Dashboard静态告警界面均已部署，执行权限仍关闭。
+VPS生产版本：`0.2.21`。当前release的commit、source tree、provenance和逐文件verification均保存在
+`/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件timer、
+Dashboard只读账户视图和有界微信retry timer均已部署，所有交易执行权限仍关闭。
+
+- **2026-07-27 `0.2.21`已部署至VPS，FOMC live路径保持未启用。** 本地全仓`2370/2370 OK`，VPS production profile
+  `360/360 OK`；editable package=`0.2.21`，逐文件release verification通过。`qount-fomc-live.service/.timer`已安装到
+  systemd，仓库模板与安装文件SHA-256逐项一致，timer=`disabled/inactive`且无NEXT；`/root/.config/qount/fomc-live.env`不存在。
+  本轮没有运行私有`prepare`、创建arm、启用live switch、访问交易所私有账户或发出订单。现有用户自有BTC仓位和两张条件单仍须由owner
+  先平掉/撤掉，之后才能在shadow信号`ARMED`且仍处入场窗口时运行私有readiness预检。
+
+- **2026-07-27 `0.2.20`账户只读、Dashboard和个人微信链已全面修复并部署。** 干净release只从提交对象生成，未包含本地FOMC
+  脏工作树；VPS聚焦`132/132 OK`、production profile `360/360 OK`，provenance逐文件回读通过。单次order-free forward run=
+  `20260727T073725Z`成功，记录用户自有BTC USD-M多仓`0.009`、名义约`587.62 USDT`、钱包`203.06011455 USDT`、
+  可用`66.0921174 USDT`、普通挂单0和两张既有BTC条件保护单；未撤改单，`private_api_order_attempted=false`、
+  `exchange_mutation_attempted=false`、`live_orders_allowed=false`。只读观察hash=`ac00bd58...7757`，Dashboard positions=
+  `available_readonly/exchange_account_observation`；平均成本、Qount订单事实、PnL、NAV和ledger reconciliation因当前仓位未进入
+  RuntimeLedger继续为unavailable，不再伪装成空仓。策略注册表仍保留`minimal_live`历史治理状态，但当前
+  `execution_status=blocked/live_orders_allowed=false`，live/forward timers保持`disabled/inactive`。
+
+- **日报和微信已重新闭环。** 新日报`29be08b6...6d8d`明确区分2026-07-23历史ledger与2026-07-27交易所只读BTC观察，
+  不再声称当前账本空仓对账通过；报告hash=`fc3f2e36...2018`。两条过期微信job已原子转为
+  `DEAD_LETTER/notification_delivery_superseded`，新job=`c8f11bf6...f4c9`一次投递`DELIVERED/SUCCEEDED`，response hash=
+  `b10445d8...bdf1`。OpenClaw gateway健康，无需重新扫码；该回执证明腾讯接口接受，不代表客户端已读。notification retry、
+  Dashboard publisher和Daily Intelligence timers均已恢复`enabled/active`。已验证Dashboard publication=
+  `cee6e7dc...a656`、hash=`7533ccb7...e166`，restore drill与system health均为healthy。
+
+- **2026-07-27 `0.2.21`包含“readiness + 一次性arm后开事件专用开关”的FOMC live能力。**
+  新增独立`fomc_live.py`和`run_fomc_live.py`：私有账户预检绑定Binance USD-M账户scope、one-way、isolated、实际leverage、
+  手续费、余额、持仓、普通单/条件单和API权限；readiness绑定事件、信号candle identity、账户scope、精确数量/止损/最大名义与
+  `<=5 USDT`压力损失；短时单次arm再绑定token hash、batch/plan hash和owner authorization hash。只有
+  `QOUNT_FOMC_LIVE_ENABLE=true`、arm ID confirmation、token、未消费arm和新鲜信号/账户全部一致时才允许一次MARKET入场。
+  MARKET必须由order与逐笔trade/USDT fee确认，随后提交并回读原生`STOP_MARKET closePosition`；保护失败会HALT并立即尝试
+  幂等`reduceOnly MARKET`平仓，只有账户回读为flat且条件单清空才记`halted_emergency_flattened`。受保护持仓周期回读保护状态，
+  到`2026-07-30 11:00 UTC`取消保护并强平，无法证明退出则`halted_uncertain`。有限窗口live service/timer已部署但保持
+  `disabled/inactive`；本轮没有读取VPS私有账户、没有生成arm、没有写生产env、没有调用订单接口。聚焦回归为47 tests OK。
+
+- **2026-07-27 10:38 CST Dashboard生产只读复核：发布健康，访问被认证挡住。**
+  `qount-dashboard-publisher.timer=enabled/active`，最近oneshot `Result=success/ExecMainStatus=0`；最新发布
+  `publication_id=3a58fee6...d6be`、`publication_hash=27b1c01b...468`，12份JSON均存在，restore drill通过，
+  `system_health_status=healthy`。公网`https://qount.alyaloale.com/`在HTML之前返回Cloudflare透传的HTTP 401和
+  `WWW-Authenticate: Basic realm="restricted"`；仓库Caddy合同本来就对整站启用Basic Auth。因此`#/live`“打不开”与数据是否更新
+  是两件事：publisher正在更新，未提供Basic Auth凭据的浏览器不会拿到前端。当前不取消认证，避免公开账户、仓位、订单和告警数据。
 
 这份文档是当前事实入口，只保留结论、能力边界和下一步。接手命令看
 [quick-handoff.md](quick-handoff.md)，项目规则和文档分类看
@@ -825,7 +864,7 @@ ETH-only research-only
 bottom_line + future + ETH/USDT + 1 position
 hourly model off
 setup model phase6 on
-legacy line A live disabled; crypto X4/C×D production on VPS
+legacy line A/X4/C×D/MiniTrend execution disabled on VPS
 §7 profit-pursuit halted (2026-06-06, owner-confirmed)
 L3 restart (stablecoin/chain-TVL + AI) falsified (2026-06-06): L3a + L3b both fail breadth-adjusted IC
 L1 restart (cross-asset trend, attacks BR): S1 breadth PASSED (eff-breadth 2.97); S2 trend REAL+robust but retail-ETF magnitude ~0.4 net Sharpe < 0.5 gate (single + ensemble); FROZEN as partial success (2026-06-06, owner-confirmed) — first real positive edge, paused per §7, no broker on sub-gate evidence
@@ -1076,10 +1115,11 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
   rows，earnings rows不绑定事件日期。Binance及Coinbase/Kraken/Bitstamp/Gemini在当前Mac无代理路径统一记录为
   `transport_unavailable`，不能读成provider不存在或语义被否证。artifact SHA-256 `ee0799d7...09d58`，raw manifest
   content hash `aa91e8d1...466d7`；该审计为`trial_count=0/market_event_created=false/orders_allowed=false`。
-- **2026-07-18 owner将研究治理切换为个人实验`research_sandbox`，已有历史可继续做标签、参数和模型探索。**
-  仓库外`qount-doc-autopilot`已改为`research_sandbox / promotion_review / paper_live`三层：历史复用、动态
-  ATR/deadband、HGB/LightGBM/XGBoost、HMM/Markov和小型神经网络不再被旧失败结论一概阻断，但必须记录
-  trial、时间切分、泄漏检查并把已看窗口称为discovery。首轮已完成：1765行数据覆盖
+- **2026-07-27 owner已移除仓库外`qount-doc-autopilot`。** 项目权限边界不再由该skill承载：除实盘下单、
+  私有交易API写操作及真实资金/账户变更外，本地开发、测试、研究、文档和部署前检查均可直接执行；任何实盘
+  动作仍须owner单次明确授权并通过代码内fail-closed门。个人实验`research_sandbox`仍允许历史复用、动态
+  ATR/deadband、HGB/LightGBM/XGBoost、HMM/Markov和小型神经网络探索，但必须记录trial、时间切分、泄漏
+  检查并把已看窗口称为discovery。首轮已完成：1765行数据覆盖
   `2021-07-20..2026-05-19`，30日/1.0σ triple-barrier标签为bear/bull/range=`401/526/838`，28个特征只用
   当日已完成日线与funding，四个年度扩展折均按label-end purge。contract/data hash为
   `45d21773...79c`/`0fd5bba6...09de9`。
@@ -1483,7 +1523,7 @@ GLOBAL §7 honest-stop ACCEPTED (2026-06-06, owner-confirmed): all three restart
 
 - Direct Stocks/ETF 的可用账户资格、权威持仓/可卖数量读取、自动执行与真实对账。
 - Equity perpetual/tokenized equity 的完整symbol discovery、费用/结算、保护单和venue adapter。
-- `SmallAccount-FOMC-RightSide-v0.2` 的真实账户只读preflight、manual arm、venue execution、保护单确认和退出对账闭环。
+- `SmallAccount-FOMC-RightSide-v0.2` 的仓库能力已具备，但VPS尚未部署该live runtime，生产未做私有preflight、未arm、未启用或授权。
 - 稳定盈利能力证明。
 - forward paper 许可。
 - live 许可。
@@ -1639,8 +1679,8 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    legacy `Notifier`/shell ServerChan，也不赋予订单权限。VPS publisher仍只能读取完整batch/registry/ledger/notification/health/brief，
    不能读取legacy state JSON或复制fixture。
 2. 跨资产推进按可捕获性排序，而不是同时建设所有连接器。P0 signed contract和P1 FOMC不可下单标准链、公共watcher、有限事件timer、
-   Dashboard告警及order-free smoke均已在VPS完成；当前先观察固定事件窗口的freeze、HALT、signal与告警闭环。真实账户只读preflight、
-   manual arm、deadline flatten、部分成交保护和venue execution合同必须另获精确授权后再做。P2再做Direct Stocks read-only
+   Dashboard告警及order-free smoke均已在VPS完成；仓库`0.2.21`也已实现私有preflight、manual arm、deadline flatten、成交保护和
+   venue execution合同，但未部署到VPS。任何生产安装、私有预检、arm、开关启用或订单动作仍必须另获单次精确授权。P2再做Direct Stocks read-only
    quote/rules/eligibility审计。没有权威holdings/
    `available_to_sell`、eligible account、已确认免责声明和完整venue reconciliation前，不建设Stocks自动SELL或live adapter。
    研究篮子从单一FOMC扩展到：FOMC/CPI/NFP/GDP/PCE事件后反应、美国cash/extended/overnight session错位、ETF/股票/
@@ -1663,7 +1703,7 @@ numpy/websockets 等 research/collector extras 而有 8 个可选依赖错误，
    冻结样本仍为0，不得为采集样本恢复timer或强制下单。
    旧X4/C×D cron与forward timer继续关闭，全局2.0%风险档和Funding Veto只能做shadow，不能控制真钱订单。
 
-   当前`0.2.15` release回归为Mac全仓`1911 OK`、VPS生产链聚焦`71 OK`。Python compileall、Bash语法、release provenance、
+   历史`0.2.15` release当时回归为Mac全仓`1911 OK`、VPS生产链聚焦`71 OK`。Python compileall、Bash语法、release provenance、
    `systemd-analyze verify`和`git diff --check`通过；unit verify只报告无关cloudmonitor旧告警，唯一测试警告仍是既存
    `src/qount/cta_data.py` UTC deprecation warning。
 4. Owner外部建议按 `docs/mini-trend-agent/review.md` 矩阵执行：Coin Metrics latest-vintage链上G0与经济

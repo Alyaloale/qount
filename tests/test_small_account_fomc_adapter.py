@@ -185,6 +185,7 @@ def _market(
         mark_price=mark,
         index_price=index,
         funding_rate=0.0001,
+        price_tick=0.1,
         quantity_step=0.001,
         minimum_quantity=minimum_quantity,
         minimum_notional_usdt=5.0,
@@ -314,12 +315,25 @@ class FomcStandardAdapterTest(unittest.TestCase):
                 mark_price=100.0,
                 index_price=100.0,
                 funding_rate=0.0,
+                price_tick=0.1,
                 quantity_step=0.001,
                 minimum_quantity=0.001,
                 minimum_notional_usdt=5.0,
                 exchange_rules_hash="f" * 64,
                 source_hashes={"ticker": "1" * 64},
             )
+
+    def test_market_observation_price_tick_uses_schema_v2(self) -> None:
+        market = _market()
+
+        self.assertEqual(market.schema_version, 2)
+        self.assertEqual(
+            FomcMarketObservation.from_mapping(market.as_dict()),
+            market,
+        )
+        legacy = market.as_dict() | {"schema_version": 1}
+        with self.assertRaisesRegex(ValueError, "market_observation_schema_invalid"):
+            FomcMarketObservation.from_mapping(legacy)
 
     def test_exchange_minimum_quantity_blocks_order_plan(self) -> None:
         chain = build_fomc_standard_chain(
