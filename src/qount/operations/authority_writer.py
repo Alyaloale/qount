@@ -233,6 +233,10 @@ def _blocked_observation(
         "status": "blocked",
         "live_orders_allowed": False,
         "runtime_ledger_created": False,
+        "strategy_id": str(
+            (projection.get("contract") or {}).get("strategy")
+            or (projection.get("decision") or {}).get("strategy")
+        ),
         "blockers": list(blocked.blockers),
         "run_id": blocked.run_dir.name,
         "source_hashes": dict(sorted(hashes.items())),
@@ -249,13 +253,16 @@ def read_blocked_runtime_observation(path: Path) -> dict[str, Any] | None:
         set(value) != {
             "schema_version", "artifact_type", "created_at", "observed_at",
             "status", "live_orders_allowed", "runtime_ledger_created",
-            "blockers", "run_id", "source_hashes", "observation_hash",
+            "strategy_id", "blockers", "run_id", "source_hashes",
+            "observation_hash",
         }
         or value.get("schema_version") != BLOCKED_RUNTIME_OBSERVATION_SCHEMA_VERSION
         or value.get("artifact_type") != "qount_blocked_runtime_observation"
         or value.get("status") != "blocked"
         or value.get("live_orders_allowed") is not False
         or value.get("runtime_ledger_created") is not False
+        or not isinstance(value.get("strategy_id"), str)
+        or not value["strategy_id"]
         or not isinstance(value.get("blockers"), list)
         or not value["blockers"]
         or value.get("observation_hash") != canonical_hash(core)

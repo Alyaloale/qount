@@ -290,6 +290,7 @@ class AuthorityWriterTest(unittest.TestCase):
                     "created_at": "2026-08-02T00:01:15+00:00",
                     "meta": common_meta,
                     "decision": {"decision_id": "a" * 64},
+                    "contract": {"strategy": "MiniTrend-UM-Base-v0.2"},
                     "diagnostics": {"projection_ready": True},
                 },
             }
@@ -328,6 +329,7 @@ class AuthorityWriterTest(unittest.TestCase):
         self.assertIsNotNone(observation)
         self.assertFalse(observation["live_orders_allowed"])
         self.assertFalse(observation["runtime_ledger_created"])
+        self.assertEqual(observation["strategy_id"], "MiniTrend-UM-Base-v0.2")
         self.assertFalse((root / "runtime/runtime.sqlite3").exists())
 
     def test_legacy_run_without_preserved_dispatch_readiness_is_blocked(self) -> None:

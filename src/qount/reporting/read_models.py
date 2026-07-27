@@ -955,12 +955,25 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
                     "promotion_evidence_present",
                     "owner_authorization_present",
                     "live_orders_allowed",
+                    "execution_blockers",
                 },
                 name=f"dashboard_readiness_strategy:{index}",
             )
             if row["live_orders_allowed"] is not False:
                 raise DashboardReadModelError(
                     "dashboard_readiness_cannot_authorize_orders"
+                )
+            if (
+                not isinstance(row["execution_blockers"], list)
+                or any(
+                    not isinstance(value, str) or not value
+                    for value in row["execution_blockers"]
+                )
+                or len(row["execution_blockers"])
+                != len(set(row["execution_blockers"]))
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_readiness_execution_blockers_invalid"
                 )
             for name in (
                 "current_batch_decision_present",
@@ -3204,6 +3217,13 @@ def _readiness_payload(
             "promotion_evidence_present": entry.promotion_artifact_hash is not None,
             "owner_authorization_present": entry.owner_authorization_hash is not None,
             "live_orders_allowed": False,
+            "execution_blockers": (
+                list(blocked_runtime_observation["blockers"])
+                if blocked_runtime_observation is not None
+                and blocked_runtime_observation.get("strategy_id")
+                == entry.strategy_id
+                else []
+            ),
         }
         for entry in registry.entries
     ]
@@ -3265,13 +3285,9 @@ def _readiness_payload(
         else "disarmed"
     )
     if blocked_runtime_observation is not None:
-        blocker_detail = ",".join(blocked_runtime_observation["blockers"])
         for gate in gates:
             if gate["gate"] == "runtime_ledger":
-                gate["detail"] = (
-                    "not_created_for_manual_account_observation;"
-                    "future_execution_prerequisites:" + blocker_detail
-                )
+                gate["detail"] = "not_created_for_manual_account_observation"
         trading_status = "disarmed"
         evidence_status = "complete"
         evidence_detail = "read_only_account_observation_verified"
@@ -3650,6 +3666,8 @@ def build_dashboard_v1(
             blocked_runtime_observation.get("status") != "blocked"
             or blocked_runtime_observation.get("live_orders_allowed") is not False
             or blocked_runtime_observation.get("runtime_ledger_created") is not False
+            or not isinstance(blocked_runtime_observation.get("strategy_id"), str)
+            or not blocked_runtime_observation["strategy_id"]
             or not is_sha256(blocked_runtime_observation.get("observation_hash"))
         ):
             raise DashboardReadModelError(

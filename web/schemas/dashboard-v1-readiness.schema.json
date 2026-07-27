@@ -45,7 +45,7 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["strategy_id", "strategy_version", "promotion_status", "current_batch_decision_present", "promotion_evidence_present", "owner_authorization_present", "live_orders_allowed"],
+                "required": ["strategy_id", "strategy_version", "promotion_status", "current_batch_decision_present", "promotion_evidence_present", "owner_authorization_present", "live_orders_allowed", "execution_blockers"],
                 "properties": {
                   "strategy_id": { "type": "string", "minLength": 1 },
                   "strategy_version": { "type": "string", "minLength": 1 },
@@ -53,7 +53,12 @@
                   "current_batch_decision_present": { "type": "boolean" },
                   "promotion_evidence_present": { "type": "boolean" },
                   "owner_authorization_present": { "type": "boolean" },
-                  "live_orders_allowed": { "const": false }
+                  "live_orders_allowed": { "const": false },
+                  "execution_blockers": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": { "type": "string", "minLength": 1 }
+                  }
                 }
               }
             }

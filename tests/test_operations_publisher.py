@@ -407,6 +407,7 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
                 "status": "blocked",
                 "live_orders_allowed": False,
                 "runtime_ledger_created": False,
+                "strategy_id": "test_strategy",
                 "blockers": ["preflight:no_unmanaged_positions"],
                 "run_id": "20260720T000900Z",
                 "source_hashes": {"account_preflight.json": "a" * 64},
@@ -441,6 +442,10 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         )
         self.assertFalse(
             models.readiness.payload["strategies"][0]["live_orders_allowed"]
+        )
+        self.assertEqual(
+            models.readiness.payload["strategies"][0]["execution_blockers"],
+            ["preflight:no_unmanaged_positions"],
         )
 
     def test_invalid_latest_intelligence_is_scoped_to_unavailable_model(self) -> None:
