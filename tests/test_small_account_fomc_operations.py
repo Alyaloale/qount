@@ -103,7 +103,7 @@ class FomcOperationsTest(unittest.TestCase):
         self.assertIn("openEventAlertCount", app)
         self.assertIn(".event-incident", style)
         self.assertIn(".source-badge", style)
-        self.assertIn('app.js?v=26', (ROOT / "web" / "site" / "index.html").read_text())
+        self.assertIn('app.js?v=29', (ROOT / "web" / "site" / "index.html").read_text())
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import re
 import sqlite3
@@ -18,6 +19,7 @@ from qount.contracts import trace_id
 from qount.contracts.trace import aware_datetime
 from qount.notifications.contracts import AlertEvent
 from qount.notifications.contracts import ALERT_SOURCE_TYPES
+from qount.notifications.transport import notification_failure_reason
 
 
 DELIVERY_STATES = ("PENDING", "RETRY_WAIT", "DELIVERED", "DEAD_LETTER")
@@ -40,6 +42,7 @@ class NotificationStoreSecurityError(NotificationStoreError):
 
 Transport = Callable[[Mapping[str, Any], str], Mapping[str, Any] | None]
 AfterTransport = Callable[[str, int], None]
+ProviderRateLimit = tuple[str, int, float]
 
 
 def _utc_time(value: str, *, name: str) -> str:
@@ -77,6 +80,34 @@ def _json_object(raw: str, *, name: str) -> dict[str, Any]:
     if not isinstance(value, dict) or _json_text(value) != raw:
         raise NotificationStoreError(f"{name}_not_canonical")
     return value
+
+
+def _transport_provider_rate_limit(transport: Transport) -> ProviderRateLimit | None:
+    policy = getattr(transport, "shared_rate_limit_policy", None)
+    if policy is None:
+        return None
+    if not callable(policy):
+        raise NotificationStoreError("notification_transport_rate_limit_invalid")
+    value = policy()
+    if not isinstance(value, tuple) or len(value) != 3:
+        raise NotificationStoreError("notification_transport_rate_limit_invalid")
+    provider, max_calls, window_seconds = value
+    if (
+        not isinstance(provider, str)
+        or not provider
+        or provider != provider.strip()
+        or len(provider) > 64
+        or any(ord(char) < 32 for char in provider)
+        or not isinstance(max_calls, int)
+        or isinstance(max_calls, bool)
+        or max_calls < 1
+        or not isinstance(window_seconds, (int, float))
+        or isinstance(window_seconds, bool)
+        or not math.isfinite(float(window_seconds))
+        or window_seconds <= 0
+    ):
+        raise NotificationStoreError("notification_transport_rate_limit_invalid")
+    return provider, max_calls, float(window_seconds)
 
 
 def _prepare_private_parent(path: Path) -> None:
@@ -336,6 +367,14 @@ class NotificationStore:
                     previous_hash TEXT,
                     row_hash TEXT NOT NULL UNIQUE
                 );
+                CREATE TABLE IF NOT EXISTS notification_provider_rate_slots (
+                    slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT NOT NULL,
+                    reserved_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS notification_provider_rate_slots_expiry
+                ON notification_provider_rate_slots(provider, expires_at);
                 INSERT OR IGNORE INTO schema_metadata(key, value)
                 VALUES ('schema_version', '1');
                 COMMIT;
@@ -679,16 +718,198 @@ class NotificationStore:
                 resolved_ids.append(alert_id)
         return tuple(sorted(resolved_ids))
 
-    def _claim_job(self, job_id: str, *, attempted_at: str) -> dict[str, Any] | None:
+    def _reserve_provider_rate_slot(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        policy: ProviderRateLimit,
+        reserved_at: str,
+    ) -> bool:
+        provider, max_calls, window_seconds = policy
+        connection.execute(
+            """
+            DELETE FROM notification_provider_rate_slots
+            WHERE provider=? AND expires_at<=?
+            """,
+            (provider, reserved_at),
+        )
+        active = int(
+            connection.execute(
+                """
+                SELECT COUNT(*) FROM notification_provider_rate_slots
+                WHERE provider=? AND expires_at>?
+                """,
+                (provider, reserved_at),
+            ).fetchone()[0]
+        )
+        if active >= max_calls:
+            return False
+        expires_at = (
+            aware_datetime(reserved_at)
+            + dt.timedelta(seconds=window_seconds)
+        ).isoformat()
+        connection.execute(
+            """
+            INSERT INTO notification_provider_rate_slots(
+                provider,reserved_at,expires_at
+            ) VALUES (?,?,?)
+            """,
+            (provider, reserved_at, expires_at),
+        )
+        return True
+
+    def _delivery_alert_and_rank(
+        self,
+        row: Mapping[str, Any],
+    ) -> tuple[AlertEvent, tuple[dt.datetime, dt.datetime, str]]:
+        payload = _json_object(
+            str(row["payload_json"]),
+            name="notification_delivery_alert",
+        )
+        try:
+            alert = AlertEvent(**payload)
+            alert.validate()
+        except (TypeError, ValueError) as exc:
+            raise NotificationStoreError("notification_delivery_alert_invalid") from exc
+        return (
+            alert,
+            (
+                aware_datetime(str(row["occurred_at"])),
+                aware_datetime(str(row["recorded_at"])),
+                alert.alert_id,
+            ),
+        )
+
+    def _cancel_delivery_job(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        row: Mapping[str, Any],
+        alert: AlertEvent,
+        attempted_at: str,
+    ) -> bool:
+        """Mark one unclaimed obsolete delivery terminally unsendable."""
+
+        updated = dict(row)
+        previous_job_hash = str(row["job_hash"])
+        updated.update(
+            {
+                "status": "DEAD_LETTER",
+                "next_attempt_at": None,
+                "delivered_at": None,
+                "last_error": "notification_delivery_superseded",
+            }
+        )
+        job_hash = canonical_hash(_job_core(updated))
+        changed = connection.execute(
+            """
+            UPDATE delivery_jobs
+            SET status='DEAD_LETTER',next_attempt_at=NULL,
+                delivered_at=NULL,last_error=?,job_hash=?
+            WHERE job_id=? AND status IN ('PENDING','RETRY_WAIT')
+            """,
+            (
+                "notification_delivery_superseded",
+                job_hash,
+                row["job_id"],
+            ),
+        )
+        if changed.rowcount != 1:
+            return False
+        self._append_audit(
+            connection,
+            event_type="delivery_cancelled",
+            entity_id=str(row["job_id"]),
+            occurred_at=attempted_at,
+            payload={
+                "alert_id": alert.alert_id,
+                "attempt_count": int(row["attempt_count"]),
+                "job_hash": job_hash,
+                "previous_job_hash": previous_job_hash,
+                "reason": "notification_delivery_superseded",
+            },
+        )
+        return True
+
+    def _delivery_is_superseded(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        row: Mapping[str, Any],
+        alert: AlertEvent,
+        rank: tuple[dt.datetime, dt.datetime, str],
+    ) -> bool:
+        """Evaluate one delivery against facts visible in this transaction."""
+
+        superseded = connection.execute(
+            """
+            SELECT 1 FROM notification_audit
+            WHERE event_type='alert_superseded' AND entity_id=?
+            LIMIT 1
+            """,
+            (alert.alert_id,),
+        ).fetchone()
+        if superseded is not None:
+            return True
+        if row["alert_status"] != "RESOLVED":
+            return False
+        candidates = connection.execute(
+            """
+            SELECT job.channel,event.payload_json,event.occurred_at,event.recorded_at
+            FROM delivery_jobs job
+            JOIN alert_events event ON event.alert_id=job.alert_id
+            WHERE job.channel=?
+            """,
+            (row["channel"],),
+        ).fetchall()
+        for candidate in candidates:
+            candidate_alert, candidate_rank = self._delivery_alert_and_rank(candidate)
+            if (
+                candidate_alert.source_type == alert.source_type
+                and candidate_alert.category == alert.category
+                and candidate_rank > rank
+            ):
+                return True
+        return False
+
+    def _claim_job(
+        self,
+        job_id: str,
+        *,
+        attempted_at: str,
+        provider_rate_limit: ProviderRateLimit | None = None,
+    ) -> dict[str, Any] | None:
         with self._transaction() as connection:
             row = connection.execute(
-                "SELECT * FROM delivery_jobs WHERE job_id=?", (job_id,)
+                """
+                SELECT job.*,event.payload_json,event.occurred_at,
+                       event.recorded_at,state.status AS alert_status
+                FROM delivery_jobs job
+                JOIN alert_events event ON event.alert_id=job.alert_id
+                JOIN alert_states state ON state.alert_id=job.alert_id
+                WHERE job.job_id=?
+                """,
+                (job_id,),
             ).fetchone()
             if row is None or row["status"] not in {"PENDING", "RETRY_WAIT"}:
                 return None
             if row["next_attempt_at"] is None or aware_datetime(
                 str(row["next_attempt_at"])
             ) > aware_datetime(attempted_at):
+                return None
+            alert, rank = self._delivery_alert_and_rank(row)
+            if self._delivery_is_superseded(
+                connection,
+                row=row,
+                alert=alert,
+                rank=rank,
+            ):
+                self._cancel_delivery_job(
+                    connection,
+                    row=row,
+                    alert=alert,
+                    attempted_at=attempted_at,
+                )
                 return None
             started_attempt = connection.execute(
                 """
@@ -698,10 +919,18 @@ class NotificationStore:
                 """,
                 (job_id,),
             ).fetchone()
-            alert_row = connection.execute(
-                "SELECT payload_json FROM alert_events WHERE alert_id=?",
-                (row["alert_id"],),
-            ).fetchone()
+            if started_attempt is None:
+                attempt_number = int(row["attempt_count"]) + 1
+                if attempt_number > int(row["max_attempts"]):
+                    raise NotificationStoreConflictError(
+                        "notification_attempt_limit_exceeded"
+                    )
+            if provider_rate_limit is not None and not self._reserve_provider_rate_slot(
+                connection,
+                policy=provider_rate_limit,
+                reserved_at=attempted_at,
+            ):
+                return None
             if started_attempt is not None:
                 return {
                     "job_id": job_id,
@@ -709,16 +938,8 @@ class NotificationStore:
                     "attempt_number": int(started_attempt["attempt_number"]),
                     "delivery_key": str(row["delivery_key"]),
                     "max_attempts": int(row["max_attempts"]),
-                    "alert": _json_object(
-                        str(alert_row["payload_json"]),
-                        name="notification_alert_payload",
-                    ),
+                    "alert": alert.as_dict(),
                 }
-            attempt_number = int(row["attempt_count"]) + 1
-            if attempt_number > int(row["max_attempts"]):
-                raise NotificationStoreConflictError(
-                    "notification_attempt_limit_exceeded"
-                )
             attempt_id = trace_id(
                 "notification_attempt",
                 {"job_id": job_id, "attempt_number": attempt_number},
@@ -773,10 +994,80 @@ class NotificationStore:
                 "attempt_number": attempt_number,
                 "delivery_key": str(row["delivery_key"]),
                 "max_attempts": int(row["max_attempts"]),
-                "alert": _json_object(
-                    str(alert_row["payload_json"]), name="notification_alert_payload"
-                ),
+                "alert": alert.as_dict(),
             }
+
+    def _cancel_superseded_due_jobs(
+        self,
+        *,
+        attempted_at: str,
+        channel: str | None,
+    ) -> tuple[str, ...]:
+        """Terminally skip due jobs whose alert has been superseded.
+
+        A resolved alert remains deliverable when it is the newest event in
+        its producer scope.  This is required for informational notifications,
+        which are resolved immediately after enqueue.  Older resolved events
+        and explicitly superseded incidents are stale and must never be sent.
+        """
+
+        with self._transaction() as connection:
+            query = """
+                SELECT job.*,event.payload_json,event.occurred_at,
+                       event.recorded_at,state.status AS alert_status
+                FROM delivery_jobs job
+                JOIN alert_events event ON event.alert_id=job.alert_id
+                JOIN alert_states state ON state.alert_id=job.alert_id
+            """
+            parameters: list[Any] = []
+            if channel is not None:
+                query += " WHERE job.channel = ?"
+                parameters.append(channel)
+            rows = connection.execute(query, parameters).fetchall()
+            superseded_alert_ids = {
+                str(row["entity_id"])
+                for row in connection.execute(
+                    "SELECT entity_id FROM notification_audit "
+                    "WHERE event_type='alert_superseded'"
+                ).fetchall()
+            }
+            latest_by_scope: dict[
+                tuple[str, str, str], tuple[dt.datetime, dt.datetime, str]
+            ] = {}
+            parsed_rows: list[
+                tuple[sqlite3.Row, AlertEvent, tuple[dt.datetime, dt.datetime, str]]
+            ] = []
+            for row in rows:
+                alert, rank = self._delivery_alert_and_rank(row)
+                scope = (str(row["channel"]), alert.source_type, alert.category)
+                latest_by_scope[scope] = max(latest_by_scope.get(scope, rank), rank)
+                parsed_rows.append((row, alert, rank))
+
+            cancelled: list[str] = []
+            attempted = aware_datetime(attempted_at)
+            for row, alert, rank in parsed_rows:
+                if (
+                    row["status"] not in {"PENDING", "RETRY_WAIT"}
+                    or row["next_attempt_at"] is None
+                    or aware_datetime(str(row["next_attempt_at"])) > attempted
+                ):
+                    continue
+                scope = (str(row["channel"]), alert.source_type, alert.category)
+                explicitly_superseded = alert.alert_id in superseded_alert_ids
+                older_resolved = (
+                    row["alert_status"] == "RESOLVED"
+                    and rank < latest_by_scope[scope]
+                )
+                if not explicitly_superseded and not older_resolved:
+                    continue
+                if self._cancel_delivery_job(
+                    connection,
+                    row=row,
+                    alert=alert,
+                    attempted_at=attempted_at,
+                ):
+                    cancelled.append(str(row["job_id"]))
+            return tuple(sorted(cancelled))
 
     def _complete_attempt(
         self,
@@ -811,7 +1102,7 @@ class NotificationStore:
             else:
                 response_hash = None
                 attempt_status = "FAILED"
-                error_type = type(error).__name__[:120]
+                error_type = notification_failure_reason(error)
                 exhausted = int(job["attempt_count"]) >= int(job["max_attempts"])
                 job_status = "DEAD_LETTER" if exhausted else "RETRY_WAIT"
                 next_attempt_at = (
@@ -920,6 +1211,29 @@ class NotificationStore:
             or retry_base_seconds < 1
         ):
             raise NotificationStoreError("notification_delivery_options_invalid")
+        provider_rate_limit = _transport_provider_rate_limit(transport)
+        self._cancel_superseded_due_jobs(
+            attempted_at=attempted_at,
+            channel=channel,
+        )
+        capacity = getattr(transport, "available_rate_slots", None)
+        if capacity is not None:
+            if not callable(capacity):
+                raise NotificationStoreError(
+                    "notification_transport_capacity_invalid"
+                )
+            available_slots = capacity()
+            if (
+                not isinstance(available_slots, int)
+                or isinstance(available_slots, bool)
+                or available_slots < 0
+            ):
+                raise NotificationStoreError(
+                    "notification_transport_capacity_invalid"
+                )
+            limit = min(limit, available_slots)
+            if limit == 0:
+                return ()
         with self._connection() as connection:
             query = """
                 SELECT job_id FROM delivery_jobs
@@ -935,7 +1249,11 @@ class NotificationStore:
             rows = connection.execute(query, parameters).fetchall()
         results: list[Mapping[str, Any]] = []
         for row in rows:
-            claim = self._claim_job(str(row["job_id"]), attempted_at=attempted_at)
+            claim = self._claim_job(
+                str(row["job_id"]),
+                attempted_at=attempted_at,
+                provider_rate_limit=provider_rate_limit,
+            )
             if claim is None:
                 continue
             try:

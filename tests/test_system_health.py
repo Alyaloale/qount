@@ -6,6 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from qount.contracts import canonical_hash
+from qount.governance import StrategyRegistration
+from qount.governance import StrategyRegistry
 from qount.ledger import build_runtime_ledger_snapshot
 from qount.notifications import SYSTEM_COMPONENTS
 from qount.notifications import SystemComponentObservation
@@ -23,6 +25,8 @@ def _hash(name: str) -> str:
 def _health_snapshot(
     *,
     status_by_component: dict[str, str] | None = None,
+    manual_arm: bool | None = None,
+    live_timer_state: str | None = None,
 ) -> SystemHealthSnapshot:
     statuses = status_by_component or {}
     observed_at = "2026-07-20T00:07:05+00:00"
@@ -58,6 +62,32 @@ def _health_snapshot(
             },
         },
     }
+    if manual_arm is not None:
+        metrics["operations"]["checks"].append(
+            {
+                "check_id": "trading:manual_arm",
+                "status": "pass",
+                "detail": "arm_present" if manual_arm else "arm_absent_disarmed",
+                "impact_scopes": ["execution"],
+                "blocks_execution": False,
+                "observed_value": manual_arm,
+            }
+        )
+    if live_timer_state is not None:
+        metrics["operations"]["checks"].append(
+            {
+                "check_id": "service:mini_trend_live",
+                "status": "pass",
+                "detail": (
+                    "service_state_expected:"
+                    f"qount-mini-trend-live.timer:{live_timer_state}"
+                ),
+                "impact_scopes": ["execution"],
+                "blocks_execution": True,
+                "observed_value": live_timer_state,
+            }
+        )
+    metrics["operations"]["checks"].sort(key=lambda row: row["check_id"])
     observations = []
     for component in SYSTEM_COMPONENTS:
         status = statuses.get(component, "healthy")
@@ -193,6 +223,12 @@ class SystemHealthContractTest(unittest.TestCase):
 
         self.assertEqual(models.overview.freshness["status"], "fresh")
         self.assertEqual(models.system.freshness["status"], "stale")
+        self.assertEqual(models.strategies.freshness["status"], "stale")
+        self.assertEqual(
+            models.strategies.freshness["source_updated_at"],
+            "2026-07-20T00:07:05+00:00",
+        )
+        self.assertEqual(models.readiness.payload["status"], "stale")
         self.assertEqual(
             set(models.system.freshness["sources"]), {"ops_observer"}
         )
@@ -205,6 +241,97 @@ class SystemHealthContractTest(unittest.TestCase):
                 "runtime_ledger",
                 "system_health",
             },
+        )
+
+    def test_new_blocked_observation_cannot_mask_stale_execution_health(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            _, batch, registry = _ledger_with_accounting(Path(temporary))
+            health = _health_snapshot()
+            core = {
+                "status": "blocked",
+                "live_orders_allowed": False,
+                "runtime_ledger_created": False,
+                "strategy_id": "test_strategy",
+                "blockers": ["preflight:no_unmanaged_positions"],
+                "observed_at": "2026-07-20T00:08:00+00:00",
+            }
+            observation = core | {"observation_hash": canonical_hash(core)}
+            models = build_dashboard_v1(
+                batch,
+                registry,
+                generated_at="2026-07-20T00:08:10+00:00",
+                evaluated_at="2026-07-20T00:08:15+00:00",
+                stale_after_seconds=300,
+                system_stale_after_seconds=60,
+                system_health=health,
+                blocked_runtime_observation=observation,
+            )
+
+        self.assertEqual(models.overview.freshness["status"], "fresh")
+        self.assertEqual(models.strategies.freshness["status"], "stale")
+        self.assertEqual(models.readiness.payload["status"], "stale")
+        self.assertEqual(
+            models.strategies.freshness["source_updated_at"],
+            "2026-07-20T00:07:05+00:00",
+        )
+
+    def test_armed_requires_live_registry_arm_and_active_live_timer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger, batch, registry = _ledger_with_accounting(Path(temporary))
+            snapshot = build_runtime_ledger_snapshot(
+                ledger, batch, captured_at=CAPTURED_AT
+            )
+            entry = registry.entries[0]
+            live_entry = StrategyRegistration.create(
+                strategy_id=entry.strategy_id,
+                strategy_version=entry.strategy_version,
+                strategy_kind=entry.strategy_kind,
+                promotion_status="minimal_live",
+                strategy_contract_hash=entry.strategy_contract_hash,
+                code_hash=entry.code_hash,
+                config_hash=entry.config_hash,
+                promotion_artifact_hash=entry.promotion_artifact_hash,
+                owner_authorization_hash="e" * 64,
+                maximum_stress_loss_fraction=entry.maximum_stress_loss_fraction,
+                maximum_gross=entry.maximum_gross,
+                registered_at=entry.registered_at,
+            )
+            live_registry = StrategyRegistry.create(
+                (live_entry,), created_at=registry.created_at
+            )
+            armed = build_dashboard_v1(
+                batch,
+                live_registry,
+                generated_at=CAPTURED_AT,
+                stale_after_seconds=300,
+                ledger_snapshot=snapshot,
+                system_health=_health_snapshot(
+                    manual_arm=True, live_timer_state="active"
+                ),
+            )
+            inactive = build_dashboard_v1(
+                batch,
+                live_registry,
+                generated_at=CAPTURED_AT,
+                stale_after_seconds=300,
+                ledger_snapshot=snapshot,
+                system_health=_health_snapshot(
+                    manual_arm=True, live_timer_state="inactive"
+                ),
+            )
+
+        armed_strategy = armed.strategies.payload["strategies"][0]
+        self.assertEqual(armed_strategy["execution_status"], "armed")
+        self.assertEqual(armed_strategy["execution_blockers"], [])
+        self.assertFalse(armed_strategy["live_orders_allowed"])
+        self.assertEqual(
+            armed.readiness.payload["axes"]["trading_authority"]["status"],
+            "armed",
+        )
+        inactive_strategy = inactive.strategies.payload["strategies"][0]
+        self.assertEqual(inactive_strategy["execution_status"], "disarmed")
+        self.assertIn(
+            "live_timer_inactive", inactive_strategy["execution_blockers"]
         )
 
     def test_system_freshness_does_not_inherit_runtime_ledger_window(self) -> None:

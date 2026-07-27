@@ -461,17 +461,75 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
             {"BTC/USDT:USDT": 0.001},
         )
         self.assertEqual(
+            models.positions.payload["summary"],
+            {
+                "status": "available_readonly",
+                "fact_scope": "exchange_account_observation",
+                "position_count": 1,
+                "nonzero_position_count": 1,
+                "reconciliation_id": None,
+                "reconciled": None,
+                "reconciliation_status": "unavailable",
+                "unavailable_fields": [
+                    "average_cost",
+                    "expected_quantity",
+                    "quantity_difference",
+                    "realized_trading_pnl",
+                    "reconciliation",
+                ],
+            },
+        )
+        position = models.positions.payload["positions"][0]
+        self.assertEqual(position["symbol"], "BTC/USDT:USDT")
+        self.assertEqual(position["actual_quantity"], 0.001)
+        self.assertEqual(position["management_scope"], "outside_qount_ledger")
+        self.assertIsNone(position["average_cost"])
+        self.assertIsNone(position["realized_trading_pnl"])
+        self.assertEqual(position["reconciliation_status"], "unavailable")
+        self.assertEqual(
+            models.orders.payload["summary"]["status"],
+            "unavailable_until_phase_b_ledger",
+        )
+        self.assertEqual(
             models.readiness.payload["status"], "read_only_observation_ready"
         )
         self.assertEqual(
             models.readiness.payload["axes"]["trading_authority"]["status"],
-            "disarmed",
+            "blocked",
+        )
+        self.assertEqual(
+            models.readiness.payload["axes"]["evidence_state"],
+            {
+                "status": "incomplete",
+                "detail": (
+                    "read_only_account_observation_verified_"
+                    "current_ledger_reconciliation_unavailable"
+                ),
+                "impact_scopes": ["execution", "observation"],
+            },
+        )
+        runtime_gate = next(
+            gate
+            for gate in models.readiness.payload["gates"]
+            if gate["gate"] == "runtime_ledger"
+        )
+        self.assertEqual(
+            runtime_gate["detail"],
+            "not_created_for_non_ledger_account_observation",
         )
         self.assertFalse(
             models.readiness.payload["strategies"][0]["live_orders_allowed"]
         )
         self.assertEqual(
             models.readiness.payload["strategies"][0]["execution_blockers"],
+            ["preflight:no_unmanaged_positions"],
+        )
+        strategy = models.strategies.payload["strategies"][0]
+        self.assertEqual(strategy["registry_status"], "shadow")
+        self.assertEqual(strategy["execution_status"], "blocked")
+        self.assertFalse(strategy["live_orders_allowed"])
+        self.assertEqual(
+            strategy["execution_blockers"],
             ["preflight:no_unmanaged_positions"],
         )
 

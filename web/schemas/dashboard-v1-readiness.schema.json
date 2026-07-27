@@ -45,11 +45,12 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["strategy_id", "strategy_version", "promotion_status", "current_batch_decision_present", "promotion_evidence_present", "owner_authorization_present", "live_orders_allowed", "execution_blockers"],
+                "required": ["strategy_id", "strategy_version", "registry_status", "execution_status", "current_batch_decision_present", "promotion_evidence_present", "owner_authorization_present", "live_orders_allowed", "execution_blockers"],
                 "properties": {
                   "strategy_id": { "type": "string", "minLength": 1 },
                   "strategy_version": { "type": "string", "minLength": 1 },
-                  "promotion_status": { "enum": ["draft", "research", "frozen_candidate", "shadow", "paper", "minimal_live", "scaled_live", "halted"] },
+                  "registry_status": { "enum": ["draft", "research", "frozen_candidate", "shadow", "paper", "minimal_live", "scaled_live", "halted"] },
+                  "execution_status": { "enum": ["disarmed", "blocked", "armed"] },
                   "current_batch_decision_present": { "type": "boolean" },
                   "promotion_evidence_present": { "type": "boolean" },
                   "owner_authorization_present": { "type": "boolean" },
@@ -73,7 +74,7 @@
       "additionalProperties": false,
       "required": ["status", "detail", "impact_scopes"],
       "properties": {
-        "status": { "enum": ["pass", "fresh", "stale", "healthy", "degraded", "unavailable", "registry_authorized", "disarmed", "blocked", "complete", "incomplete"] },
+        "status": { "enum": ["pass", "fresh", "stale", "healthy", "degraded", "unavailable", "registry_authorized", "disarmed", "blocked", "armed", "complete", "incomplete"] },
         "detail": { "type": "string", "minLength": 1 },
         "impact_scopes": {
           "type": "array",

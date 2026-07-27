@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import sqlite3
 import stat
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from qount.contracts import canonical_hash
@@ -19,6 +21,7 @@ from qount.notifications import ProviderResponseError
 from qount.notifications import ProviderTimeoutError
 from qount.notifications import ProviderTransport
 from qount.notifications import RateLimitPolicy
+from qount.notifications import notification_failure_reason
 
 
 OCCURRED_AT = "2026-07-20T00:10:00+00:00"
@@ -37,7 +40,7 @@ def _payload() -> dict[str, str]:
     }
 
 
-def _alert() -> AlertEvent:
+def _alert(name: str = "default") -> AlertEvent:
     return AlertEvent.create(
         severity="HALT",
         category="reconciliation",
@@ -45,9 +48,9 @@ def _alert() -> AlertEvent:
         summary="Ledger and exchange positions do not match.",
         occurred_at=OCCURRED_AT,
         source_type="reconciliation",
-        source_id=_hash("source"),
-        source_hash=_hash("source-payload"),
-        dedupe_key="reconciliation:transport-fixture",
+        source_id=_hash(f"source:{name}"),
+        source_hash=_hash(f"source-payload:{name}"),
+        dedupe_key=f"reconciliation:transport-fixture:{name}",
         trace_id_value=_hash("trace"),
     )
 
@@ -131,6 +134,15 @@ class ProviderResponseContractTest(unittest.TestCase):
 
 
 class ProviderTransportPolicyTest(unittest.TestCase):
+    def test_failure_reason_does_not_trust_provider_defined_attributes(self) -> None:
+        class ForgedProviderError(RuntimeError):
+            notification_reason = "fixture_secret_token"
+
+        self.assertEqual(
+            notification_failure_reason(ForgedProviderError("private body")),
+            "NotificationDeliveryError",
+        )
+
     def test_fake_provider_is_idempotent_for_one_delivery_key(self) -> None:
         now = dt.datetime.fromisoformat(RECEIVED_AT)
         provider = FakeNotificationProvider(clock=lambda: now)
@@ -165,6 +177,182 @@ class ProviderTransportPolicyTest(unittest.TestCase):
         current[0] = 15.0
         transport(_payload(), _hash("delivery-2"))
         self.assertEqual(len(provider.calls), 2)
+
+    def test_store_bounds_claims_to_transport_rate_capacity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = NotificationStore(
+                Path(temporary) / "private" / "notifications.sqlite3"
+            )
+            for index in range(3):
+                store.enqueue(
+                    _alert(f"batch-{index}"),
+                    recorded_at=RECORDED_AT,
+                    channels=("openclaw_weixin",),
+                )
+            provider = FakeNotificationProvider(
+                clock=lambda: dt.datetime.fromisoformat(RECEIVED_AT)
+            )
+            transport = ProviderTransport(
+                provider,
+                provider_name="fake",
+                rate_limit=RateLimitPolicy(max_calls=2, window_seconds=1.0),
+                monotonic_clock=lambda: 10.0,
+            )
+
+            first = store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=transport,
+                channel="openclaw_weixin",
+                limit=10,
+            )
+            second = store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=transport,
+                channel="openclaw_weixin",
+                limit=10,
+            )
+            rows = store.verified_rows()
+
+        self.assertEqual(len(first), 2)
+        self.assertEqual(second, ())
+        self.assertEqual(len(provider.calls), 2)
+        self.assertEqual(transport.available_rate_slots(), 0)
+        self.assertEqual(
+            sorted(row["status"] for row in rows["jobs"]),
+            ["DELIVERED", "DELIVERED", "PENDING"],
+        )
+        self.assertEqual(
+            sorted(row["attempt_count"] for row in rows["jobs"]),
+            [0, 1, 1],
+        )
+        self.assertNotIn(
+            "notification_transport_rate_limited",
+            {event["event_type"] for event in transport.audit_events},
+        )
+
+    def test_two_store_transports_share_persistent_provider_rate_slots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = (
+                Path(temporary) / "private" / "notifications.sqlite3"
+            )
+            first_store = NotificationStore(database_path)
+            for index in range(4):
+                first_store.enqueue(
+                    _alert(f"shared-{index}"),
+                    recorded_at=RECORDED_AT,
+                    channels=("openclaw_weixin",),
+                )
+
+            # A v1 database created before shared limiting has no slot table.
+            with closing(sqlite3.connect(database_path)) as connection:
+                connection.execute("DROP TABLE notification_provider_rate_slots")
+                connection.commit()
+            second_store = NotificationStore(database_path)
+            with closing(sqlite3.connect(database_path)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT value FROM schema_metadata "
+                        "WHERE key='schema_version'"
+                    ).fetchone()[0],
+                    "1",
+                )
+                self.assertIsNotNone(
+                    connection.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table' "
+                        "AND name='notification_provider_rate_slots'"
+                    ).fetchone()
+                )
+
+            first_provider = FakeNotificationProvider(
+                clock=lambda: dt.datetime.fromisoformat(RECEIVED_AT)
+            )
+            second_provider = FakeNotificationProvider(
+                clock=lambda: dt.datetime.fromisoformat(RECEIVED_AT)
+            )
+            first_transport = ProviderTransport(
+                first_provider,
+                provider_name="fake",
+                rate_limit=RateLimitPolicy(max_calls=2, window_seconds=1.0),
+                monotonic_clock=lambda: 10.0,
+            )
+            second_transport = ProviderTransport(
+                second_provider,
+                provider_name="fake",
+                rate_limit=RateLimitPolicy(max_calls=2, window_seconds=1.0),
+                monotonic_clock=lambda: 10.0,
+            )
+
+            first = first_store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=first_transport,
+                channel="openclaw_weixin",
+                limit=1,
+            )
+            second = second_store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=second_transport,
+                channel="openclaw_weixin",
+                limit=10,
+            )
+            capacity_exhausted = first_store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=first_transport,
+                channel="openclaw_weixin",
+                limit=10,
+            )
+            limited_rows = first_store.verified_rows()
+            limited_provider_call_count = len(first_provider.calls) + len(
+                second_provider.calls
+            )
+
+            next_window = "2026-07-20T00:10:02+00:00"
+            third = first_store.deliver_due(
+                attempted_at=next_window,
+                transport=first_transport,
+                channel="openclaw_weixin",
+                limit=10,
+            )
+            fourth = second_store.deliver_due(
+                attempted_at=next_window,
+                transport=second_transport,
+                channel="openclaw_weixin",
+                limit=10,
+            )
+            final_rows = second_store.verified_rows()
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 1)
+        self.assertEqual(capacity_exhausted, ())
+        self.assertEqual(limited_provider_call_count, 2)
+        self.assertEqual(len(first_provider.calls) + len(second_provider.calls), 4)
+        self.assertEqual(len(third), 1)
+        self.assertEqual(len(fourth), 1)
+        self.assertEqual(
+            sorted(row["status"] for row in limited_rows["jobs"]),
+            ["DELIVERED", "DELIVERED", "PENDING", "PENDING"],
+        )
+        self.assertEqual(
+            sorted(row["attempt_count"] for row in limited_rows["jobs"]),
+            [0, 0, 1, 1],
+        )
+        self.assertEqual(len(limited_rows["attempts"]), 2)
+        self.assertEqual(
+            {row["status"] for row in limited_rows["attempts"]},
+            {"SUCCEEDED"},
+        )
+        self.assertEqual(
+            {row["status"] for row in final_rows["jobs"]},
+            {"DELIVERED"},
+        )
+        self.assertNotIn(
+            "notification_transport_rate_limited",
+            {
+                event["event_type"]
+                for event in first_transport.audit_events
+                + second_transport.audit_events
+            },
+        )
 
     def test_timeout_is_local_and_audited(self) -> None:
         def slow_provider(payload, delivery_key, credential):

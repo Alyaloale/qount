@@ -15,6 +15,7 @@ from qount.notifications import NotificationContractError
 from qount.notifications import NotificationStore
 from qount.notifications import NotificationStoreConflictError
 from qount.notifications import NotificationStoreError
+from qount.notifications import OpenClawWeixinProviderError
 from qount.notifications import build_notification_snapshot
 from qount.notifications.migration import replay_verified_notification_store
 
@@ -43,6 +44,25 @@ def _alert(
         source_hash=_hash("source-1"),
         dedupe_key="reconciliation:report-1",
         trace_id_value=_hash("batch-1"),
+    )
+
+
+def _daily_alert(
+    name: str,
+    *,
+    occurred_at: str,
+    severity: str = "INFO",
+) -> AlertEvent:
+    return AlertEvent.create(
+        severity=severity,
+        category="daily_intelligence",
+        title=f"Qount daily review {name}",
+        summary="Fixture daily review completed.",
+        occurred_at=occurred_at,
+        source_type="intelligence",
+        source_id=_hash(f"daily-source:{name}"),
+        source_hash=_hash(f"daily-payload:{name}"),
+        dedupe_key=f"daily_intelligence:{name}",
     )
 
 
@@ -239,6 +259,286 @@ class NotificationStoreTest(unittest.TestCase):
                 snapshot.alerts[0]["deliveries"][0]["last_error"],
                 "ConnectionError",
             )
+
+    def test_failure_reason_is_diagnostic_but_never_persists_error_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            store = self._store(root / "provider")
+            store.enqueue(_alert(), recorded_at=RECORDED_AT, max_attempts=1)
+
+            def rejected(payload, delivery_key):
+                raise OpenClawWeixinProviderError(
+                    "openclaw_weixin_response_rejected:-2"
+                )
+
+            store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=rejected,
+            )
+            provider_rows = store.verified_rows()
+            self.assertEqual(
+                provider_rows["jobs"][0]["last_error"],
+                "openclaw_weixin_response_rejected:-2",
+            )
+            self.assertEqual(
+                provider_rows["attempts"][0]["error_type"],
+                "openclaw_weixin_response_rejected:-2",
+            )
+
+            secret_store = self._store(root / "arbitrary")
+            secret_store.enqueue(_alert(), recorded_at=RECORDED_AT, max_attempts=1)
+            secret_text = (
+                "Bearer fixture-secret-token; recipient=fixture_user@im.wechat; "
+                "body={private response}"
+            )
+
+            def unsafe_failure(payload, delivery_key):
+                raise RuntimeError(secret_text)
+
+            secret_store.deliver_due(
+                attempted_at=RECORDED_AT,
+                transport=unsafe_failure,
+            )
+            secret_rows = secret_store.verified_rows()
+            self.assertEqual(secret_rows["jobs"][0]["last_error"], "RuntimeError")
+            self.assertEqual(
+                secret_rows["attempts"][0]["error_type"], "RuntimeError"
+            )
+            self.assertNotIn(secret_text, repr(secret_rows))
+            self.assertNotIn("fixture-secret-token", repr(secret_rows))
+
+    def test_superseded_retry_is_cancelled_but_latest_resolved_info_delivers(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = self._store(Path(temporary))
+            old_alert = _daily_alert(
+                "old-warning",
+                occurred_at="2026-07-20T00:10:00+00:00",
+                severity="WARNING",
+            )
+            current_alert = _daily_alert(
+                "current-info",
+                occurred_at="2026-07-20T00:11:00+00:00",
+            )
+            store.enqueue(
+                old_alert,
+                recorded_at="2026-07-20T00:10:01+00:00",
+                channels=("openclaw_weixin",),
+                max_attempts=3,
+            )
+            store.deliver_due(
+                attempted_at="2026-07-20T00:10:01+00:00",
+                transport=lambda payload, key: (_ for _ in ()).throw(
+                    ConnectionError("fixture offline")
+                ),
+                channel="openclaw_weixin",
+                retry_base_seconds=1,
+            )
+            store.enqueue(
+                current_alert,
+                recorded_at="2026-07-20T00:11:01+00:00",
+                channels=("openclaw_weixin",),
+                max_attempts=3,
+            )
+            store.resolve_alert(
+                current_alert.alert_id,
+                resolved_at="2026-07-20T00:11:01+00:00",
+            )
+            self.assertEqual(
+                store.resolve_superseded_alerts(
+                    active_alert_ids=(),
+                    source_type="intelligence",
+                    categories=("daily_intelligence",),
+                    resolved_at="2026-07-20T00:11:01+00:00",
+                ),
+                (old_alert.alert_id,),
+            )
+            delivered_alert_ids: list[str] = []
+
+            result = store.deliver_due(
+                attempted_at="2026-07-20T00:11:01+00:00",
+                transport=lambda payload, key: (
+                    delivered_alert_ids.append(str(payload["alert_id"]))
+                    or {"accepted": True}
+                ),
+                channel="openclaw_weixin",
+                retry_base_seconds=1,
+            )
+            rows = store.verified_rows()
+
+        jobs = {row["alert_id"]: row for row in rows["jobs"]}
+        self.assertEqual(len(result), 1)
+        self.assertEqual(delivered_alert_ids, [current_alert.alert_id])
+        self.assertEqual(jobs[current_alert.alert_id]["status"], "DELIVERED")
+        self.assertEqual(jobs[current_alert.alert_id]["attempt_count"], 1)
+        self.assertEqual(jobs[old_alert.alert_id]["status"], "DEAD_LETTER")
+        self.assertEqual(jobs[old_alert.alert_id]["attempt_count"], 1)
+        self.assertEqual(
+            jobs[old_alert.alert_id]["last_error"],
+            "notification_delivery_superseded",
+        )
+        attempts_by_alert = {
+            job["alert_id"]: [
+                attempt
+                for attempt in rows["attempts"]
+                if attempt["job_id"] == job["job_id"]
+            ]
+            for job in rows["jobs"]
+        }
+        self.assertEqual(len(attempts_by_alert[old_alert.alert_id]), 1)
+        cancelled = [
+            row for row in rows["audit"] if row["event_type"] == "delivery_cancelled"
+        ]
+        self.assertEqual(len(cancelled), 1)
+        self.assertEqual(cancelled[0]["entity_id"], jobs[old_alert.alert_id]["job_id"])
+        self.assertEqual(
+            cancelled[0]["payload"]["reason"],
+            "notification_delivery_superseded",
+        )
+
+    def test_older_resolved_info_retry_is_cancelled_without_open_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = self._store(Path(temporary))
+            old_alert = _daily_alert(
+                "old-info",
+                occurred_at="2026-07-20T00:10:00+00:00",
+            )
+            current_alert = _daily_alert(
+                "new-info",
+                occurred_at="2026-07-20T00:11:00+00:00",
+            )
+            store.enqueue(
+                old_alert,
+                recorded_at="2026-07-20T00:10:01+00:00",
+                channels=("openclaw_weixin",),
+            )
+            store.resolve_alert(
+                old_alert.alert_id,
+                resolved_at="2026-07-20T00:10:01+00:00",
+            )
+            store.deliver_due(
+                attempted_at="2026-07-20T00:10:01+00:00",
+                transport=lambda payload, key: (_ for _ in ()).throw(
+                    TimeoutError("fixture timeout")
+                ),
+                channel="openclaw_weixin",
+                retry_base_seconds=1,
+            )
+            store.enqueue(
+                current_alert,
+                recorded_at="2026-07-20T00:11:01+00:00",
+                channels=("openclaw_weixin",),
+            )
+            store.resolve_alert(
+                current_alert.alert_id,
+                resolved_at="2026-07-20T00:11:01+00:00",
+            )
+
+            store.deliver_due(
+                attempted_at="2026-07-20T00:11:01+00:00",
+                transport=lambda payload, key: {"accepted": True},
+                channel="openclaw_weixin",
+                retry_base_seconds=1,
+            )
+            rows = store.verified_rows()
+
+        jobs = {row["alert_id"]: row for row in rows["jobs"]}
+        self.assertEqual(jobs[old_alert.alert_id]["status"], "DEAD_LETTER")
+        self.assertEqual(jobs[old_alert.alert_id]["attempt_count"], 1)
+        self.assertEqual(jobs[current_alert.alert_id]["status"], "DELIVERED")
+
+    def test_claim_rechecks_latest_after_batch_cleanup_interleaving(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = self._store(Path(temporary))
+            old_alert = _daily_alert(
+                "interleaved-old",
+                occurred_at="2026-07-20T00:10:00+00:00",
+            )
+            current_alert = _daily_alert(
+                "interleaved-current",
+                occurred_at="2026-07-20T00:11:00+00:00",
+            )
+            store.enqueue(
+                old_alert,
+                recorded_at="2026-07-20T00:10:01+00:00",
+                channels=("openclaw_weixin",),
+            )
+            store.resolve_alert(
+                old_alert.alert_id,
+                resolved_at="2026-07-20T00:10:01+00:00",
+            )
+            store.deliver_due(
+                attempted_at="2026-07-20T00:10:01+00:00",
+                transport=lambda payload, key: (_ for _ in ()).throw(
+                    TimeoutError("fixture timeout")
+                ),
+                channel="openclaw_weixin",
+                retry_base_seconds=1,
+            )
+            batch_cleanup = store._cancel_superseded_due_jobs
+            injected = False
+
+            def cleanup_then_enqueue(*, attempted_at, channel):
+                nonlocal injected
+                cancelled = batch_cleanup(
+                    attempted_at=attempted_at,
+                    channel=channel,
+                )
+                if not injected:
+                    injected = True
+                    store.enqueue(
+                        current_alert,
+                        recorded_at="2026-07-20T00:11:01+00:00",
+                        channels=("openclaw_weixin",),
+                    )
+                    store.resolve_alert(
+                        current_alert.alert_id,
+                        resolved_at="2026-07-20T00:11:01+00:00",
+                    )
+                return cancelled
+
+            store._cancel_superseded_due_jobs = (  # type: ignore[method-assign]
+                cleanup_then_enqueue
+            )
+            delivered_alert_ids: list[str] = []
+
+            result = store.deliver_due(
+                attempted_at="2026-07-20T00:11:01+00:00",
+                transport=lambda payload, key: (
+                    delivered_alert_ids.append(str(payload["alert_id"]))
+                    or {"accepted": True}
+                ),
+                channel="openclaw_weixin",
+                retry_base_seconds=1,
+            )
+            rows = store.verified_rows()
+
+        jobs = {row["alert_id"]: row for row in rows["jobs"]}
+        self.assertTrue(injected)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(delivered_alert_ids, [current_alert.alert_id])
+        self.assertEqual(jobs[old_alert.alert_id]["status"], "DEAD_LETTER")
+        self.assertEqual(jobs[old_alert.alert_id]["attempt_count"], 1)
+        self.assertEqual(
+            jobs[old_alert.alert_id]["last_error"],
+            "notification_delivery_superseded",
+        )
+        self.assertEqual(jobs[current_alert.alert_id]["status"], "DELIVERED")
+        old_attempts = [
+            attempt
+            for attempt in rows["attempts"]
+            if attempt["job_id"] == jobs[old_alert.alert_id]["job_id"]
+        ]
+        self.assertEqual(len(old_attempts), 1)
+        self.assertEqual(old_attempts[0]["status"], "FAILED")
+        cancelled = [
+            row
+            for row in rows["audit"]
+            if row["event_type"] == "delivery_cancelled"
+            and row["entity_id"] == jobs[old_alert.alert_id]["job_id"]
+        ]
+        self.assertEqual(len(cancelled), 1)
 
     def test_external_success_before_marker_retries_same_key_after_restart(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

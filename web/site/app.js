@@ -100,6 +100,7 @@ function statusText(value) {
     fresh: "数据有效",
     stale: "已过期",
     available: "可用",
+    available_readonly: "交易所只读事实",
     healthy: "健康",
     degraded: "降级",
     unavailable: "不可用",
@@ -149,6 +150,12 @@ function statusText(value) {
     long: "做多",
     short: "做空",
     paper: "模拟运行",
+    draft: "草稿登记",
+    research: "研究登记",
+    frozen_candidate: "冻结候选登记",
+    minimal_live: "最小实盘登记",
+    scaled_live: "扩展实盘登记",
+    halted: "停机登记",
     research_only: "仅研究",
     read_model_ready: "读模型就绪",
     read_only_observation_ready: "账户只读观察就绪",
@@ -158,11 +165,23 @@ function statusText(value) {
     limited: "有限",
     registry_authorized: "注册授权存在",
     disarmed: "未武装",
+    armed: "已武装",
     metadata_only: "仅元数据",
     substantive: "实质正文",
     no_order_expected: "无需订单",
     orders_expected_but_missing: "预期订单缺失",
     fills_verified: "成交已核验",
+    ledger_current: "当前账本有效",
+    ledger_current_after_blocked_observation: "当前账本有效",
+    ledger_stale: "账本已过期",
+    ledger_stale_after_blocked_observation: "账本已过期",
+    ledger_superseded_by_blocked_observation: "账本已被只读观察取代",
+    ledger_unavailable: "当前账本不可用",
+    ledger_unavailable_with_blocked_observation: "当前账本不可用",
+    ledger_future_dated: "账本时钟异常",
+    ledger_future_dated_after_blocked_observation: "账本时钟异常",
+    ledger_freshness_unverified: "账本时效未验证",
+    ledger_freshness_unverified_after_blocked_observation: "账本时效未验证",
     eligible_for_research_design: "可进入研究设计",
     blocked_source_capacity: "来源容量阻断",
     blocked_history_capacity: "历史容量阻断",
@@ -412,8 +431,25 @@ function renderLive() {
 
 function renderPositions() {
   const payload = state.models.positions.payload;
+  if (payload.summary.status === "available_readonly") {
+    const summary = payload.summary;
+    $("view-positions").innerHTML = `
+      <div class="metrics metrics-four">
+        ${metric("交易所仓位", String(summary.position_count), "账户预检只读观察", "accent")}
+        ${metric("非零仓位", String(summary.nonzero_position_count), "不属于 Qount ledger", "")}
+        ${metric("Ledger 对账", statusText(summary.reconciliation_status), "没有权威 ledger reconciliation", "bad")}
+        ${metric("事实范围", "只读", "非 ledger 账户仓位，Qount 未归因", "accent")}
+      </div>
+      <section class="panel full-panel">
+        <header class="panel-head"><div><h2>交易所只读仓位事实</h2><p>仅展示账户观察，不补造策略账本事实</p></div><span class="mono">${escapeHtml(shortHash(state.models.positions.source_hashes.blocked_runtime_observation))}</span></header>
+        <div class="table-wrap"><table><thead><tr><th>标的</th><th>方向</th><th>实际数量</th><th>名义价值</th><th>成本</th><th>已实现 PnL</th><th>对账</th><th>观测时间</th></tr></thead><tbody>
+          ${payload.positions.map((row) => `<tr><td><strong>${escapeHtml(row.symbol)}</strong><small>Qount ledger 外仓位</small></td><td>${pill(row.side)}</td><td>${escapeHtml(formatQuantity(row.actual_quantity))}</td><td>${escapeHtml(formatMoney(row.notional))}</td><td>${escapeHtml(statusText("unavailable"))}<small>非 ledger 事实</small></td><td>${escapeHtml(statusText("unavailable"))}<small>非 ledger 事实</small></td><td>${pill(row.reconciliation_status)}</td><td>${escapeHtml(formatTime(row.observed_at))}<small class="mono">${escapeHtml(shortHash(row.observation_hash))}</small></td></tr>`).join("") || `<tr><td colspan="8" class="empty-cell">账户观察为空仓</td></tr>`}
+        </tbody></table></div>
+      </section>`;
+    return;
+  }
   if (payload.summary.status !== "available") {
-    $("view-positions").innerHTML = unavailableBlock("仓位读模型不可用", "当前发布没有权威 ledger position facts。");
+    $("view-positions").innerHTML = unavailableBlock("仓位读模型不可用", "当前发布既没有权威 ledger position facts，也没有可验证的交易所账户观察。");
     return;
   }
   $("view-positions").innerHTML = `
@@ -460,8 +496,8 @@ function renderOrders() {
 function renderStrategies() {
   const rows = state.models.strategies.payload.strategies;
   $("view-strategies").innerHTML = `<section class="panel full-panel"><header class="panel-head"><div><h2>策略注册表</h2><p>${rows.length} 个当前版本</p></div><span class="mono">${escapeHtml(shortHash(state.models.strategies.source_hashes.strategy_registry))}</span></header>
-    <div class="table-wrap"><table><thead><tr><th>策略</th><th>状态</th><th>风险预算</th><th>本批决定</th><th>目标</th><th>NAV</th></tr></thead><tbody>
-      ${rows.map((row) => { const decision = row.latest_decision; const nav = row.nav.status === "available" ? row.nav.values : null; return `<tr><td><strong>${escapeHtml(row.strategy_id)}</strong><small>v${escapeHtml(row.strategy_version)} / ${escapeHtml(row.strategy_kind)}</small></td><td>${pill(row.promotion_status)}</td><td>${escapeHtml(formatPercent(row.maximum_gross))}<small>压力损失 ${escapeHtml(formatPercent(row.maximum_stress_loss_fraction))}</small></td><td>${decision ? traceLink(decision.decision_id) : "-"}${decision ? `<small>${escapeHtml(decision.reason_codes.join(" / "))}</small>` : ""}</td><td>${decision ? escapeHtml(formatPercent(decision.standalone_target_gross)) : "-"}</td><td>${nav ? escapeHtml(formatMoney(nav.standalone_executable_nav)) : "-"}<small>${nav ? `信号净值 ${escapeHtml(formatMoney(nav.signal_nav))}` : "账本不可用"}</small></td></tr>`; }).join("")}
+    <div class="table-wrap"><table><thead><tr><th>策略</th><th>注册状态</th><th>执行状态</th><th>订单权限</th><th>风险预算</th><th>本批决定</th><th>目标</th><th>NAV</th></tr></thead><tbody>
+      ${rows.map((row) => { const decision = row.latest_decision; const nav = row.nav.status === "available" ? row.nav.values : null; return `<tr><td><strong>${escapeHtml(row.strategy_id)}</strong><small>v${escapeHtml(row.strategy_version)} / ${escapeHtml(row.strategy_kind)}</small></td><td>${pill(row.registry_status)}<small>仅注册表阶段</small></td><td>${pill(row.execution_status)}<small>${row.execution_blockers.length ? escapeHtml(row.execution_blockers.join(" / ")) : "运行前置条件已观测"}</small></td><td>${pill(row.live_orders_allowed ? "pass" : "block")}<small>live_orders_allowed=${row.live_orders_allowed ? "true" : "false"}</small></td><td>${escapeHtml(formatPercent(row.maximum_gross))}<small>压力损失 ${escapeHtml(formatPercent(row.maximum_stress_loss_fraction))}</small></td><td>${decision ? traceLink(decision.decision_id) : "-"}${decision ? `<small>${escapeHtml(decision.reason_codes.join(" / "))}</small>` : ""}</td><td>${decision ? escapeHtml(formatPercent(decision.standalone_target_gross)) : "-"}</td><td>${nav ? escapeHtml(formatMoney(nav.standalone_executable_nav)) : "-"}<small>${nav ? `信号净值 ${escapeHtml(formatMoney(nav.signal_nav))}` : "账本不可用"}</small></td></tr>`; }).join("")}
     </tbody></table></div></section>`;
 }
 
@@ -519,7 +555,7 @@ function renderReadiness() {
   $("view-readiness").innerHTML = `<div class="readiness-head"><div><span>读模型就绪状态</span><strong>${escapeHtml(statusText(payload.status))}</strong></div>${pill(payload.status)}</div>
     <section class="axis-band">${axes.map(([name, axis]) => `<article><header><strong>${escapeHtml(axisText(name))}</strong>${pill(axis.status)}</header><p>${escapeHtml(axis.detail)}</p><small>${axis.impact_scopes.map(scopeText).map(escapeHtml).join(" / ")}</small></article>`).join("")}</section>
     <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>运行检查项</h2><p>所有订单权限保持关闭</p></div></header><div class="gate-list">${payload.gates.map((gate) => `<div class="gate-row"><span class="gate-signal ${tone(gate.status)}"></span><div><strong>${escapeHtml(gate.gate)}</strong><small>${escapeHtml(gate.detail)}</small></div>${pill(gate.status)}</div>`).join("")}</div></section>
-    <section class="panel"><header class="panel-head"><div><h2>策略就绪状态</h2><p>${payload.strategies.length} 个策略</p></div></header><div class="gate-list">${payload.strategies.map((row) => `<div class="gate-row"><span class="gate-signal ${row.current_batch_decision_present ? "ok" : "warn"}"></span><div><strong>${escapeHtml(row.strategy_id)} v${escapeHtml(row.strategy_version)}</strong><small>${escapeHtml(statusText(row.promotion_status))} / 所有者授权${row.owner_authorization_present ? "已存在" : "缺失"}${row.execution_blockers.length ? ` / 策略执行前置条件：${row.execution_blockers.map(escapeHtml).join("、")}` : ""}</small></div>${pill(row.live_orders_allowed ? "pass" : "block")}</div>`).join("")}</div></section></div>`;
+    <section class="panel"><header class="panel-head"><div><h2>策略就绪状态</h2><p>${payload.strategies.length} 个策略</p></div></header><div class="gate-list">${payload.strategies.map((row) => `<div class="gate-row"><span class="gate-signal ${tone(row.execution_status)}"></span><div><strong>${escapeHtml(row.strategy_id)} v${escapeHtml(row.strategy_version)}</strong><small>注册状态：${escapeHtml(statusText(row.registry_status))} / 执行状态：${escapeHtml(statusText(row.execution_status))} / live_orders_allowed=false${row.execution_blockers.length ? ` / 阻断或未武装原因：${row.execution_blockers.map(escapeHtml).join("、")}` : ""}</small></div>${pill(row.live_orders_allowed ? "pass" : "block")}</div>`).join("")}</div></section></div>`;
 }
 
 function healthMetric(row) {
@@ -592,13 +628,15 @@ function renderIntelligence() {
   }
   const report = payload.report;
   const history = report.trading_history;
+  const historyAuthority = report.runtime_history_authority;
+  const currentHistoryAuthoritative = historyAuthority?.current_history_authoritative === true;
   const symbols = report.market_pulse.symbols;
   const evidence = report.evidence_summary;
   $("view-intelligence").innerHTML = `<div class="metrics metrics-four">
       ${metric("Pipeline", statusText(report.pipeline_status), report.report_date, tone(report.pipeline_status) === "ok" ? "good" : "bad")}
       ${metric("证据状态", statusText(report.evidence_status), `${evidence.substantive_source_count}/${evidence.verified_source_count} 份实质正文`, tone(report.evidence_status) === "ok" ? "good" : "bad")}
       ${metric("研究建议", String(report.research_proposals.length), "G0 容量先行", "accent")}
-      ${metric("执行证据", statusText(history.execution_evidence_status || "unavailable"), history.status === "available" ? `${history.order_count} 订单 / ${history.fill_count} 成交` : "缺少账本", history.execution_evidence_sufficient ? "good" : "bad")}
+      ${metric("执行证据", currentHistoryAuthoritative ? statusText(history.execution_evidence_status || "unavailable") : "当前不可用", currentHistoryAuthoritative ? `${history.order_count} 订单 / ${history.fill_count} 成交` : historyAuthority ? `${statusText(historyAuthority.status)} / 历史账本仅截至 ${formatTime(history.source_updated_at)}` : "旧报告缺少当前权威边界", currentHistoryAuthoritative && history.execution_evidence_sufficient ? "good" : "bad")}
     </div>
     <section class="market-strip">${symbols.map((row) => `<article><span>${escapeHtml(row.symbol)}</span><strong>${escapeHtml(formatMoney(row.last_price))}</strong><small class="${Number(row.change_24h_pct) >= 0 ? "positive" : "negative"}">${escapeHtml(formatPercent(Number(row.change_24h_pct) / 100))} / funding ${escapeHtml(formatPercent(row.funding_rate))}</small></article>`).join("")}</section>
     <section class="panel full-panel"><header class="panel-head"><div><h2>综合结论</h2><p>${escapeHtml(report.llm.model)} / ${escapeHtml(formatTime(report.created_at))}</p></div><span class="mono">${escapeHtml(shortHash(report.report_hash))}</span></header><div class="intelligence-summary"><p>${escapeHtml(report.executive_summary)}</p><div class="conclusion-grid"><div><h3>已观测事实</h3><div class="code-list">${report.observed_impacts.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无已验证事实</span>`}</div></div><div><h3>证据缺口</h3><div class="code-list">${evidence.gaps.map((item) => `<code class="muted-code">${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无合同缺口</span>`}</div></div><div><h3>假设边界</h3><div class="code-list">${report.risk_notes.map((item) => `<code>${escapeHtml(item)}</code>`).join("") || `<span class="empty-cell">无新增假设</span>`}</div></div><div><h3>研究建议</h3><div class="proposal-list">${report.research_proposals.map((item) => `<article><div><strong>${escapeHtml(item.hypothesis)}</strong>${pill(item.g0_status)}</div><small>来源 ${escapeHtml(statusText(item.source_capacity))} / 历史 ${escapeHtml(statusText(item.history_capacity))} / ${escapeHtml(item.holdout_role)}</small></article>`).join("") || `<span class="empty-cell">无新研究建议</span>`}</div></div></div></div></section>

@@ -517,6 +517,17 @@ class LedgerDashboardBridgeTest(unittest.TestCase):
                 snapshot.positions,
             )
             self.assertEqual(
+                models.positions.payload["summary"]["fact_scope"],
+                "runtime_ledger",
+            )
+            self.assertEqual(
+                models.positions.payload["summary"]["reconciliation_status"],
+                "passed",
+            )
+            self.assertEqual(
+                models.positions.payload["summary"]["unavailable_fields"], []
+            )
+            self.assertEqual(
                 models.overview.payload["pnl"]["values"]["equity"], 1_015.9
             )
             self.assertEqual(
@@ -545,6 +556,10 @@ class LedgerDashboardBridgeTest(unittest.TestCase):
                     for row in models.readiness.payload["strategies"]
                 )
             )
+            strategy = models.strategies.payload["strategies"][0]
+            self.assertEqual(strategy["registry_status"], "shadow")
+            self.assertEqual(strategy["execution_status"], "disarmed")
+            self.assertNotIn("promotion_status", strategy)
             publication_root = Path(temporary) / "dashboard"
             publication = publish_dashboard_v1(publication_root, models)
             loaded, loaded_publication = read_dashboard_v1(publication_root)
@@ -609,7 +624,7 @@ class LedgerDashboardBridgeTest(unittest.TestCase):
         self.assertEqual(actual, expected)
         self.assertEqual(
             hashlib.sha256(actual).hexdigest(),
-            "393870ebdb2345196e2dcdf3869415ef356ddbe90aa66ef81668e38a4cdd81b7",
+            "9bdce873311a206ec216d6d427e008bb6c6876ec5442816f2810c373ebce9f71",
         )
 
 

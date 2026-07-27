@@ -14,6 +14,7 @@
     "pipeline_status": { "enum": ["complete", "partial", "failed"] },
     "evidence_status": { "enum": ["sufficient", "limited", "insufficient"] },
     "evidence_summary": { "$ref": "#/$defs/evidence_summary" },
+    "runtime_history_authority": { "$ref": "#/$defs/runtime_history_authority" },
     "market_pulse": { "$ref": "daily-intelligence-v1.schema.json#/$defs/market_pulse" },
     "trading_history": {
       "oneOf": [
@@ -79,6 +80,22 @@
     "report_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
   },
   "$defs": {
+    "runtime_history_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "current_history_authoritative", "current_ledger_reconciliation", "ledger_source_updated_at", "account_observed_at", "evaluated_at", "stale_after_seconds"],
+      "properties": {
+        "status": {
+          "enum": ["ledger_unavailable", "ledger_current", "ledger_stale", "ledger_future_dated", "ledger_freshness_unverified", "ledger_unavailable_with_blocked_observation", "ledger_superseded_by_blocked_observation", "ledger_current_after_blocked_observation", "ledger_stale_after_blocked_observation", "ledger_future_dated_after_blocked_observation", "ledger_freshness_unverified_after_blocked_observation"]
+        },
+        "current_history_authoritative": { "type": "boolean" },
+        "current_ledger_reconciliation": { "enum": ["available", "unavailable"] },
+        "ledger_source_updated_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+        "account_observed_at": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" }] },
+        "evaluated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "stale_after_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+      }
+    },
     "evidence_summary": {
       "type": "object",
       "additionalProperties": false,

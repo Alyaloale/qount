@@ -13,6 +13,7 @@ from unittest.mock import patch
 from qount.alpha_agents.llm import AlphaLLMConfig
 from qount.alpha_agents.models import AgentReport
 from qount.alpha_agents.official_sources import build_official_source_document
+from qount.contracts import canonical_hash
 from qount.intelligence import IntelligenceContractError
 from qount.intelligence import StaticSearchProvider
 from qount.intelligence import alert_from_daily_intelligence
@@ -20,6 +21,7 @@ from qount.intelligence import build_market_pulse
 from qount.intelligence import fetch_binance_market_pulse
 from qount.intelligence import read_latest_daily_intelligence
 from qount.intelligence import run_daily_intelligence
+from qount.intelligence import summarize_runtime_fact_boundary
 from qount.intelligence import summarize_trading_history
 from qount.ledger import build_runtime_ledger_snapshot
 from scripts.operations.run_daily_intelligence import (
@@ -35,6 +37,7 @@ from scripts.operations.run_daily_intelligence import (
     DAILY_INTELLIGENCE_DEFAULT_LLM_PROVIDER_PROFILE,
 )
 from scripts.operations.run_daily_intelligence import _parser as daily_intelligence_parser
+from scripts.operations.run_daily_intelligence import _read_runtime_observation
 from tests.test_ledger_dashboard_bridge import CAPTURED_AT
 from tests.test_ledger_dashboard_bridge import _ledger_with_accounting
 
@@ -87,7 +90,97 @@ def _config():
     )
 
 
+def _flat_snapshot(*, source_updated_at: str = "2026-07-20T10:00:00+00:00"):
+    return SimpleNamespace(
+        validate=lambda: None,
+        batch_id="a" * 64,
+        source_updated_at=source_updated_at,
+        position_details=(),
+        orders=(),
+        fills=(),
+        cash_events=(),
+        recoveries=(),
+        unresolved_order_ids=(),
+        nav={
+            "equity": 100.0,
+            "trading_pnl": 0.0,
+            "trading_pnl_cumulative": 0.0,
+            "funding": 0.0,
+            "funding_cumulative": 0.0,
+            "fees": 0.0,
+            "fees_cumulative": 0.0,
+            "transfers": 0.0,
+            "transfers_cumulative": 0.0,
+            "residual": 0.0,
+        },
+        account={
+            "wallet_balance": 100.0,
+            "available_balance": 100.0,
+            "current_drawdown_fraction": 0.0,
+            "peak_drawdown_fraction": 0.0,
+        },
+        reconciliation={"passed": True, "halt_required": False},
+    )
+
+
+def _blocked_observation(
+    *,
+    observed_at: str = "2026-07-21T09:55:00+00:00",
+):
+    core = {
+        "schema_version": 1,
+        "artifact_type": "qount_blocked_runtime_observation",
+        "created_at": "2026-07-21T09:56:00+00:00",
+        "observed_at": observed_at,
+        "status": "blocked",
+        "live_orders_allowed": False,
+        "runtime_ledger_created": False,
+        "strategy_id": "mini_trend_um_base_v0_2",
+        "blockers": ["preflight:no_unmanaged_positions"],
+        "run_id": "20260721T095500Z",
+        "account_observation": {
+            "source": "private_account_preflight",
+            "observed_at": observed_at,
+            "quote_asset": "USDT",
+            "wallet_balance": 203.16,
+            "available_balance": 102.0,
+            "margin_balance": 203.16,
+            "margin_used": 101.16,
+            "actual_gross_notional": 392.0,
+            "actual_gross_fraction": 1.9295,
+            "margin_fraction": 0.4979,
+            "open_order_count": 0,
+            "positions": [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "side": "long",
+                    "quantity": 0.006,
+                    "notional": 392.0,
+                }
+            ],
+        },
+        "source_hashes": {"account_preflight.json": "b" * 64},
+    }
+    return core | {"observation_hash": canonical_hash(core)}
+
+
 class DailyIntelligenceTest(unittest.TestCase):
+    def test_runner_reads_blocked_observation_next_to_authority_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            authority_root = Path(temporary) / "dashboard-authority"
+            authority_root.mkdir()
+            expected = _blocked_observation()
+            with patch(
+                "scripts.operations.run_daily_intelligence.read_blocked_runtime_observation",
+                return_value=expected,
+            ) as reader:
+                actual = _read_runtime_observation(authority_root)
+
+        self.assertEqual(actual, expected)
+        reader.assert_called_once_with(
+            authority_root.resolve().parent / "blocked_runtime_observation.json"
+        )
+
     def test_daily_cli_defaults_to_coding_plan(self) -> None:
         args = daily_intelligence_parser().parse_args(
             [
@@ -155,7 +248,8 @@ class DailyIntelligenceTest(unittest.TestCase):
             self.assertEqual(run.report.status, "incomplete")
             self.assertFalse(run.report.orders_allowed)
             self.assertFalse(run.report.live_changes_allowed)
-            self.assertIn("任务骨架", run.report.executive_summary)
+            self.assertIn("运行事实边界", run.report.executive_summary)
+            self.assertIn("行情观察", run.report.executive_summary)
             self.assertIn("每日情报复盘", alert_from_daily_intelligence(run.report).title)
             self.assertEqual(
                 tuple(row["role_id"] for row in run.report.agent_reports),
@@ -337,7 +431,8 @@ class DailyIntelligenceTest(unittest.TestCase):
         self.assertLess(max(payload_sizes), 35_000)
         self.assertIn("prior_agent_reports", calls[-1]["context"])
         self.assertNotIn("raw_response", calls[-1]["context"]["prior_agent_reports"][0])
-        self.assertEqual(run.report.executive_summary, "本角色已完成有界复核。")
+        self.assertNotIn("本角色已完成有界复核", run.report.executive_summary)
+        self.assertIn("当前没有可用的 Qount 权威 ledger", run.report.executive_summary)
         self.assertTrue(
             all(report["status"] == "ok" for report in run.report.agent_reports)
         )
@@ -400,41 +495,158 @@ class DailyIntelligenceTest(unittest.TestCase):
         self.assertTrue(summary["execution_evidence_sufficient"])
 
     def test_flat_zero_order_cycle_is_no_order_expected_evidence(self) -> None:
-        snapshot = SimpleNamespace(
-            validate=lambda: None,
-            batch_id="a" * 64,
-            source_updated_at="2026-07-21T10:00:00+00:00",
-            position_details=(),
-            orders=(),
-            fills=(),
-            cash_events=(),
-            recoveries=(),
-            unresolved_order_ids=(),
-            nav={
-                "equity": 100.0,
-                "trading_pnl": 0.0,
-                "trading_pnl_cumulative": 0.0,
-                "funding": 0.0,
-                "funding_cumulative": 0.0,
-                "fees": 0.0,
-                "fees_cumulative": 0.0,
-                "transfers": 0.0,
-                "transfers_cumulative": 0.0,
-                "residual": 0.0,
-            },
-            account={
-                "wallet_balance": 100.0,
-                "available_balance": 100.0,
-                "current_drawdown_fraction": 0.0,
-                "peak_drawdown_fraction": 0.0,
-            },
-            reconciliation={"passed": True, "halt_required": False},
-        )
+        snapshot = _flat_snapshot(source_updated_at="2026-07-21T10:00:00+00:00")
 
         summary = summarize_trading_history(snapshot)
 
         self.assertEqual(summary["execution_evidence_status"], "no_order_expected")
         self.assertTrue(summary["execution_evidence_sufficient"])
+
+    def test_newer_readonly_account_observation_supersedes_current_ledger_claims(
+        self,
+    ) -> None:
+        snapshot = _flat_snapshot()
+        observation = _blocked_observation()
+
+        boundary = summarize_runtime_fact_boundary(snapshot, observation)
+
+        self.assertEqual(
+            boundary["status"], "ledger_superseded_by_blocked_observation"
+        )
+        self.assertEqual(boundary["ledger"]["position_count"], 0)
+        self.assertTrue(boundary["ledger"]["reconciliation_passed"])
+        self.assertEqual(boundary["current_ledger_reconciliation"], "unavailable")
+        self.assertFalse(boundary["account_observation"]["ledger_authority"])
+        self.assertEqual(
+            boundary["account_observation"]["positions"][0]["quantity"],
+            0.006,
+        )
+        self.assertFalse(boundary["account_observation"]["nav_available"])
+
+        tampered = dict(observation)
+        tampered["observation_hash"] = "f" * 64
+        with self.assertRaisesRegex(
+            ValueError, "runtime_fact_blocked_observation_invalid"
+        ):
+            summarize_runtime_fact_boundary(snapshot, tampered)
+
+    def test_runtime_boundary_requires_fresh_ledger_and_fails_closed_on_tie(
+        self,
+    ) -> None:
+        stale = summarize_runtime_fact_boundary(
+            _flat_snapshot(source_updated_at="2026-07-21T09:44:59+00:00"),
+            None,
+            evaluated_at=CREATED_AT,
+        )
+        fresh = summarize_runtime_fact_boundary(
+            _flat_snapshot(source_updated_at="2026-07-21T09:45:01+00:00"),
+            None,
+            evaluated_at=CREATED_AT,
+        )
+        tied = summarize_runtime_fact_boundary(
+            _flat_snapshot(source_updated_at="2026-07-21T09:55:00+00:00"),
+            _blocked_observation(observed_at="2026-07-21T09:55:00+00:00"),
+            evaluated_at=CREATED_AT,
+        )
+
+        self.assertEqual(stale["status"], "ledger_stale")
+        self.assertEqual(stale["current_ledger_reconciliation"], "unavailable")
+        self.assertEqual(fresh["status"], "ledger_current")
+        self.assertEqual(fresh["current_ledger_reconciliation"], "available")
+        self.assertEqual(
+            tied["status"], "ledger_superseded_by_blocked_observation"
+        )
+        self.assertEqual(tied["current_ledger_reconciliation"], "unavailable")
+
+    def test_daily_report_corrects_stale_flat_ledger_before_llm_summary(self) -> None:
+        body = b"<html><body>Official notice.</body></html>"
+
+        def fetcher(url, *, observed_at):
+            return build_official_source_document(
+                source_url=url,
+                final_url=url,
+                body=body,
+                content_type_header="text/html",
+                observed_at=observed_at,
+            )
+
+        calls: list[dict] = []
+
+        def request(**kwargs):
+            calls.append(kwargs)
+            return AgentReport(
+                role_id=kwargs["role"].role_id,
+                task_id=kwargs["task"].task_id,
+                status="ok",
+                summary="账本空仓对账通过。",
+                findings=("完成复核。",),
+                proposals=("继续做只读研究。",),
+                risks=(),
+                sources=kwargs["sources"],
+            )
+
+        observation = _blocked_observation()
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "qount.intelligence.daily.request_agent_report", side_effect=request
+        ):
+            pulse, market_bodies = _market()
+            run = run_daily_intelligence(
+                created_at=CREATED_AT,
+                market_pulse=pulse,
+                market_bodies=market_bodies,
+                runtime_ledger_snapshot=_flat_snapshot(),
+                blocked_runtime_observation=observation,
+                search_provider=StaticSearchProvider(
+                    {"fixture": (("Notice", SOURCE_URL),)}
+                ),
+                archive_root=temporary,
+                llm_config=AlphaLLMConfig(
+                    enabled=True,
+                    base_url="https://llm.alyaloale.com/v1",
+                    api_key="fixture-secret",
+                    model="gpt-5.6-sol",
+                ),
+                search_queries=("fixture",),
+                source_fetcher=fetcher,
+            )
+
+        self.assertEqual(run.report.status, "incomplete")
+        self.assertTrue(run.report.trading_history["reconciliation_passed"])
+        self.assertIn(
+            "runtime_ledger_superseded_by_blocked_runtime_observation",
+            run.report.evidence_summary["gaps"],
+        )
+        self.assertIn(
+            "current_ledger_reconciliation_unavailable",
+            run.report.evidence_summary["gaps"],
+        )
+        self.assertTrue(run.report.executive_summary.startswith("运行事实边界："))
+        self.assertIn("BTC/USDT:USDT 多头 0.006", run.report.executive_summary)
+        self.assertIn(observation["observation_hash"], run.report.executive_summary)
+        self.assertNotIn("总编结论", run.report.executive_summary)
+        self.assertNotIn("账本空仓对账通过", run.report.executive_summary)
+        self.assertEqual(
+            run.report.runtime_history_authority["current_history_authoritative"],
+            False,
+        )
+        self.assertEqual(run.report.risk_notes[0].split("：", 1)[0], "运行事实边界")
+        self.assertTrue(
+            all(
+                proposal["history_capacity"] == "blocked"
+                for proposal in run.report.research_proposals
+            )
+        )
+        self.assertTrue(
+            alert_from_daily_intelligence(run.report).summary.startswith(
+                "运行事实边界："
+            )
+        )
+        for call in calls[2:]:
+            boundary = call["context"]["runtime_fact_boundary"]
+            self.assertEqual(
+                boundary["current_ledger_reconciliation"],
+                "unavailable",
+            )
 
     def test_history_position_count_excludes_zero_quantity_symbol_rows(self) -> None:
         snapshot = SimpleNamespace(

@@ -17,20 +17,48 @@
             "summary": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["status", "position_count", "nonzero_position_count", "reconciliation_id", "reconciled"],
+              "required": ["status", "fact_scope", "position_count", "nonzero_position_count", "reconciliation_id", "reconciled", "reconciliation_status", "unavailable_fields"],
               "properties": {
-                "status": { "enum": ["unavailable_until_phase_b_ledger", "available"] },
+                "status": { "enum": ["unavailable_until_phase_b_ledger", "available_readonly", "available"] },
+                "fact_scope": { "enum": [null, "exchange_account_observation", "runtime_ledger"] },
                 "position_count": { "type": "integer", "minimum": 0 },
                 "nonzero_position_count": { "type": "integer", "minimum": 0 },
                 "reconciliation_id": { "oneOf": [{ "type": "null" }, { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }] },
-                "reconciled": { "type": "boolean" }
+                "reconciled": { "type": ["boolean", "null"] },
+                "reconciliation_status": { "enum": ["unavailable", "passed", "failed"] },
+                "unavailable_fields": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
               }
             },
             "positions": {
               "type": "array",
-              "items": { "$ref": "#/$defs/position" }
+              "items": {
+                "oneOf": [
+                  { "$ref": "#/$defs/ledger_position" },
+                  { "$ref": "#/$defs/exchange_observed_position" }
+                ]
+              }
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "authority": { "properties": { "account_and_pnl": { "const": "runtime_ledger" } } } } },
+              "then": {
+                "properties": {
+                  "summary": { "properties": { "status": { "const": "available" }, "fact_scope": { "const": "runtime_ledger" }, "reconciled": { "type": "boolean" } } },
+                  "positions": { "items": { "$ref": "#/$defs/ledger_position" } }
+                }
+              }
+            },
+            {
+              "if": { "properties": { "authority": { "properties": { "account_and_pnl": { "const": "private_account_preflight" } } } } },
+              "then": {
+                "properties": {
+                  "summary": { "properties": { "status": { "const": "available_readonly" }, "fact_scope": { "const": "exchange_account_observation" }, "reconciled": { "type": "null" }, "reconciliation_status": { "const": "unavailable" } } },
+                  "positions": { "items": { "$ref": "#/$defs/exchange_observed_position" } }
+                }
+              }
+            }
+          ]
         }
       }
     }
@@ -54,7 +82,7 @@
         "href": { "type": "string", "pattern": "^#/decisions\\?trace=[0-9a-f]{64}$" }
       }
     },
-    "position": {
+    "ledger_position": {
       "type": "object",
       "additionalProperties": false,
       "required": ["symbol", "actual_quantity", "average_cost", "realized_trading_pnl", "expected_quantity", "quantity_difference", "approved_target_weight", "updated_at", "source_hash", "position_hash", "trace"],
@@ -70,6 +98,25 @@
         "source_hash": { "$ref": "#/$defs/nullable_hash" },
         "position_hash": { "$ref": "#/$defs/nullable_hash" },
         "trace": { "$ref": "#/$defs/trace" }
+      }
+    },
+    "exchange_observed_position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "side", "actual_quantity", "notional", "observed_at", "observation_hash", "source", "fact_scope", "management_scope", "average_cost", "realized_trading_pnl", "reconciliation_status"],
+      "properties": {
+        "symbol": { "type": "string", "minLength": 1 },
+        "side": { "enum": ["long", "short"] },
+        "actual_quantity": { "type": "number", "minimum": 0 },
+        "notional": { "type": "number", "minimum": 0 },
+        "observed_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "observation_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "source": { "const": "private_account_preflight" },
+        "fact_scope": { "const": "exchange_account_observation" },
+        "management_scope": { "const": "outside_qount_ledger" },
+        "average_cost": { "type": "null" },
+        "realized_trading_pnl": { "type": "null" },
+        "reconciliation_status": { "const": "unavailable" }
       }
     }
   }

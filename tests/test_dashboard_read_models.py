@@ -231,6 +231,14 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertFalse(
             models.readiness.payload["strategies"][0]["live_orders_allowed"]
         )
+        strategy = models.strategies.payload["strategies"][0]
+        self.assertEqual(strategy["registry_status"], "shadow")
+        self.assertEqual(strategy["execution_status"], "disarmed")
+        self.assertNotIn("promotion_status", strategy)
+        self.assertEqual(
+            strategy["execution_blockers"],
+            ["owner_authorization_missing", "registry_status_not_live"],
+        )
         self.assertEqual(
             set(models.overview.source_hashes),
             {"decision_batch_manifest", "strategy_registry"},
@@ -271,6 +279,79 @@ class DashboardReadModelTest(unittest.TestCase):
             stale.overview.freshness["stale_at"],
             "2026-07-20T00:11:00+00:00",
         )
+
+    def test_readonly_exchange_positions_are_not_promoted_to_ledger_facts(self) -> None:
+        batch, registry = _sources()
+        core = {
+            "status": "blocked",
+            "live_orders_allowed": False,
+            "runtime_ledger_created": False,
+            "strategy_id": "test_strategy",
+            "blockers": ["preflight:no_unmanaged_positions"],
+            "observed_at": "2026-07-20T00:06:20+00:00",
+            "account_observation": {
+                "source": "private_account_preflight",
+                "observed_at": "2026-07-20T00:06:20+00:00",
+                "quote_asset": "USDT",
+                "wallet_balance": 200.0,
+                "available_balance": 150.0,
+                "margin_balance": 200.0,
+                "margin_used": 50.0,
+                "actual_gross_notional": 100.0,
+                "actual_gross_fraction": 0.5,
+                "margin_fraction": 0.25,
+                "open_order_count": 0,
+                "positions": [
+                    {
+                        "symbol": "BTC/USDT:USDT",
+                        "side": "long",
+                        "quantity": 0.001,
+                        "notional": 100.0,
+                    }
+                ],
+            },
+        }
+        observation = core | {"observation_hash": canonical_hash(core)}
+        models = build_dashboard_v1(
+            batch,
+            registry,
+            generated_at=GENERATED_AT,
+            stale_after_seconds=300,
+            blocked_runtime_observation=observation,
+        )
+
+        summary = models.positions.payload["summary"]
+        row = models.positions.payload["positions"][0]
+        self.assertEqual(summary["status"], "available_readonly")
+        self.assertEqual(summary["fact_scope"], "exchange_account_observation")
+        self.assertIsNone(summary["reconciled"])
+        self.assertEqual(summary["reconciliation_status"], "unavailable")
+        self.assertEqual(row["management_scope"], "outside_qount_ledger")
+        self.assertIsNone(row["average_cost"])
+        self.assertIsNone(row["realized_trading_pnl"])
+        self.assertNotIn("trace", row)
+        self.assertEqual(
+            models.strategies.payload["strategies"][0]["execution_status"],
+            "blocked",
+        )
+
+        schema_root = Path(__file__).resolve().parents[1] / "web" / "schemas"
+        schemas = {
+            path.name: json.loads(path.read_text(encoding="ascii"))
+            for path in schema_root.glob("*.schema.json")
+        }
+        schema_registry = Registry().with_resources(
+            [
+                (schema["$id"], Resource.from_contents(schema))
+                for schema in schemas.values()
+            ]
+        )
+        for model in (models.positions, models.strategies, models.readiness):
+            Draft202012Validator(
+                schemas[f"dashboard-v1-{model.read_model_type}.schema.json"],
+                registry=schema_registry,
+                format_checker=FormatChecker(),
+            ).validate(model.as_dict())
 
     def test_tampered_batch_and_registry_fail_before_model_generation(self) -> None:
         batch, registry = _sources()
@@ -545,6 +626,13 @@ class DashboardReadModelTest(unittest.TestCase):
             "strategies"
         ]["items"]["properties"]["nav"]
         self.assertEqual(len(nav_schema["oneOf"]), 2)
+        strategy_properties = strategies["allOf"][1]["properties"]["payload"][
+            "properties"
+        ]["strategies"]["items"]["properties"]
+        self.assertIn("registry_status", strategy_properties)
+        self.assertIn("execution_status", strategy_properties)
+        self.assertIn("live_orders_allowed", strategy_properties)
+        self.assertNotIn("promotion_status", strategy_properties)
         publication = json.loads(
             (schema_root / "dashboard-v1-publication.schema.json").read_text(
                 encoding="ascii"
@@ -629,6 +717,14 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertNotIn("patchLive", app)
         self.assertIn("portfolio.actual_positions", app)
         self.assertIn("payload.pnl", app)
+        self.assertIn("交易所只读仓位事实", app)
+        self.assertNotIn("手工/外部仓位", app)
+        self.assertIn("live_orders_allowed=", app)
+        self.assertIn("row.registry_status", app)
+        self.assertIn("row.execution_status", app)
+        self.assertNotIn("row.promotion_status", app)
+        self.assertIn("currentHistoryAuthoritative", app)
+        self.assertIn("旧报告缺少当前权威边界", app)
         self.assertIn('history.replaceState(null, "", "#/live")', app)
         self.assertIn("Object.entries(model.source_hashes).every", app)
         self.assertIn("publication.source_hashes[name] === hash", app)

@@ -1,0 +1,64 @@
+[Unit]
+Description=Qount bounded OpenClaw Weixin notification retry
+After=network-online.target openclaw-gateway.service
+Wants=network-online.target openclaw-gateway.service
+ConditionPathIsDirectory=/root/qount
+ConditionPathIsDirectory=/var/lib/qount/notifications
+ConditionPathIsDirectory=/etc/qount/intelligence
+ConditionPathIsDirectory=/root/.openclaw/openclaw-weixin/accounts
+ConditionPathExists=/etc/qount/intelligence/openclaw-weixin.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+Environment=PYTHONPATH=/root/qount/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=QOUNT_LIVE_ENABLE=false
+Environment=QOUNT_LIVE_CONFIRMATION=
+Environment=QOUNT_X4_LIVE_ENABLE=false
+Environment=QOUNT_RV_LIVE_ENABLE=false
+Environment=QOUNT_CXD_CARRY_ENABLE=false
+Environment=QOUNT_MINI_TREND_LIVE_ENABLE=false
+Environment=QOUNT_MINI_TREND_LIVE_CONFIRMATION=
+Environment=QOUNT_FOMC_LIVE_ENABLE=false
+Environment=QOUNT_FOMC_LIVE_CONFIRMATION=
+Environment=http_proxy=
+Environment=https_proxy=
+Environment=all_proxy=
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+UnsetEnvironment=QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN QOUNT_FOMC_LIVE_CONFIRMATION QOUNT_FOMC_ARM_TOKEN BINANCE_API_KEY BINANCE_SECRET QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_TESTNET_API_KEY QOUNT_TESTNET_API_SECRET QOUNT_ALPHA_AGENT_API_KEY QOUNT_ALPHA_AGENT_BASE_URL QOUNT_ALPHA_AGENT_MODEL QOUNT_ALPHA_AGENT_PROVIDER_PROFILE QOUNT_ALPHA_AGENT_LLM_ENABLE QOUNT_OPENAI_API_KEY QOUNT_TIINGO_API_KEY OPENAI_API_KEY
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_notification_retry.py --notification-store /var/lib/qount/notifications/store.sqlite3 --credential-path /etc/qount/intelligence/openclaw-weixin.json --context-token-directory /root/.openclaw/openclaw-weixin/accounts --limit 2 --retry-base-seconds 300 --timeout-seconds 20
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryHigh=128M
+MemoryMax=192M
+TasksMax=24
+TimeoutStartSec=1m
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/etc/qount/intelligence/openclaw-weixin.json
+ReadOnlyPaths=/root/.openclaw/openclaw-weixin/accounts
+ReadWritePaths=/var/lib/qount/notifications
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=

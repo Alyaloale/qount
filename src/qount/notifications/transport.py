@@ -10,7 +10,9 @@ rate limit, timeout and credential audit boundary.  Tests can therefore use
 from __future__ import annotations
 
 import datetime as dt
+import math
 import os
+import re
 import stat
 import threading
 import time
@@ -29,6 +31,32 @@ from qount.contracts.trace import aware_datetime
 
 PROVIDER_RESPONSE_SCHEMA_VERSION = 1
 PROVIDER_RESPONSE_STATUSES = ("ACCEPTED", "DUPLICATE", "REJECTED")
+NOTIFICATION_FAILURE_REASON_MAXIMUM = 120
+_FAILURE_REASON_RE = re.compile(
+    rf"^[A-Za-z][A-Za-z0-9_]{{0,{NOTIFICATION_FAILURE_REASON_MAXIMUM - 1}}}"
+    rf"(?::[-]?[A-Za-z0-9_]{{1,{NOTIFICATION_FAILURE_REASON_MAXIMUM - 2}}})?$"
+)
+_SAFE_FAILURE_TYPE_NAMES = frozenset(
+    {
+        "BrokenPipeError",
+        "ConnectionAbortedError",
+        "ConnectionError",
+        "ConnectionRefusedError",
+        "ConnectionResetError",
+        "HTTPError",
+        "OSError",
+        "OpenClawWeixinProviderError",
+        "ProviderCredentialError",
+        "ProviderRateLimitError",
+        "ProviderResponseError",
+        "ProviderTimeoutError",
+        "RuntimeError",
+        "SSLError",
+        "TimeoutError",
+        "URLError",
+        "WeComProviderError",
+    }
+)
 
 
 class NotificationTransportError(ValueError):
@@ -56,6 +84,35 @@ class ProviderCredentialError(NotificationTransportError):
 TransportRateLimitError = ProviderRateLimitError
 TransportTimeoutError = ProviderTimeoutError
 TransportCredentialError = ProviderCredentialError
+
+
+def notification_failure_reason(error: BaseException) -> str:
+    """Return a bounded diagnostic reason without persisting exception text.
+
+    Provider exceptions may expose ``notification_reason`` when their message
+    is an intentionally secret-free machine code.  All other exceptions are
+    reduced to their class name so response bodies, credentials, recipients,
+    and arbitrary remote error text cannot enter the durable outbox.
+    """
+
+    error_type = type(error).__name__
+    explicit = getattr(error, "notification_reason", None)
+    if (
+        type(error).__module__ == "qount.notifications.weixin"
+        and error_type == "OpenClawWeixinProviderError"
+        and isinstance(explicit, str)
+        and explicit.startswith("openclaw_weixin_")
+        and len(explicit) <= NOTIFICATION_FAILURE_REASON_MAXIMUM
+        and _FAILURE_REASON_RE.fullmatch(explicit)
+    ):
+        return explicit
+    if (
+        error_type in _SAFE_FAILURE_TYPE_NAMES
+        and len(error_type) <= NOTIFICATION_FAILURE_REASON_MAXIMUM
+        and _FAILURE_REASON_RE.fullmatch(error_type)
+    ):
+        return error_type
+    return "NotificationDeliveryError"
 
 
 def _text(value: object, *, name: str, maximum: int) -> str:
@@ -298,6 +355,8 @@ class RateLimitPolicy:
             or isinstance(self.max_calls, bool)
             or self.max_calls < 1
             or isinstance(self.window_seconds, bool)
+            or not isinstance(self.window_seconds, (int, float))
+            or not math.isfinite(float(self.window_seconds))
             or self.window_seconds <= 0
         ):
             raise NotificationTransportError("provider_rate_limit_policy_invalid")
@@ -350,12 +409,7 @@ class ProviderTransport:
     def _acquire_rate_slot(self) -> None:
         now = float(self._clock())
         with self._rate_lock:
-            while (
-                self._rate_timestamps
-                and now - self._rate_timestamps[0]
-                >= self.rate_limit.window_seconds
-            ):
-                self._rate_timestamps.popleft()
+            self._discard_expired_rate_slots(now)
             if len(self._rate_timestamps) >= self.rate_limit.max_calls:
                 self._audit(
                     {
@@ -366,6 +420,30 @@ class ProviderTransport:
                 )
                 raise ProviderRateLimitError("provider_rate_limit_exceeded")
             self._rate_timestamps.append(now)
+
+    def _discard_expired_rate_slots(self, now: float) -> None:
+        while (
+            self._rate_timestamps
+            and now - self._rate_timestamps[0] >= self.rate_limit.window_seconds
+        ):
+            self._rate_timestamps.popleft()
+
+    def available_rate_slots(self) -> int:
+        """Return the calls this transport can accept without local failure."""
+
+        now = float(self._clock())
+        with self._rate_lock:
+            self._discard_expired_rate_slots(now)
+            return self.rate_limit.max_calls - len(self._rate_timestamps)
+
+    def shared_rate_limit_policy(self) -> tuple[str, int, float]:
+        """Describe the provider limit used by a shared durable outbox."""
+
+        return (
+            self.provider_name,
+            self.rate_limit.max_calls,
+            float(self.rate_limit.window_seconds),
+        )
 
     def _invoke(
         self,
@@ -406,7 +484,7 @@ class ProviderTransport:
                     "event_type": "notification_transport_provider_failed",
                     "provider": self.provider_name,
                     "delivery_key": delivery_key,
-                    "error_type": type(exc).__name__[:120],
+                    "error_type": notification_failure_reason(exc),
                     "credential_present": self.credential is not None,
                 }
             )
@@ -528,4 +606,5 @@ __all__ = [
     "TransportRateLimitError",
     "TransportTimeoutError",
     "load_provider_credential",
+    "notification_failure_reason",
 ]

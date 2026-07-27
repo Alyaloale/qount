@@ -25,11 +25,25 @@ OPENCLAW_WEIXIN_APP_ID = "bot"
 OPENCLAW_WEIXIN_APP_CLIENT_VERSION = str((2 << 16) | (4 << 8) | 4)
 _RECIPIENT_RE = re.compile(r"^[A-Za-z0-9_-]{1,96}@im\.wechat$")
 _ACCOUNT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_ERROR_REASON_RE = re.compile(
+    r"^[A-Za-z][A-Za-z0-9_]{0,119}(?::[-]?[A-Za-z0-9_]{1,118})?$"
+)
 _MAXIMUM_CONTEXT_FILE_BYTES = 64_000
 
 
 class OpenClawWeixinProviderError(ValueError):
     """Raised when the imported Weixin credential or response is invalid."""
+
+    def __init__(self, reason: str) -> None:
+        safe_reason = (
+            reason
+            if reason.startswith("openclaw_weixin_")
+            and len(reason) <= 120
+            and _ERROR_REASON_RE.fullmatch(reason)
+            else "OpenClawWeixinProviderError"
+        )
+        self.notification_reason = safe_reason
+        super().__init__(safe_reason)
 
 
 @dataclass(frozen=True)
@@ -46,7 +60,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     for key, item in pairs:
         if key in value:
             raise OpenClawWeixinProviderError(
-                f"openclaw_weixin_credential_duplicate_key:{key}"
+                "openclaw_weixin_credential_duplicate_key"
             )
         value[key] = item
     return value

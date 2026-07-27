@@ -25,6 +25,8 @@ from .contracts import DailyIntelligenceReport
 from .contracts import MarketPulse
 from .contracts import SearchEvidence
 from .contracts import SourceEvidence
+from .history import RUNTIME_LEDGER_CURRENT_MAX_AGE_SECONDS
+from .history import summarize_runtime_fact_boundary
 from .history import summarize_trading_history
 from .search import SearchProvider
 
@@ -153,6 +155,7 @@ def _source_context(
 def _evidence_summary(
     sources: Sequence[SourceEvidence],
     trading_history: Mapping[str, Any],
+    runtime_fact_boundary: Mapping[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     substantive_count = sum(
         source.content_quality == "substantive" for source in sources
@@ -174,7 +177,21 @@ def _evidence_summary(
         gaps.append("runtime_ledger_history_unavailable")
     elif execution_status == "orders_expected_but_missing":
         gaps.append("orders_expected_but_missing")
-    if substantive_count >= 2 and len(source_domains) >= 2 and history_sufficient:
+    current_reconciliation_available = (
+        runtime_fact_boundary.get("current_ledger_reconciliation") == "available"
+    )
+    if not current_reconciliation_available:
+        if runtime_fact_boundary.get("blocked_runtime_observation") is not None:
+            gaps.append("runtime_ledger_superseded_by_blocked_runtime_observation")
+        else:
+            gaps.append("runtime_ledger_history_not_current")
+        gaps.append("current_ledger_reconciliation_unavailable")
+    if (
+        substantive_count >= 2
+        and len(source_domains) >= 2
+        and history_sufficient
+        and current_reconciliation_available
+    ):
         status = "sufficient"
     elif (
         any(source.content_quality != "metadata_only" for source in sources)
@@ -211,6 +228,7 @@ def _role_context(
     created_at: str,
     market_pulse: MarketPulse,
     trading_history: Mapping[str, Any],
+    runtime_fact_boundary: Mapping[str, Any],
     sources: Sequence[SourceEvidence],
     source_failures: Sequence[str],
     reports: Sequence[AgentReport],
@@ -239,12 +257,15 @@ def _role_context(
             "优化想法必须是带基线和否决测试的可证伪研究建议。",
             "只有给定来源原文和账本事实可以表述为已观测事实。",
             "所有面向用户的自然语言报告必须使用简体中文。",
+            "历史 ledger reconciliation 只适用于 source_updated_at，不得表述为当前账户对账。",
+            "交易所只读账户观察不得用于补造成本、成交、手续费、盈亏、NAV 或订单沿袭。",
         ],
     }
     if role_id in {"market_analyst", "event_analyst", "strategy_reviewer", "red_team", "editor"}:
         context["market_pulse"] = market_pulse.as_dict()
     if role_id in {"execution_reviewer", "strategy_reviewer", "red_team", "editor"}:
         context["trading_history"] = trading_history
+        context["runtime_fact_boundary"] = runtime_fact_boundary
     if role_id == "event_analyst":
         context["verified_sources"] = [
             _source_context(source, excerpt_chars=DAILY_LLM_SOURCE_EXCERPT_CHARS)
@@ -307,12 +328,112 @@ def _circuit_blocked_agent(
     )
 
 
+def _runtime_boundary_is_conflicted(value: Mapping[str, Any]) -> bool:
+    return value.get("current_ledger_reconciliation") != "available"
+
+
+def _runtime_history_authority(value: Mapping[str, Any]) -> dict[str, Any]:
+    ledger = value["ledger"]
+    account = value.get("account_observation")
+    return {
+        "status": value["status"],
+        "current_history_authoritative": not _runtime_boundary_is_conflicted(value),
+        "current_ledger_reconciliation": value["current_ledger_reconciliation"],
+        "ledger_source_updated_at": ledger["source_updated_at"],
+        "account_observed_at": (
+            account["observed_at"] if isinstance(account, Mapping) else None
+        ),
+        "evaluated_at": value["evaluated_at"],
+        "stale_after_seconds": value["stale_after_seconds"],
+    }
+
+
+def _market_facts_summary(market_pulse: MarketPulse) -> str:
+    rows = ", ".join(
+        f"{row['symbol']} {float(row['change_24h_pct']):+.2f}%"
+        for row in market_pulse.symbols
+    )
+    return f"行情观察：{rows}。"
+
+
+def _runtime_boundary_notice(value: Mapping[str, Any]) -> str | None:
+    if not _runtime_boundary_is_conflicted(value):
+        return None
+    ledger = value["ledger"]
+    if ledger["status"] == "available":
+        position_count = int(ledger["position_count"])
+        reconciliation = (
+            "对账通过" if ledger["reconciliation_passed"] else "对账未通过"
+        )
+        ledger_state = (
+            f"空仓且{reconciliation}"
+            if position_count == 0
+            else f"有 {position_count} 个账本持仓且{reconciliation}"
+        )
+        ledger_text = (
+            f"Qount 权威 ledger 截至 {ledger['source_updated_at']}，"
+            f"仅证明该时点{ledger_state}"
+        )
+    else:
+        ledger_text = "当前没有可用的 Qount 权威 ledger"
+    blocked = value.get("blocked_runtime_observation")
+    if not isinstance(blocked, Mapping):
+        return (
+            f"运行事实边界：{ledger_text}，但截至 {value['evaluated_at']} "
+            "未取得当前权威 ledger reconciliation。"
+            "当前成本、手续费、订单沿袭、NAV 与 ledger reconciliation 均不可用；"
+            "live_orders_allowed=false。"
+        )
+    account = value.get("account_observation")
+    if isinstance(account, Mapping):
+        side_names = {"long": "多头", "short": "空头"}
+        position_rows = account["positions"]
+        positions = ", ".join(
+            f"{row['symbol']} {side_names[row['side']]} "
+            f"{float(row['quantity']):g}（名义价值 "
+            f"{float(row['notional']):.2f} {account['quote_asset']}）"
+            for row in position_rows[:3]
+        )
+        if len(position_rows) > 3:
+            positions = f"{positions} 等 {len(position_rows)} 个持仓"
+        account_state = positions or "账户无非零持仓"
+        observation_text = (
+            f"交易所只读观察截至 {account['observed_at']}，"
+            f"记录到{account_state}"
+        )
+    else:
+        observation_text = (
+            f"阻断运行观察截至 {blocked['observed_at']}，"
+            "但没有可用的账户持仓明细"
+        )
+    return (
+        f"运行事实边界：{ledger_text}；{observation_text}。"
+        "该观察未进入 Qount ledger，当前成本、手续费、订单沿袭、NAV 与 "
+        "ledger reconciliation 均不可用；live_orders_allowed=false。"
+        f"观察哈希 {blocked['observation_hash']}。"
+    )
+
+
+def _executive_summary(
+    editor_summary: str,
+    runtime_fact_boundary: Mapping[str, Any],
+    market_pulse: MarketPulse,
+) -> str:
+    notice = _runtime_boundary_notice(runtime_fact_boundary)
+    if notice is None:
+        return editor_summary
+    # Execution and reconciliation claims from an LLM cannot survive a
+    # deterministic current-fact conflict. Retain only the supplied market facts.
+    return f"{notice} {_market_facts_summary(market_pulse)}"[:2_000].rstrip()
+
+
 def run_daily_intelligence(
     *,
     created_at: str,
     market_pulse: MarketPulse,
     market_bodies: Mapping[str, bytes],
     runtime_ledger_snapshot: Any | None,
+    blocked_runtime_observation: Mapping[str, Any] | None = None,
     search_provider: SearchProvider,
     archive_root: str,
     llm_config: AlphaLLMConfig | None = None,
@@ -325,6 +446,12 @@ def run_daily_intelligence(
     market_pulse.validate()
     config = llm_config or AlphaLLMConfig.from_env()
     trading_history = summarize_trading_history(runtime_ledger_snapshot)
+    runtime_fact_boundary = summarize_runtime_fact_boundary(
+        runtime_ledger_snapshot,
+        blocked_runtime_observation,
+        evaluated_at=created_at,
+        stale_after_seconds=RUNTIME_LEDGER_CURRENT_MAX_AGE_SECONDS,
+    )
 
     searches: list[SearchEvidence] = []
     search_bodies: list[bytes] = []
@@ -383,6 +510,7 @@ def run_daily_intelligence(
             created_at=created_at,
             market_pulse=market_pulse,
             trading_history=trading_history,
+            runtime_fact_boundary=runtime_fact_boundary,
             sources=sources,
             source_failures=source_failures,
             reports=reports,
@@ -406,8 +534,12 @@ def run_daily_intelligence(
         )
     )[:12]
     proposals = tuple(dict.fromkeys(reports[3].proposals))[:12]
+    boundary_notice = _runtime_boundary_notice(runtime_fact_boundary)
     risks = tuple(
-        dict.fromkeys(item for report in reports for item in report.risks)
+        dict.fromkeys(
+            ([boundary_notice] if boundary_notice is not None else [])
+            + [item for report in reports for item in report.risks]
+        )
     )[:12]
     pipeline_status = (
         "partial"
@@ -416,7 +548,11 @@ def run_daily_intelligence(
         or any(report.status == "blocked" for report in reports)
         else "complete"
     )
-    evidence_status, evidence_summary = _evidence_summary(sources, trading_history)
+    evidence_status, evidence_summary = _evidence_summary(
+        sources,
+        trading_history,
+        runtime_fact_boundary,
+    )
     status = (
         "incomplete"
         if pipeline_status != "complete" or evidence_status != "sufficient"
@@ -445,7 +581,11 @@ def run_daily_intelligence(
         searches=searches,
         sources=sources,
         agent_reports=reports,
-        executive_summary=editor.summary,
+        executive_summary=_executive_summary(
+            editor.summary,
+            runtime_fact_boundary,
+            market_pulse,
+        ),
         observed_impacts=observed_impacts,
         research_proposals=proposals,
         risk_notes=risks,
@@ -455,6 +595,10 @@ def run_daily_intelligence(
             "model": config.model,
             "provider_profile": config.provider_profile,
         },
+        current_history_authoritative=not _runtime_boundary_is_conflicted(
+            runtime_fact_boundary
+        ),
+        runtime_history_authority=_runtime_history_authority(runtime_fact_boundary),
     )
     archive = archive_daily_intelligence(
         archive_root,

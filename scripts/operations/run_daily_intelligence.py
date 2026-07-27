@@ -32,6 +32,9 @@ from qount.notifications import synchronize_producer_incidents  # noqa: E402
 from qount.notifications import WECOM_PROVIDER_NAME  # noqa: E402
 from qount.notifications import WeComGroupRobotProvider  # noqa: E402
 from qount.notifications import load_provider_credential  # noqa: E402
+from qount.operations.authority_writer import (  # noqa: E402
+    read_blocked_runtime_observation,
+)
 from qount.reporting import read_vps_authority_bundle  # noqa: E402
 
 
@@ -39,6 +42,12 @@ DAILY_INTELLIGENCE_DEFAULT_LLM_MODEL = VOLC_CODING_PLAN_DEFAULT_MODEL
 DAILY_INTELLIGENCE_DEFAULT_LLM_BASE_URL = VOLC_CODING_PLAN_BASE_URL
 DAILY_INTELLIGENCE_DEFAULT_LLM_PROVIDER_PROFILE = VOLC_CODING_PLAN_PROFILE
 DAILY_INTELLIGENCE_DEFAULT_LLM_MAX_TOKENS = VOLC_CODING_PLAN_DEFAULT_MAX_TOKENS
+
+
+def _read_runtime_observation(authority_root: Path) -> dict | None:
+    return read_blocked_runtime_observation(
+        authority_root.resolve().parent / "blocked_runtime_observation.json"
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -85,7 +94,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     now = dt.datetime.now(dt.timezone.utc).isoformat()
-    bundle = read_vps_authority_bundle(args.authority_root.resolve())
+    authority_root = args.authority_root.resolve()
+    bundle = read_vps_authority_bundle(authority_root)
+    blocked_runtime_observation = _read_runtime_observation(authority_root)
     if args.search_provider == "brave":
         if args.search_credential_path is None:
             raise ValueError("search_credential_path_required")
@@ -126,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         market_pulse=market.pulse,
         market_bodies=market.raw_bodies,
         runtime_ledger_snapshot=bundle.ledger_snapshot,
+        blocked_runtime_observation=blocked_runtime_observation,
         search_provider=search_provider,
         archive_root=str(args.archive_root.resolve()),
         llm_config=llm_config,

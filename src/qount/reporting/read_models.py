@@ -76,6 +76,17 @@ _SYSTEM_HEALTH_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"system_health"}
 _SYSTEM_RUNTIME_SOURCE_KEYS = _RUNTIME_SOURCE_KEYS | {"system_health"}
 _SYSTEM_BLOCKED_RUNTIME_SOURCE_KEYS = _BLOCKED_RUNTIME_SOURCE_KEYS | {"system_health"}
 _HEX_ID_LENGTH = 64
+_REGISTRY_STATUSES = {
+    "draft",
+    "research",
+    "frozen_candidate",
+    "shadow",
+    "paper",
+    "minimal_live",
+    "scaled_live",
+    "halted",
+}
+_EXECUTION_STATUSES = {"disarmed", "blocked", "armed"}
 
 
 class DashboardReadModelError(ValueError):
@@ -168,7 +179,7 @@ def _valid_source_hashes(
             and keys == _INTELLIGENCE_SOURCE_KEYS
         )
         or (
-            read_model_type == "system"
+            read_model_type in {"system", "strategies", "readiness"}
             and (
                 keys == _SYSTEM_HEALTH_SOURCE_KEYS
                 or keys == _SYSTEM_RUNTIME_SOURCE_KEYS
@@ -784,7 +795,10 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
                     "strategy_id",
                     "strategy_version",
                     "strategy_kind",
-                    "promotion_status",
+                    "registry_status",
+                    "execution_status",
+                    "live_orders_allowed",
+                    "execution_blockers",
                     "registry_entry_id",
                     "strategy_contract_hash",
                     "maximum_gross",
@@ -805,17 +819,26 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
                 raise DashboardReadModelError("dashboard_strategy_version_invalid")
             if row["strategy_kind"] not in {"continuous", "event", "filter"}:
                 raise DashboardReadModelError("dashboard_strategy_kind_invalid")
-            if row["promotion_status"] not in {
-                "draft",
-                "research",
-                "frozen_candidate",
-                "shadow",
-                "paper",
-                "minimal_live",
-                "scaled_live",
-                "halted",
-            }:
+            if row["registry_status"] not in _REGISTRY_STATUSES:
                 raise DashboardReadModelError("dashboard_strategy_status_invalid")
+            if (
+                row["execution_status"] not in _EXECUTION_STATUSES
+                or row["live_orders_allowed"] is not False
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_strategy_execution_status_invalid"
+                )
+            blockers = _string_list(
+                row["execution_blockers"],
+                name="dashboard_strategy_execution_blockers",
+            )
+            if (
+                (row["execution_status"] == "armed" and blockers)
+                or (row["execution_status"] != "armed" and not blockers)
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_strategy_execution_blockers_mismatch"
+                )
             for name in ("registry_entry_id", "strategy_contract_hash"):
                 if not is_sha256(row[name]):
                     raise DashboardReadModelError(f"dashboard_strategy_{name}_invalid")
@@ -886,6 +909,7 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
             "registry_authorized",
             "disarmed",
             "blocked",
+            "armed",
             "complete",
             "incomplete",
         }
@@ -972,7 +996,8 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
                 {
                     "strategy_id",
                     "strategy_version",
-                    "promotion_status",
+                    "registry_status",
+                    "execution_status",
                     "current_batch_decision_present",
                     "promotion_evidence_present",
                     "owner_authorization_present",
@@ -986,6 +1011,13 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
                     "dashboard_readiness_cannot_authorize_orders"
                 )
             if (
+                row["registry_status"] not in _REGISTRY_STATUSES
+                or row["execution_status"] not in _EXECUTION_STATUSES
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_readiness_strategy_status_invalid"
+                )
+            if (
                 not isinstance(row["execution_blockers"], list)
                 or any(
                     not isinstance(value, str) or not value
@@ -996,6 +1028,16 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
             ):
                 raise DashboardReadModelError(
                     "dashboard_readiness_execution_blockers_invalid"
+                )
+            if (
+                row["execution_status"] == "armed"
+                and row["execution_blockers"]
+            ) or (
+                row["execution_status"] != "armed"
+                and not row["execution_blockers"]
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_readiness_execution_blockers_mismatch"
                 )
             for name in (
                 "current_batch_decision_present",
@@ -1052,28 +1094,128 @@ def _validate_positions_payload(value: Mapping[str, object]) -> None:
         summary,
         {
             "status",
+            "fact_scope",
             "position_count",
             "nonzero_position_count",
             "reconciliation_id",
             "reconciled",
+            "reconciliation_status",
+            "unavailable_fields",
         },
         name="dashboard_positions_summary",
     )
     rows = value["positions"]
     if not isinstance(rows, list):
         raise DashboardReadModelError("dashboard_positions_invalid")
-    runtime = value["authority"]["account_and_pnl"] == "runtime_ledger"
-    if not runtime:
+    account_authority = value["authority"]["account_and_pnl"]
+    if account_authority == "private_account_preflight":
+        expected_unavailable = [
+            "average_cost",
+            "expected_quantity",
+            "quantity_difference",
+            "realized_trading_pnl",
+            "reconciliation",
+        ]
+        if (
+            summary["status"] != "available_readonly"
+            or summary["fact_scope"] != "exchange_account_observation"
+            or summary["reconciliation_id"] is not None
+            or summary["reconciled"] is not None
+            or summary["reconciliation_status"] != "unavailable"
+            or summary["unavailable_fields"] != expected_unavailable
+        ):
+            raise DashboardReadModelError(
+                "dashboard_positions_readonly_summary_invalid"
+            )
+        for field in ("position_count", "nonzero_position_count"):
+            _count(summary[field], name=f"dashboard_positions_{field}")
+        symbols: list[str] = []
+        nonzero = 0
+        for index, row_value in enumerate(rows):
+            row = _mapping(
+                row_value, name=f"dashboard_readonly_position:{index}"
+            )
+            _exact_keys(
+                row,
+                {
+                    "symbol",
+                    "side",
+                    "actual_quantity",
+                    "notional",
+                    "observed_at",
+                    "observation_hash",
+                    "source",
+                    "fact_scope",
+                    "management_scope",
+                    "average_cost",
+                    "realized_trading_pnl",
+                    "reconciliation_status",
+                },
+                name=f"dashboard_readonly_position:{index}",
+            )
+            symbol = row["symbol"]
+            if (
+                not isinstance(symbol, str)
+                or not symbol
+                or row["side"] not in {"long", "short"}
+                or row["source"] != "private_account_preflight"
+                or row["fact_scope"] != "exchange_account_observation"
+                or row["management_scope"] != "outside_qount_ledger"
+                or row["average_cost"] is not None
+                or row["realized_trading_pnl"] is not None
+                or row["reconciliation_status"] != "unavailable"
+                or not is_sha256(row["observation_hash"])
+            ):
+                raise DashboardReadModelError(
+                    "dashboard_readonly_position_invalid"
+                )
+            try:
+                aware_datetime(str(row["observed_at"]))
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise DashboardReadModelError(
+                    "dashboard_readonly_position_time_invalid"
+                ) from exc
+            actual = _finite_nonnegative(
+                row["actual_quantity"],
+                name=f"dashboard_readonly_position_actual:{symbol}",
+            )
+            _finite_nonnegative(
+                row["notional"],
+                name=f"dashboard_readonly_position_notional:{symbol}",
+            )
+            symbols.append(symbol)
+            if actual > 0.0:
+                nonzero += 1
+        if symbols != sorted(symbols) or len(symbols) != len(set(symbols)):
+            raise DashboardReadModelError(
+                "dashboard_readonly_positions_order_invalid"
+            )
+        if summary["position_count"] != len(rows) or summary[
+            "nonzero_position_count"
+        ] != nonzero:
+            raise DashboardReadModelError(
+                "dashboard_readonly_positions_summary_mismatch"
+            )
+        return
+    if account_authority != "runtime_ledger":
         if summary != {
             "status": "unavailable_until_phase_b_ledger",
+            "fact_scope": None,
             "position_count": 0,
             "nonzero_position_count": 0,
             "reconciliation_id": None,
-            "reconciled": False,
+            "reconciled": None,
+            "reconciliation_status": "unavailable",
+            "unavailable_fields": ["positions", "reconciliation"],
         } or rows:
             raise DashboardReadModelError("dashboard_positions_unavailable_invalid")
         return
-    if summary["status"] != "available":
+    if (
+        summary["status"] != "available"
+        or summary["fact_scope"] != "runtime_ledger"
+        or summary["reconciliation_status"] not in {"passed", "failed"}
+        or summary["unavailable_fields"] != []
+    ):
         raise DashboardReadModelError("dashboard_positions_status_invalid")
     for field in ("position_count", "nonzero_position_count"):
         _count(summary[field], name=f"dashboard_positions_{field}")
@@ -1081,6 +1223,12 @@ def _validate_positions_payload(value: Mapping[str, object]) -> None:
         summary["reconciled"], bool
     ):
         raise DashboardReadModelError("dashboard_positions_reconciliation_invalid")
+    if (summary["reconciliation_status"] == "passed") is not summary[
+        "reconciled"
+    ]:
+        raise DashboardReadModelError(
+            "dashboard_positions_reconciliation_status_mismatch"
+        )
     symbols: list[str] = []
     nonzero = 0
     for index, row_value in enumerate(rows):
@@ -2608,16 +2756,67 @@ def _overview_payload(
 def _positions_payload(
     batch: VerifiedDecisionBatch,
     ledger_snapshot: RuntimeLedgerSnapshot | None,
+    blocked_runtime_observation: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
+    if (
+        blocked_runtime_observation is not None
+        and "account_observation" in blocked_runtime_observation
+    ):
+        account = _readonly_account_values(blocked_runtime_observation)
+        positions = account["positions"]
+        rows = [
+            {
+                "symbol": row["symbol"],
+                "side": row["side"],
+                "actual_quantity": row["quantity"],
+                "notional": row["notional"],
+                "observed_at": account["observed_at"],
+                "observation_hash": blocked_runtime_observation[
+                    "observation_hash"
+                ],
+                "source": "private_account_preflight",
+                "fact_scope": "exchange_account_observation",
+                "management_scope": "outside_qount_ledger",
+                "average_cost": None,
+                "realized_trading_pnl": None,
+                "reconciliation_status": "unavailable",
+            }
+            for row in positions
+        ]
+        return {
+            "authority": _authority(None, readonly_account=True),
+            "summary": {
+                "status": "available_readonly",
+                "fact_scope": "exchange_account_observation",
+                "position_count": len(rows),
+                "nonzero_position_count": sum(
+                    float(row["actual_quantity"]) > 0.0 for row in rows
+                ),
+                "reconciliation_id": None,
+                "reconciled": None,
+                "reconciliation_status": "unavailable",
+                "unavailable_fields": [
+                    "average_cost",
+                    "expected_quantity",
+                    "quantity_difference",
+                    "realized_trading_pnl",
+                    "reconciliation",
+                ],
+            },
+            "positions": rows,
+        }
     if ledger_snapshot is None:
         return {
             "authority": _authority(None),
             "summary": {
                 "status": "unavailable_until_phase_b_ledger",
+                "fact_scope": None,
                 "position_count": 0,
                 "nonzero_position_count": 0,
                 "reconciliation_id": None,
-                "reconciled": False,
+                "reconciled": None,
+                "reconciliation_status": "unavailable",
+                "unavailable_fields": ["positions", "reconciliation"],
             },
             "positions": [],
         }
@@ -2677,12 +2876,17 @@ def _positions_payload(
         "authority": _authority(ledger_snapshot),
         "summary": {
             "status": "available",
+            "fact_scope": "runtime_ledger",
             "position_count": len(rows),
             "nonzero_position_count": sum(
                 float(row["actual_quantity"]) > 0.0 for row in rows
             ),
             "reconciliation_id": reconciliation["reconciliation_id"],
             "reconciled": bool(reconciliation["passed"]),
+            "reconciliation_status": (
+                "passed" if reconciliation["passed"] else "failed"
+            ),
+            "unavailable_fields": [],
         },
         "positions": rows,
     }
@@ -3189,13 +3393,168 @@ def _system_payload(
     }
 
 
+def _operations_observation(
+    system_health: SystemHealthSnapshot | None,
+) -> Mapping[str, Any] | None:
+    if system_health is None:
+        return None
+    return next(
+        (
+            row
+            for row in system_health.observations
+            if row["component"] == "operations"
+        ),
+        None,
+    )
+
+
+def _strategy_execution_facts(
+    batch: VerifiedDecisionBatch,
+    registry: StrategyRegistry,
+    *,
+    stale: bool,
+    ledger_snapshot: RuntimeLedgerSnapshot | None,
+    system_health: SystemHealthSnapshot | None,
+    blocked_runtime_observation: Mapping[str, Any] | None,
+) -> dict[str, dict[str, object]]:
+    """Derive observed execution state without granting order authority."""
+
+    intent_ids = {intent.strategy_id for intent in batch.intents}
+    operations = _operations_observation(system_health)
+    operations_checks = (
+        list(operations["metrics"]["checks"])
+        if operations is not None
+        else []
+    )
+    manual_arm = next(
+        (
+            check["observed_value"]
+            for check in operations_checks
+            if check["check_id"] == "trading:manual_arm"
+        ),
+        None,
+    )
+    live_timer_state = next(
+        (
+            check["observed_value"]
+            for check in operations_checks
+            if check["check_id"] == "service:mini_trend_live"
+        ),
+        None,
+    )
+    operations_blockers = sorted(
+        f"operations:{check['check_id']}:{check['status']}"
+        for check in operations_checks
+        if check["blocks_execution"]
+        and check["status"] in {"block", "unavailable"}
+    )
+    facts: dict[str, dict[str, object]] = {}
+    for entry in registry.entries:
+        if (
+            blocked_runtime_observation is not None
+            and blocked_runtime_observation.get("strategy_id")
+            == entry.strategy_id
+        ):
+            facts[entry.strategy_id] = {
+                "execution_status": "blocked",
+                "live_orders_allowed": False,
+                "execution_blockers": list(
+                    dict.fromkeys(blocked_runtime_observation["blockers"])
+                ),
+            }
+            continue
+
+        disarmed: list[str] = []
+        if entry.promotion_status not in {"minimal_live", "scaled_live"}:
+            disarmed.append("registry_status_not_live")
+        if entry.owner_authorization_hash is None:
+            disarmed.append("owner_authorization_missing")
+        if entry.strategy_id not in intent_ids:
+            disarmed.append("current_batch_decision_missing")
+        if disarmed:
+            facts[entry.strategy_id] = {
+                "execution_status": "disarmed",
+                "live_orders_allowed": False,
+                "execution_blockers": sorted(set(disarmed)),
+            }
+            continue
+
+        blocked: list[str] = []
+        if stale:
+            blocked.append("read_model_sources_stale")
+        if not batch.risk.approved:
+            blocked.append("risk_decision_not_approved")
+        if not batch.plan.executable:
+            blocked.append("order_plan_not_executable")
+        if ledger_snapshot is not None:
+            if ledger_snapshot.unresolved_order_ids:
+                blocked.append("runtime_unresolved_order_states")
+            if (
+                not ledger_snapshot.reconciliation["passed"]
+                or ledger_snapshot.reconciliation["halt_required"]
+            ):
+                blocked.append("runtime_reconciliation_failed")
+            if not ledger_snapshot.nav["passed"]:
+                blocked.append("runtime_nav_accounting_failed")
+        blocked.extend(operations_blockers)
+        if blocked:
+            facts[entry.strategy_id] = {
+                "execution_status": "blocked",
+                "live_orders_allowed": False,
+                "execution_blockers": sorted(set(blocked)),
+            }
+            continue
+
+        disarmed = []
+        if ledger_snapshot is None:
+            disarmed.append("runtime_ledger_unavailable")
+        if operations is None:
+            disarmed.append("operations_observation_unavailable")
+        elif manual_arm is not True:
+            disarmed.append(
+                "manual_arm_absent"
+                if manual_arm is False
+                else "manual_arm_not_observed"
+            )
+        if operations is not None and live_timer_state != "active":
+            disarmed.append(
+                "live_timer_inactive"
+                if live_timer_state in {
+                    "activating",
+                    "deactivating",
+                    "inactive",
+                    "failed",
+                }
+                else "live_timer_not_observed"
+            )
+        status = "disarmed" if disarmed else "armed"
+        facts[entry.strategy_id] = {
+            "execution_status": status,
+            "live_orders_allowed": False,
+            "execution_blockers": sorted(set(disarmed)),
+        }
+    return facts
+
+
 def _strategy_payload(
     batch: VerifiedDecisionBatch,
     registry: StrategyRegistry,
     ledger_snapshot: RuntimeLedgerSnapshot | None,
+    *,
+    stale: bool,
+    system_health: SystemHealthSnapshot | None,
+    blocked_runtime_observation: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     intents = {intent.strategy_id: intent for intent in batch.intents}
     sleeves = batch.target.sleeve_contributions
+    execution_facts = _strategy_execution_facts(
+        batch,
+        registry,
+        stale=stale,
+        ledger_snapshot=ledger_snapshot,
+        system_health=system_health,
+        blocked_runtime_observation=blocked_runtime_observation,
+    )
     rows: list[dict[str, object]] = []
     for entry in registry.entries:
         intent = intents.get(entry.strategy_id)
@@ -3204,7 +3563,8 @@ def _strategy_payload(
                 "strategy_id": entry.strategy_id,
                 "strategy_version": entry.strategy_version,
                 "strategy_kind": entry.strategy_kind,
-                "promotion_status": entry.promotion_status,
+                "registry_status": entry.promotion_status,
+                **execution_facts[entry.strategy_id],
                 "registry_entry_id": entry.registry_entry_id,
                 "strategy_contract_hash": entry.strategy_contract_hash,
                 "maximum_gross": entry.maximum_gross,
@@ -3243,7 +3603,14 @@ def _strategy_payload(
                 ),
             }
         )
-    return {"authority": _authority(ledger_snapshot), "strategies": rows}
+    return {
+        "authority": _authority(
+            ledger_snapshot,
+            readonly_account=blocked_runtime_observation is not None
+            and "account_observation" in blocked_runtime_observation,
+        ),
+        "strategies": rows,
+    }
 
 
 def _readiness_payload(
@@ -3256,6 +3623,14 @@ def _readiness_payload(
     blocked_runtime_observation: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     intent_ids = {intent.strategy_id for intent in batch.intents}
+    execution_facts = _strategy_execution_facts(
+        batch,
+        registry,
+        stale=stale,
+        ledger_snapshot=ledger_snapshot,
+        system_health=system_health,
+        blocked_runtime_observation=blocked_runtime_observation,
+    )
     gates = [
         {
             "gate": "verified_decision_batch",
@@ -3339,35 +3714,14 @@ def _readiness_payload(
         {
             "strategy_id": entry.strategy_id,
             "strategy_version": entry.strategy_version,
-            "promotion_status": entry.promotion_status,
+            "registry_status": entry.promotion_status,
+            **execution_facts[entry.strategy_id],
             "current_batch_decision_present": entry.strategy_id in intent_ids,
             "promotion_evidence_present": entry.promotion_artifact_hash is not None,
             "owner_authorization_present": entry.owner_authorization_hash is not None,
-            "live_orders_allowed": False,
-            "execution_blockers": (
-                list(blocked_runtime_observation["blockers"])
-                if blocked_runtime_observation is not None
-                and blocked_runtime_observation.get("strategy_id")
-                == entry.strategy_id
-                else []
-            ),
         }
         for entry in registry.entries
     ]
-    runtime_blocked = bool(
-        ledger_snapshot is not None
-        and (
-            ledger_snapshot.unresolved_order_ids
-            or not ledger_snapshot.reconciliation["passed"]
-            or ledger_snapshot.reconciliation["halt_required"]
-            or not ledger_snapshot.nav["passed"]
-        )
-    )
-    registry_authorized = any(
-        entry.promotion_status in {"minimal_live", "scaled_live"}
-        and entry.owner_authorization_hash is not None
-        for entry in registry.entries
-    )
     if ledger_snapshot is None:
         evidence_status = "unavailable"
         evidence_detail = "runtime_ledger_snapshot_not_supplied"
@@ -3387,39 +3741,32 @@ def _readiness_payload(
         if system_health.status == "degraded"
         else "healthy"
     )
-    operations_row = (
-        next(
-            (
-                row
-                for row in system_health.observations
-                if row["component"] == "operations"
-            ),
-            None,
-        )
-        if system_health is not None
-        else None
-    )
-    execution_operations_blocked = bool(
-        operations_row is not None
-        and operations_row["metrics"]["scope_status"]["execution"]
-        == "unavailable"
-    )
+    execution_statuses = {
+        str(row["execution_status"]) for row in strategies
+    }
     trading_status = (
         "blocked"
-        if stale or runtime_blocked or execution_operations_blocked
-        else "registry_authorized"
-        if registry_authorized
+        if "blocked" in execution_statuses
+        else "armed"
+        if "armed" in execution_statuses
         else "disarmed"
     )
     if blocked_runtime_observation is not None:
         for gate in gates:
             if gate["gate"] == "runtime_ledger":
-                gate["detail"] = "not_created_for_manual_account_observation"
-        trading_status = "disarmed"
-        evidence_status = "complete"
-        evidence_detail = "read_only_account_observation_verified"
+                gate["detail"] = "not_created_for_non_ledger_account_observation"
+        trading_status = "blocked"
+        evidence_status = "incomplete"
+        evidence_detail = (
+            "read_only_account_observation_verified_"
+            "current_ledger_reconciliation_unavailable"
+        )
     return {
-        "authority": _authority(ledger_snapshot),
+        "authority": _authority(
+            ledger_snapshot,
+            readonly_account=blocked_runtime_observation is not None
+            and "account_observation" in blocked_runtime_observation,
+        ),
         "status": (
             "stale"
             if stale
@@ -3467,9 +3814,9 @@ def _readiness_payload(
                 "detail": (
                     "runtime_or_freshness_gate_blocked"
                     if trading_status == "blocked"
-                    else "registry_owner_authorization_present_dashboard_read_only"
-                    if trading_status == "registry_authorized"
-                    else "no_live_registry_authority_dashboard_read_only"
+                    else "manual_arm_observed_runtime_gates_passed_dashboard_read_only"
+                    if trading_status == "armed"
+                    else "execution_not_armed_dashboard_read_only"
                 ),
                 "impact_scopes": ["execution"],
             },
@@ -3795,6 +4142,12 @@ def build_dashboard_v1(
             or blocked_runtime_observation.get("runtime_ledger_created") is not False
             or not isinstance(blocked_runtime_observation.get("strategy_id"), str)
             or not blocked_runtime_observation["strategy_id"]
+            or not isinstance(blocked_runtime_observation.get("blockers"), list)
+            or not blocked_runtime_observation["blockers"]
+            or any(
+                not isinstance(blocker, str) or not blocker
+                for blocker in blocked_runtime_observation["blockers"]
+            )
             or not is_sha256(blocked_runtime_observation.get("observation_hash"))
         ):
             raise DashboardReadModelError(
@@ -4113,6 +4466,35 @@ def build_dashboard_v1(
                 sources={"ops_observer": system_health.source_updated_at},
             ),
         }
+    execution_source_hashes = dict(source_hashes)
+    execution_source_times = dict(source_times_by_name)
+    execution_stale_after_seconds = stale_after_seconds
+    if system_health is not None:
+        execution_source_hashes["system_health"] = system_health.snapshot_hash
+        execution_source_times["ops_observer"] = aware_datetime(
+            system_health.source_updated_at
+        )
+        execution_stale_after_seconds = min(
+            stale_after_seconds, system_stale_after_seconds
+        )
+    execution_source_updated_at = min(execution_source_times.values()).isoformat()
+    execution_common = {
+        "generated_at": generated_at,
+        "data_cutoff": batch.snapshot.data_cutoff,
+        "source_hashes": execution_source_hashes,
+        "stale_after_seconds": execution_stale_after_seconds,
+        "freshness": _freshness(
+            source_updated_at=execution_source_updated_at,
+            evaluated_at=evaluated_at,
+            stale_after_seconds=execution_stale_after_seconds,
+            observed_at=generated_at,
+            content_updated_at=max(execution_source_times.values()).isoformat(),
+            sources={
+                name: value.isoformat()
+                for name, value in execution_source_times.items()
+            },
+        ),
+    }
     models = DashboardReadModelSet(
         overview=DashboardReadModel.create(
             read_model_type="overview",
@@ -4125,7 +4507,11 @@ def build_dashboard_v1(
         ),
         positions=DashboardReadModel.create(
             read_model_type="positions",
-            payload=_positions_payload(batch, effective_ledger_snapshot),
+            payload=_positions_payload(
+                batch,
+                effective_ledger_snapshot,
+                blocked_runtime_observation,
+            ),
             **common,
         ),
         orders=DashboardReadModel.create(
@@ -4135,8 +4521,15 @@ def build_dashboard_v1(
         ),
         strategies=DashboardReadModel.create(
             read_model_type="strategies",
-            payload=_strategy_payload(batch, registry, effective_ledger_snapshot),
-            **decision_common,
+            payload=_strategy_payload(
+                batch,
+                registry,
+                effective_ledger_snapshot,
+                stale=execution_common["freshness"]["status"] == "stale",
+                system_health=system_health,
+                blocked_runtime_observation=blocked_runtime_observation,
+            ),
+            **execution_common,
         ),
         decisions=DashboardReadModel.create(
             read_model_type="decisions",
@@ -4153,12 +4546,12 @@ def build_dashboard_v1(
             payload=_readiness_payload(
                 batch,
                 registry,
-                stale=freshness["status"] == "stale",
+                stale=execution_common["freshness"]["status"] == "stale",
                 ledger_snapshot=effective_ledger_snapshot,
                 system_health=system_health,
                 blocked_runtime_observation=blocked_runtime_observation,
             ),
-            **common,
+            **execution_common,
         ),
         system=DashboardReadModel.create(
             read_model_type="system",

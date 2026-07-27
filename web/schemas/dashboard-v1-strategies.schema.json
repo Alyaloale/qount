@@ -19,12 +19,19 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["strategy_id", "strategy_version", "strategy_kind", "promotion_status", "registry_entry_id", "strategy_contract_hash", "maximum_gross", "maximum_stress_loss_fraction", "promotion_evidence_present", "owner_authorization_present", "latest_decision", "nav"],
+                "required": ["strategy_id", "strategy_version", "strategy_kind", "registry_status", "execution_status", "live_orders_allowed", "execution_blockers", "registry_entry_id", "strategy_contract_hash", "maximum_gross", "maximum_stress_loss_fraction", "promotion_evidence_present", "owner_authorization_present", "latest_decision", "nav"],
                 "properties": {
                   "strategy_id": { "type": "string", "minLength": 1 },
                   "strategy_version": { "type": "string", "minLength": 1 },
                   "strategy_kind": { "enum": ["continuous", "event", "filter"] },
-                  "promotion_status": { "enum": ["draft", "research", "frozen_candidate", "shadow", "paper", "minimal_live", "scaled_live", "halted"] },
+                  "registry_status": { "enum": ["draft", "research", "frozen_candidate", "shadow", "paper", "minimal_live", "scaled_live", "halted"] },
+                  "execution_status": { "enum": ["disarmed", "blocked", "armed"] },
+                  "live_orders_allowed": { "const": false },
+                  "execution_blockers": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": { "type": "string", "minLength": 1 }
+                  },
                   "registry_entry_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
                   "strategy_contract_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
                   "maximum_gross": { "type": "number", "minimum": 0, "maximum": 1 },

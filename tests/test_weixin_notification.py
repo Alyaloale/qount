@@ -201,10 +201,30 @@ class OpenClawWeixinNotificationTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             OpenClawWeixinProviderError, "response_rejected:-2"
-        ):
+        ) as raised:
             provider.send(
                 {}, canonical_hash({"delivery": "business-rejected"}), _credential()
             )
+        self.assertEqual(
+            raised.exception.notification_reason,
+            "openclaw_weixin_response_rejected:-2",
+        )
+
+    def test_error_reason_rejects_arbitrary_remote_or_secret_text(self) -> None:
+        unsafe = OpenClawWeixinProviderError(
+            "Bearer fixture-secret-token fixture_user@im.wechat {response body}"
+        )
+        self.assertEqual(str(unsafe), "OpenClawWeixinProviderError")
+        self.assertEqual(unsafe.notification_reason, "OpenClawWeixinProviderError")
+
+        duplicated = '{"token":"first","token":"fixture-secret-token"}'
+        with self.assertRaises(OpenClawWeixinProviderError) as raised:
+            parse_openclaw_weixin_credential(duplicated)
+        self.assertEqual(
+            str(raised.exception),
+            "openclaw_weixin_credential_duplicate_key",
+        )
+        self.assertNotIn("fixture-secret-token", str(raised.exception))
 
     def test_http_success_with_invalid_body_is_rejected(self) -> None:
         for body in (

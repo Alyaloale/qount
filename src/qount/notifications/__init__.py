@@ -49,6 +49,7 @@ from qount.notifications.transport import TransportCredentialError
 from qount.notifications.transport import TransportRateLimitError
 from qount.notifications.transport import TransportTimeoutError
 from qount.notifications.transport import load_provider_credential
+from qount.notifications.transport import notification_failure_reason
 from qount.notifications.wecom import WECOM_PROVIDER_NAME
 from qount.notifications.wecom import WeComGroupRobotProvider
 from qount.notifications.wecom import WeComProviderError
@@ -118,4 +119,5 @@ __all__ = [
     "collect_system_health",
     "synchronize_producer_incidents",
     "load_provider_credential",
+    "notification_failure_reason",
 ]

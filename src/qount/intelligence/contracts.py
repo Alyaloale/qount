@@ -420,6 +420,8 @@ class ResearchProposal:
 def _research_capacities(
     sources: Sequence[SourceEvidence],
     trading_history: Mapping[str, Any],
+    *,
+    current_history_authoritative: bool = True,
 ) -> tuple[str, str]:
     substantive = [source for source in sources if source.content_quality == "substantive"]
     domains = {
@@ -433,13 +435,77 @@ def _research_capacities(
     else:
         source_capacity = "blocked"
     execution_status = trading_history.get("execution_evidence_status")
-    if trading_history.get("status") != "available" or execution_status == "orders_expected_but_missing":
+    if (
+        not current_history_authoritative
+        or trading_history.get("status") != "available"
+        or execution_status == "orders_expected_but_missing"
+    ):
         history_capacity = "blocked"
     else:
         # A current ledger snapshot can prove an order-free or filled cycle, but it
         # is not a historical event window or an independent strategy holdout.
         history_capacity = "limited"
     return source_capacity, history_capacity
+
+
+_RUNTIME_HISTORY_AUTHORITY_FIELDS = {
+    "status",
+    "current_history_authoritative",
+    "current_ledger_reconciliation",
+    "ledger_source_updated_at",
+    "account_observed_at",
+    "evaluated_at",
+    "stale_after_seconds",
+}
+_RUNTIME_HISTORY_CURRENT_STATUSES = {
+    "ledger_current",
+    "ledger_current_after_blocked_observation",
+}
+_RUNTIME_HISTORY_STATUSES = _RUNTIME_HISTORY_CURRENT_STATUSES | {
+    "ledger_unavailable",
+    "ledger_stale",
+    "ledger_future_dated",
+    "ledger_freshness_unverified",
+    "ledger_unavailable_with_blocked_observation",
+    "ledger_superseded_by_blocked_observation",
+    "ledger_stale_after_blocked_observation",
+    "ledger_future_dated_after_blocked_observation",
+    "ledger_freshness_unverified_after_blocked_observation",
+}
+
+
+def _runtime_history_authority(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Validate the persisted current-fact boundary for new v2 reports.
+
+    Older v2 reports predate this field and remain readable, but callers must
+    treat their execution evidence as non-current until a new report exists.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, Mapping) or set(value) != _RUNTIME_HISTORY_AUTHORITY_FIELDS:
+        raise IntelligenceContractError("intelligence_runtime_history_authority_invalid")
+    status = value["status"]
+    current = value["current_history_authoritative"]
+    reconciliation = value["current_ledger_reconciliation"]
+    if (
+        status not in _RUNTIME_HISTORY_STATUSES
+        or not isinstance(current, bool)
+        or reconciliation not in {"available", "unavailable"}
+        or current is not (status in _RUNTIME_HISTORY_CURRENT_STATUSES)
+        or (reconciliation == "available") is not current
+        or not isinstance(value["stale_after_seconds"], int)
+        or isinstance(value["stale_after_seconds"], bool)
+        or not 1 <= value["stale_after_seconds"] <= 86_400
+    ):
+        raise IntelligenceContractError("intelligence_runtime_history_authority_invalid")
+    for name in ("ledger_source_updated_at", "account_observed_at"):
+        if value[name] is not None:
+            _timestamp(value[name], name=f"intelligence_runtime_history_{name}")
+    _timestamp(value["evaluated_at"], name="intelligence_runtime_history_evaluated_at")
+    return dict(value)
 
 
 @dataclass(frozen=True)
@@ -466,6 +532,7 @@ class DailyIntelligenceReport:
     orders_allowed: bool
     live_changes_allowed: bool
     report_hash: str
+    runtime_history_authority: Mapping[str, Any] | None = None
 
     @classmethod
     def create(
@@ -488,9 +555,28 @@ class DailyIntelligenceReport:
         risk_notes: Sequence[str],
         source_hashes: Mapping[str, str],
         llm: Mapping[str, Any],
+        current_history_authoritative: bool = True,
+        runtime_history_authority: Mapping[str, Any] | None = None,
     ) -> "DailyIntelligenceReport":
+        if not isinstance(current_history_authoritative, bool):
+            raise IntelligenceContractError(
+                "intelligence_current_history_authority_invalid"
+            )
+        normalized_runtime_history_authority = _runtime_history_authority(
+            runtime_history_authority
+        )
+        if (
+            normalized_runtime_history_authority is not None
+            and normalized_runtime_history_authority["current_history_authoritative"]
+            is not current_history_authoritative
+        ):
+            raise IntelligenceContractError(
+                "intelligence_current_history_authority_mismatch"
+            )
         source_capacity, history_capacity = _research_capacities(
-            sources, trading_history
+            sources,
+            trading_history,
+            current_history_authoritative=current_history_authoritative,
         )
         structured_proposals = [
             ResearchProposal.create(
@@ -522,6 +608,8 @@ class DailyIntelligenceReport:
             "orders_allowed": False,
             "live_changes_allowed": False,
         }
+        if normalized_runtime_history_authority is not None:
+            core["runtime_history_authority"] = normalized_runtime_history_authority
         report_hash = canonical_hash(core)
         report = cls(
             schema_version=core["schema_version"],
@@ -546,6 +634,7 @@ class DailyIntelligenceReport:
             live_changes_allowed=False,
             report_id=trace_id("daily_intelligence", {"report_hash": report_hash}),
             report_hash=report_hash,
+            runtime_history_authority=normalized_runtime_history_authority,
         )
         report.validate()
         return report
@@ -568,6 +657,7 @@ class DailyIntelligenceReport:
             raise IntelligenceContractError("intelligence_pipeline_status_invalid")
         if self.evidence_status not in DAILY_INTELLIGENCE_EVIDENCE_STATUSES:
             raise IntelligenceContractError("intelligence_evidence_status_invalid")
+        _runtime_history_authority(self.runtime_history_authority)
         evidence_summary = self.evidence_summary
         expected_evidence_fields = {
             "status",
@@ -820,7 +910,7 @@ class DailyIntelligenceReport:
             raise IntelligenceContractError("intelligence_report_id_invalid")
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema_version": self.schema_version,
             "report_id": self.report_id,
             "report_date": self.report_date,
@@ -844,6 +934,9 @@ class DailyIntelligenceReport:
             "live_changes_allowed": self.live_changes_allowed,
             "report_hash": self.report_hash,
         }
+        if self.runtime_history_authority is not None:
+            value["runtime_history_authority"] = dict(self.runtime_history_authority)
+        return value
 
 
 def daily_intelligence_from_dict(value: Mapping[str, Any]) -> DailyIntelligenceReport:
@@ -873,7 +966,9 @@ def daily_intelligence_from_dict(value: Mapping[str, Any]) -> DailyIntelligenceR
         "live_changes_allowed",
         "report_hash",
     }
-    if set(value) != expected:
+    optional = {"runtime_history_authority"}
+    actual = set(value)
+    if actual != expected and actual != expected | optional:
         raise IntelligenceContractError("intelligence_report_fields_invalid")
     report = DailyIntelligenceReport(
         schema_version=value["schema_version"],
@@ -898,6 +993,11 @@ def daily_intelligence_from_dict(value: Mapping[str, Any]) -> DailyIntelligenceR
         orders_allowed=value["orders_allowed"],
         live_changes_allowed=value["live_changes_allowed"],
         report_hash=value["report_hash"],
+        runtime_history_authority=(
+            dict(value["runtime_history_authority"])
+            if "runtime_history_authority" in value
+            else None
+        ),
     )
     report.validate()
     return report
