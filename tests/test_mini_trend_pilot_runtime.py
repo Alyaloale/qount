@@ -32,6 +32,16 @@ class MiniTrendPilotRuntimeTest(unittest.TestCase):
             'DISPATCH_JOURNAL_PATH="$DRY_ROOT/dispatcher.jsonl"', cycle
         )
 
+    def test_forward_cycle_preserves_observation_when_free_balance_is_low(self) -> None:
+        cycle = (
+            ROOT / "scripts" / "desktop" / "mini_trend_um_forward_cycle.sh"
+        ).read_text(encoding="ascii")
+
+        self.assertIn('CAPITAL_USDT="100.00000000"', cycle)
+        self.assertNotIn("assert v >= 100", cycle)
+        self.assertIn('--preflight-path "$PREFLIGHT_PATH"', cycle)
+        self.assertIn('write_authority_bundle.py', cycle)
+
     def test_systemd_order_free_runtime_is_verified(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

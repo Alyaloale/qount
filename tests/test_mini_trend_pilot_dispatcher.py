@@ -19,6 +19,8 @@ from qount.mini_trend.pilot_dispatcher import (
     PILOT_DISPATCH_SNAPSHOT_VERSION,
     PILOT_MANUAL_ARM_VERSION,
     _adverse_slippage_bps,
+    _finalize_snapshot,
+    _post_dispatch_reconciliation,
     _record_dispatch_cash_events,
     build_manual_arm,
     build_pilot_dispatch_plan,
@@ -503,6 +505,151 @@ class MiniTrendPilotDispatcherTest(unittest.TestCase):
             ready["diagnostics"]["blockers"],
         )
         self.assertFalse(ready["meta"]["live_orders_allowed"])
+
+    def test_current_low_available_balance_blocks_exposure_increase(self) -> None:
+        rules = _rules()
+        rules["created_at"] = utc_now().isoformat()
+        snapshot = _snapshot()
+        snapshot["balance"]["quote_free"] = 66.0
+        snapshot["diagnostics"]["errors"] = {}
+        snapshot = _finalize_snapshot(snapshot)
+        plan = build_pilot_dispatch_plan(
+            _preflight(),
+            _projection(rules),
+            _readiness(),
+            rules,
+            snapshot,
+            source_hashes={
+                "preflight": "p",
+                "projection": "x",
+                "readiness": "r",
+                "exchange_rules": "e",
+            },
+        )
+
+        self.assertEqual(snapshot["diagnostics"]["verdict"], "account_snapshot_pass")
+        self.assertEqual(snapshot["diagnostics"]["blockers"], [])
+        self.assertEqual(plan["diagnostics"]["verdict"], "blocked_dispatch")
+        self.assertIn(
+            "available_balance_below_pilot_capital",
+            plan["diagnostics"]["blockers"],
+        )
+        self.assertFalse(plan["meta"]["live_orders_allowed"])
+        self.assertFalse(
+            any(order["side"] == "buy" for order in plan["market_orders"])
+        )
+
+        exchange = mock.Mock()
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_pilot_dispatch(
+                mock.Mock(),
+                plan,
+                Path(temporary) / "dispatcher.jsonl",
+                exchange=exchange,
+            )
+        self.assertEqual(result["status"], "not_recorded")
+        exchange.create_order.assert_not_called()
+
+    def test_low_available_balance_preserves_reduce_only_plan(self) -> None:
+        rules = _rules()
+        projection = _projection(rules)
+        decision = dict(projection["decision"])
+        decision["desired_weights"] = {symbol: 0.0 for symbol in TOP3}
+        execution_state = dict(decision["execution_state"])
+        execution_state["target_weights"] = {
+            symbol: 0.0 for symbol in TOP3
+        }
+        decision["execution_state"] = execution_state
+        decision["execution_state_hash"] = canonical_hash(execution_state)
+        decision["projected_order_intent_count"] = 1
+        decision_core = {
+            key: value for key, value in decision.items() if key != "decision_id"
+        }
+        decision["decision_id"] = canonical_hash(
+            {
+                "live_pilot_contract_hash": LIVE_PILOT_CONTRACT.contract_hash,
+                "decision": decision_core,
+            }
+        )
+        projection["decision"] = decision
+        snapshot = _snapshot()
+        snapshot["balance"]["quote_free"] = 66.0
+        snapshot["positions"] = [
+            {
+                "data_symbol": "BTCUSDT",
+                "symbol": "BTC/USDT:USDT",
+                "side": "long",
+                "contracts": 0.009,
+                "notional_usdt": 90.0,
+            }
+        ]
+        snapshot["diagnostics"]["errors"] = {}
+        snapshot = _finalize_snapshot(snapshot)
+
+        plan = build_pilot_dispatch_plan(
+            _preflight(),
+            projection,
+            _readiness(),
+            rules,
+            snapshot,
+            source_hashes={
+                "preflight": "p",
+                "projection": "x",
+                "readiness": "r",
+                "exchange_rules": "e",
+            },
+        )
+
+        self.assertEqual(plan["diagnostics"]["verdict"], "dry_dispatch_ready")
+        self.assertNotIn(
+            "available_balance_below_pilot_capital",
+            plan["diagnostics"]["blockers"],
+        )
+        self.assertEqual(len(plan["market_orders"]), 1)
+        self.assertEqual(plan["market_orders"][0]["side"], "sell")
+        self.assertTrue(plan["market_orders"][0]["reduce_only"])
+
+    def test_post_dispatch_reconciliation_accepts_lower_free_balance(self) -> None:
+        snapshot = _snapshot()
+        snapshot["balance"]["quote_free"] = 42.0
+        snapshot["positions"] = [
+            {
+                "data_symbol": "BTCUSDT",
+                "symbol": "BTC/USDT:USDT",
+                "side": "long",
+                "contracts": 0.001,
+            }
+        ]
+        snapshot["conditional_open_orders"] = [
+            {
+                "data_symbol": "BTCUSDT",
+                "symbol": "BTC/USDT:USDT",
+                "side": "sell",
+                "client_order_id": "qmt-s-post-reconcile",
+                "close_position": True,
+                "reduce_only": False,
+            }
+        ]
+        snapshot["diagnostics"]["errors"] = {}
+        snapshot = _finalize_snapshot(snapshot)
+        plan = {
+            "expected_positions_base": {
+                "BTCUSDT": 0.001,
+                "ETHUSDT": 0.0,
+                "BNBUSDT": 0.0,
+            },
+            "reconciliation_tolerance_base": {
+                "BTCUSDT": 0.00001,
+                "ETHUSDT": 0.00001,
+                "BNBUSDT": 0.00001,
+            },
+        }
+
+        reconciliation = _post_dispatch_reconciliation(plan, snapshot)
+
+        self.assertEqual(snapshot["diagnostics"]["verdict"], "account_snapshot_pass")
+        self.assertEqual(reconciliation["blockers"], [])
+        self.assertTrue(reconciliation["passed"])
 
     def test_live_rejects_stale_source_artifacts(self) -> None:
         rules = _rules()

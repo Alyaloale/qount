@@ -941,6 +941,13 @@ def build_pilot_dispatch_plan(
         symbol: _float(prices[symbol]) for symbol in TOP3
     }
     margin_balance = _float((snapshot.get("balance") or {}).get("margin_balance"))
+    available_balance = _float(
+        (snapshot.get("balance") or {}).get("quote_free")
+    )
+    balance_blocks_increase = (
+        not math.isfinite(available_balance)
+        or available_balance + 1e-12 < capital
+    )
     arm_baseline = _float((arm or {}).get("initial_margin_balance_usdt"))
     if mode == "live" and arm_baseline <= 0.0:
         blockers.append("pilot_equity_baseline_missing")
@@ -1033,6 +1040,12 @@ def build_pilot_dispatch_plan(
                 report["risk_flags"].append(f"{symbol}:below_buffered_minimum")
             continue
         side = "buy" if delta > 0.0 else "sell"
+        if side == "buy" and balance_blocks_increase:
+            blockers.append("available_balance_below_pilot_capital")
+            report["risk_flags"].append(
+                f"{symbol}:increase_blocked_by_available_balance"
+            )
+            continue
         intent = {
             "symbol": symbol,
             "ccxt_symbol": (snapshot.get("resolved_symbols") or {}).get(symbol),

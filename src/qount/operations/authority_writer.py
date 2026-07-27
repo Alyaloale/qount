@@ -181,6 +181,7 @@ def _blocked_observation(
     allowed_dispatch = {
         "dispatch:critical_account_preflight_blocked",
         "dispatch:current_account_snapshot_blocked",
+        "dispatch:available_balance_below_pilot_capital",
         "dispatch:unmanaged_or_short_position",
         "dispatch:unmanaged_or_duplicate_conditional_order",
         "dispatch:unresolved_regular_open_orders",

@@ -122,7 +122,9 @@ fi
 "$PYTHON" scripts/desktop/mini_trend_um_preflight.py \
   --output-path "$PREFLIGHT_PATH"
 
-CAPITAL_USDT="$("$PYTHON" -c 'import json,sys; p=json.load(open(sys.argv[1])); v=float(p["evidence"]["available_balance_usdt"]); assert v >= 100; print("100.00000000")' "$PREFLIGHT_PATH")"
+# The order-free projection stays on the fixed canary budget. Account balance
+# sufficiency remains a fail-closed readiness gate in the preflight artifact.
+CAPITAL_USDT="100.00000000"
 
 "$PYTHON" scripts/desktop/mini_trend_um_paper.py \
   --exchange-rules-path "$RULES_PATH" \

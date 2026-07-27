@@ -275,6 +275,23 @@ class AuthorityWriterTest(unittest.TestCase):
                 "account_preflight.json": {
                     "created_at": "2026-08-02T00:01:00+00:00",
                     "meta": common_meta | {"read_only": True},
+                    "account": {
+                        "balance": {
+                            "wallet_balance": 203.06011455,
+                            "quote_free": 66.0921174,
+                            "quote_used": 136.92929715,
+                            "margin_balance": 203.02141455,
+                        },
+                        "nonzero_positions": [
+                            {
+                                "symbol": "BTC/USDT:USDT",
+                                "side": "long",
+                                "contracts": 0.009,
+                                "notional_usdt": 588.3327,
+                            }
+                        ],
+                        "open_order_count": 0,
+                    },
                 },
                 "dispatch_readiness.json": {
                     "created_at": "2026-08-02T00:01:10+00:00",
@@ -308,6 +325,7 @@ class AuthorityWriterTest(unittest.TestCase):
             blocked = AuthorityWriterBlocked(
                 (
                     "dispatch:critical_account_preflight_blocked",
+                    "dispatch:available_balance_below_pilot_capital",
                     "dispatch:unmanaged_or_duplicate_conditional_order",
                     "preflight:no_unmanaged_positions",
                     "account_snapshot_unmanaged_conditional_order",
@@ -330,6 +348,22 @@ class AuthorityWriterTest(unittest.TestCase):
         self.assertFalse(observation["live_orders_allowed"])
         self.assertFalse(observation["runtime_ledger_created"])
         self.assertEqual(observation["strategy_id"], "MiniTrend-UM-Base-v0.2")
+        self.assertEqual(
+            observation["account_observation"]["positions"],
+            [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "side": "long",
+                    "quantity": 0.009,
+                    "notional": 588.3327,
+                }
+            ],
+        )
+        self.assertEqual(
+            observation["account_observation"]["available_balance"],
+            66.0921174,
+        )
+        self.assertEqual(observation["account_observation"]["open_order_count"], 0)
         self.assertFalse((root / "runtime/runtime.sqlite3").exists())
 
     def test_legacy_run_without_preserved_dispatch_readiness_is_blocked(self) -> None:
