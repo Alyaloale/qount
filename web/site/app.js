@@ -326,8 +326,11 @@ function validateModel(model, type, publication) {
   if (!reference || reference.read_model_id !== model.read_model_id || reference.read_model_hash !== model.read_model_hash) {
     throw new Error(`${type} 与 publication 不一致`);
   }
-  if (!["system", "alerts", "reports", "intelligence"].includes(type) && JSON.stringify(model.source_hashes) !== JSON.stringify(publication.source_hashes)) {
-    throw new Error(`${type} 权威来源不一致`);
+  if (!["system", "alerts", "reports", "intelligence"].includes(type)) {
+    const sourcesMatch = Object.entries(model.source_hashes).every(
+      ([name, hash]) => publication.source_hashes[name] === hash,
+    );
+    if (!sourcesMatch) throw new Error(`${type} 权威来源不一致`);
   }
 }
 

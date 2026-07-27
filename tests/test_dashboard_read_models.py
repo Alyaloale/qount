@@ -630,6 +630,8 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("portfolio.actual_positions", app)
         self.assertIn("payload.pnl", app)
         self.assertIn('history.replaceState(null, "", "#/live")', app)
+        self.assertIn("Object.entries(model.source_hashes).every", app)
+        self.assertIn("publication.source_hashes[name] === hash", app)
         for legacy_source in (
             "x4_live.json",
             "x4_paper.json",
