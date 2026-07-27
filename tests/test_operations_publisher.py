@@ -75,6 +75,8 @@ class OperationsHealthProbeTest(unittest.TestCase):
         def operations_runner(argv: tuple[str, ...]) -> CommandResult:
             unit = argv[2]
             states = {
+                "qount-fomc-shadow.timer": "active",
+                "qount-fomc-live.timer": "inactive",
                 "qount-mini-trend-forward.timer": "inactive",
                 "qount-mini-trend-live.timer": "inactive",
                 "qount-mini-trend-live.service": "activating",
@@ -111,15 +113,23 @@ class OperationsHealthProbeTest(unittest.TestCase):
             row["check_id"]: row for row in measurement["metrics"]["checks"]
         }
         live_service = checks["service:mini_trend_live_service"]
+        fomc_shadow = checks["service:fomc_shadow"]
+        fomc_live = checks["service:fomc_live"]
         self.assertEqual(measurement["status"], "healthy")
         self.assertEqual(measurement["metrics"]["scope_status"]["execution"], "pass")
         self.assertEqual(live_service["status"], "pass")
         self.assertEqual(live_service["observed_value"], "activating")
+        self.assertEqual(fomc_shadow["status"], "pass")
+        self.assertEqual(fomc_shadow["observed_value"], "active")
+        self.assertEqual(fomc_live["status"], "pass")
+        self.assertEqual(fomc_live["observed_value"], "inactive")
 
     def test_forward_timer_activating_remains_an_execution_blocker(self) -> None:
         def operations_runner(argv: tuple[str, ...]) -> CommandResult:
             unit = argv[2]
             states = {
+                "qount-fomc-shadow.timer": "active",
+                "qount-fomc-live.timer": "inactive",
                 "qount-mini-trend-forward.timer": "activating",
                 "qount-mini-trend-live.timer": "inactive",
                 "qount-mini-trend-live.service": "inactive",

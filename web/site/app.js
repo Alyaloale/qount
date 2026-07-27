@@ -253,6 +253,19 @@ function scopeText(value) {
   return ({ execution: "执行", observation: "观测", intelligence: "情报", delivery: "投递" })[value] || String(value || "-");
 }
 
+function operationCheckText(value) {
+  return ({
+    "service:fomc_shadow": "FOMC 公共行情 Shadow",
+    "service:fomc_live": "FOMC 受控执行 Timer",
+    "service:mini_trend_forward": "MiniTrend Forward Timer",
+    "service:mini_trend_live": "MiniTrend Live Timer",
+    "service:mini_trend_live_service": "MiniTrend Live Service",
+    "trading:manual_arm": "执行 Arm",
+    "trading:halt": "全局交易 HALT",
+    "release:provenance": "Release Provenance",
+  })[value] || String(value || "-");
+}
+
 function traceTypeText(value) {
   return ({
     decision_batch: "决策批次",
@@ -581,7 +594,7 @@ function renderSystem() {
       ${metric("健康观测", health ? String(health.observations.length) : "0", health ? statusText(health.status) : "缺失", health ? (health.status === "healthy" ? "good" : "bad") : "bad")}
     </div>
     ${health ? `<section class="health-band">${baseHealth.map((row) => `<article><header><strong>${escapeHtml(componentText(row.component))}</strong>${pill(row.status)}</header><p>${escapeHtml(healthMetric(row))}</p><small>${escapeHtml(formatTime(row.observed_at))} / ${escapeHtml(shortHash(row.observation_hash))}</small></article>`).join("")}</section>` : unavailableBlock("系统健康观测缺失", "时钟、磁盘、服务和备份尚未由生产发布器提供。")}
-    ${operations ? `<section class="panel full-panel"><header class="panel-head"><div><h2>Ops Observer</h2><p>${Object.entries(operations.metrics.scope_status).map(([scope, status]) => `${scopeText(scope)} ${statusText(status)}`).join(" / ")}</p></div>${pill(operations.status)}</header><div class="table-wrap"><table><thead><tr><th>检查项</th><th>状态</th><th>影响域</th><th>阻断执行</th><th>观测值</th><th>结论</th></tr></thead><tbody>${operations.metrics.checks.map((check) => `<tr><td><strong>${escapeHtml(check.check_id)}</strong></td><td>${pill(check.status)}</td><td>${check.impact_scopes.map(scopeText).map(escapeHtml).join(" / ")}</td><td>${check.blocks_execution ? pill("block") : pill("pass")}</td><td class="mono">${escapeHtml(check.observed_value)}</td><td><small>${escapeHtml(check.detail)}</small></td></tr>`).join("")}</tbody></table></div></section>` : ""}
+    ${operations ? `<section class="panel full-panel"><header class="panel-head"><div><h2>Ops Observer</h2><p>${Object.entries(operations.metrics.scope_status).map(([scope, status]) => `${scopeText(scope)} ${statusText(status)}`).join(" / ")}</p></div>${pill(operations.status)}</header><div class="table-wrap"><table><thead><tr><th>检查项</th><th>状态</th><th>影响域</th><th>阻断执行</th><th>观测值</th><th>结论</th></tr></thead><tbody>${operations.metrics.checks.map((check) => `<tr><td><strong>${escapeHtml(operationCheckText(check.check_id))}</strong><small class="mono">${escapeHtml(check.check_id)}</small></td><td>${pill(check.status)}</td><td>${check.impact_scopes.map(scopeText).map(escapeHtml).join(" / ")}</td><td>${check.blocks_execution ? pill("block") : pill("pass")}</td><td class="mono">${escapeHtml(check.observed_value)}</td><td><small>${escapeHtml(check.detail)}</small></td></tr>`).join("")}</tbody></table></div></section>` : ""}
     <div class="split-layout"><section class="panel"><header class="panel-head"><div><h2>账本完整性</h2><p>SQLite 快照 / JSONL 审计链</p></div><span class="mono">${escapeHtml(shortHash(ledger && ledger.snapshot_hash))}</span></header>${ledger ? `<dl class="fact-list"><div><dt>快照完整性</dt><dd>${pill(ledger.integrity_status === "verified" ? "pass" : "block")}</dd></div><div><dt>审计链</dt><dd>${pill(ledger.audit_chain_status === "verified" ? "pass" : "block")}</dd></div><div><dt>三方对账</dt><dd>${pill(ledger.reconciliation_passed ? "pass" : "block")}</dd></div><div><dt>可恢复订单</dt><dd>${ledger.recoverable_order_count}</dd></div><div><dt>恢复报告</dt><dd>${ledger.recovery_report_count}</dd></div><div><dt>来源更新时间</dt><dd>${escapeHtml(formatTime(ledger.source_updated_at))}</dd></div></dl>` : unavailableBlock("账本不可用", "没有可验证账本快照。")}</section>
       <section class="panel"><header class="panel-head"><div><h2>原因码</h2><p>显式运行结论</p></div>${pill(payload.summary.status)}</header><div class="code-list">${payload.summary.reason_codes.map((reason) => `<code>${escapeHtml(reason)}</code>`).join("") || `<span class="empty-cell">无异常理由</span>`}${payload.summary.unavailable_fields.map((field) => `<code class="muted-code">缺失:${escapeHtml(field)}</code>`).join("")}</div></section></div>`;
 }

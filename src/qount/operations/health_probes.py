@@ -50,6 +50,20 @@ _OPS_SERVICE_POLICIES = (
         False,
     ),
     (
+        "fomc_shadow",
+        "qount-fomc-shadow.timer",
+        "active",
+        ("observation",),
+        False,
+    ),
+    (
+        "fomc_live",
+        "qount-fomc-live.timer",
+        "inactive",
+        ("execution",),
+        True,
+    ),
+    (
         "mini_trend_forward",
         "qount-mini-trend-forward.timer",
         "inactive",
