@@ -54,7 +54,7 @@
             "properties": {
               "authority": {
                 "properties": {
-                  "account_and_pnl": { "const": "unavailable_until_phase_b_ledger" }
+                    "account_and_pnl": { "enum": ["unavailable_until_phase_b_ledger", "private_account_preflight"] }
                 }
               }
             }
@@ -195,7 +195,7 @@
       "properties": {
         "decision": { "const": "verified_decision_batch" },
         "governance": { "const": "strategy_registry" },
-        "account_and_pnl": { "enum": ["unavailable_until_phase_b_ledger", "runtime_ledger"] }
+        "account_and_pnl": { "enum": ["unavailable_until_phase_b_ledger", "runtime_ledger", "private_account_preflight"] }
       }
     },
     "weights": {

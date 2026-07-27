@@ -410,6 +410,25 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
                 "strategy_id": "test_strategy",
                 "blockers": ["preflight:no_unmanaged_positions"],
                 "run_id": "20260720T000900Z",
+                "account_observation": {
+                    "source": "private_account_preflight",
+                    "observed_at": "2026-07-20T00:09:00+00:00",
+                    "quote_asset": "USDT",
+                    "wallet_balance": 200.0,
+                    "available_balance": 150.0,
+                    "margin_balance": 200.0,
+                    "margin_used": 50.0,
+                    "actual_gross_notional": 100.0,
+                    "actual_gross_fraction": 0.5,
+                    "margin_fraction": 0.25,
+                    "open_order_count": 0,
+                    "positions": [{
+                        "symbol": "BTC/USDT:USDT",
+                        "side": "long",
+                        "quantity": 0.001,
+                        "notional": 100.0,
+                    }],
+                },
                 "source_hashes": {"account_preflight.json": "a" * 64},
             }
             observation = core | {"observation_hash": canonical_hash(core)}
@@ -431,7 +450,15 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         )
         self.assertEqual(
             models.overview.payload["account"]["status"],
-            "unavailable_until_phase_b_ledger",
+            "available_readonly",
+        )
+        self.assertEqual(
+            models.overview.payload["account"]["source"],
+            "private_account_preflight",
+        )
+        self.assertEqual(
+            models.overview.payload["portfolio"]["actual_positions"]["values"]["positions"],
+            {"BTC/USDT:USDT": 0.001},
         )
         self.assertEqual(
             models.readiness.payload["status"], "read_only_observation_ready"

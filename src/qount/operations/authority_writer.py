@@ -225,6 +225,7 @@ def _blocked_observation(
         aware_datetime(str(value["created_at"]))
         for value in (projection, preflight, dispatch)
     ).isoformat()
+    account_observation = _readonly_account_observation(preflight, observed_at)
     core = {
         "schema_version": BLOCKED_RUNTIME_OBSERVATION_SCHEMA_VERSION,
         "artifact_type": "qount_blocked_runtime_observation",
@@ -241,7 +242,52 @@ def _blocked_observation(
         "run_id": blocked.run_dir.name,
         "source_hashes": dict(sorted(hashes.items())),
     }
+    if account_observation is not None:
+        core["account_observation"] = account_observation
     return core | {"observation_hash": canonical_hash(core)}
+
+
+def _readonly_account_observation(
+    preflight: Mapping[str, Any], observed_at: str,
+) -> dict[str, Any] | None:
+    account = preflight.get("account")
+    balance = account.get("balance") if isinstance(account, Mapping) else None
+    positions = account.get("nonzero_positions") if isinstance(account, Mapping) else None
+    if not isinstance(balance, Mapping) or not isinstance(positions, list):
+        return None
+    try:
+        wallet_balance = float(balance["wallet_balance"])
+        available_balance = float(balance["quote_free"])
+        margin_balance = float(balance["margin_balance"])
+        margin_used = float(balance["quote_used"])
+        open_order_count = int(account["open_order_count"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if min(wallet_balance, available_balance, margin_balance, margin_used) < 0.0 or open_order_count < 0 or available_balance > wallet_balance + 1e-12:
+        return None
+    readonly_positions = []
+    for row in positions:
+        if not isinstance(row, Mapping):
+            return None
+        try:
+            symbol, side = str(row["symbol"]), str(row["side"])
+            quantity, notional = float(row["contracts"]), float(row["notional_usdt"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not symbol or side not in {"long", "short"} or quantity < 0.0 or notional < 0.0:
+            return None
+        readonly_positions.append({"symbol": symbol, "side": side, "quantity": quantity, "notional": notional})
+    readonly_positions.sort(key=lambda row: row["symbol"])
+    gross_notional = sum(row["notional"] for row in readonly_positions)
+    return {
+        "source": "private_account_preflight", "observed_at": observed_at,
+        "quote_asset": "USDT", "wallet_balance": wallet_balance,
+        "available_balance": available_balance, "margin_balance": margin_balance,
+        "margin_used": margin_used, "actual_gross_notional": gross_notional,
+        "actual_gross_fraction": gross_notional / wallet_balance if wallet_balance > 0.0 else 0.0,
+        "margin_fraction": margin_used / margin_balance if margin_balance > 0.0 else 0.0,
+        "open_order_count": open_order_count, "positions": readonly_positions,
+    }
 
 
 def read_blocked_runtime_observation(path: Path) -> dict[str, Any] | None:
@@ -250,12 +296,17 @@ def read_blocked_runtime_observation(path: Path) -> dict[str, Any] | None:
     value, _ = _read_source(path, name=path.name)
     core = {key: item for key, item in value.items() if key != "observation_hash"}
     if (
-        set(value) != {
+        set(value) not in ({
             "schema_version", "artifact_type", "created_at", "observed_at",
             "status", "live_orders_allowed", "runtime_ledger_created",
             "strategy_id", "blockers", "run_id", "source_hashes",
             "observation_hash",
-        }
+        }, {
+            "schema_version", "artifact_type", "created_at", "observed_at",
+            "status", "live_orders_allowed", "runtime_ledger_created",
+            "strategy_id", "blockers", "run_id", "source_hashes",
+            "account_observation", "observation_hash",
+        })
         or value.get("schema_version") != BLOCKED_RUNTIME_OBSERVATION_SCHEMA_VERSION
         or value.get("artifact_type") != "qount_blocked_runtime_observation"
         or value.get("status") != "blocked"
@@ -265,6 +316,10 @@ def read_blocked_runtime_observation(path: Path) -> dict[str, Any] | None:
         or not value["strategy_id"]
         or not isinstance(value.get("blockers"), list)
         or not value["blockers"]
+        or (
+            "account_observation" in value
+            and not isinstance(value.get("account_observation"), Mapping)
+        )
         or value.get("observation_hash") != canonical_hash(core)
     ):
         raise AuthorityWriterError("blocked_runtime_observation_invalid")

@@ -598,6 +598,7 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
     ) != "strategy_registry" or authority.get("account_and_pnl") not in {
         "unavailable_until_phase_b_ledger",
         "runtime_ledger",
+        "private_account_preflight",
     }:
         raise DashboardReadModelError("dashboard_authority_invalid")
     if read_model_type == "orders":
@@ -685,11 +686,18 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
             )
         if approved_gross > 1.0 + 1e-12:
             raise DashboardReadModelError("dashboard_approved_target_gross_invalid")
-        actual_positions = _validate_ledger_value(
-            portfolio["actual_positions"],
-            name="dashboard_actual_positions",
-            value_kind="positions",
-        )
+        if authority["account_and_pnl"] == "private_account_preflight":
+            actual_positions = _validate_readonly_account_value(
+                portfolio["actual_positions"],
+                name="dashboard_actual_positions",
+                value_kind="positions",
+            )
+        else:
+            actual_positions = _validate_ledger_value(
+                portfolio["actual_positions"],
+                name="dashboard_actual_positions",
+                value_kind="positions",
+            )
         for name in ("planned_order_count", "planned_cancellation_count"):
             if (
                 not isinstance(portfolio[name], int)
@@ -729,16 +737,22 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
                 raise DashboardReadModelError(f"dashboard_risk_{name}_invalid")
 
         pnl = _validate_ledger_value(
-            value["pnl"],
-            name="dashboard_overview_pnl",
-            value_kind="pnl",
+            value["pnl"], name="dashboard_overview_pnl", value_kind="pnl"
         )
-        account = _validate_ledger_value(
-            value["account"],
-            name="dashboard_overview_account",
-            value_kind="account",
-        )
+        if authority["account_and_pnl"] == "private_account_preflight":
+            account = _validate_readonly_account_value(
+                value["account"],
+                name="dashboard_overview_account",
+                value_kind="account",
+            )
+        else:
+            account = _validate_ledger_value(
+                value["account"],
+                name="dashboard_overview_account",
+                value_kind="account",
+            )
         runtime_authoritative = authority["account_and_pnl"] == "runtime_ledger"
+        readonly_authoritative = authority["account_and_pnl"] == "private_account_preflight"
         if runtime_authoritative is not (
             actual_positions["status"] == "available"
             and pnl["status"] == "available"
@@ -746,6 +760,14 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
         ):
             raise DashboardReadModelError(
                 "dashboard_overview_ledger_availability_mismatch"
+            )
+        if readonly_authoritative is not (
+            actual_positions["status"] == "available_readonly"
+            and pnl["status"] == "unavailable_until_phase_b_ledger"
+            and account["status"] == "available_readonly"
+        ):
+            raise DashboardReadModelError(
+                "dashboard_overview_readonly_account_availability_mismatch"
             )
     elif read_model_type == "strategies":
         rows = value["strategies"]
@@ -2101,6 +2123,69 @@ def _validate_alerts_payload(value: Mapping[str, object]) -> None:
         raise DashboardReadModelError("dashboard_alert_counts_mismatch")
 
 
+def _validate_readonly_account_value(
+    value: object,
+    *,
+    name: str,
+    value_kind: str,
+) -> Mapping[str, Any]:
+    row = _mapping(value, name=name)
+    _exact_keys(row, {"status", "source", "values"}, name=name)
+    if row["status"] != "available_readonly" or row["source"] != "private_account_preflight":
+        raise DashboardReadModelError(f"{name}_not_private_readonly_authoritative")
+    values = _mapping(row["values"], name=f"{name}_values")
+    if value_kind == "account":
+        expected = {
+            "source", "observed_at", "quote_asset", "wallet_balance",
+            "available_balance", "margin_balance", "margin_used",
+            "actual_gross_notional", "actual_gross_fraction", "margin_fraction",
+            "open_order_count", "positions",
+        }
+        _exact_keys(values, expected, name=f"{name}_values")
+        if values["source"] != "private_account_preflight":
+            raise DashboardReadModelError(f"{name}_source_invalid")
+        try:
+            aware_datetime(str(values["observed_at"]))
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise DashboardReadModelError(f"{name}_observed_at_invalid") from exc
+        if not isinstance(values["quote_asset"], str) or not values["quote_asset"]:
+            raise DashboardReadModelError(f"{name}_quote_asset_invalid")
+        for field in expected - {"source", "observed_at", "quote_asset", "positions"}:
+            if field == "open_order_count":
+                if not isinstance(values[field], int) or isinstance(values[field], bool) or values[field] < 0:
+                    raise DashboardReadModelError(f"{name}_{field}_invalid")
+            else:
+                _finite_nonnegative(values[field], name=f"{name}_{field}")
+        positions = values["positions"]
+        if not isinstance(positions, list):
+            raise DashboardReadModelError(f"{name}_positions_invalid")
+        symbols = []
+        for position in positions:
+            item = _mapping(position, name=f"{name}_position")
+            _exact_keys(item, {"symbol", "side", "quantity", "notional"}, name=f"{name}_position")
+            if not isinstance(item["symbol"], str) or not item["symbol"] or item["side"] not in {"long", "short"}:
+                raise DashboardReadModelError(f"{name}_position_identity_invalid")
+            _finite_nonnegative(item["quantity"], name=f"{name}_position_quantity")
+            _finite_nonnegative(item["notional"], name=f"{name}_position_notional")
+            symbols.append(item["symbol"])
+        if symbols != sorted(symbols) or len(symbols) != len(set(symbols)):
+            raise DashboardReadModelError(f"{name}_positions_order_invalid")
+    elif value_kind == "positions":
+        _exact_keys(values, {"positions", "open_order_count"}, name=f"{name}_values")
+        positions = _mapping(values["positions"], name=f"{name}_positions")
+        if list(positions) != sorted(positions):
+            raise DashboardReadModelError(f"{name}_positions_order_invalid")
+        for symbol, quantity in positions.items():
+            if not isinstance(symbol, str) or not symbol:
+                raise DashboardReadModelError(f"{name}_position_symbol_invalid")
+            _finite_nonnegative(quantity, name=f"{name}_position:{symbol}")
+        if not isinstance(values["open_order_count"], int) or isinstance(values["open_order_count"], bool) or values["open_order_count"] < 0:
+            raise DashboardReadModelError(f"{name}_open_order_count_invalid")
+    else:
+        raise DashboardReadModelError(f"{name}_kind_invalid")
+    return row
+
+
 def _validate_ledger_value(
     value: object,
     *,
@@ -2350,13 +2435,19 @@ def _validate_strategy_decision(value: object, *, index: int) -> None:
         )
 
 
-def _authority(ledger_snapshot: RuntimeLedgerSnapshot | None) -> dict[str, str]:
+def _authority(
+    ledger_snapshot: RuntimeLedgerSnapshot | None,
+    *,
+    readonly_account: bool = False,
+) -> dict[str, str]:
     return {
         "decision": "verified_decision_batch",
         "governance": "strategy_registry",
         "account_and_pnl": (
             "runtime_ledger"
             if ledger_snapshot is not None
+            else "private_account_preflight"
+            if readonly_account
             else "unavailable_until_phase_b_ledger"
         ),
     }
@@ -2406,15 +2497,27 @@ def _account_values(ledger_snapshot: RuntimeLedgerSnapshot) -> dict[str, object]
     return dict(ledger_snapshot.account)
 
 
+def _readonly_account_values(observation: Mapping[str, Any]) -> dict[str, object]:
+    values = _mapping(
+        observation["account_observation"], name="blocked_runtime_account_observation"
+    )
+    return dict(values)
+
+
 def _overview_payload(
     batch: VerifiedDecisionBatch,
     ledger_snapshot: RuntimeLedgerSnapshot | None,
+    blocked_runtime_observation: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     target = batch.target
     risk = batch.risk
     plan = batch.plan
     return {
-        "authority": _authority(ledger_snapshot),
+        "authority": _authority(
+            ledger_snapshot,
+            readonly_account=blocked_runtime_observation is not None
+            and "account_observation" in blocked_runtime_observation,
+        ),
         "latest_batch": {
             "batch_id": batch.manifest.batch_id,
             "manifest_id": batch.manifest.decision_batch_manifest_id,
@@ -2428,6 +2531,13 @@ def _overview_payload(
         "account": (
             _ledger_unavailable()
             if ledger_snapshot is None
+            and (blocked_runtime_observation is None or "account_observation" not in blocked_runtime_observation)
+            else {
+                "status": "available_readonly",
+                "source": "private_account_preflight",
+                "values": _readonly_account_values(blocked_runtime_observation),
+            }
+            if blocked_runtime_observation is not None and "account_observation" in blocked_runtime_observation
             else {
                 "status": "available",
                 "source": "runtime_ledger",
@@ -2441,6 +2551,23 @@ def _overview_payload(
             "actual_positions": (
                 _ledger_unavailable()
                 if ledger_snapshot is None
+                and (blocked_runtime_observation is None or "account_observation" not in blocked_runtime_observation)
+                else {
+                    "status": "available_readonly",
+                    "source": "private_account_preflight",
+                    "values": {
+                        "positions": {
+                            row["symbol"]: row["quantity"]
+                            for row in _readonly_account_values(
+                                blocked_runtime_observation
+                            )["positions"]
+                        },
+                        "open_order_count": _readonly_account_values(
+                            blocked_runtime_observation
+                        )["open_order_count"],
+                    },
+                }
+                if blocked_runtime_observation is not None and "account_observation" in blocked_runtime_observation
                 else {
                     "status": "available",
                     "source": "runtime_ledger",
@@ -3989,7 +4116,11 @@ def build_dashboard_v1(
     models = DashboardReadModelSet(
         overview=DashboardReadModel.create(
             read_model_type="overview",
-            payload=_overview_payload(batch, effective_ledger_snapshot),
+            payload=_overview_payload(
+                batch,
+                effective_ledger_snapshot,
+                blocked_runtime_observation,
+            ),
             **common,
         ),
         positions=DashboardReadModel.create(

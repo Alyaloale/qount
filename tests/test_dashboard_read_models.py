@@ -526,16 +526,16 @@ class DashboardReadModelTest(unittest.TestCase):
                     "account_and_pnl"
                 ]["enum"]
             ),
-            {"unavailable_until_phase_b_ledger", "runtime_ledger"},
+            {"unavailable_until_phase_b_ledger", "runtime_ledger", "private_account_preflight"},
         )
         overview = json.loads(
             (schema_root / "dashboard-v1-overview.schema.json").read_text(
                 encoding="ascii"
             )
         )["allOf"][1]["properties"]["payload"]["properties"]
-        self.assertEqual(len(overview["portfolio"]["properties"]["actual_positions"]["oneOf"]), 2)
+        self.assertEqual(len(overview["portfolio"]["properties"]["actual_positions"]["oneOf"]), 3)
         self.assertEqual(len(overview["pnl"]["oneOf"]), 2)
-        self.assertEqual(len(overview["account"]["oneOf"]), 2)
+        self.assertEqual(len(overview["account"]["oneOf"]), 3)
         strategies = json.loads(
             (schema_root / "dashboard-v1-strategies.schema.json").read_text(
                 encoding="ascii"

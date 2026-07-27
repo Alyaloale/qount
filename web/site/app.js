@@ -356,14 +356,21 @@ function renderFreshnessDetail() {
 function renderLive() {
   const model = state.models.overview;
   const payload = model.payload;
-  const account = payload.account.status === "available" ? payload.account.values : null;
+  const readonlyAccount = payload.account.status === "available_readonly";
+  const account = ["available", "available_readonly"].includes(payload.account.status) ? payload.account.values : null;
   const pnl = payload.pnl.status === "available" ? payload.pnl.values : null;
   const portfolio = payload.portfolio;
   const risk = payload.risk;
   const batch = payload.latest_batch;
-  const actual = portfolio.actual_positions.status === "available" ? portfolio.actual_positions.values.positions : {};
+  const actual = ["available", "available_readonly"].includes(portfolio.actual_positions.status) ? portfolio.actual_positions.values.positions : {};
   const symbols = [...new Set([...Object.keys(portfolio.approved_target), ...Object.keys(actual)])].sort();
-  const accountMetrics = account ? `
+  const accountMetrics = account && readonlyAccount ? `
+    <div class="metrics metrics-four">
+      ${metric("钱包余额", formatMoney(account.wallet_balance, account.quote_asset), "私有只读账户预检", "good")}
+      ${metric("可用余额", formatMoney(account.available_balance, account.quote_asset), `普通挂单 ${account.open_order_count}`, "good")}
+      ${metric("实际总敞口", formatPercent(account.actual_gross_fraction), formatMoney(account.actual_gross_notional, account.quote_asset), "accent")}
+      ${metric("保证金占用", formatPercent(account.margin_fraction), formatMoney(account.margin_used, account.quote_asset), "")}
+    </div>` : account ? `
     <div class="metrics metrics-six">
       ${metric("钱包余额", formatMoney(account.wallet_balance, account.quote_asset), `可用余额 ${formatMoney(account.available_balance)}`, "good")}
       ${metric("账户权益", formatMoney(pnl.equity, account.quote_asset), `本期变化 ${formatMoney(pnl.equity_change)}`, pnl.passed ? "good" : "bad")}
@@ -373,6 +380,7 @@ function renderLive() {
       ${metric("当前回撤", formatPercent(account.current_drawdown_fraction), `峰值时点 ${formatTime(account.peak_drawdown_at)}`, account.current_drawdown_fraction > 0.1 ? "bad" : "")}
     </div>` : unavailableBlock("权威账户读数不可用", "当前发布没有可验证的 RuntimeLedger 账户观测。");
   $("view-live").innerHTML = `${accountMetrics}
+    ${readonlyAccount ? `<div class="unavailable-block"><span class="unavailable-mark" aria-hidden="true">i</span><div><strong>只读账户观测</strong><p>该账户由私有只读预检提供；PnL、回撤、账本对账和订单执行仍不可用。</p></div></div>` : ""}
     <div class="account-strip">
       <div><span>交易损益</span><strong>${pnl ? escapeHtml(formatMoney(pnl.trading_pnl)) : "-"}</strong></div>
       <div><span>资金费</span><strong>${pnl ? escapeHtml(formatMoney(pnl.funding)) : "-"}</strong></div>
