@@ -327,10 +327,22 @@ async function fetchJSON(path) {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json();
+    const raw = await response.text();
+    return { value: JSON.parse(raw), fileSha256: await sha256Hex(raw) };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function sha256Hex(value) {
+  if (!globalThis.crypto || !globalThis.crypto.subtle) {
+    throw new Error("浏览器不支持读模型完整性校验");
+  }
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function assertObject(value, name) {
@@ -355,14 +367,15 @@ function releaseModelPath(path, publicationId) {
   return path.replace("data/v1/", `data/releases/${publicationId}/`);
 }
 
-function validateModel(model, type, publication) {
+function validateModel(response, type, publication) {
+  const { value: model, fileSha256 } = response;
   assertObject(model, type);
   assertObject(model.payload, `${type}.payload`);
   assertObject(model.freshness, `${type}.freshness`);
   assertObject(model.source_hashes, `${type}.source_hashes`);
   if (model.schema_version !== 1 || model.read_model_type !== type) throw new Error(`${type} schema 不匹配`);
   const reference = publication.read_models[type];
-  if (!reference || reference.read_model_id !== model.read_model_id || reference.read_model_hash !== model.read_model_hash) {
+  if (!reference || reference.read_model_id !== model.read_model_id || reference.read_model_hash !== model.read_model_hash || reference.file_sha256 !== fileSha256) {
     throw new Error(`${type} 与 publication 不一致`);
   }
   if (!["system", "alerts", "reports", "intelligence"].includes(type)) {
@@ -728,7 +741,8 @@ async function load() {
   $("refresh-button").classList.add("spinning");
   $("error-banner").hidden = true;
   try {
-    const publication = await fetchJSON("data/v1/publication.json");
+    const publicationResponse = await fetchJSON("data/v1/publication.json");
+    const publication = publicationResponse.value;
     validatePublication(publication);
     const entries = await Promise.all(Object.entries(MODEL_PATHS).map(async ([type, path]) => [
       type,

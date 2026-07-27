@@ -13,6 +13,15 @@
 
 ## 2026-07-27 (Round 30)
 
+### `0.2.22` Dashboard 发布完整性与最终就绪修复
+
+本地 package 版本由`0.2.21`提升为`0.2.22`，未部署 VPS。Dashboard publication 对每个 immutable read model
+新增精确原始文件`file_sha256`；浏览器下载原文后用 Web Crypto 计算 SHA-256 并与 publication 比对，单个 release
+文件被篡改时 fail closed。更新 publication JSON schema、发布/读回验证与 ledger golden；FOMC 页面 cache-bust 测试
+改为检查版本格式，不再因正常版本递增产生假失败。README 当前态同步为 VPS `0.2.21` 已部署但 FOMC live
+`disabled/inactive`、未 arm。Mac 全仓 unittest=`2370/2370 OK`，JS/schema/compile/diff 检查均通过；未访问私有
+账户、未改交易开关或订单。
+
 ### Dashboard 私有账户观察自动刷新
 
 新增独立 `qount-dashboard-account-observer.timer`，每五分钟仅运行现有私有只读 preflight，原子更新

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -4601,6 +4602,7 @@ class DashboardPublication:
                     "file_name": _READ_MODEL_FILES[model.read_model_type],
                     "read_model_id": model.read_model_id,
                     "read_model_hash": model.read_model_hash,
+                    "file_sha256": _release_file_sha256(model.as_dict()),
                 }
                 for model in models.models()
             },
@@ -4639,11 +4641,12 @@ class DashboardPublication:
             row = _mapping(row_value, name="dashboard_publication_model")
             _exact_keys(
                 row,
-                {"file_name", "read_model_id", "read_model_hash"},
+                {"file_name", "read_model_id", "read_model_hash", "file_sha256"},
                 name="dashboard_publication_model",
             )
             if row["file_name"] != _READ_MODEL_FILES[read_model_type] or not all(
-                is_sha256(row[name]) for name in ("read_model_id", "read_model_hash")
+                is_sha256(row[name])
+                for name in ("read_model_id", "read_model_hash", "file_sha256")
             ):
                 raise DashboardReadModelError("dashboard_publication_model_invalid")
         expected_hash = canonical_hash(self._core())
@@ -4667,7 +4670,9 @@ class DashboardPublication:
                 row = self.read_models[model.read_model_type]
                 if row["read_model_id"] != model.read_model_id or row[
                     "read_model_hash"
-                ] != model.read_model_hash:
+                ] != model.read_model_hash or (
+                    row["file_sha256"] != _release_file_sha256(model.as_dict())
+                ):
                     raise DashboardReadModelError(
                         "dashboard_publication_read_model_mismatch"
                     )
@@ -4702,6 +4707,10 @@ def _write_release_file(path: Path, value: Mapping[str, Any]) -> None:
             os.close(descriptor)
         if temporary.exists():
             temporary.unlink()
+
+
+def _release_file_sha256(value: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_canonical_bytes(value)).hexdigest()
 
 
 def _fsync_directory(path: Path) -> None:

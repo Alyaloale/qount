@@ -35,11 +35,12 @@
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["file_name", "read_model_id", "read_model_hash"],
+      "required": ["file_name", "read_model_id", "read_model_hash", "file_sha256"],
       "properties": {
         "file_name": { "enum": ["overview.json", "positions.json", "orders.json", "strategies.json", "decisions.json", "risk.json", "readiness.json", "system.json", "alerts.json", "reports.json", "intelligence.json"] },
         "read_model_id": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
-        "read_model_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+        "read_model_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "file_sha256": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
       }
     }
   }

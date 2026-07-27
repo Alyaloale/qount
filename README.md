@@ -2,17 +2,16 @@
 
 `qount` 是按当前真实机器拓扑设计的 `AI 决策系统 + 风控执行器 + Binance 执行` 骨架。
 
-仓库版本`0.2.21`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
-`STOP_MARKET closePosition`回读、保护失败紧急平仓和硬截止退出；VPS仍只部署公共行情shadow，live service/timer未部署、未启用，
-没有私有预检、arm或订单授权。Dashboard publisher健康；匿名打开`#/live`得到401是整站Basic Auth策略，不是发布器停止更新。
+仓库版本`0.2.22`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
+`STOP_MARKET closePosition`回读、保护失败紧急平仓和硬截止退出；VPS已部署FOMC live service/timer，但它保持
+`disabled/inactive`，未生成arm、未写live环境文件、未启用窗口开关或订单授权。Dashboard publisher健康；匿名打开`#/live`得到401是整站Basic Auth策略，不是发布器停止更新。
 
 系统工程主设计见 [docs/system-architecture-design.md](docs/system-architecture-design.md)：它定义统一合同、
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前 VPS 生产版本为 `0.2.20`，implementation commit=`3a4fb404ecf870c67301b15ce71fed3ddcdd5faa`、
-provenance=`76ee714d...6afbe`，source tree=`f3821570...103da`。FOMC公共行情watcher、现金窗口/冻结/信号告警和
-仅覆盖2026年7月事件窗口的systemd timer已部署；该timer固定不可下单，不读取私有账户或API。
+当前 VPS 生产版本为 `0.2.21`；FOMC公共行情watcher、现金窗口/冻结/信号告警、事件专用live service/timer和
+仅覆盖2026年7月事件窗口的systemd timer均已部署。所有live开关仍关闭，默认运行路径固定不可下单且不读取私有账户或API。
 Base 已迁入 `standard_production`：曾获真钱授权的策略
 `MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，
 但 owner 已于 2026-07-26 因长期无订单停止实盘；live/forward timer 与 production cron 均关闭，RiskTier/FundingVeto仍为shadow。
@@ -218,7 +217,8 @@ WSL不是Mac的持续镜像，也不是实盘真相。Mac只在计算接口变�
 - A股 ETF 20 日 research-only 状态判别、Tushare/公开复权数据和固定组合证据门（当前冻结保留）
 - VPS 运行脚本、同步脚本、Dashboard v1原子发布合同和order-free authority writer；publisher timer为`enabled/active`，
   每轮验证authority、健康、恢复演练，并保留当前+4个release及latest+60个备份。authority oneshot保持`static/inactive`；
-  MiniTrend live/forward timer和production cron均关闭，当前没有订单权限。仓库FOMC live模板尚未部署、未arm、未启用
+  MiniTrend live/forward timer和production cron均关闭，当前没有订单权限。FOMC live service/timer已部署但保持
+  `disabled/inactive`、未arm、未启用
 
 ## 初始化
 
@@ -358,8 +358,8 @@ WSL 的 `HTTP_PROXY=http://192.168.128.1:7907` 等配置只属于历史研究 / 
 
 注意：本节是旧 `qount.main` line A 的通用保护，仅供历史代码测试。当前生产不通过
 `QOUNT_LIVE_ENABLE`、`QOUNT_X4_LIVE_ENABLE`、`QOUNT_RV_LIVE_ENABLE`或`QOUNT_CXD_CARRY_ENABLE`开启；
-MiniTrend live timer已停用，registry中的`minimal_live`不构成订单权限。仓库FOMC live能力也尚未部署、arm或启用，
-所以当前没有生产订单入口。
+MiniTrend live timer已停用，registry中的`minimal_live`不构成订单权限。FOMC live能力已部署但保持
+`disabled/inactive`、未arm、未启用，所以当前没有生产订单入口。
 
 还必须满足：
 
@@ -474,9 +474,9 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 - 历史执行记录（2026-07-14 及更早）：[docs/archive/update-log-archive.md](docs/archive/update-log-archive.md)。
 
-当前基线：VPS仍为`0.2.20`；旧 line A `qount.main`、X4、C×D以及MiniTrend live/forward timer和production cron全部关闭。
-MiniTrend registry仍保留`minimal_live`历史状态，但执行为`blocked/live_orders_allowed=false`；仓库`0.2.21`的FOMC live能力尚未部署、
-未arm、未启用。Dashboard静态前端已部署，publisher timer为`enabled/active`，只读完整authority并刷新系统健康、release、备份和恢复演练。
+当前基线：VPS为`0.2.21`；旧 line A `qount.main`、X4、C×D以及MiniTrend live/forward timer和production cron全部关闭。
+MiniTrend registry仍保留`minimal_live`历史状态，但执行为`blocked/live_orders_allowed=false`；FOMC live能力已部署但保持
+`disabled/inactive`、未arm、未启用。Dashboard静态前端已部署，publisher timer为`enabled/active`，只读完整authority并刷新系统健康、release、备份和恢复演练。
 2026-07-27最新order-free观察显示用户自有BTC USD-M多仓`0.009`、普通挂单0和两张既有条件保护单；该仓位未进入Qount ledger，
 因此成本、Qount订单、PnL、NAV与当前ledger reconciliation均明确不可用。NotificationStore通过腾讯个人微信iLink provider投递；
 `DELIVERED/SUCCEEDED`只证明通道已接受，不代表微信客户端已展示或用户已读，WeCom仅保留为未启用兼容adapter。

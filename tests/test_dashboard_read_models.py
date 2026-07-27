@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -392,6 +393,14 @@ class DashboardReadModelTest(unittest.TestCase):
                 f"releases/{publication.publication_id}",
             )
             release = root / "releases" / publication.publication_id
+            for read_model_type, reference in publication.read_models.items():
+                self.assertEqual(
+                    reference["file_sha256"],
+                    hashlib.sha256(
+                        (release / reference["file_name"]).read_bytes()
+                    ).hexdigest(),
+                    read_model_type,
+                )
             self.assertEqual(
                 {path.name for path in release.iterdir()},
                 {
@@ -730,6 +739,8 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("Object.hasOwn(publication.source_hashes, name)", app)
         self.assertIn("sharedSources.length > 0", app)
         self.assertIn("publication.source_hashes[name] === hash", app)
+        self.assertIn("async function sha256Hex", app)
+        self.assertIn("reference.file_sha256 !== fileSha256", app)
         self.assertIn("data/releases/${publicationId}/", app)
         self.assertIn("releaseModelPath(path, publication.publication_id)", app)
         for legacy_source in (
