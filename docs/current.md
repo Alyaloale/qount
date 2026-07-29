@@ -1,14 +1,29 @@
 # qount 当前状态
 
-> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-29
+> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-30
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：本次 FOMC 已获一次事件/账户/风控绑定的自动执行授权：仅 BTCUSDT USD-M、200 USDT sleeve、20 USDT 策略回撤停止阈值，且首笔压力风险仍不超过 5 USDT。timer 已启用但当前无新鲜信号、无 arm、无订单；公共 `liquidation_cascade_forward_v1` 仍只采集原始数据。
+> **TL;DR**：本次 FOMC 的 live/shadow timer 已恢复并处于 `enabled/active/waiting`，但当前 live 运行停在 `auto_waiting_for_observation`，shadow 为 `EVENT_FROZEN`；没有 arm、订单授权或交易所变更。标准策略注册表只列连续策略，FOMC 是独立事件运行时。
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 VPS生产版本：`0.2.26`。当前release的commit、source tree、provenance和逐文件verification均保存在
-`/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件timer、
+`/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件 live/shadow timer、
 Dashboard只读账户视图和有界微信retry timer均已部署；除本次受限 FOMC live 路径外，所有交易执行权限仍关闭。
+
+- **2026-07-30 FOMC 实机运行与 Dashboard 前端复核完成。** VPS 上 `qount-fomc-live.timer` 与
+  `qount-fomc-shadow.timer` 均为 `enabled/active/waiting`；live 最近结果为
+  `auto_waiting_for_observation`，shadow 最近结果为 `EVENT_FROZEN`。当前事件身份为
+  `SmallAccount-FOMC-RightSide@0.2`，边界为 freeze `17:30 UTC`、statement `18:00 UTC`、press conference
+  `18:30 UTC`、observation `22:30 UTC`、entry cutoff 次日 `04:00 UTC`、force exit 次日 `11:00 UTC`。
+  本轮 `exchange_mutation_attempted=false`、`orders_authorized=false`，未生成 arm 或授权消费记录；因此 timer 正常运行不等于已有实盘订单。
+  Chrome 已对 VPS 实际发布目录完成桌面和移动端截图检查（`/tmp/qount-vps-strategies-desktop.png`、
+  `/tmp/qount-vps-strategies-mobile.png`），前端可渲染 `MiniTrend-UM-Base-v0.2`。
+
+- **策略注册表与 FOMC 的可观测性边界。** Dashboard 的标准策略行来自
+  `StrategyRegistry.entries`，当前只显示连续策略 `MiniTrend-UM-Base-v0.2`；FOMC 的
+  `SmallAccount-FOMC-RightSide@0.2` 属于独立 event runtime，不会自动伪装成标准连续策略行。
+  这解释了“策略注册表没有 FOMC”，不表示 FOMC runtime 故障。`NAV`/ledger unavailable 只限制账本投影和净值，不会隐藏策略行；偶发“已过期”来自
+  `blocked_runtime_observation` freshness 超时，observer timer 本身仍正常运行。
 
 - **2026-07-29 `0.2.26`修复 Dashboard v1 读模型解包。** 浏览器先验证带文件 SHA-256 的下载响应，随后只把
   read-model 本体写入渲染状态；此前错误保留响应包装导致 `overview.payload.account` 未定义并显示错误的

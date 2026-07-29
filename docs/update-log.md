@@ -1,15 +1,33 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-29
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-30
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-20 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 这份文档只记录**近期**关键变更、验证结果和当前读法（2026-07-21 起）。
 **2026-07-20 及更早**的历史证据链移入 [archive/update-log-archive.md](archive/update-log-archive.md)。
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
+
+## 2026-07-30 (Round 36)
+
+### FOMC live/shadow timer 实机恢复与 Dashboard 策略边界复核
+
+- **VPS 运行状态**：`qount-fomc-live.timer`、`qount-fomc-shadow.timer` 均为 `enabled/active/waiting`。
+  live 最近状态为 `auto_waiting_for_observation`，shadow 最近状态为 `EVENT_FROZEN`；事件身份固定为
+  `SmallAccount-FOMC-RightSide@0.2`，窗口边界为 freeze `17:30 UTC`、statement `18:00 UTC`、press conference
+  `18:30 UTC`、observation `22:30 UTC`、entry cutoff 次日 `04:00 UTC`、force exit 次日 `11:00 UTC`。
+- **权限与副作用**：本轮 `exchange_mutation_attempted=false`、`orders_authorized=false`，未生成 arm，也没有授权消费记录。
+  因此 timer 的 `enabled/active` 只证明受控运行时正在观察，不证明已有 live 订单或可下单权限；所有不满足身份、观察、风险和 arm 门的路径继续 fail closed。
+- **Dashboard 真实前端检查**：通过 Chrome 对 VPS 实际发布目录完成桌面和移动视口截图检查，文件为
+  `/tmp/qount-vps-strategies-desktop.png` 和 `/tmp/qount-vps-strategies-mobile.png`；DOM 与画面均确认
+  `MiniTrend-UM-Base-v0.2` 存在，页面无前端错误、重叠或横向溢出。
+- **策略注册表边界**：Dashboard 标准策略行只遍历 `StrategyRegistry.entries`。FOMC
+  `SmallAccount-FOMC-RightSide@0.2` 是独立 event runtime，不会自动显示为标准连续策略行；这属于可观测性边界，不是 runtime 缺失。
+  `NAV`/ledger unavailable 只表示账本投影不可用，不会隐藏策略；偶发 freshness “已过期”来自
+  `blocked_runtime_observation` 超时，observer timer 仍正常运行。
 
 ## 2026-07-29 (Round 35)
 

@@ -1,14 +1,16 @@
 # qount 快速接手手册
 
-> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-29
+> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-30
 > **本文回答**：接手命令、跨主机操作、VPS 运维坑、sync/test 脚本、artifact 规则。
-> **TL;DR**：生产真相在 VPS `/root/qount`；2026-07 FOMC 只有一次 event/account/policy-bound 自动执行授权，其余订单路径仍关闭。
+> **TL;DR**：生产真相在 VPS `/root/qount`；FOMC live/shadow timer 已运行观察，但当前没有可消费 arm、订单授权或交易所变更，其余订单路径仍关闭。
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 VPS生产版本：`0.2.26`；当前release的commit、source tree、provenance和逐文件verification保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`。FOMC不可下单watcher、
-现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；除 2026-07 FOMC 的受限单次 live 授权外，仍没有 paper/live 或订单权限。
+现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；`qount-fomc-live.timer` 与
+`qount-fomc-shadow.timer` 当前均为 `enabled/active/waiting`，但 live 最近为 `auto_waiting_for_observation`、shadow 最近为
+`EVENT_FROZEN`，`orders_authorized=false` 且没有 arm/授权消费记录。
 
 `0.2.25`强制 FOMC 事件和自动授权精确绑定 `SmallAccount-FOMC-RightSide@0.2`。缺少身份字段、错误 ID 或版本、
 或试图复用其他策略的授权/风险预算都会 fail closed；不得通过修改事件配置、state 或 env 绕过这一门。
@@ -17,7 +19,8 @@ Dashboard v1 `0.2.26` 已修复下载响应包装与实际 read model 混用造�
 publication、model hash 和文件 SHA-256，再将 model 本体渲染。该页面始终只读，不能更改 FOMC timer、arm 或订单。
 
 `0.2.24`的FOMC受控live runtime、CLI及`qount-fomc-live.service/.timer`已部署到VPS。VPS production profile为
-`360/360 OK`，模板与安装unit的SHA-256完全一致；live/shadow timer明确保持`disabled/inactive`，无live环境文件、无arm。
+`360/360 OK`，模板与安装unit的SHA-256完全一致；当前 live/shadow timer 已启用用于事件观察，但仍无可消费 arm、
+无授权订单，且 `exchange_mutation_attempted=false`。
 
 当前账户只读证据为run `20260727T073725Z` / observation `ac00bd58...7757`：BTC USD-M用户自有多仓`0.009`、名义约
 `587.62 USDT`，钱包`203.06011455 USDT`、可用`66.0921174 USDT`、普通挂单0、既有条件保护单2。不要撤改或把该仓位归给
@@ -25,8 +28,13 @@ MiniTrend；Dashboard只可发布`available_readonly`，成本、PnL、NAV、订
 `minimal_live`是registry历史状态，当前执行状态为`blocked`且`live_orders_allowed=false`。
 
 FOMC live runtime、CLI及`qount-fomc-live.service/.timer`已经形成VPS release并安装。生产仍不存在已授权的
-FOMC live arm/env；不要把已部署但`disabled/inactive`的timer解释成生产启用状态。当前用户自有BTC仓位和两张条件单
+FOMC live arm/env；不要把 `enabled/active` 的观察 timer 解释成已有订单授权。当前用户自有BTC仓位和两张条件单
 必须由owner自行处理；账户平坦后，仍须在shadow信号`ARMED`且入场窗口内重新执行`prepare -> arm -> switch --enable`。
+
+Dashboard 策略行的标准来源是 `StrategyRegistry.entries`。FOMC 的
+`SmallAccount-FOMC-RightSide@0.2` 是独立 event runtime，不能因为它没有出现在标准连续策略表就判定运行失败；
+账本/NAV unavailable 也不会隐藏标准策略行。真实 VPS 前端桌面和移动端截图检查记录在
+`/tmp/qount-vps-strategies-desktop.png` 与 `/tmp/qount-vps-strategies-mobile.png`。
 
 这份文档给接手的大模型用，只放可执行入口、跨主机命令和容易踩坑的边界。当前结论看
 [current.md](current.md)，证据长链看 [update-log.md](update-log.md)，架构路线看
@@ -53,22 +61,23 @@ FOMC live arm/env；不要把已部署但`disabled/inactive`的timer解释成生
 - VPS 是所有 live / paper forward / dashboard 的生产真相：`qount-vps:/root/qount`；真实host只存仓库外inventory。
 - WSL不作为当前实盘依据；完成数据必须发布到外置盘，WSL ext4只留可清理scratch。
 - 旧 line A 必须保持关闭：`QOUNT_LIVE_ENABLE=false`。
-- X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；唯一已部署的生产交易入口是
-  `qount-mini-trend-live.timer` 与独立 Base arm/standard batch/registry/RuntimeLedger/reconciliation，但owner已于2026-07-26停用。
+- X4/C×D/RV-C 环境开关仅属于 legacy 研究线，当前不得读取或开启；连续策略的生产交易入口是
+  `qount-mini-trend-live.timer` 与独立 Base arm/standard batch/registry/RuntimeLedger/reconciliation，但owner已于2026-07-26停用；
+  FOMC 则是独立 event runtime，不能并入连续策略注册表。
 - 当前`qount-mini-trend-live.timer=disabled/inactive`、无NEXT，`qount-mini-trend-forward.timer=disabled/inactive`，production cron为0 entry。
   `state/mini_trend/standard-production/status.json`的`awaiting_natural_fill/sample_count=0`现为冻结历史状态，不再表示正在等待调度。
   不要恢复旧X4/C×D、任何MiniTrend timer或production cron，也不要强制下单采样。
-- FOMC live未来若得到精确授权，操作序列固定为`prepare -> arm -> switch --enable`；`prepare`会使用私有只读API，`arm`写0600且
-  默认off的短时单次env，`switch`只能修改匹配arm的布尔值。当前不要运行这三步，也不要enable仓库中的live timer模板。
+- FOMC live若得到精确授权，操作序列固定为`prepare -> arm -> switch --enable`；`prepare`会使用私有只读API，`arm`写0600且
+  默认off的短时单次env，`switch`只能修改匹配arm的布尔值。当前不要运行这三步，也不要把观察结果当成已下单。
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
   `qount-dashboard-publisher.timer`、`qount-daily-intelligence.timer`、`qount-notification-retry.timer`和固定窗口的
-  `qount-fomc-shadow.timer`已获授权并保持`enabled/active`；
-  FOMC timer仅在`2026-07-29 17:00 UTC`至`2026-07-30 11:00 UTC`运行公共数据shadow，后者每日`04:30 UTC`抓免费官方feed、
-  运行六角色中文LLM、不可覆盖归档并发送个人微信。所有交易执行timer当前均停用；不得恢复live/paper cron、MiniTrend timer、
+  `qount-fomc-shadow.timer`和事件专用`qount-fomc-live.timer`已获授权并保持`enabled/active`，但 live 只会在
+  所有身份、观察、arm 和订单权限门同时通过时执行；FOMC shadow timer仅在`2026-07-29 17:00 UTC`至`2026-07-30 11:00 UTC`运行公共数据观察，
+  后者每日`04:30 UTC`抓免费官方feed、运行六角色中文LLM、不可覆盖归档并发送个人微信。不得恢复live/paper cron、MiniTrend timer、
   X4/C×D或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。
-- `qount-mini-trend-forward.timer`与live timer均保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
+- `qount-mini-trend-forward.timer`与`qount-mini-trend-live.timer`均保持`disabled/inactive`，authority writer oneshot保持`static/inactive`；
   publisher只读发布既有authority、系统健康和备份，不访问交易所、不刷新账户。Daily Intelligence unit显式移除Binance私钥和全部live
   authority，只访问官方公开源、火山方舟Coding Plan和个人微信；不要把它与MiniTrend live timer混淆。个人微信凭据只保留
   `account_id/base_url/recipient/token`，最新context token从`/root/.openclaw/openclaw-weixin/accounts`动态读取；unit依赖
