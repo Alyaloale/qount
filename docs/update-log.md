@@ -1,15 +1,27 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-27
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-29
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-20 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-07-27
+更新时间：2026-07-29
 
 这份文档只记录**近期**关键变更、验证结果和当前读法（2026-07-21 起）。
 **2026-07-20 及更早**的历史证据链移入 [archive/update-log-archive.md](archive/update-log-archive.md)。
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
+
+## 2026-07-29 (Round 34)
+
+### `0.2.25` FOMC策略身份防错接与实盘发布
+
+- FOMC事件配置现在必须显式提供并精确匹配 `SmallAccount-FOMC-RightSide@0.2`；ID或版本不匹配、或自动授权中的身份不匹配，
+  都在任何运行状态读取、交易所访问或arm生成前失败关闭。授权、shadow、readiness、标准批次、账本投影、风险预算和发布provenance
+  必须保持同一身份对，不能跨策略复用。
+- 回归覆盖了缺失身份、错误ID、错误版本、错误授权身份和 shadow 候选在已验证保护周期后仍受首笔 `<=5 USDT` 风险上限约束。
+  `PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py' -q` 通过；仅有既存 `cta_data.py` UTC 弃用警告。
+- 本次 release 不扩大授权：仅保留原有单次 FOMC、BTCUSDT USD-M、200 USDT sleeve、isolated、实际杠杆 `<=5x`、
+  40 USDT保证金、200 USDT名义、首笔压力风险 `<=5 USDT` 与滚动24h亏损 `<=10 USDT` 的限制。
 
 ## 2026-07-27 (Round 30)
 

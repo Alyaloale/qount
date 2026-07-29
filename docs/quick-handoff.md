@@ -1,14 +1,17 @@
 # qount 快速接手手册
 
-> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-27
+> **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-29
 > **本文回答**：接手命令、跨主机操作、VPS 运维坑、sync/test 脚本、artifact 规则。
-> **TL;DR**：生产真相在 VPS `/root/qount`；只读探针查 timer/service；不手工触发订单路径。
+> **TL;DR**：生产真相在 VPS `/root/qount`；2026-07 FOMC 只有一次 event/account/policy-bound 自动执行授权，其余订单路径仍关闭。
 
-更新时间：2026-07-27
+更新时间：2026-07-29
 
-VPS生产版本：`0.2.24`；当前release的commit、source tree、provenance和逐文件verification保存在
+VPS生产版本：`0.2.25`；当前release的commit、source tree、provenance和逐文件verification保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`。FOMC不可下单watcher、
-现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；仍没有paper/live或订单权限。
+现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；除 2026-07 FOMC 的受限单次 live 授权外，仍没有 paper/live 或订单权限。
+
+`0.2.25`强制 FOMC 事件和自动授权精确绑定 `SmallAccount-FOMC-RightSide@0.2`。缺少身份字段、错误 ID 或版本、
+或试图复用其他策略的授权/风险预算都会 fail closed；不得通过修改事件配置、state 或 env 绕过这一门。
 
 `0.2.24`的FOMC受控live runtime、CLI及`qount-fomc-live.service/.timer`已部署到VPS。VPS production profile为
 `360/360 OK`，模板与安装unit的SHA-256完全一致；live/shadow timer明确保持`disabled/inactive`，无live环境文件、无arm。

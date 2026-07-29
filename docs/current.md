@@ -1,14 +1,19 @@
 # qount 当前状态
 
-> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-27
+> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-29
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：真钱交易当前未授权；`0.2.24`已部署至VPS，FOMC受控live/shadow timer均保持`disabled/inactive`，未生成arm、未写live环境文件、未启用窗口开关。Dashboard可显示用户自有BTC仓位，但ledger成本、订单、PnL、NAV和当前对账仍明确不可用；`minimal_live`只代表历史注册状态且当前执行阻断。
+> **TL;DR**：本次 FOMC 已获一次事件/账户/风控绑定的自动执行授权：仅 BTCUSDT USD-M、200 USDT sleeve、20 USDT 策略回撤停止阈值，且首笔压力风险仍不超过 5 USDT。timer 已启用但当前无新鲜信号、无 arm、无订单；公共 `liquidation_cascade_forward_v1` 仍只采集原始数据。
 
-更新时间：2026-07-27
+更新时间：2026-07-29
 
-VPS生产版本：`0.2.24`。当前release的commit、source tree、provenance和逐文件verification均保存在
+VPS生产版本：`0.2.25`。当前release的commit、source tree、provenance和逐文件verification均保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件timer、
-Dashboard只读账户视图和有界微信retry timer均已部署，所有交易执行权限仍关闭。
+Dashboard只读账户视图和有界微信retry timer均已部署；除本次受限 FOMC live 路径外，所有交易执行权限仍关闭。
+
+- **2026-07-29 `0.2.25`精确策略身份门已部署至FOMC自动路径。** 事件配置必须显式且精确匹配
+  `SmallAccount-FOMC-RightSide@0.2`；缺失、错误 ID 或错误版本会在读取运行状态、访问交易所或生成 arm 前失败关闭。
+  自动授权也重复验证身份，不能复用其他策略的授权、风险预算或内部 arm。该变更不扩大本次 FOMC 的事件、账户、
+  标的、杠杆、名义、保证金或首笔风险授权。
 
 - **2026-07-27 `0.2.21`已部署至VPS，FOMC live路径保持未启用。** 本地全仓`2370/2370 OK`，VPS production profile
   `360/360 OK`；editable package=`0.2.21`，逐文件release verification通过。`qount-fomc-live.service/.timer`已安装到
