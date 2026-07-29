@@ -89,6 +89,8 @@ class FomcOperationsTest(unittest.TestCase):
         )
         self.assertIn("2026-07-29 17..23:0/5:00 UTC", timer)
         self.assertIn("2026-07-30 11:00:00 UTC", timer)
+        for retry_at in ("05", "10", "15", "20", "25", "30"):
+            self.assertIn(f"2026-07-30 11:{retry_at}:00 UTC", timer)
         self.assertNotIn("OnCalendar=*-*-*", timer)
         self.assertIn("Unit=qount-fomc-shadow.service", timer)
 

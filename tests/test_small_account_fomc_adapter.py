@@ -270,6 +270,29 @@ class FomcStandardAdapterTest(unittest.TestCase):
         self.assertEqual(chain.blockers, ())
         self.assertFalse(chain.batch.manifest.orders_authorized)
 
+    def test_shadow_candidate_keeps_first_live_risk_budget_after_protection(self) -> None:
+        account = AccountRiskSnapshot(
+            **{
+                **_healthy_account().__dict__,
+                "protective_cycle_verified": True,
+            }
+        )
+        chain = build_fomc_standard_chain(
+            _event(),
+            _freeze(),
+            _scan("long"),
+            _market(),
+            account_snapshot=account,
+            orders_authorized=False,
+        )
+
+        assert chain.sizing is not None
+        self.assertTrue(chain.sizing.allowed)
+        self.assertEqual(chain.sizing.requested_risk_budget_usdt, 5.0)
+        self.assertEqual(chain.sizing.effective_risk_cap_usdt, 5.0)
+        self.assertLessEqual(chain.sizing.estimated_stress_loss_usdt, 5.0)
+        self.assertEqual(chain.batch.plan.blockers, ("FOMC_MANUAL_ARM_REQUIRED",))
+
     def test_unknown_account_blocks_new_risk_and_all_orders(self) -> None:
         account = AccountRiskSnapshot(
             **{

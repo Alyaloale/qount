@@ -32,6 +32,9 @@ from qount.small_account.fomc_runtime import FomcFreezeSnapshot
 from qount.small_account.fomc_runtime import build_fomc_freeze_snapshot
 from qount.small_account.fomc_runtime import fomc_stage
 from qount.small_account.fomc_runtime import scan_fomc_hybrid_signal
+from qount.small_account.fomc_scorecard import FomcShadowScorecardError
+from qount.small_account.fomc_scorecard import build_fomc_v02_shadow_scorecard
+from qount.small_account.fomc_scorecard import validate_fomc_v02_shadow_scorecard
 
 
 FOMC_WATCHER_SCHEMA_VERSION = 1
@@ -156,6 +159,7 @@ class FomcStateStore:
     def __init__(self, root: str | os.PathLike[str], event_id: str) -> None:
         if not is_sha256(event_id):
             raise FomcWatcherError("fomc_event_id_invalid")
+        self.event_id = event_id
         requested = Path(root).expanduser()
         if requested.is_symlink():
             raise FomcWatcherError("fomc_state_root_symlink_forbidden")
@@ -163,12 +167,14 @@ class FomcStateStore:
         self.event_root = self.root / "events" / event_id
         self.runs_root = self.event_root / "runs"
         self.batches_root = self.event_root / "decision_batches"
+        self.scorecards_root = self.event_root / "scorecards"
         for path in (
             self.root,
             self.root / "events",
             self.event_root,
             self.runs_root,
             self.batches_root,
+            self.scorecards_root,
         ):
             _secure_directory(path)
 
@@ -179,6 +185,10 @@ class FomcStateStore:
     @property
     def latest_path(self) -> Path:
         return self.event_root / "latest.json"
+
+    @property
+    def v02_scorecard_path(self) -> Path:
+        return self.scorecards_root / "fomc-v02-shadow-scorecard.json"
 
     def read_freeze(self) -> FomcFreezeSnapshot | None:
         if not self.freeze_path.exists():
@@ -230,6 +240,49 @@ class FomcStateStore:
             _write_exclusive(path, result)
         _write_latest(self.latest_path, result)
         return path
+
+    def read_results(self) -> tuple[dict[str, Any], ...]:
+        results = [_read_json(path) for path in self.runs_root.glob("*.json")]
+        try:
+            results.sort(
+                key=lambda value: (
+                    aware_datetime(str(value["observed_at"])),
+                    str(value["result_hash"]),
+                )
+            )
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise FomcWatcherError("fomc_state_run_history_invalid") from exc
+        return tuple(results)
+
+    def read_v02_scorecard(self) -> dict[str, Any] | None:
+        if not self.v02_scorecard_path.exists():
+            return None
+        value = _read_json(self.v02_scorecard_path)
+        try:
+            validate_fomc_v02_shadow_scorecard(value)
+        except FomcShadowScorecardError as exc:
+            raise FomcWatcherError(str(exc)) from exc
+        if value.get("event_id") != self.event_id:
+            raise FomcWatcherError("fomc_scorecard_store_event_mismatch")
+        return value
+
+    def write_v02_scorecard(self, scorecard: Mapping[str, Any]) -> dict[str, Any]:
+        try:
+            validate_fomc_v02_shadow_scorecard(scorecard)
+        except FomcShadowScorecardError as exc:
+            raise FomcWatcherError(str(exc)) from exc
+        if scorecard.get("event_id") != self.event_id:
+            raise FomcWatcherError("fomc_scorecard_store_event_mismatch")
+        existing = self.read_v02_scorecard()
+        if existing is not None:
+            if existing != dict(scorecard):
+                raise FomcWatcherError("fomc_scorecard_immutable_conflict")
+            return existing
+        _write_exclusive(self.v02_scorecard_path, scorecard)
+        written = self.read_v02_scorecard()
+        if written is None:
+            raise FomcWatcherError("fomc_scorecard_write_missing")
+        return written
 
 
 def _number(value: object, *fallbacks: object) -> float:
@@ -491,6 +544,7 @@ def _result(
     signal: Mapping[str, Any] | None,
     chain: FomcStandardChain | None,
     blockers: Sequence[str],
+    scorecard: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     core = {
         "schema_version": FOMC_WATCHER_SCHEMA_VERSION,
@@ -503,6 +557,7 @@ def _result(
         "signal": dict(signal) if signal is not None else None,
         "standard_chain": chain.as_dict() if chain is not None else None,
         "blockers": list(dict.fromkeys(str(value) for value in blockers)),
+        "scorecard": dict(scorecard) if scorecard is not None else None,
         "permissions": {
             "orders_authorized": False,
             "paper_or_live_allowed": False,
@@ -679,6 +734,67 @@ def _sync_alerts(
     )
 
 
+def _expired_scorecard_reference(
+    event: FomcEventDefinition,
+    store: FomcStateStore,
+    freeze: FomcFreezeSnapshot | None,
+    *,
+    observed_at: dt.datetime,
+    exchange: Any | None,
+) -> dict[str, Any]:
+    """Finalize public v0.2 shadow evidence without changing an account."""
+
+    try:
+        existing = store.read_v02_scorecard()
+        if existing is not None:
+            return {
+                "status": "completed",
+                "scorecard_hash": existing["scorecard_hash"],
+            }
+        if freeze is None:
+            return {
+                "status": "pending",
+                "blocker": "FOMC_FREEZE_MISSING",
+            }
+        owned_exchange = exchange is None
+        client = exchange
+        if client is None:
+            settings = replace(Settings.from_env(), market_type="future")
+            client = build_exchange(settings, private=False)
+        # A candle stamped exactly at force-exit is complete but the public
+        # collector deliberately rejects its exact close boundary.
+        collection_time = max(
+            observed_at,
+            event.force_exit_time + dt.timedelta(seconds=1),
+        )
+        _, fifteen, _ = collect_fomc_public_market(
+            client,
+            event,
+            observed_at=collection_time,
+        )
+        scorecard = build_fomc_v02_shadow_scorecard(
+            event,
+            run_results=store.read_results(),
+            fifteen_minute_candles=fifteen,
+            generated_at=observed_at,
+        )
+        written = store.write_v02_scorecard(scorecard)
+        return {
+            "status": "completed",
+            "scorecard_hash": written["scorecard_hash"],
+        }
+    except Exception as exc:
+        return {
+            "status": "pending",
+            "blocker": _error_code(exc),
+        }
+    finally:
+        if "owned_exchange" in locals() and owned_exchange and client is not None:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
+
+
 def run_fomc_shadow_cycle(
     event: FomcEventDefinition,
     store: FomcStateStore,
@@ -712,6 +828,13 @@ def run_fomc_shadow_cycle(
         _sync_alerts(notification_store, event, result)
         return result
     if now >= event.force_exit_time:
+        scorecard = _expired_scorecard_reference(
+            event,
+            store,
+            freeze,
+            observed_at=now,
+            exchange=exchange,
+        )
         result = _result(
             event,
             observed_at=now,
@@ -721,6 +844,7 @@ def run_fomc_shadow_cycle(
             signal=None,
             chain=None,
             blockers=("FOMC_FREEZE_MISSING",) if freeze is None else (),
+            scorecard=scorecard,
         )
         store.write_result(result)
         _sync_alerts(notification_store, event, result)

@@ -1,5 +1,5 @@
 [Unit]
-Description=Qount bounded FOMC live execution and position-management cycle
+Description=Qount bounded FOMC automatic execution and position-management cycle
 Wants=network-online.target
 After=network-online.target
 ConditionPathExists=/root/qount/deploy/events/fomc-2026-07.json
@@ -28,7 +28,7 @@ Environment=all_proxy=
 Environment=HTTP_PROXY=
 Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
-ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_fomc_live.py --event-config /root/qount/deploy/events/fomc-2026-07.json --state-root /var/lib/qount/fomc cycle
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_fomc_live.py --event-config /root/qount/deploy/events/fomc-2026-07.json --state-root /var/lib/qount/fomc auto-cycle
 UMask=0077
 Nice=5
 CPUQuota=60%

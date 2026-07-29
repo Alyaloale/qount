@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 
 from qount.small_account.management import DEFAULT_TAIL_STOP_POLICY
+from qount.small_account.management import calculate_one_third_exit_quantity
 from qount.small_account.management import calculate_post_2r_tail_stop
+from qount.small_account.management import calculate_profit_thresholds
 
 
 class TailStopPolicyTests(unittest.TestCase):
@@ -104,6 +106,55 @@ class TailStopDecisionTests(unittest.TestCase):
 
         self.assertFalse(result.allowed)
         self.assertEqual(result.reasons, ("policy_invalid",))
+
+
+class ProfitThresholdTests(unittest.TestCase):
+    def test_thresholds_keep_actual_entry_cost_and_future_exit_costs(self) -> None:
+        long = calculate_profit_thresholds(
+            side="long",
+            entry_price=100.0,
+            initial_quantity=1.0,
+            full_risk_usdt=5.0,
+            entry_fee_usdt=0.1,
+            adverse_funding_usdt=0.06,
+            exit_fee_rate=0.0005,
+            exit_slippage_rate=0.0005,
+        )
+        short = calculate_profit_thresholds(
+            side="short",
+            entry_price=100.0,
+            initial_quantity=1.0,
+            full_risk_usdt=5.0,
+            entry_fee_usdt=0.1,
+            adverse_funding_usdt=0.06,
+            exit_fee_rate=0.0005,
+            exit_slippage_rate=0.0005,
+        )
+
+        self.assertTrue(long.allowed)
+        self.assertGreater(long.net_break_even_price, 100.0)
+        self.assertGreater(long.net_two_r_price, long.net_one_r_price)
+        self.assertTrue(short.allowed)
+        self.assertLess(short.net_break_even_price, 100.0)
+        self.assertLess(short.net_two_r_price, short.net_one_r_price)
+
+    def test_one_third_must_be_representable_without_consuming_tail(self) -> None:
+        blocked = calculate_one_third_exit_quantity(
+            initial_quantity=0.002,
+            quantity_step=0.001,
+            minimum_quantity=0.001,
+        )
+        allowed = calculate_one_third_exit_quantity(
+            initial_quantity=0.003,
+            quantity_step=0.001,
+            minimum_quantity=0.001,
+        )
+
+        self.assertFalse(blocked.allowed)
+        self.assertIn("one_third_partial_below_minimum_quantity", blocked.reasons)
+        self.assertTrue(allowed.allowed)
+        self.assertEqual(allowed.partial_quantity, 0.001)
+        self.assertEqual(allowed.remaining_quantity, 0.002)
 
 
 if __name__ == "__main__":

@@ -47,9 +47,10 @@ DEFAULT_FOMC_COSTS = ExecutionCostRates(
     exit_fee_rate=0.0005,
     entry_slippage_rate=0.0005,
     exit_slippage_rate=0.0005,
-    adverse_funding_rate=0.0003,
+    # Covers two potentially adverse eight-hour funding settlements.
+    adverse_funding_rate=0.0006,
 )
-DEFAULT_FOMC_STOP_GAP_RATE = 0.002
+DEFAULT_FOMC_STOP_GAP_RATE = 0.005
 
 _REASON_SANITIZER = re.compile(r"[^A-Z0-9_.:-]+")
 
@@ -297,6 +298,10 @@ class FomcStandardChain:
     market: FomcMarketObservation
     instrument: InstrumentId
     capability: ProductCapability
+    entry_price: float | None
+    effective_stop_price: float | None
+    costs: ExecutionCostRates
+    stop_gap_rate: float
     sizing: PositionSizeDecision | None
     structure_target_price: float | None
     account_guard: AccountGuardDecision | None
@@ -315,6 +320,11 @@ class FomcStandardChain:
             "market_observation_id": self.market.observation_id,
             "instrument_id": self.instrument.instrument_id,
             "capability_id": self.capability.capability_id,
+            "entry_price": self.entry_price,
+            "effective_stop_price": self.effective_stop_price,
+            "costs": asdict(self.costs),
+            "costs_hash": canonical_hash(asdict(self.costs)),
+            "stop_gap_rate": self.stop_gap_rate,
             "structure_target_price": self.structure_target_price,
             "sizing": asdict(self.sizing) if self.sizing is not None else None,
             "account_guard": (
@@ -489,12 +499,12 @@ def build_fomc_standard_chain(
                 quantity_step=market.quantity_step,
                 minimum_notional_usdt=market.minimum_notional_usdt,
                 costs=costs,
+                # This event path is always bounded by the first-entry budget.
+                # A previously verified protective cycle must not widen a shadow
+                # candidate before its separately authorized FOMC entry.
+                risk_budget_usdt=DEFAULT_SMALL_ACCOUNT_POLICY.first_live_risk_cap_usdt,
                 leverage=leverage,
-                protective_cycle_verified=(
-                    account_snapshot.protective_cycle_verified
-                    if account_snapshot is not None
-                    else False
-                ),
+                protective_cycle_verified=False,
             )
             if (
                 sizing.allowed
@@ -731,6 +741,11 @@ def build_fomc_standard_chain(
         "market_observation_id": market.observation_id,
         "instrument_id": instrument.instrument_id,
         "capability_id": capability.capability_id,
+        "entry_price": entry_price if signal.armed else None,
+        "effective_stop_price": effective_stop_price,
+        "costs": asdict(costs),
+        "costs_hash": canonical_hash(asdict(costs)),
+        "stop_gap_rate": stop_gap_rate,
         "structure_target_price": target_price,
         "sizing": asdict(sizing) if sizing is not None else None,
         "account_guard": asdict(account_guard),
@@ -747,6 +762,10 @@ def build_fomc_standard_chain(
         market=market,
         instrument=instrument,
         capability=capability,
+        entry_price=entry_price if signal.armed else None,
+        effective_stop_price=effective_stop_price,
+        costs=costs,
+        stop_gap_rate=stop_gap_rate,
         sizing=sizing,
         structure_target_price=target_price,
         account_guard=account_guard,

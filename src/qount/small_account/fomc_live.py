@@ -2,9 +2,9 @@
 
 The public watcher remains order-free.  This module adds a separate private
 account preflight, exact-plan readiness artifact, short-lived one-use arm, and
-an idempotent Binance USD-M dispatcher.  No function routes an order unless
-the dedicated FOMC switch, arm token, arm confirmation, and current account
-state all match the same frozen plan.
+an idempotent Binance USD-M dispatcher.  No function routes an order unless a
+manual switch or a one-event owner authorization produces a matching arm,
+token, confirmation, and current account state for the same frozen plan.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import os
+import secrets
 import stat
 import tempfile
 from dataclasses import asdict, replace
@@ -60,14 +61,20 @@ from qount.small_account.risk import AccountRiskSnapshot
 from qount.small_account.risk import DEFAULT_SMALL_ACCOUNT_POLICY
 from qount.small_account.risk import size_linear_usdt_futures
 from qount.small_account.fomc_watcher import FomcStateStore
+from qount.small_account.fomc_watcher import collect_fomc_public_market
 from qount.small_account.fomc_watcher import run_fomc_shadow_cycle
+from qount.small_account.management import calculate_one_third_exit_quantity
+from qount.small_account.management import calculate_post_2r_tail_stop
+from qount.small_account.management import calculate_profit_thresholds
 
 
 FOMC_LIVE_PREFLIGHT_VERSION = 1
 FOMC_LIVE_READINESS_VERSION = 1
 FOMC_LIVE_ARM_VERSION = 1
+FOMC_LIVE_AUTO_AUTHORIZATION_VERSION = 1
 FOMC_LIVE_EXECUTION_VERSION = 1
 FOMC_LIVE_REDUCTION_ATTEMPT_VERSION = 1
+FOMC_LIVE_MANAGEMENT_VERSION = 1
 FOMC_LIVE_ARM_TTL_SECONDS = 10 * 60
 FOMC_LIVE_MAX_QUOTE_AGE_SECONDS = 90
 FOMC_LIVE_MAX_ADVERSE_SLIPPAGE_BPS = 20.0
@@ -319,6 +326,7 @@ class FomcLiveStore:
         self.consumptions_root = self.root / "consumptions"
         self.executions_root = self.root / "executions"
         self.reduction_attempts_root = self.root / "reduction-attempts"
+        self.management_root = self.root / "management"
         for path in (
             self.state_root,
             self.state_root / "events",
@@ -329,6 +337,7 @@ class FomcLiveStore:
             self.consumptions_root,
             self.executions_root,
             self.reduction_attempts_root,
+            self.management_root,
         ):
             _secure_directory(path)
 
@@ -341,8 +350,24 @@ class FomcLiveStore:
         return self.root / "arm-latest.json"
 
     @property
+    def auto_authorization_path(self) -> Path:
+        return self.root / "auto-authorization.json"
+
+    @property
+    def auto_authorization_consumption_path(self) -> Path:
+        return self.root / "auto-authorization-consumption.json"
+
+    @property
+    def auto_arm_secret_path(self) -> Path:
+        return self.root / "auto-arm-secret.json"
+
+    @property
     def execution_latest_path(self) -> Path:
         return self.root / "execution-latest.json"
+
+    @property
+    def management_latest_path(self) -> Path:
+        return self.root / "management-latest.json"
 
     @property
     def attempt_path(self) -> Path:
@@ -413,6 +438,87 @@ class FomcLiveStore:
             return None
         payload = _read_json(path)
         validate_fomc_live_arm(payload)
+        return payload
+
+    def write_auto_authorization(self, payload: Mapping[str, Any]) -> Path:
+        validate_fomc_live_auto_authorization(payload)
+        if self.auto_authorization_path.exists():
+            if _read_json(self.auto_authorization_path) != dict(payload):
+                raise FomcLiveError("fomc_live_auto_authorization_conflict")
+            return self.auto_authorization_path
+        _write_exclusive(self.auto_authorization_path, payload)
+        return self.auto_authorization_path
+
+    def read_auto_authorization(self) -> dict[str, Any] | None:
+        if not self.auto_authorization_path.exists():
+            return None
+        payload = _read_json(self.auto_authorization_path)
+        validate_fomc_live_auto_authorization(payload)
+        return payload
+
+    def read_auto_authorization_consumption(self) -> dict[str, Any] | None:
+        if not self.auto_authorization_consumption_path.exists():
+            return None
+        payload = _read_json(self.auto_authorization_consumption_path)
+        validate_fomc_live_auto_authorization_consumption(payload)
+        return payload
+
+    def consume_auto_authorization(
+        self,
+        authorization: Mapping[str, Any],
+        arm: Mapping[str, Any],
+        *,
+        consumed_at: str | dt.datetime,
+    ) -> dict[str, Any]:
+        validate_fomc_live_auto_authorization(authorization)
+        validate_fomc_live_arm(arm)
+        consumed = _utc(consumed_at)
+        core = {
+            "schema_version": FOMC_LIVE_AUTO_AUTHORIZATION_VERSION,
+            "artifact_type": "fomc_live_auto_authorization_consumption",
+            "authorization_id": authorization["authorization_id"],
+            "event_id": authorization["event_id"],
+            "account_scope_hash": authorization["account_scope_hash"],
+            "arm_id": arm["arm_id"],
+            "readiness_hash": arm["readiness_hash"],
+            "consumed_at": consumed.isoformat(),
+            "single_use": True,
+        }
+        payload = core | {"consumption_hash": canonical_hash(core)}
+        validate_fomc_live_auto_authorization_consumption(payload)
+        if self.auto_authorization_consumption_path.exists():
+            raise FomcLiveError("fomc_live_auto_authorization_already_consumed")
+        _write_exclusive(self.auto_authorization_consumption_path, payload)
+        return payload
+
+    def write_auto_arm_secret(
+        self, arm: Mapping[str, Any], *, arm_token: str
+    ) -> Path:
+        validate_fomc_live_arm(arm)
+        if hashlib.sha256(arm_token.encode("utf-8")).hexdigest() != arm.get(
+            "arm_token_sha256"
+        ):
+            raise FomcLiveError("fomc_live_auto_arm_token_mismatch")
+        core = {
+            "schema_version": FOMC_LIVE_AUTO_AUTHORIZATION_VERSION,
+            "artifact_type": "fomc_live_auto_arm_secret",
+            "arm_id": arm["arm_id"],
+            "arm_token": arm_token,
+            "arm_token_sha256": arm["arm_token_sha256"],
+        }
+        payload = core | {"secret_hash": canonical_hash(core)}
+        if self.auto_arm_secret_path.exists():
+            if _read_json(self.auto_arm_secret_path) != payload:
+                raise FomcLiveError("fomc_live_auto_arm_secret_conflict")
+            return self.auto_arm_secret_path
+        _write_exclusive(self.auto_arm_secret_path, payload)
+        return self.auto_arm_secret_path
+
+    def read_auto_arm_secret(self) -> dict[str, Any] | None:
+        if not self.auto_arm_secret_path.exists():
+            return None
+        payload = _read_json(self.auto_arm_secret_path)
+        validate_fomc_live_auto_arm_secret(payload)
         return payload
 
     def consumption_path(self, arm_id: str) -> Path:
@@ -498,6 +604,31 @@ class FomcLiveStore:
                 raise FomcLiveError("fomc_live_reduction_attempt_identity_invalid")
             attempts.append(payload)
         return tuple(attempts)
+
+    def write_management_state(self, payload: Mapping[str, Any]) -> Path:
+        if not _hashed_artifact_valid(payload, "management_hash"):
+            raise FomcLiveError("fomc_live_management_hash_invalid")
+        management_hash = str(payload.get("management_hash") or "")
+        if not is_sha256(management_hash):
+            raise FomcLiveError("fomc_live_management_identity_invalid")
+        path = self.management_root / f"{management_hash}.json"
+        if path.exists():
+            if _read_json(path) != dict(payload):
+                raise FomcLiveError("fomc_live_management_conflict")
+        else:
+            _write_exclusive(path, payload)
+        _write_latest(self.management_latest_path, payload)
+        return path
+
+    def read_management_state(self) -> dict[str, Any] | None:
+        if not self.management_latest_path.exists():
+            return None
+        payload = _read_json(self.management_latest_path)
+        if not _hashed_artifact_valid(payload, "management_hash"):
+            raise FomcLiveError("fomc_live_management_hash_invalid")
+        if payload.get("artifact_type") != "fomc_live_position_management":
+            raise FomcLiveError("fomc_live_management_type_invalid")
+        return payload
 
     def write_execution(self, payload: Mapping[str, Any]) -> Path:
         if not _hashed_artifact_valid(payload, "execution_hash"):
@@ -1353,39 +1484,56 @@ def build_fomc_live_readiness(
         event.entry_cutoff_time,
     )
     plan_scope: dict[str, Any] | None = None
+    management_partial_reduction = None
     if chain is not None and chain.sizing is not None and signal is not None and market is not None:
         entry_order, stop_order = chain.batch.plan.orders
-        plan_scope = {
-            "event_id": event.event_id,
-            "account_scope_hash": (preflight.get("account") or {}).get(
-                "account_scope_hash"
-            ),
-            "strategy_id": event.strategy_id,
-            "strategy_version": event.strategy_version,
-            "symbol": event.symbol,
-            "instrument_key": event.instrument_key,
-            "side": signal.side,
-            "quantity": entry_order.quantity,
-            "reference_entry_price": market.entry_price(signal.side),
-            "maximum_notional_usdt": chain.sizing.notional_usdt,
-            "maximum_stress_loss_usdt": chain.sizing.estimated_stress_loss_usdt,
-            "risk_per_unit_usdt": chain.sizing.risk_per_unit_usdt,
-            "target_price": chain.structure_target_price,
-            "stop_price": stop_order.stop_price,
-            "exchange_rules_hash": market.exchange_rules_hash,
-            "price_tick": market.price_tick,
-            "quantity_step": market.quantity_step,
-            "minimum_quantity": market.minimum_quantity,
-            "minimum_notional_usdt": market.minimum_notional_usdt,
-            "contract_size": 1.0,
-            "leverage": chain.sizing.leverage,
-            "margin_mode": "isolated",
-            "entry_client_order_id": entry_order.client_order_id,
-            "stop_client_order_id": stop_order.client_order_id,
-            "force_exit_at": event.force_exit_at,
-            "emergency_flatten_allowed": True,
-            "maximum_adverse_slippage_bps": FOMC_LIVE_MAX_ADVERSE_SLIPPAGE_BPS,
-        }
+        management_partial_reduction = calculate_one_third_exit_quantity(
+            initial_quantity=_float(entry_order.quantity, math.nan),
+            quantity_step=market.quantity_step,
+            minimum_quantity=market.minimum_quantity,
+        )
+        if not management_partial_reduction.allowed:
+            blockers.extend(management_partial_reduction.reasons)
+        if not management_partial_reduction.allowed:
+            entry_order = stop_order = None
+        if entry_order is not None and stop_order is not None:
+            plan_scope = {
+                "event_id": event.event_id,
+                "account_scope_hash": (preflight.get("account") or {}).get(
+                    "account_scope_hash"
+                ),
+                "strategy_id": event.strategy_id,
+                "strategy_version": event.strategy_version,
+                "symbol": event.symbol,
+                "instrument_key": event.instrument_key,
+                "side": signal.side,
+                "quantity": entry_order.quantity,
+                "reference_entry_price": market.entry_price(signal.side),
+                "maximum_notional_usdt": chain.sizing.notional_usdt,
+                "maximum_stress_loss_usdt": chain.sizing.estimated_stress_loss_usdt,
+                "risk_per_unit_usdt": chain.sizing.risk_per_unit_usdt,
+                "target_price": chain.structure_target_price,
+                "stop_price": stop_order.stop_price,
+                "exchange_rules_hash": market.exchange_rules_hash,
+                "price_tick": market.price_tick,
+                "quantity_step": market.quantity_step,
+                "minimum_quantity": market.minimum_quantity,
+                "minimum_notional_usdt": market.minimum_notional_usdt,
+                "contract_size": 1.0,
+                "leverage": chain.sizing.leverage,
+                "margin_mode": "isolated",
+                "entry_client_order_id": entry_order.client_order_id,
+                "stop_client_order_id": stop_order.client_order_id,
+                "force_exit_at": event.force_exit_at,
+                "emergency_flatten_allowed": True,
+                "maximum_adverse_slippage_bps": FOMC_LIVE_MAX_ADVERSE_SLIPPAGE_BPS,
+                "management_contract_version": FOMC_LIVE_MANAGEMENT_VERSION,
+                "freeze_h0": chain.freeze.h0,
+                "freeze_l0": chain.freeze.l0,
+                "costs": asdict(chain.costs),
+                "one_third_partial_quantity": management_partial_reduction.partial_quantity,
+                "one_third_remaining_quantity": management_partial_reduction.remaining_quantity,
+            }
     gates = {
         "shadow_signal_armed": shadow_result.get("stage") == "ARMED",
         "private_account_preflight_passed": (
@@ -1560,6 +1708,372 @@ def validate_fomc_live_arm(arm: Mapping[str, Any]) -> None:
     }
     if arm.get("owner_authorization_hash") != canonical_hash(owner_core):
         raise FomcLiveError("fomc_live_arm_owner_authorization_invalid")
+
+
+def _auto_execution_policy_scope() -> dict[str, Any]:
+    policy = DEFAULT_SMALL_ACCOUNT_POLICY
+    if policy.validate():
+        raise FomcLiveError("fomc_live_auto_policy_invalid")
+    core = {
+        "initial_equity_usdt": policy.initial_equity_usdt,
+        "first_live_risk_cap_usdt": policy.first_live_risk_cap_usdt,
+        "per_trade_risk_cap_usdt": policy.per_trade_risk_cap_usdt,
+        "concurrent_stress_risk_cap_usdt": policy.concurrent_stress_risk_cap_usdt,
+        "rolling_24h_loss_limit_usdt": policy.rolling_24h_loss_limit_usdt,
+        "strategy_drawdown_limit_usdt": policy.strategy_drawdown_limit_usdt,
+        "maximum_crypto_beta_exposures": policy.maximum_crypto_beta_exposures,
+        "maximum_futures_leverage": policy.maximum_futures_leverage,
+        "maximum_isolated_margin_usdt": policy.maximum_isolated_margin_usdt,
+        "maximum_futures_notional_usdt": policy.maximum_futures_notional_usdt,
+    }
+    return core | {"policy_hash": canonical_hash(core)}
+
+
+def build_fomc_live_auto_authorization(
+    event: FomcEventDefinition,
+    preflight: Mapping[str, Any],
+    *,
+    authorized_at: str | dt.datetime,
+) -> dict[str, Any]:
+    """Create the owner-authorized, one-event automatic execution boundary."""
+
+    if not _hashed_artifact_valid(preflight, "preflight_hash"):
+        raise FomcLiveError("fomc_live_preflight_hash_invalid")
+    if (preflight.get("diagnostics") or {}).get("verdict") != (
+        "fomc_live_account_preflight_pass"
+    ):
+        raise FomcLiveError("fomc_live_auto_authorization_preflight_not_passed")
+    account_scope_hash = (preflight.get("account") or {}).get("account_scope_hash")
+    if not is_sha256(account_scope_hash):
+        raise FomcLiveError("fomc_live_auto_authorization_account_scope_invalid")
+    now = _utc(authorized_at)
+    if now >= event.entry_cutoff_time:
+        raise FomcLiveError("fomc_live_auto_authorization_entry_cutoff_reached")
+    policy = _auto_execution_policy_scope()
+    core = {
+        "schema_version": FOMC_LIVE_AUTO_AUTHORIZATION_VERSION,
+        "artifact_type": "fomc_live_auto_authorization",
+        "status": "authorized",
+        "authorization_source": "owner_explicit_auto_execution",
+        "event_id": event.event_id,
+        "event_definition_hash": event.definition_hash,
+        "strategy_id": event.strategy_id,
+        "strategy_version": event.strategy_version,
+        "symbol": event.symbol,
+        "instrument_key": event.instrument_key,
+        "account_scope_hash": account_scope_hash,
+        "policy": policy,
+        "authorized_at": now.isoformat(),
+        "expires_at": event.entry_cutoff_time.isoformat(),
+        "single_use": True,
+    }
+    authorization_id = canonical_hash(core)
+    owner_core = {
+        "authorization_id": authorization_id,
+        "event_id": event.event_id,
+        "event_definition_hash": event.definition_hash,
+        "account_scope_hash": account_scope_hash,
+        "policy_hash": policy["policy_hash"],
+        "expires_at": core["expires_at"],
+    }
+    payload = core | {
+        "authorization_id": authorization_id,
+        "owner_authorization_hash": canonical_hash(owner_core),
+    }
+    validate_fomc_live_auto_authorization(payload)
+    return payload
+
+
+def validate_fomc_live_auto_authorization(
+    authorization: Mapping[str, Any],
+) -> None:
+    core_fields = (
+        "schema_version",
+        "artifact_type",
+        "status",
+        "authorization_source",
+        "event_id",
+        "event_definition_hash",
+        "strategy_id",
+        "strategy_version",
+        "symbol",
+        "instrument_key",
+        "account_scope_hash",
+        "policy",
+        "authorized_at",
+        "expires_at",
+        "single_use",
+    )
+    required_hashes = (
+        "authorization_id",
+        "event_id",
+        "event_definition_hash",
+        "account_scope_hash",
+        "owner_authorization_hash",
+    )
+    if (
+        any(name not in authorization for name in core_fields)
+        or authorization.get("schema_version") != FOMC_LIVE_AUTO_AUTHORIZATION_VERSION
+        or authorization.get("artifact_type") != "fomc_live_auto_authorization"
+        or authorization.get("status") != "authorized"
+        or authorization.get("authorization_source")
+        != "owner_explicit_auto_execution"
+        or authorization.get("single_use") is not True
+        or any(not is_sha256(authorization.get(name)) for name in required_hashes)
+        or any(
+            not isinstance(authorization.get(name), str)
+            or not str(authorization.get(name)).strip()
+            for name in ("strategy_id", "strategy_version", "symbol", "instrument_key")
+        )
+    ):
+        raise FomcLiveError("fomc_live_auto_authorization_invalid")
+    try:
+        authorized_at = _utc(str(authorization["authorized_at"]))
+        expires_at = _utc(str(authorization["expires_at"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise FomcLiveError("fomc_live_auto_authorization_time_invalid") from exc
+    if expires_at <= authorized_at:
+        raise FomcLiveError("fomc_live_auto_authorization_time_order_invalid")
+    policy = authorization.get("policy")
+    if not isinstance(policy, Mapping) or dict(policy) != _auto_execution_policy_scope():
+        raise FomcLiveError("fomc_live_auto_authorization_policy_invalid")
+    core = {key: authorization[key] for key in core_fields}
+    authorization_id = canonical_hash(core)
+    if authorization.get("authorization_id") != authorization_id:
+        raise FomcLiveError("fomc_live_auto_authorization_id_invalid")
+    owner_core = {
+        "authorization_id": authorization_id,
+        "event_id": authorization["event_id"],
+        "event_definition_hash": authorization["event_definition_hash"],
+        "account_scope_hash": authorization["account_scope_hash"],
+        "policy_hash": policy["policy_hash"],
+        "expires_at": authorization["expires_at"],
+    }
+    if authorization.get("owner_authorization_hash") != canonical_hash(owner_core):
+        raise FomcLiveError("fomc_live_auto_owner_authorization_invalid")
+
+
+def validate_fomc_live_auto_authorization_consumption(
+    consumption: Mapping[str, Any],
+) -> None:
+    core_fields = (
+        "schema_version",
+        "artifact_type",
+        "authorization_id",
+        "event_id",
+        "account_scope_hash",
+        "arm_id",
+        "readiness_hash",
+        "consumed_at",
+        "single_use",
+    )
+    hash_fields = (
+        "authorization_id",
+        "event_id",
+        "account_scope_hash",
+        "arm_id",
+        "readiness_hash",
+        "consumption_hash",
+    )
+    if (
+        any(name not in consumption for name in core_fields)
+        or consumption.get("schema_version") != FOMC_LIVE_AUTO_AUTHORIZATION_VERSION
+        or consumption.get("artifact_type")
+        != "fomc_live_auto_authorization_consumption"
+        or consumption.get("single_use") is not True
+        or any(not is_sha256(consumption.get(name)) for name in hash_fields)
+    ):
+        raise FomcLiveError("fomc_live_auto_consumption_invalid")
+    try:
+        _utc(str(consumption["consumed_at"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise FomcLiveError("fomc_live_auto_consumption_time_invalid") from exc
+    core = {key: consumption[key] for key in core_fields}
+    if consumption.get("consumption_hash") != canonical_hash(core):
+        raise FomcLiveError("fomc_live_auto_consumption_hash_invalid")
+
+
+def validate_fomc_live_auto_arm_secret(secret: Mapping[str, Any]) -> None:
+    core_fields = (
+        "schema_version",
+        "artifact_type",
+        "arm_id",
+        "arm_token",
+        "arm_token_sha256",
+    )
+    if (
+        any(name not in secret for name in core_fields)
+        or secret.get("schema_version") != FOMC_LIVE_AUTO_AUTHORIZATION_VERSION
+        or secret.get("artifact_type") != "fomc_live_auto_arm_secret"
+        or not is_sha256(secret.get("arm_id"))
+        or not is_sha256(secret.get("arm_token_sha256"))
+        or not is_sha256(secret.get("secret_hash"))
+        or not isinstance(secret.get("arm_token"), str)
+        or len(str(secret.get("arm_token"))) < 32
+    ):
+        raise FomcLiveError("fomc_live_auto_arm_secret_invalid")
+    token = str(secret["arm_token"])
+    if hashlib.sha256(token.encode("utf-8")).hexdigest() != secret.get(
+        "arm_token_sha256"
+    ):
+        raise FomcLiveError("fomc_live_auto_arm_secret_token_invalid")
+    core = {key: secret[key] for key in core_fields}
+    if secret.get("secret_hash") != canonical_hash(core):
+        raise FomcLiveError("fomc_live_auto_arm_secret_hash_invalid")
+
+
+def _auto_execution_authorization_blockers(
+    event: FomcEventDefinition,
+    authorization: Mapping[str, Any],
+    readiness: Mapping[str, Any],
+    *,
+    observed_at: str | dt.datetime,
+    consumed: Mapping[str, Any] | None,
+) -> tuple[str, ...]:
+    blockers: list[str] = []
+    try:
+        validate_fomc_live_auto_authorization(authorization)
+    except FomcLiveError as exc:
+        return (str(exc),)
+    if not _hashed_artifact_valid(readiness, "readiness_hash"):
+        blockers.append("fomc_live_auto_readiness_hash_invalid")
+    if readiness.get("verdict") != "ready_for_fomc_live_arm":
+        blockers.append("fomc_live_auto_readiness_not_passed")
+    if authorization.get("event_id") != event.event_id:
+        blockers.append("fomc_live_auto_event_id_changed")
+    if authorization.get("event_definition_hash") != event.definition_hash:
+        blockers.append("fomc_live_auto_event_definition_changed")
+    for name in ("strategy_id", "strategy_version", "symbol", "instrument_key"):
+        if authorization.get(name) != getattr(event, name):
+            blockers.append(f"fomc_live_auto_event_scope_changed:{name}")
+    scope = readiness.get("scope")
+    if not isinstance(scope, Mapping):
+        blockers.append("fomc_live_auto_readiness_scope_missing")
+        scope = {}
+    if scope.get("event_id") != event.event_id:
+        blockers.append("fomc_live_auto_readiness_event_changed")
+    if scope.get("account_scope_hash") != authorization.get("account_scope_hash"):
+        blockers.append("fomc_live_auto_account_scope_changed")
+    policy = authorization.get("policy") or {}
+    if _float(scope.get("maximum_notional_usdt"), math.inf) > _float(
+        policy.get("maximum_futures_notional_usdt"), 0.0
+    ) + 1e-12:
+        blockers.append("fomc_live_auto_notional_limit_exceeded")
+    if _float(scope.get("maximum_stress_loss_usdt"), math.inf) > _float(
+        policy.get("first_live_risk_cap_usdt"), 0.0
+    ) + 1e-12:
+        blockers.append("fomc_live_auto_first_risk_limit_exceeded")
+    if scope.get("margin_mode") != "isolated":
+        blockers.append("fomc_live_auto_margin_mode_invalid")
+    if not 0.0 < _float(scope.get("leverage"), math.nan) <= _float(
+        policy.get("maximum_futures_leverage"), 0.0
+    ):
+        blockers.append("fomc_live_auto_leverage_limit_exceeded")
+    if scope.get("side") not in {"long", "short"}:
+        blockers.append("fomc_live_auto_side_invalid")
+    now = _utc(observed_at)
+    if now >= _utc(str(authorization["expires_at"])):
+        blockers.append("fomc_live_auto_authorization_expired")
+    if now >= event.entry_cutoff_time:
+        blockers.append("fomc_live_auto_entry_cutoff_reached")
+    if consumed is not None:
+        try:
+            validate_fomc_live_auto_authorization_consumption(consumed)
+        except FomcLiveError as exc:
+            blockers.append(str(exc))
+        if consumed.get("authorization_id") != authorization.get("authorization_id"):
+            blockers.append("fomc_live_auto_consumption_authorization_mismatch")
+        else:
+            blockers.append("fomc_live_auto_authorization_consumed")
+    return tuple(dict.fromkeys(blockers))
+
+
+def _auto_execution_arm_state_blockers(
+    event: FomcEventDefinition,
+    authorization: Mapping[str, Any] | None,
+    consumption: Mapping[str, Any] | None,
+    readiness: Mapping[str, Any] | None,
+    arm: Mapping[str, Any],
+    secret: Mapping[str, Any] | None,
+) -> tuple[str, ...]:
+    """Prove that a persisted arm came from this automatic authorization."""
+
+    blockers: list[str] = []
+    if authorization is None:
+        blockers.append("fomc_live_auto_authorization_missing")
+    else:
+        try:
+            validate_fomc_live_auto_authorization(authorization)
+        except FomcLiveError as exc:
+            blockers.append(str(exc))
+    if consumption is None:
+        blockers.append("fomc_live_auto_consumption_missing")
+    else:
+        try:
+            validate_fomc_live_auto_authorization_consumption(consumption)
+        except FomcLiveError as exc:
+            blockers.append(str(exc))
+    if secret is None:
+        blockers.append("fomc_live_auto_arm_secret_missing")
+    else:
+        try:
+            validate_fomc_live_auto_arm_secret(secret)
+        except FomcLiveError as exc:
+            blockers.append(str(exc))
+    if not _hashed_artifact_valid(readiness or {}, "readiness_hash"):
+        blockers.append("fomc_live_auto_readiness_hash_invalid")
+    if readiness is None:
+        blockers.append("fomc_live_auto_readiness_missing")
+    if authorization is not None:
+        if authorization.get("event_id") != event.event_id:
+            blockers.append("fomc_live_auto_event_id_changed")
+        if authorization.get("event_definition_hash") != event.definition_hash:
+            blockers.append("fomc_live_auto_event_definition_changed")
+        for name in ("strategy_id", "strategy_version", "symbol", "instrument_key"):
+            if authorization.get(name) != getattr(event, name):
+                blockers.append(f"fomc_live_auto_event_scope_changed:{name}")
+    if readiness is not None:
+        scope = readiness.get("scope")
+        if readiness.get("event_id") != event.event_id:
+            blockers.append("fomc_live_auto_readiness_event_changed")
+        if not isinstance(scope, Mapping):
+            blockers.append("fomc_live_auto_readiness_scope_missing")
+        elif authorization is not None and scope.get("account_scope_hash") != authorization.get(
+            "account_scope_hash"
+        ):
+            blockers.append("fomc_live_auto_account_scope_changed")
+        if readiness.get("readiness_hash") != arm.get("readiness_hash"):
+            blockers.append("fomc_live_auto_arm_readiness_mismatch")
+    if arm.get("event_id") != event.event_id:
+        blockers.append("fomc_live_auto_arm_event_changed")
+    if authorization is not None and arm.get("account_scope_hash") != authorization.get(
+        "account_scope_hash"
+    ):
+        blockers.append("fomc_live_auto_arm_account_scope_changed")
+    arm_scope = arm.get("scope")
+    if not isinstance(arm_scope, Mapping):
+        blockers.append("fomc_live_auto_arm_scope_missing")
+    elif arm_scope.get("account_scope_hash") != arm.get("account_scope_hash"):
+        blockers.append("fomc_live_auto_arm_scope_account_mismatch")
+    if consumption is not None:
+        if authorization is not None and consumption.get("authorization_id") != authorization.get(
+            "authorization_id"
+        ):
+            blockers.append("fomc_live_auto_consumption_authorization_mismatch")
+        if consumption.get("event_id") != arm.get("event_id"):
+            blockers.append("fomc_live_auto_consumption_event_mismatch")
+        if consumption.get("account_scope_hash") != arm.get("account_scope_hash"):
+            blockers.append("fomc_live_auto_consumption_account_scope_mismatch")
+        if consumption.get("arm_id") != arm.get("arm_id"):
+            blockers.append("fomc_live_auto_consumption_arm_mismatch")
+        if consumption.get("readiness_hash") != arm.get("readiness_hash"):
+            blockers.append("fomc_live_auto_consumption_readiness_mismatch")
+    if secret is not None:
+        if secret.get("arm_id") != arm.get("arm_id"):
+            blockers.append("fomc_live_auto_secret_arm_mismatch")
+        if secret.get("arm_token_sha256") != arm.get("arm_token_sha256"):
+            blockers.append("fomc_live_auto_secret_token_mismatch")
+    return tuple(dict.fromkeys(blockers))
 
 
 def fomc_live_arm_valid(
@@ -2184,12 +2698,12 @@ def _record_account_observation(
     preflight: Mapping[str, Any],
     *,
     observed_at: str,
-) -> None:
+) -> Any:
     account = preflight.get("account") or {}
     balance = account.get("balance") or {}
     positions = account.get("positions") or []
     source_hash = str(preflight["preflight_hash"])
-    ledger.record_account_observation(
+    return ledger.record_account_observation(
         batch_id=batch.manifest.batch_id,
         observed_at=observed_at,
         quote_asset="USDT",
@@ -2519,6 +3033,1243 @@ def _mark_inflight_unknown(
 def _exit_client_order_id(event_id: str, purpose: str) -> str:
     digest = canonical_hash({"event_id": event_id, "purpose": purpose})
     return f"qf-{digest[:32]}"
+
+
+def _management_enabled(scope: Mapping[str, Any]) -> bool:
+    return _float(scope.get("management_contract_version"), math.nan) == float(
+        FOMC_LIVE_MANAGEMENT_VERSION
+    )
+
+
+def _management_entry_time(execution: Mapping[str, Any]) -> str:
+    entry = execution.get("entry") or {}
+    fills = entry.get("fills") if isinstance(entry, Mapping) else None
+    occurred = [
+        str(row.get("occurred_at"))
+        for row in fills or ()
+        if isinstance(row, Mapping) and row.get("occurred_at")
+    ]
+    if occurred:
+        return max(_utc(value).isoformat() for value in occurred)
+    observed_at = execution.get("observed_at")
+    if not observed_at:
+        raise FomcLiveError("fomc_live_management_entry_time_missing")
+    return _utc(str(observed_at)).isoformat()
+
+
+def _management_entry_fee_usdt(execution: Mapping[str, Any]) -> float:
+    entry = execution.get("entry") or {}
+    direct = _float(entry.get("fee_usdt"), math.nan)
+    if math.isfinite(direct) and direct >= 0.0:
+        return direct
+    total = 0.0
+    for row in entry.get("fills") or ():
+        if not isinstance(row, Mapping):
+            continue
+        if str(row.get("fee_asset") or "").upper() != "USDT":
+            raise FomcLiveError("fomc_live_management_entry_fee_asset_invalid")
+        fee = _float(row.get("fee"), math.nan)
+        if not math.isfinite(fee) or fee < 0.0:
+            raise FomcLiveError("fomc_live_management_entry_fee_invalid")
+        total += fee
+    return total
+
+
+def _management_state_payload(
+    *,
+    event: FomcEventDefinition,
+    parent_batch: VerifiedDecisionBatch,
+    scope: Mapping[str, Any],
+    execution: Mapping[str, Any],
+    created_at: str,
+) -> dict[str, Any]:
+    """Freeze post-entry thresholds before the first management venue mutation."""
+
+    entry = execution.get("entry") or {}
+    side = str(scope.get("side") or "")
+    entry_price = _float(entry.get("average"), math.nan)
+    initial_quantity = _float(entry.get("filled"), math.nan)
+    if not math.isfinite(initial_quantity) or initial_quantity <= 0.0:
+        initial_quantity = _float(scope.get("quantity"), math.nan)
+    if side not in {"long", "short"} or not math.isfinite(entry_price) or entry_price <= 0.0:
+        raise FomcLiveError("fomc_live_management_entry_invalid")
+    if not math.isfinite(initial_quantity) or initial_quantity <= 0.0:
+        raise FomcLiveError("fomc_live_management_quantity_invalid")
+    costs = scope.get("costs")
+    if not isinstance(costs, Mapping):
+        raise FomcLiveError("fomc_live_management_costs_missing")
+    exit_fee_rate = _float(costs.get("exit_fee_rate"), math.nan)
+    exit_slippage_rate = _float(costs.get("exit_slippage_rate"), math.nan)
+    adverse_funding_rate = _float(costs.get("adverse_funding_rate"), math.nan)
+    entry_fee_usdt = _management_entry_fee_usdt(execution)
+    adverse_funding_usdt = entry_price * initial_quantity * adverse_funding_rate
+    initial_stop_price = _float(scope.get("stop_price"), math.nan)
+    active_stop_id = str(scope.get("stop_client_order_id") or "")
+    if (
+        not active_stop_id
+        or not math.isfinite(initial_stop_price)
+        or initial_stop_price <= 0.0
+    ):
+        raise FomcLiveError("fomc_live_management_initial_stop_invalid")
+    full_risk_usdt = _float(scope.get("maximum_stress_loss_usdt"), math.nan)
+    if not math.isfinite(full_risk_usdt) or full_risk_usdt <= 0.0:
+        full_risk_usdt = _float(scope.get("risk_per_unit_usdt"), math.nan) * initial_quantity
+    worst_stop_fill = (
+        initial_stop_price * (1.0 - DEFAULT_FOMC_STOP_GAP_RATE)
+        if side == "long"
+        else initial_stop_price * (1.0 + DEFAULT_FOMC_STOP_GAP_RATE)
+    )
+    structural_loss_per_unit = (
+        entry_price - worst_stop_fill
+        if side == "long"
+        else worst_stop_fill - entry_price
+    )
+    actual_stress_risk = (
+        structural_loss_per_unit * initial_quantity
+        + entry_fee_usdt
+        + worst_stop_fill
+        * initial_quantity
+        * (exit_fee_rate + exit_slippage_rate)
+        + adverse_funding_usdt
+    )
+    if (
+        not math.isfinite(structural_loss_per_unit)
+        or structural_loss_per_unit <= 0.0
+        or not math.isfinite(actual_stress_risk)
+        or actual_stress_risk <= 0.0
+    ):
+        raise FomcLiveError("fomc_live_management_actual_stress_invalid")
+    full_risk_usdt = (
+        max(full_risk_usdt, actual_stress_risk)
+        if math.isfinite(full_risk_usdt) and full_risk_usdt > 0.0
+        else actual_stress_risk
+    )
+    thresholds = calculate_profit_thresholds(
+        side=side,
+        entry_price=entry_price,
+        initial_quantity=initial_quantity,
+        full_risk_usdt=full_risk_usdt,
+        entry_fee_usdt=entry_fee_usdt,
+        adverse_funding_usdt=adverse_funding_usdt,
+        exit_fee_rate=exit_fee_rate,
+        exit_slippage_rate=exit_slippage_rate,
+    )
+    partial = calculate_one_third_exit_quantity(
+        initial_quantity=initial_quantity,
+        quantity_step=_float(scope.get("quantity_step"), math.nan),
+        minimum_quantity=_float(scope.get("minimum_quantity"), math.nan),
+    )
+    if not thresholds.allowed:
+        raise FomcLiveError(
+            "fomc_live_management_thresholds_invalid:" + ",".join(thresholds.reasons)
+        )
+    if not partial.allowed:
+        raise FomcLiveError(
+            "fomc_live_management_partial_invalid:" + ",".join(partial.reasons)
+        )
+    freeze_h0 = _float(scope.get("freeze_h0"), math.nan)
+    freeze_l0 = _float(scope.get("freeze_l0"), math.nan)
+    if (
+        not active_stop_id
+        or not math.isfinite(initial_stop_price)
+        or initial_stop_price <= 0.0
+        or not math.isfinite(freeze_h0)
+        or not math.isfinite(freeze_l0)
+        or freeze_l0 >= freeze_h0
+    ):
+        raise FomcLiveError("fomc_live_management_scope_invalid")
+    created = _utc(created_at).isoformat()
+    core = {
+        "schema_version": FOMC_LIVE_MANAGEMENT_VERSION,
+        "artifact_type": "fomc_live_position_management",
+        "event_id": event.event_id,
+        "parent_batch_id": parent_batch.manifest.batch_id,
+        "entry_client_order_id": str(scope.get("entry_client_order_id") or ""),
+        "side": side,
+        "entry_at": _management_entry_time(execution),
+        "entry_price": entry_price,
+        "initial_quantity": initial_quantity,
+        "remaining_quantity": initial_quantity,
+        "full_risk_usdt": full_risk_usdt,
+        "entry_fee_usdt": entry_fee_usdt,
+        "adverse_funding_usdt": adverse_funding_usdt,
+        "net_break_even_price": thresholds.net_break_even_price,
+        "net_one_r_price": thresholds.net_one_r_price,
+        "net_two_r_price": thresholds.net_two_r_price,
+        "initial_stop_client_order_id": active_stop_id,
+        "initial_stop_price": initial_stop_price,
+        "active_stop_client_order_id": active_stop_id,
+        "active_stop_price": initial_stop_price,
+        "freeze_h0": freeze_h0,
+        "freeze_l0": freeze_l0,
+        "partial_quantity": partial.partial_quantity,
+        "price_tick": _float(scope.get("price_tick"), math.nan),
+        "partial_exit_confirmed": False,
+        "one_r_confirmed": False,
+        "pending_action": None,
+        "actions": [],
+        "previous_management_hash": None,
+        "created_at": created,
+        "updated_at": created,
+    }
+    if not math.isfinite(_float(core["price_tick"], math.nan)) or _float(
+        core["price_tick"], math.nan
+    ) <= 0.0:
+        raise FomcLiveError("fomc_live_management_price_tick_missing")
+    return core | {"management_hash": canonical_hash(core)}
+
+
+def _advance_management_state(
+    state: Mapping[str, Any],
+    *,
+    updated_at: str,
+    **changes: Any,
+) -> dict[str, Any]:
+    core = {key: value for key, value in state.items() if key != "management_hash"}
+    core.update(changes)
+    core["previous_management_hash"] = state.get("management_hash")
+    core["updated_at"] = _utc(updated_at).isoformat()
+    return core | {"management_hash": canonical_hash(core)}
+
+
+def _round_protective_stop_price(*, side: str, price: float, price_tick: float) -> float:
+    if side not in {"long", "short"} or not math.isfinite(price) or price <= 0.0:
+        raise FomcLiveError("fomc_live_management_stop_price_invalid")
+    if not math.isfinite(price_tick) or price_tick <= 0.0:
+        raise FomcLiveError("fomc_live_management_price_tick_invalid")
+    units = price / price_tick
+    rounded_units = (
+        math.ceil(units - 1e-12) if side == "long" else math.floor(units + 1e-12)
+    )
+    rounded = rounded_units * price_tick
+    if rounded <= 0.0 or not math.isfinite(rounded):
+        raise FomcLiveError("fomc_live_management_stop_price_invalid")
+    decimals = max(0, int(-math.floor(math.log10(price_tick))) + 3)
+    return round(rounded, decimals)
+
+
+def _management_action_key(
+    state: Mapping[str, Any],
+    *,
+    purpose: str,
+    replacement_stop_price: float,
+    partial_quantity: float | None,
+) -> str:
+    return canonical_hash(
+        {
+            "management_hash": state.get("management_hash"),
+            "purpose": purpose,
+            "active_stop_client_order_id": state.get("active_stop_client_order_id"),
+            "replacement_stop_price": replacement_stop_price,
+            "partial_quantity": partial_quantity,
+        }
+    )
+
+
+def _build_fomc_management_batch(
+    parent_batch: VerifiedDecisionBatch,
+    event: FomcEventDefinition,
+    *,
+    action_key: str,
+    purpose: str,
+    signed_quantity_before: float,
+    signed_quantity_after: float,
+    partial_quantity: float | None,
+    replacement_stop_price: float,
+    created_at: str,
+) -> tuple[VerifiedDecisionBatch, PlannedOrder | None, PlannedOrder]:
+    """Create an immutable partial/replacement-stop batch before venue mutation."""
+
+    if (
+        not is_sha256(action_key)
+        or signed_quantity_before == 0.0
+        or signed_quantity_after == 0.0
+        or signed_quantity_before * signed_quantity_after <= 0.0
+        or not math.isfinite(replacement_stop_price)
+        or replacement_stop_price <= 0.0
+    ):
+        raise FomcLiveError("fomc_live_management_batch_inputs_invalid")
+    if partial_quantity is not None and (
+        not math.isfinite(partial_quantity)
+        or partial_quantity <= 0.0
+        or partial_quantity >= abs(signed_quantity_before)
+    ):
+        raise FomcLiveError("fomc_live_management_partial_quantity_invalid")
+    created = _utc(created_at).isoformat()
+    batch_id = canonical_hash(
+        {
+            "parent_batch_id": parent_batch.manifest.batch_id,
+            "event_id": event.event_id,
+            "action_key": action_key,
+            "purpose": purpose,
+            "signed_quantity_before": signed_quantity_before,
+            "signed_quantity_after": signed_quantity_after,
+            "partial_quantity": partial_quantity,
+            "replacement_stop_price": replacement_stop_price,
+            "created_at": created,
+            "kind": "fomc_live_management_v1",
+        }
+    )
+    risk = RiskDecision.create(
+        batch_id=batch_id,
+        portfolio_target_id=parent_batch.target.portfolio_target_id,
+        decision_time=parent_batch.target.decision_time,
+        approved=True,
+        input_target=parent_batch.target.target_weights,
+        approved_target=parent_batch.target.target_weights,
+        adjustments=("FOMC_LIVE_POST_ENTRY_MANAGEMENT",),
+        violations=(),
+        risk_state_hash=canonical_hash(
+            {
+                "parent_batch_id": parent_batch.manifest.batch_id,
+                "action_key": action_key,
+                "purpose": purpose,
+            }
+        ),
+        increase_risk_allowed=False,
+        reduce_risk_allowed=True,
+    )
+    side = "sell" if signed_quantity_before > 0.0 else "buy"
+    partial_order: PlannedOrder | None = None
+    orders: list[PlannedOrder] = []
+    if partial_quantity is not None:
+        partial_order = PlannedOrder.create(
+            batch_id=batch_id,
+            decision_ids=parent_batch.target.decision_ids,
+            symbol=event.instrument_key,
+            side=side,
+            quantity=partial_quantity,
+            reduce_only=True,
+            phase="reduce",
+            sequence=1,
+            order_type="MARKET",
+        )
+        orders.append(partial_order)
+    stop_order = PlannedOrder.create(
+        batch_id=batch_id,
+        decision_ids=parent_batch.target.decision_ids,
+        symbol=event.instrument_key,
+        side=side,
+        quantity=None,
+        reduce_only=True,
+        phase="protective",
+        sequence=len(orders) + 1,
+        order_type="STOP_MARKET",
+        close_position=True,
+        stop_price=replacement_stop_price,
+    )
+    orders.append(stop_order)
+    plan = OrderPlan.create(
+        batch_id=batch_id,
+        risk_decision_id=risk.risk_decision_id,
+        portfolio_target_id=parent_batch.target.portfolio_target_id,
+        snapshot_id=parent_batch.snapshot.snapshot_id,
+        decision_ids=parent_batch.target.decision_ids,
+        created_at=created,
+        current_position_hash=canonical_hash(
+            {event.instrument_key: float(signed_quantity_before)}
+        ),
+        approved_target=risk.approved_target,
+        orders=tuple(orders),
+        expected_positions={event.instrument_key: float(signed_quantity_after)},
+        reconciliation_tolerance=parent_batch.plan.reconciliation_tolerance,
+        blockers=(),
+        executable=True,
+    )
+    manifest = build_decision_batch_manifest(
+        snapshot=parent_batch.snapshot,
+        intents=parent_batch.intents,
+        target=parent_batch.target,
+        risk=risk,
+        plan=plan,
+        created_at=created,
+    )
+    return (
+        VerifiedDecisionBatch(
+            manifest=manifest,
+            snapshot=parent_batch.snapshot,
+            intents=parent_batch.intents,
+            target=parent_batch.target,
+            risk=risk,
+            plan=plan,
+        ),
+        partial_order,
+        stop_order,
+    )
+
+
+def _plan_management_action(
+    live_store: FomcLiveStore,
+    ledger: RuntimeLedger,
+    parent_batch: VerifiedDecisionBatch,
+    event: FomcEventDefinition,
+    state: Mapping[str, Any],
+    *,
+    purpose: str,
+    replacement_stop_price: float,
+    partial_quantity: float | None,
+    started_at: str,
+) -> tuple[dict[str, Any], VerifiedDecisionBatch, PlannedOrder | None, PlannedOrder]:
+    pending = state.get("pending_action")
+    if isinstance(pending, Mapping):
+        return _pending_management_action_batch(parent_batch, event, state)
+    side = str(state.get("side") or "")
+    remaining = _float(state.get("remaining_quantity"), math.nan)
+    if side not in {"long", "short"} or not math.isfinite(remaining) or remaining <= 0.0:
+        raise FomcLiveError("fomc_live_management_position_invalid")
+    signed_before = remaining if side == "long" else -remaining
+    signed_after = (
+        signed_before
+        if partial_quantity is None
+        else signed_before - partial_quantity if side == "long" else signed_before + partial_quantity
+    )
+    action_key = _management_action_key(
+        state,
+        purpose=purpose,
+        replacement_stop_price=replacement_stop_price,
+        partial_quantity=partial_quantity,
+    )
+    created_at = _utc(started_at).isoformat()
+    batch, partial_order, stop_order = _build_fomc_management_batch(
+        parent_batch,
+        event,
+        action_key=action_key,
+        purpose=purpose,
+        signed_quantity_before=signed_before,
+        signed_quantity_after=signed_after,
+        partial_quantity=partial_quantity,
+        replacement_stop_price=replacement_stop_price,
+        created_at=created_at,
+    )
+    action = {
+        "action_key": action_key,
+        "purpose": purpose,
+        "phase": "planned",
+        "created_at": created_at,
+        "management_batch_id": batch.manifest.batch_id,
+        "signed_quantity_before": signed_before,
+        "signed_quantity_after": signed_after,
+        "partial_quantity": partial_quantity,
+        "partial_client_order_id": (
+            partial_order.client_order_id if partial_order is not None else None
+        ),
+        "replacement_stop_price": replacement_stop_price,
+        "replacement_stop_client_order_id": stop_order.client_order_id,
+        "replaced_stop_client_order_id": state.get("active_stop_client_order_id"),
+        "replaced_stop_price": state.get("active_stop_price"),
+    }
+    next_state = _advance_management_state(
+        state,
+        updated_at=created_at,
+        pending_action=action,
+    )
+    live_store.write_management_state(next_state)
+    ledger.record_verified_batch(batch, recorded_at=created_at)
+    return next_state, batch, partial_order, stop_order
+
+
+def _pending_management_action_batch(
+    parent_batch: VerifiedDecisionBatch,
+    event: FomcEventDefinition,
+    state: Mapping[str, Any],
+) -> tuple[dict[str, Any], VerifiedDecisionBatch, PlannedOrder | None, PlannedOrder]:
+    action = state.get("pending_action")
+    if not isinstance(action, Mapping):
+        raise FomcLiveError("fomc_live_management_pending_action_missing")
+    batch, partial_order, stop_order = _build_fomc_management_batch(
+        parent_batch,
+        event,
+        action_key=str(action.get("action_key") or ""),
+        purpose=str(action.get("purpose") or ""),
+        signed_quantity_before=_float(action.get("signed_quantity_before"), math.nan),
+        signed_quantity_after=_float(action.get("signed_quantity_after"), math.nan),
+        partial_quantity=(
+            _float(action.get("partial_quantity"), math.nan)
+            if action.get("partial_quantity") is not None
+            else None
+        ),
+        replacement_stop_price=_float(action.get("replacement_stop_price"), math.nan),
+        created_at=str(action.get("created_at") or ""),
+    )
+    if (
+        action.get("management_batch_id") != batch.manifest.batch_id
+        or action.get("partial_client_order_id")
+        != (partial_order.client_order_id if partial_order is not None else None)
+        or action.get("replacement_stop_client_order_id") != stop_order.client_order_id
+    ):
+        raise FomcLiveError("fomc_live_management_pending_action_identity_invalid")
+    return dict(action), batch, partial_order, stop_order
+
+
+def _record_management_market_fill(
+    ledger: RuntimeLedger,
+    order: PlannedOrder,
+    *,
+    view: Mapping[str, Any],
+    fills: Sequence[Mapping[str, Any]],
+    evidence_hash: str,
+    reason: str,
+) -> None:
+    current = ledger.get_order(order.client_order_id)
+    filled_at = _time_after(
+        str(current["last_transition_at"]),
+        *(str(row["occurred_at"]) for row in fills),
+    )
+    if current["status"] != "FILLED":
+        ledger.transition_order(
+            order.client_order_id,
+            "FILLED",
+            event_at=filled_at,
+            source_hash=evidence_hash,
+            exchange_order_id=str(view["id"]),
+            executed_quantity=_float(view["filled"]),
+            average_price=_float(view["average"]),
+            reason=reason,
+        )
+    for fill in fills:
+        if ledger.has_fill(
+            client_order_id=order.client_order_id,
+            exchange_trade_id=str(fill["exchange_trade_id"]),
+        ):
+            continue
+        ledger.record_fill(
+            client_order_id=order.client_order_id,
+            exchange_trade_id=str(fill["exchange_trade_id"]),
+            quantity=_float(fill["quantity"]),
+            price=_float(fill["price"]),
+            fee=_float(fill["fee"]),
+            fee_asset=str(fill["fee_asset"]),
+            occurred_at=str(fill["occurred_at"]),
+            source_hash=evidence_hash,
+        )
+
+
+def _management_partial_reconciliation(
+    ledger: RuntimeLedger,
+    event: FomcEventDefinition,
+    *,
+    preflight: Mapping[str, Any],
+    signed_remaining_quantity: float,
+    active_stop_client_order_id: str,
+    active_stop_price: float,
+    price_tick: float,
+    account_observation_hash: str,
+) -> dict[str, Any]:
+    """Persist the target/ledger/exchange evidence before replacing protection."""
+
+    account = preflight.get("account") or {}
+    exchange_quantity = _preflight_exchange_positions(event, preflight).get(
+        event.instrument_key, 0.0
+    )
+    ledger_quantity = ledger.position_quantities().get(event.instrument_key, 0.0)
+    matching_stops = [
+        row
+        for row in account.get("conditional_open_orders", [])
+        if row.get("client_order_id") == active_stop_client_order_id
+    ]
+    stop_exact = len(matching_stops) == 1 and _protective_stop_shape_matches(
+        matching_stops[0],
+        signed_quantity=signed_remaining_quantity,
+        stop_price=active_stop_price,
+        price_tick=price_tick,
+    )
+    tolerance = 1e-12
+    core = {
+        "artifact_type": "fomc_live_management_partial_reconciliation",
+        "event_id": event.event_id,
+        "preflight_hash": preflight["preflight_hash"],
+        "account_observation_hash": account_observation_hash,
+        "target_remaining_quantity": signed_remaining_quantity,
+        "ledger_remaining_quantity": ledger_quantity,
+        "exchange_remaining_quantity": exchange_quantity,
+        "position_tolerance": tolerance,
+        "target_ledger_difference": ledger_quantity - signed_remaining_quantity,
+        "ledger_exchange_difference": exchange_quantity - ledger_quantity,
+        "active_stop_client_order_id": active_stop_client_order_id,
+        "active_stop_exact": stop_exact,
+    }
+    passed = (
+        abs(_float(core["target_ledger_difference"])) <= tolerance
+        and abs(_float(core["ledger_exchange_difference"])) <= tolerance
+        and stop_exact
+    )
+    return core | {
+        "passed": passed,
+        "reconciliation_hash": canonical_hash(core | {"passed": passed}),
+    }
+
+
+def _confirm_management_partial_fill(
+    settings: Settings,
+    event: FomcEventDefinition,
+    ledger: RuntimeLedger,
+    *,
+    management_batch: VerifiedDecisionBatch,
+    exchange: Any,
+    ccxt_symbol: str,
+    partial_order: PlannedOrder,
+    active_stop_client_order_id: str,
+    active_stop_price: float,
+    signed_remaining_quantity: float,
+    price_tick: float,
+    started_at: str,
+) -> tuple[dict[str, Any], Mapping[str, Any]]:
+    """Fill the planned partial first; the active native stop remains live here."""
+
+    current = ledger.get_order(partial_order.client_order_id)
+    if current["status"] == "PLANNED":
+        ledger.transition_order(
+            partial_order.client_order_id,
+            "SUBMITTING",
+            event_at=_time_after(str(current["last_transition_at"]), started_at),
+            source_hash=canonical_hash(
+                {
+                    "event": "fomc_live_management_partial_submission_started",
+                    "client_order_id": partial_order.client_order_id,
+                }
+            ),
+        )
+        response = call_with_time_sync_retry(
+            exchange,
+            exchange.create_order,
+            ccxt_symbol,
+            "market",
+            partial_order.side,
+            _float(partial_order.quantity),
+            None,
+            {"newClientOrderId": partial_order.client_order_id, "reduceOnly": True},
+            retry_attempts=1,
+        )
+        if not isinstance(response, Mapping):
+            raise FomcLiveError("fomc_live_management_partial_response_invalid")
+    elif current["status"] in {"SUBMITTING", "ACKNOWLEDGED", "UNKNOWN"}:
+        response = _fetch_order_by_client_id(
+            exchange,
+            event,
+            ccxt_symbol=ccxt_symbol,
+            client_order_id=partial_order.client_order_id,
+            conditional=False,
+        )
+    elif current["status"] == "FILLED":
+        response = _fetch_order_by_client_id(
+            exchange,
+            event,
+            ccxt_symbol=ccxt_symbol,
+            client_order_id=partial_order.client_order_id,
+            conditional=False,
+        )
+    else:
+        raise FomcLiveError("fomc_live_management_partial_terminal_unfilled")
+    view, fills, evidence_hash = _fetch_market_fill_evidence(
+        exchange,
+        response,
+        ccxt_symbol=ccxt_symbol,
+        client_order_id=partial_order.client_order_id,
+        planned_quantity=_float(partial_order.quantity),
+        confirmed_response=response,
+    )
+    if view["side"] != partial_order.side:
+        raise FomcLiveError("fomc_live_management_partial_side_invalid")
+    _record_management_market_fill(
+        ledger,
+        partial_order,
+        view=view,
+        fills=fills,
+        evidence_hash=evidence_hash,
+        reason="fomc_live_management_partial_fill_confirmed",
+    )
+    post = build_fomc_live_account_preflight(
+        settings,
+        event,
+        observed_at=_time_after(*(str(row["occurred_at"]) for row in fills)),
+        exchange=exchange,
+        halt_present=False,
+        expected_position_quantity=signed_remaining_quantity,
+        expected_stop_client_id=active_stop_client_order_id,
+        expected_stop_price=active_stop_price,
+        price_tick=price_tick,
+    )
+    if (post.get("diagnostics") or {}).get("verdict") != (
+        "fomc_live_account_preflight_pass"
+    ):
+        raise FomcLiveError("fomc_live_management_partial_readback_failed")
+    observed_at = _time_after(
+        str(post["created_at"]),
+        *(str(row["occurred_at"]) for row in fills),
+    )
+    observation = _record_account_observation(
+        ledger,
+        management_batch,
+        post,
+        observed_at=observed_at,
+    )
+    reconciliation = _management_partial_reconciliation(
+        ledger,
+        event,
+        preflight=post,
+        signed_remaining_quantity=signed_remaining_quantity,
+        active_stop_client_order_id=active_stop_client_order_id,
+        active_stop_price=active_stop_price,
+        price_tick=price_tick,
+        account_observation_hash=str(observation.observation_hash),
+    )
+    if not reconciliation["passed"]:
+        raise FomcLiveError("fomc_live_management_partial_reconciliation_failed")
+    return (
+        view
+        | {
+            "fills": list(fills),
+            "evidence_hash": evidence_hash,
+            "post_preflight_hash": post["preflight_hash"],
+            "partial_reconciliation": reconciliation,
+        },
+        post,
+    )
+
+
+def _submit_management_replacement_stop(
+    settings: Settings,
+    event: FomcEventDefinition,
+    ledger: RuntimeLedger,
+    parent_batch: VerifiedDecisionBatch,
+    *,
+    exchange: Any,
+    ccxt_symbol: str,
+    stop_order: PlannedOrder,
+    signed_remaining_quantity: float,
+    price_tick: float,
+    started_at: str,
+) -> tuple[dict[str, Any], Mapping[str, Any]]:
+    current = ledger.get_order(stop_order.client_order_id)
+    if current["status"] == "PLANNED":
+        ledger.transition_order(
+            stop_order.client_order_id,
+            "SUBMITTING",
+            event_at=_time_after(str(current["last_transition_at"]), started_at),
+            source_hash=canonical_hash(
+                {
+                    "event": "fomc_live_management_stop_submission_started",
+                    "client_order_id": stop_order.client_order_id,
+                }
+            ),
+        )
+        response = call_with_time_sync_retry(
+            exchange,
+            exchange.create_order,
+            ccxt_symbol,
+            "STOP_MARKET",
+            stop_order.side,
+            None,
+            None,
+            {
+                "stopPrice": stop_order.stop_price,
+                "closePosition": True,
+                "newClientOrderId": stop_order.client_order_id,
+                "workingType": "MARK_PRICE",
+            },
+            retry_attempts=1,
+        )
+        if not isinstance(response, Mapping):
+            raise FomcLiveError("fomc_live_management_stop_response_invalid")
+    elif current["status"] in {"SUBMITTING", "UNKNOWN", "ACKNOWLEDGED"}:
+        response = _fetch_order_by_client_id(
+            exchange,
+            event,
+            ccxt_symbol=ccxt_symbol,
+            client_order_id=stop_order.client_order_id,
+            conditional=True,
+        )
+    else:
+        raise FomcLiveError("fomc_live_management_stop_terminal_invalid")
+    view = _exchange_response_view(response)
+    if (
+        view["client_order_id"] not in {"", stop_order.client_order_id}
+        or view["id"] == ""
+    ):
+        raise FomcLiveError("fomc_live_management_stop_identity_invalid")
+    post = build_fomc_live_account_preflight(
+        settings,
+        event,
+        observed_at=_time_after(started_at),
+        exchange=exchange,
+        halt_present=False,
+        expected_position_quantity=signed_remaining_quantity,
+        expected_stop_client_id=stop_order.client_order_id,
+        expected_stop_price=_float(stop_order.stop_price),
+        price_tick=price_tick,
+    )
+    if (post.get("diagnostics") or {}).get("verdict") != (
+        "fomc_live_account_preflight_pass"
+    ):
+        raise FomcLiveError("fomc_live_management_stop_readback_failed")
+    readback = next(
+        row
+        for row in (post.get("account") or {}).get("conditional_open_orders", [])
+        if row.get("client_order_id") == stop_order.client_order_id
+    )
+    evidence_hash = canonical_hash(
+        {
+            "event": "fomc_live_management_stop_acknowledged_and_read_back",
+            "response": view,
+            "readback": readback,
+            "post_preflight_hash": post["preflight_hash"],
+        }
+    )
+    current = ledger.get_order(stop_order.client_order_id)
+    if current["status"] != "ACKNOWLEDGED":
+        ledger.transition_order(
+            stop_order.client_order_id,
+            "ACKNOWLEDGED",
+            event_at=_time_after(str(current["last_transition_at"]), started_at),
+            source_hash=evidence_hash,
+            exchange_order_id=str(view["id"]),
+            reason="fomc_live_management_replacement_stop_confirmed",
+        )
+    return (
+        view
+        | {
+            "client_order_id": stop_order.client_order_id,
+            "readback": readback,
+            "evidence_hash": evidence_hash,
+        },
+        post,
+    )
+
+
+def _cancel_uncertain_management_replacement_stop(
+    ledger: RuntimeLedger,
+    parent_batch: VerifiedDecisionBatch,
+    event: FomcEventDefinition,
+    *,
+    exchange: Any,
+    ccxt_symbol: str,
+    replacement_stop_client_order_id: str,
+    signed_remaining_quantity: float,
+    replacement_stop_price: float,
+    price_tick: float,
+    at: str,
+) -> dict[str, Any]:
+    """Resolve and remove a replacement stop whose submit outcome is uncertain."""
+
+    response = _fetch_order_by_client_id(
+        exchange,
+        event,
+        ccxt_symbol=ccxt_symbol,
+        client_order_id=replacement_stop_client_order_id,
+        conditional=True,
+    )
+    view = _exchange_response_view(response)
+    if (
+        view["client_order_id"] != replacement_stop_client_order_id
+        or not view["id"]
+        or not _protective_stop_shape_matches(
+            view,
+            signed_quantity=signed_remaining_quantity,
+            stop_price=replacement_stop_price,
+            price_tick=price_tick,
+        )
+    ):
+        raise FomcLiveError("fomc_live_management_replacement_stop_identity_invalid")
+    if view["status"] == "open":
+        terminal = _cancel_protective_stop(
+            exchange,
+            event,
+            ccxt_symbol=ccxt_symbol,
+            stop=view,
+        )
+    elif view["status"] in {"canceled", "expired", "rejected"}:
+        terminal = _owned_stop_terminal_evidence(
+            exchange,
+            event,
+            ccxt_symbol=ccxt_symbol,
+            client_order_id=replacement_stop_client_order_id,
+            exchange_order_id=str(view["id"]),
+        )
+    else:
+        raise FomcLiveError("fomc_live_management_replacement_stop_terminal_ambiguous")
+    _transition_owned_stop_terminal(
+        ledger,
+        parent_batch,
+        stop_client_order_id=replacement_stop_client_order_id,
+        at=at,
+        source_hash=canonical_hash(
+            {
+                "event": "fomc_live_management_uncertain_replacement_stop_canceled",
+                "replacement_stop_client_order_id": replacement_stop_client_order_id,
+                "terminal": terminal,
+            }
+        ),
+        terminal_evidence=terminal,
+    )
+    return {
+        "replacement_stop": view,
+        "terminal": terminal,
+    }
+
+
+def _continue_management_action(
+    settings: Settings,
+    event: FomcEventDefinition,
+    live_store: FomcLiveStore,
+    ledger: RuntimeLedger,
+    parent_batch: VerifiedDecisionBatch,
+    state: Mapping[str, Any],
+    *,
+    exchange: Any,
+    ccxt_symbol: str,
+    active_stop: Mapping[str, Any] | None,
+    started_at: str,
+) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Resume the sole pending management action without resubmitting UNKNOWNs."""
+
+    action, batch, partial_order, stop_order = _pending_management_action_batch(
+        parent_batch, event, state
+    )
+    ledger.record_verified_batch(batch, recorded_at=str(action["created_at"]))
+    phase = str(action.get("phase") or "")
+    signed_after = _float(action.get("signed_quantity_after"), math.nan)
+    price_tick = _float((state.get("price_tick") or 0.0), math.nan)
+    if not math.isfinite(price_tick) or price_tick <= 0.0:
+        price_tick = _float((state.get("market_rules") or {}).get("price_tick"), math.nan)
+    if not math.isfinite(price_tick) or price_tick <= 0.0:
+        raise FomcLiveError("fomc_live_management_price_tick_missing")
+    if not math.isfinite(signed_after) or signed_after == 0.0:
+        raise FomcLiveError("fomc_live_management_remaining_quantity_invalid")
+    evidence: dict[str, Any] = {}
+
+    if partial_order is not None and phase == "planned":
+        partial_fill, _ = _confirm_management_partial_fill(
+            settings,
+            event,
+            ledger,
+            management_batch=batch,
+            exchange=exchange,
+            ccxt_symbol=ccxt_symbol,
+            partial_order=partial_order,
+            active_stop_client_order_id=str(action["replaced_stop_client_order_id"]),
+            active_stop_price=_float(action["replaced_stop_price"]),
+            signed_remaining_quantity=signed_after,
+            price_tick=price_tick,
+            started_at=started_at,
+        )
+        evidence["partial_fill"] = partial_fill
+        action = dict(action) | {
+            "phase": "partial_confirmed",
+            "partial_fill": partial_fill,
+        }
+        state = _advance_management_state(
+            state,
+            updated_at=started_at,
+            remaining_quantity=abs(signed_after),
+            partial_exit_confirmed=True,
+            pending_action=action,
+        )
+        live_store.write_management_state(state)
+        phase = "partial_confirmed"
+    elif partial_order is None and phase == "planned":
+        phase = "ready_to_cancel"
+
+    if phase in {"partial_confirmed", "ready_to_cancel", "cancelling_active_stop"}:
+        if phase != "cancelling_active_stop":
+            action = dict(action) | {"phase": "cancelling_active_stop"}
+            state = _advance_management_state(
+                state,
+                updated_at=started_at,
+                pending_action=action,
+            )
+            live_store.write_management_state(state)
+        replaced_stop_id = str(action.get("replaced_stop_client_order_id") or "")
+        if not replaced_stop_id:
+            raise FomcLiveError("fomc_live_management_replaced_stop_missing")
+        if active_stop is not None:
+            if active_stop.get("client_order_id") != replaced_stop_id:
+                raise FomcLiveError("fomc_live_management_replaced_stop_identity_invalid")
+            terminal = _cancel_protective_stop(
+                exchange,
+                event,
+                ccxt_symbol=ccxt_symbol,
+                stop=active_stop,
+            )
+        else:
+            current = ledger.get_order(replaced_stop_id)
+            terminal = _owned_stop_terminal_evidence(
+                exchange,
+                event,
+                ccxt_symbol=ccxt_symbol,
+                client_order_id=replaced_stop_id,
+                exchange_order_id=(
+                    str(current["exchange_order_id"])
+                    if current["exchange_order_id"] is not None
+                    else None
+                ),
+            )
+        _transition_owned_stop_terminal(
+            ledger,
+            parent_batch,
+            stop_client_order_id=replaced_stop_id,
+            at=started_at,
+            source_hash=canonical_hash(
+                {
+                    "event": "fomc_live_management_active_stop_canceled",
+                    "action_key": action["action_key"],
+                    "terminal": terminal,
+                }
+            ),
+            terminal_evidence=terminal,
+        )
+        evidence["canceled_stop"] = terminal
+        action = dict(action) | {
+            "phase": "active_stop_canceled",
+            "canceled_stop": terminal,
+        }
+        state = _advance_management_state(
+            state,
+            updated_at=started_at,
+            pending_action=action,
+        )
+        live_store.write_management_state(state)
+        phase = "active_stop_canceled"
+
+    if phase in {"active_stop_canceled", "submitting_replacement_stop"}:
+        if phase != "submitting_replacement_stop":
+            action = dict(action) | {"phase": "submitting_replacement_stop"}
+            state = _advance_management_state(
+                state,
+                updated_at=started_at,
+                pending_action=action,
+            )
+            live_store.write_management_state(state)
+        replacement_stop, _ = _submit_management_replacement_stop(
+            settings,
+            event,
+            ledger,
+            parent_batch,
+            exchange=exchange,
+            ccxt_symbol=ccxt_symbol,
+            stop_order=stop_order,
+            signed_remaining_quantity=signed_after,
+            price_tick=price_tick,
+            started_at=started_at,
+        )
+        evidence["replacement_stop"] = replacement_stop
+        completed_action = dict(action) | {
+            "phase": "completed",
+            "replacement_stop": replacement_stop,
+            "completed_at": _time_after(started_at),
+        }
+        actions = list(state.get("actions") or ())
+        actions.append(completed_action)
+        next_state = _advance_management_state(
+            state,
+            updated_at=str(completed_action["completed_at"]),
+            remaining_quantity=abs(signed_after),
+            active_stop_client_order_id=stop_order.client_order_id,
+            active_stop_price=_float(stop_order.stop_price),
+            partial_exit_confirmed=(
+                bool(state.get("partial_exit_confirmed")) or partial_order is not None
+            ),
+            pending_action=None,
+            actions=actions,
+        )
+        live_store.write_management_state(next_state)
+        return next_state, evidence, True
+    raise FomcLiveError("fomc_live_management_action_phase_invalid")
+
+
+def _management_completed_after(
+    candles: Sequence[Any], *, entry_at: str, interval_minutes: int
+) -> tuple[Any, ...]:
+    entry_time = _utc(entry_at)
+    completed = tuple(
+        candle
+        for candle in candles
+        if getattr(candle, "interval_minutes", None) == interval_minutes
+        and getattr(candle, "closed_at", entry_time) > entry_time
+    )
+    if any(
+        later.closed_at <= earlier.closed_at
+        for earlier, later in zip(completed, completed[1:])
+    ):
+        raise FomcLiveError("fomc_live_management_candles_not_ordered")
+    return completed
+
+
+def _management_atr14(hourly: Sequence[Any]) -> float | None:
+    if len(hourly) < 15:
+        return None
+    bars = hourly[-15:]
+    if any(
+        later.closed_at - earlier.closed_at != dt.timedelta(hours=1)
+        for earlier, later in zip(bars, bars[1:])
+    ):
+        raise FomcLiveError("fomc_live_management_hourly_gap")
+    true_ranges = [
+        max(
+            float(current.high) - float(current.low),
+            abs(float(current.high) - float(previous.close)),
+            abs(float(current.low) - float(previous.close)),
+        )
+        for previous, current in zip(bars, bars[1:])
+    ]
+    atr = sum(true_ranges) / len(true_ranges)
+    if not math.isfinite(atr) or atr <= 0.0:
+        raise FomcLiveError("fomc_live_management_atr_invalid")
+    return atr
+
+
+def _evaluate_fomc_management_policy(
+    state: Mapping[str, Any],
+    *,
+    hourly: Sequence[Any],
+    fifteen_minute: Sequence[Any],
+    mark_price: float,
+    funding_rate: float,
+) -> dict[str, Any]:
+    """Return a no-mutation management decision from completed public candles."""
+
+    side = str(state.get("side") or "")
+    entry_at = str(state.get("entry_at") or "")
+    if side not in {"long", "short"} or not entry_at:
+        raise FomcLiveError("fomc_live_management_state_invalid")
+    if not math.isfinite(mark_price) or mark_price <= 0.0:
+        raise FomcLiveError("fomc_live_management_mark_price_invalid")
+    completed_hourly = tuple(
+        candle
+        for candle in hourly
+        if getattr(candle, "interval_minutes", None) == 60
+    )
+    hourly_after = _management_completed_after(
+        hourly, entry_at=entry_at, interval_minutes=60
+    )
+    fifteen_after = _management_completed_after(
+        fifteen_minute, entry_at=entry_at, interval_minutes=15
+    )
+    net_one_r = _float(state.get("net_one_r_price"), math.nan)
+    net_two_r = _float(state.get("net_two_r_price"), math.nan)
+    net_break_even = _float(state.get("net_break_even_price"), math.nan)
+    active_stop = _float(state.get("active_stop_price"), math.nan)
+    if any(
+        not math.isfinite(value) or value <= 0.0
+        for value in (net_one_r, net_two_r, net_break_even, active_stop)
+    ):
+        raise FomcLiveError("fomc_live_management_threshold_state_invalid")
+    reached_one_r = bool(state.get("one_r_confirmed")) or any(
+        (float(candle.close) >= net_one_r if side == "long" else float(candle.close) <= net_one_r)
+        for candle in fifteen_after
+    )
+    reached_two_r = any(
+        (float(candle.close) >= net_two_r if side == "long" else float(candle.close) <= net_two_r)
+        for candle in fifteen_after
+    )
+    latest_hour = hourly_after[-1] if hourly_after else None
+    if latest_hour is not None:
+        returned_to_range = (
+            float(latest_hour.close) <= _float(state.get("freeze_h0"), math.nan)
+            if side == "long"
+            else float(latest_hour.close) >= _float(state.get("freeze_l0"), math.nan)
+        )
+        if returned_to_range:
+            return {
+                "kind": "flatten",
+                "purpose": "returned-to-frozen-range",
+                "reached_one_r": reached_one_r,
+                "hourly_count": len(hourly_after),
+            }
+    full_risk = _float(state.get("full_risk_usdt"), math.nan)
+    notional = _float(state.get("entry_price"), math.nan) * _float(
+        state.get("remaining_quantity"), math.nan
+    )
+    adverse_funding = (
+        side == "long" and funding_rate > 0.0
+    ) or (side == "short" and funding_rate < 0.0)
+    if (
+        not reached_one_r
+        and adverse_funding
+        and math.isfinite(full_risk)
+        and math.isfinite(notional)
+        and abs(funding_rate) * notional > 0.1 * full_risk
+    ):
+        return {
+            "kind": "flatten",
+            "purpose": "adverse-funding-before-one-r",
+            "reached_one_r": reached_one_r,
+            "hourly_count": len(hourly_after),
+        }
+    if len(hourly_after) >= 8 and not reached_one_r:
+        return {
+            "kind": "flatten",
+            "purpose": "eight-hour-no-one-r",
+            "reached_one_r": reached_one_r,
+            "hourly_count": len(hourly_after),
+        }
+
+    price_tick = _float(state.get("price_tick"), math.nan)
+    if not bool(state.get("partial_exit_confirmed")) and reached_two_r:
+        next_stop = _round_protective_stop_price(
+            side=side, price=net_one_r, price_tick=price_tick
+        )
+        return {
+            "kind": "action",
+            "purpose": "two-r-partial-and-profit-floor",
+            "replacement_stop_price": next_stop,
+            "partial_quantity": _float(state.get("partial_quantity"), math.nan),
+            "reached_one_r": reached_one_r,
+            "hourly_count": len(hourly_after),
+        }
+    if not bool(state.get("partial_exit_confirmed")) and reached_one_r:
+        next_stop = _round_protective_stop_price(
+            side=side, price=net_break_even, price_tick=price_tick
+        )
+        tighter = next_stop > active_stop if side == "long" else next_stop < active_stop
+        return {
+            "kind": "action" if tighter else "noop",
+            "purpose": "one-r-net-break-even-stop",
+            "replacement_stop_price": next_stop if tighter else None,
+            "partial_quantity": None,
+            "reached_one_r": reached_one_r,
+            "hourly_count": len(hourly_after),
+        }
+    if bool(state.get("partial_exit_confirmed")) and hourly_after:
+        atr14 = _management_atr14(completed_hourly)
+        if atr14 is not None:
+            favorable_close = (
+                max(float(candle.close) for candle in hourly_after)
+                if side == "long"
+                else min(float(candle.close) for candle in hourly_after)
+            )
+            tail = calculate_post_2r_tail_stop(
+                side=side,
+                previous_stop_price=active_stop,
+                net_one_r_floor_price=net_one_r,
+                favorable_completed_1h_close_price=favorable_close,
+                atr14_1h=atr14,
+                partial_exit_confirmed=True,
+            )
+            if tail.allowed and tail.next_stop_price is not None:
+                next_stop = _round_protective_stop_price(
+                    side=side,
+                    price=tail.next_stop_price,
+                    price_tick=price_tick,
+                )
+                tighter = (
+                    next_stop > active_stop if side == "long" else next_stop < active_stop
+                )
+                if tighter:
+                    return {
+                        "kind": "action",
+                        "purpose": "post-two-r-atr-trailing-stop",
+                        "replacement_stop_price": next_stop,
+                        "partial_quantity": None,
+                        "reached_one_r": reached_one_r,
+                        "hourly_count": len(hourly_after),
+                        "atr14_1h": atr14,
+                        "favorable_completed_1h_close_price": favorable_close,
+                    }
+    return {
+        "kind": "noop",
+        "reached_one_r": reached_one_r,
+        "hourly_count": len(hourly_after),
+    }
 
 
 def _build_fomc_reduction_batch(
@@ -2872,13 +4623,15 @@ def _transition_owned_stop_terminal(
     ledger: RuntimeLedger,
     parent_batch: VerifiedDecisionBatch,
     *,
+    stop_client_order_id: str | None = None,
     at: str,
     source_hash: str,
     terminal_evidence: Mapping[str, Any] | None,
     allow_unsubmitted: bool = False,
 ) -> None:
-    stop_order = parent_batch.plan.orders[1]
-    current = ledger.get_order(stop_order.client_order_id)
+    default_stop_order = parent_batch.plan.orders[1]
+    client_order_id = stop_client_order_id or default_stop_order.client_order_id
+    current = ledger.get_order(client_order_id)
     if current["status"] in {"CANCELED", "REJECTED", "EXPIRED"}:
         return
     if current["status"] == "FILLED":
@@ -2890,7 +4643,7 @@ def _transition_owned_stop_terminal(
     else:
         if terminal_evidence is None:
             raise FomcLiveError("fomc_live_stop_terminal_evidence_missing")
-        if terminal_evidence.get("client_order_id") != stop_order.client_order_id:
+        if terminal_evidence.get("client_order_id") != client_order_id:
             raise FomcLiveError("fomc_live_stop_terminal_client_identity_invalid")
         observed_status = _exchange_status(terminal_evidence.get("status"))
         next_status = {
@@ -2903,7 +4656,7 @@ def _transition_owned_stop_terminal(
         exchange_order_id = str(terminal_evidence.get("id") or "") or None
         reason = "fomc_live_owned_protection_terminal_after_flatten"
     ledger.transition_order(
-        stop_order.client_order_id,
+        client_order_id,
         next_status,
         event_at=_time_after(str(current["last_transition_at"]), at),
         source_hash=source_hash,
@@ -2931,6 +4684,7 @@ def _ledgered_flatten_position(
     purpose: str,
     protective_stop: Mapping[str, Any] | None,
     started_at: str,
+    protective_stop_client_order_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Submit a registered reduce-only order and close its ledger evidence loop."""
 
@@ -3155,7 +4909,11 @@ def _ledgered_flatten_position(
             source_hash=evidence_hash,
         )
 
-    stop_current = ledger.get_order(parent_batch.plan.orders[1].client_order_id)
+    active_stop_client_order_id = (
+        protective_stop_client_order_id
+        or parent_batch.plan.orders[1].client_order_id
+    )
+    stop_current = ledger.get_order(active_stop_client_order_id)
     stop_terminal = flattened.get("canceled_stop")
     if (
         stop_terminal is None
@@ -3165,7 +4923,7 @@ def _ledgered_flatten_position(
             exchange,
             event,
             ccxt_symbol=ccxt_symbol,
-            client_order_id=parent_batch.plan.orders[1].client_order_id,
+            client_order_id=active_stop_client_order_id,
             exchange_order_id=(
                 str(stop_current["exchange_order_id"])
                 if stop_current["exchange_order_id"] is not None
@@ -3175,6 +4933,7 @@ def _ledgered_flatten_position(
     _transition_owned_stop_terminal(
         ledger,
         parent_batch,
+        stop_client_order_id=active_stop_client_order_id,
         at=filled_at,
         source_hash=canonical_hash(
             {
@@ -3277,9 +5036,6 @@ def _ledger_native_stop_flatten(
         or abs(filled_quantity - abs(signed_quantity)) > 1e-12
     ):
         raise FomcLiveError("fomc_live_native_stop_identity_invalid")
-    stop_order = parent_batch.plan.orders[1]
-    if stop_order.client_order_id != stop_client_order_id:
-        raise FomcLiveError("fomc_live_native_stop_plan_identity_invalid")
     filled_at = _time_after(observed_at, *(str(row["occurred_at"]) for row in fills))
     current = ledger.get_order(stop_client_order_id)
     if current["status"] != "FILLED":
@@ -4167,6 +5923,7 @@ def manage_fomc_live_position(
         "halted_emergency_flattened",
         "protection_failure_flattened",
         "native_stop_flattened",
+        "management_early_exit_flattened",
     }:
         return execution
     if execution.get("status") not in {
@@ -4178,9 +5935,42 @@ def manage_fomc_live_position(
     }:
         raise FomcLiveError("fomc_live_execution_not_manageable")
     scope = execution.get("scope") or {}
+    parent_batch = read_decision_batch(
+        state_store.batches_root / str(execution["batch_id"])
+    )
+    ledger = live_store.ledger()
+    management_state: dict[str, Any] | None = None
+    if _management_enabled(scope):
+        management_state = live_store.read_management_state()
+        if management_state is None:
+            management_state = _management_state_payload(
+                event=event,
+                parent_batch=parent_batch,
+                scope=scope,
+                execution=execution,
+                created_at=deadline_time.isoformat(),
+            )
+            live_store.write_management_state(management_state)
+        if (
+            management_state.get("event_id") != event.event_id
+            or management_state.get("parent_batch_id")
+            != parent_batch.manifest.batch_id
+        ):
+            raise FomcLiveError("fomc_live_management_state_identity_invalid")
     side = str(scope.get("side") or "")
-    signed_quantity = _float(scope.get("quantity")) * (1.0 if side == "long" else -1.0)
+    signed_quantity = _float(scope.get("quantity")) * (
+        1.0 if side == "long" else -1.0
+    )
     stop_client_id = str(scope.get("stop_client_order_id") or "")
+    active_stop_price = _float(scope.get("stop_price"), math.nan)
+    if management_state is not None:
+        side = str(management_state["side"])
+        signed_quantity = _float(management_state["remaining_quantity"]) * (
+            1.0 if side == "long" else -1.0
+        )
+        stop_client_id = str(management_state["active_stop_client_order_id"])
+        active_stop_price = _float(management_state["active_stop_price"], math.nan)
+    current_protection: Mapping[str, Any] | None = execution.get("protection")
 
     def artifact(
         status: str,
@@ -4200,7 +5990,7 @@ def manage_fomc_live_position(
             observed_at=deadline_time.isoformat(),
             status=status,
             entry=execution.get("entry"),
-            protection=execution.get("protection"),
+            protection=current_protection,
             blockers=blockers,
             reconciliation=reconciliation,
             exchange_mutation_attempted=exchange_mutation_attempted,
@@ -4214,7 +6004,7 @@ def manage_fomc_live_position(
         halt_present=False,
         expected_position_quantity=signed_quantity,
         expected_stop_client_id=stop_client_id,
-        expected_stop_price=_float(scope.get("stop_price")),
+        expected_stop_price=active_stop_price,
         price_tick=_float(scope.get("price_tick")),
     )
     account = preflight.get("account") or {}
@@ -4247,15 +6037,11 @@ def manage_fomc_live_position(
         and _protective_stop_shape_matches(
             matching_stops[0],
             signed_quantity=signed_quantity,
-            stop_price=_float(scope.get("stop_price"), math.nan),
+            stop_price=active_stop_price,
             price_tick=_float(scope.get("price_tick")),
         )
     )
     only_owned_stop = len(conditional) == len(matching_stops) <= 1
-    parent_batch = read_decision_batch(
-        state_store.batches_root / str(execution["batch_id"])
-    )
-    ledger = live_store.ledger()
     reduction_attempt = _existing_reduction_attempt(live_store, parent_batch, event)
     entry_order = parent_batch.plan.orders[0]
     entry_state = ledger.get_order(entry_order.client_order_id)
@@ -4263,16 +6049,22 @@ def manage_fomc_live_position(
     ledger_position_exact = abs(
         ledger.position_quantities().get(event.instrument_key, 0.0) - signed_quantity
     ) <= 1e-12
+    expected_entry_quantity = (
+        _float(management_state.get("initial_quantity"), math.nan)
+        if management_state is not None
+        else abs(signed_quantity)
+    )
     strategy_position_evidence_exact = (
         entry_state["status"] == "FILLED"
-        and abs(_float(entry_state["executed_quantity"]) - abs(signed_quantity))
+        and abs(_float(entry_state["executed_quantity"]) - expected_entry_quantity)
         <= 1e-12
         and execution_entry.get("client_order_id") == entry_order.client_order_id
         and execution_entry.get("side") == entry_order.side
         and execution_entry.get("symbol")
         in {event.symbol, str(account.get("resolved_symbol"))}
         and _exchange_status(execution_entry.get("status")) == "closed"
-        and abs(_float(execution_entry.get("filled")) - abs(signed_quantity)) <= 1e-12
+        and abs(_float(execution_entry.get("filled")) - expected_entry_quantity)
+        <= 1e-12
         and ledger_position_exact
     )
 
@@ -4367,8 +6159,405 @@ def manage_fomc_live_position(
         and only_owned_stop
         and (not matching_stops or not stop_shape_exact)
     )
+    pending_action = (
+        management_state.get("pending_action")
+        if management_state is not None
+        else None
+    )
+    if (
+        management_state is not None
+        and isinstance(pending_action, Mapping)
+        and deadline_time < event.force_exit_time
+        and exact_position
+        and strategy_position_evidence_exact
+        and not regular
+        and only_owned_stop
+    ):
+        action_phase = str(pending_action.get("phase") or "")
+        active_stop = matching_stops[0] if matching_stops else None
+        can_continue = preflight_passed or (
+            action_phase in {"active_stop_canceled", "submitting_replacement_stop"}
+            and not conditional
+        )
+        if can_continue:
+            try:
+                management_state, management_evidence, _ = _continue_management_action(
+                    settings,
+                    event,
+                    live_store,
+                    ledger,
+                    parent_batch,
+                    management_state,
+                    exchange=exchange,
+                    ccxt_symbol=str(account["resolved_symbol"]),
+                    active_stop=active_stop,
+                    started_at=_time_after(str(preflight["created_at"])),
+                )
+                current_protection = management_evidence.get(
+                    "replacement_stop", current_protection
+                )
+                result = artifact(
+                    "protected",
+                    reconciliation={
+                        "preflight_hash": preflight["preflight_hash"],
+                        "management": management_evidence,
+                        "management_hash": management_state["management_hash"],
+                    },
+                    exchange_mutation_attempted=True,
+                )
+                live_store.write_execution(result)
+                return result
+            except Exception as exc:
+                latest_management = live_store.read_management_state() or management_state
+                latest_pending = latest_management.get("pending_action") or {}
+                phase_after_error = str(latest_pending.get("phase") or "")
+                if phase_after_error in {
+                    "active_stop_canceled",
+                    "submitting_replacement_stop",
+                }:
+                    try:
+                        replacement_cleanup = _cancel_uncertain_management_replacement_stop(
+                            ledger,
+                            parent_batch,
+                            event,
+                            exchange=exchange,
+                            ccxt_symbol=str(account["resolved_symbol"]),
+                            replacement_stop_client_order_id=str(
+                                latest_pending["replacement_stop_client_order_id"]
+                            ),
+                            signed_remaining_quantity=signed_quantity,
+                            replacement_stop_price=_float(
+                                latest_pending["replacement_stop_price"]
+                            ),
+                            price_tick=_float(latest_management["price_tick"]),
+                            at=_time_after(str(preflight["created_at"])),
+                        )
+                        flattened, ledger_state = _ledgered_flatten_position(
+                            settings,
+                            event,
+                            live_store,
+                            parent_batch,
+                            exchange=exchange,
+                            ccxt_symbol=str(account["resolved_symbol"]),
+                            quantity=abs(signed_quantity),
+                            position_side=side,
+                            purpose="management-protection-replacement-failure",
+                            protective_stop=None,
+                            protective_stop_client_order_id=str(
+                                latest_pending["replacement_stop_client_order_id"]
+                            ),
+                            started_at=_time_after(str(preflight["created_at"])),
+                        )
+                        live_store.halt(
+                            "fomc_live_management_replacement_stop_failed",
+                            occurred_at=deadline_time.isoformat(),
+                        )
+                        result = artifact(
+                            "halted_emergency_flattened",
+                            blockers=(
+                                "fomc_live_management_replacement_stop_failed",
+                                _safe_error(exc, settings),
+                            ),
+                            reconciliation={
+                                "replacement_stop_cleanup": replacement_cleanup,
+                                "management_emergency_flatten": flattened,
+                                "ledger_state": ledger_state,
+                            },
+                            exchange_mutation_attempted=True,
+                        )
+                    except Exception as flatten_exc:
+                        live_store.halt(
+                            "fomc_live_management_replacement_stop_uncertain",
+                            occurred_at=deadline_time.isoformat(),
+                        )
+                        result = artifact(
+                            "management_state_uncertain",
+                            blockers=(
+                                "fomc_live_management_replacement_stop_uncertain",
+                                _safe_error(exc, settings),
+                                _safe_error(flatten_exc, settings),
+                            ),
+                            exchange_mutation_attempted=True,
+                        )
+                else:
+                    live_store.halt(
+                        "fomc_live_management_action_uncertain",
+                        occurred_at=deadline_time.isoformat(),
+                    )
+                    result = artifact(
+                        "management_state_uncertain",
+                        blockers=(
+                            "fomc_live_management_action_uncertain",
+                            _safe_error(exc, settings),
+                        ),
+                        reconciliation={"preflight_hash": preflight["preflight_hash"]},
+                        exchange_mutation_attempted=True,
+                    )
+                live_store.write_execution(result)
+                return result
     if preflight_passed and deadline_time < event.force_exit_time:
-        if execution.get("status") in {"protected", "protected_slippage_halt"}:
+        if management_state is not None:
+            try:
+                hourly, fifteen_minute, market = collect_fomc_public_market(
+                    exchange,
+                    event,
+                    observed_at=deadline_time,
+                )
+                if (
+                    market.exchange_rules_hash != scope.get("exchange_rules_hash")
+                    or abs(market.price_tick - _float(scope.get("price_tick"))) > 1e-12
+                    or abs(market.quantity_step - _float(scope.get("quantity_step")))
+                    > 1e-12
+                ):
+                    raise FomcLiveError("fomc_live_management_public_rules_changed")
+                policy_decision = _evaluate_fomc_management_policy(
+                    management_state,
+                    hourly=hourly,
+                    fifteen_minute=fifteen_minute,
+                    mark_price=market.mark_price,
+                    funding_rate=market.funding_rate,
+                )
+            except Exception as exc:
+                result = artifact(
+                    "protected",
+                    blockers=("fomc_live_management_market_unavailable", _safe_error(exc, settings)),
+                    reconciliation={
+                        "preflight_hash": preflight["preflight_hash"],
+                        "management_hash": management_state["management_hash"],
+                    },
+                )
+                live_store.write_execution(result)
+                return result
+            if policy_decision.get("reached_one_r") and not management_state.get(
+                "one_r_confirmed"
+            ):
+                management_state = _advance_management_state(
+                    management_state,
+                    updated_at=deadline_time.isoformat(),
+                    one_r_confirmed=True,
+                )
+                live_store.write_management_state(management_state)
+            if policy_decision.get("kind") == "flatten":
+                purpose = str(policy_decision["purpose"])
+                try:
+                    flattened, ledger_state = _ledgered_flatten_position(
+                        settings,
+                        event,
+                        live_store,
+                        parent_batch,
+                        exchange=exchange,
+                        ccxt_symbol=str(account["resolved_symbol"]),
+                        quantity=abs(signed_quantity),
+                        position_side=side,
+                        purpose=purpose,
+                        protective_stop=(matching_stops[0] if matching_stops else None),
+                        protective_stop_client_order_id=stop_client_id,
+                        started_at=_time_after(str(preflight["created_at"])),
+                    )
+                    result = artifact(
+                        "management_early_exit_flattened",
+                        reconciliation={
+                            purpose: flattened,
+                            "ledger_state": ledger_state,
+                            "management": policy_decision,
+                        },
+                        exchange_mutation_attempted=True,
+                    )
+                except Exception as exc:
+                    live_store.halt(
+                        "fomc_live_management_exit_uncertain",
+                        occurred_at=deadline_time.isoformat(),
+                    )
+                    result = artifact(
+                        "management_state_uncertain",
+                        blockers=("fomc_live_management_exit_uncertain", _safe_error(exc, settings)),
+                        exchange_mutation_attempted=True,
+                    )
+                live_store.write_execution(result)
+                return result
+            if policy_decision.get("kind") == "action":
+                replacement_stop_price = _float(
+                    policy_decision.get("replacement_stop_price"), math.nan
+                )
+                stop_already_crossed = (
+                    side == "long" and market.mark_price <= replacement_stop_price
+                ) or (
+                    side == "short" and market.mark_price >= replacement_stop_price
+                )
+                if stop_already_crossed:
+                    policy_decision = dict(policy_decision) | {
+                        "kind": "flatten",
+                        "purpose": "management-stop-already-crossed",
+                    }
+                    try:
+                        flattened, ledger_state = _ledgered_flatten_position(
+                            settings,
+                            event,
+                            live_store,
+                            parent_batch,
+                            exchange=exchange,
+                            ccxt_symbol=str(account["resolved_symbol"]),
+                            quantity=abs(signed_quantity),
+                            position_side=side,
+                            purpose=str(policy_decision["purpose"]),
+                            protective_stop=(matching_stops[0] if matching_stops else None),
+                            protective_stop_client_order_id=stop_client_id,
+                            started_at=_time_after(str(preflight["created_at"])),
+                        )
+                        result = artifact(
+                            "management_early_exit_flattened",
+                            reconciliation={
+                                "management": policy_decision,
+                                "ledger_state": ledger_state,
+                                "flattened": flattened,
+                            },
+                            exchange_mutation_attempted=True,
+                        )
+                    except Exception as exc:
+                        live_store.halt(
+                            "fomc_live_management_exit_uncertain",
+                            occurred_at=deadline_time.isoformat(),
+                        )
+                        result = artifact(
+                            "management_state_uncertain",
+                            blockers=(
+                                "fomc_live_management_exit_uncertain",
+                                _safe_error(exc, settings),
+                            ),
+                            exchange_mutation_attempted=True,
+                        )
+                    live_store.write_execution(result)
+                    return result
+                try:
+                    management_state, _, _, _ = _plan_management_action(
+                        live_store,
+                        ledger,
+                        parent_batch,
+                        event,
+                        management_state,
+                        purpose=str(policy_decision["purpose"]),
+                        replacement_stop_price=replacement_stop_price,
+                        partial_quantity=(
+                            _float(policy_decision["partial_quantity"])
+                            if policy_decision.get("partial_quantity") is not None
+                            else None
+                        ),
+                        started_at=_time_after(str(preflight["created_at"])),
+                    )
+                    management_state, management_evidence, _ = _continue_management_action(
+                        settings,
+                        event,
+                        live_store,
+                        ledger,
+                        parent_batch,
+                        management_state,
+                        exchange=exchange,
+                        ccxt_symbol=str(account["resolved_symbol"]),
+                        active_stop=matching_stops[0],
+                        started_at=_time_after(str(preflight["created_at"])),
+                    )
+                    current_protection = management_evidence.get(
+                        "replacement_stop", current_protection
+                    )
+                    result = artifact(
+                        "protected",
+                        reconciliation={
+                            "preflight_hash": preflight["preflight_hash"],
+                            "management": policy_decision | management_evidence,
+                            "management_hash": management_state["management_hash"],
+                        },
+                        exchange_mutation_attempted=True,
+                    )
+                except Exception as exc:
+                    latest_management = live_store.read_management_state() or management_state
+                    latest_pending = latest_management.get("pending_action") or {}
+                    if str(latest_pending.get("phase") or "") in {
+                        "active_stop_canceled",
+                        "submitting_replacement_stop",
+                    }:
+                        try:
+                            replacement_cleanup = _cancel_uncertain_management_replacement_stop(
+                                ledger,
+                                parent_batch,
+                                event,
+                                exchange=exchange,
+                                ccxt_symbol=str(account["resolved_symbol"]),
+                                replacement_stop_client_order_id=str(
+                                    latest_pending["replacement_stop_client_order_id"]
+                                ),
+                                signed_remaining_quantity=signed_quantity,
+                                replacement_stop_price=_float(
+                                    latest_pending["replacement_stop_price"]
+                                ),
+                                price_tick=_float(latest_management["price_tick"]),
+                                at=_time_after(str(preflight["created_at"])),
+                            )
+                            flattened, ledger_state = _ledgered_flatten_position(
+                                settings,
+                                event,
+                                live_store,
+                                parent_batch,
+                                exchange=exchange,
+                                ccxt_symbol=str(account["resolved_symbol"]),
+                                quantity=abs(signed_quantity),
+                                position_side=side,
+                                purpose="management-protection-replacement-failure",
+                                protective_stop=None,
+                                protective_stop_client_order_id=str(
+                                    latest_pending["replacement_stop_client_order_id"]
+                                ),
+                                started_at=_time_after(str(preflight["created_at"])),
+                            )
+                            live_store.halt(
+                                "fomc_live_management_replacement_stop_failed",
+                                occurred_at=deadline_time.isoformat(),
+                            )
+                            result = artifact(
+                                "halted_emergency_flattened",
+                                blockers=(
+                                    "fomc_live_management_replacement_stop_failed",
+                                    _safe_error(exc, settings),
+                                ),
+                                reconciliation={
+                                    "replacement_stop_cleanup": replacement_cleanup,
+                                    "ledger_state": ledger_state,
+                                    "flattened": flattened,
+                                },
+                                exchange_mutation_attempted=True,
+                            )
+                        except Exception as flatten_exc:
+                            live_store.halt(
+                                "fomc_live_management_replacement_stop_uncertain",
+                                occurred_at=deadline_time.isoformat(),
+                            )
+                            result = artifact(
+                                "management_state_uncertain",
+                                blockers=(
+                                    "fomc_live_management_replacement_stop_uncertain",
+                                    _safe_error(exc, settings),
+                                    _safe_error(flatten_exc, settings),
+                                ),
+                                exchange_mutation_attempted=True,
+                            )
+                    else:
+                        live_store.halt(
+                            "fomc_live_management_action_uncertain",
+                            occurred_at=deadline_time.isoformat(),
+                        )
+                        result = artifact(
+                            "management_state_uncertain",
+                            blockers=(
+                                "fomc_live_management_action_uncertain",
+                                _safe_error(exc, settings),
+                            ),
+                            exchange_mutation_attempted=True,
+                        )
+                live_store.write_execution(result)
+                return result
+        if (
+            management_state is None
+            and execution.get("status") in {"protected", "protected_slippage_halt"}
+        ):
             return execution
         result = artifact(
             "protected",
@@ -4412,6 +6601,7 @@ def manage_fomc_live_position(
             purpose=purpose,
             protective_stop=stop,
             started_at=_time_after(str(preflight["created_at"])),
+            protective_stop_client_order_id=stop_client_id,
         )
         result = artifact(
             "force_exit_flattened"
@@ -4824,6 +7014,26 @@ def prepare_fomc_live_readiness(
         observed_at=observed_at,
         exchange=public_exchange,
     )
+    readiness, _ = _prepare_fomc_live_readiness_from_shadow(
+        settings,
+        event,
+        live_store,
+        shadow,
+        private_exchange=private_exchange,
+    )
+    return readiness
+
+
+def _prepare_fomc_live_readiness_from_shadow(
+    settings: Settings,
+    event: FomcEventDefinition,
+    live_store: FomcLiveStore,
+    shadow: Mapping[str, Any],
+    *,
+    private_exchange: Any | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Bind a read-only account preflight to one already-collected shadow scan."""
+
     preflight = build_fomc_live_account_preflight(
         settings,
         event,
@@ -4833,7 +7043,204 @@ def prepare_fomc_live_readiness(
     )
     readiness, _ = build_fomc_live_readiness(event, shadow, preflight)
     live_store.write_readiness(readiness)
-    return readiness
+    return readiness, preflight
+
+
+def _auto_cycle_result(
+    event: FomcEventDefinition,
+    *,
+    observed_at: dt.datetime,
+    status: str,
+    blockers: Sequence[str] = (),
+) -> dict[str, Any]:
+    return {
+        "event_id": event.event_id,
+        "observed_at": observed_at.isoformat(),
+        "status": status,
+        "blockers": list(dict.fromkeys(str(value) for value in blockers)),
+        "exchange_mutation_attempted": False,
+    }
+
+
+def run_fomc_auto_execution_cycle(
+    settings: Settings,
+    event: FomcEventDefinition,
+    state_store: FomcStateStore,
+    live_store: FomcLiveStore,
+    *,
+    observed_at: str | dt.datetime | None = None,
+    public_exchange: Any | None = None,
+    private_exchange: Any | None = None,
+) -> dict[str, Any]:
+    """Route one owner-authorized event entry only after all live gates agree.
+
+    The authorization is event/account/policy-bound and consumed before the
+    arm is persisted. Incomplete automatic state cannot mint a fresh arm; a
+    persisted arm must prove its binding again before it reaches the dispatcher.
+    """
+
+    now = max(_utc(observed_at), _utc())
+    execution = live_store.read_execution()
+    attempt = live_store.read_attempt()
+    arm = live_store.read_arm()
+
+    if execution is not None or attempt is not None:
+        return run_fomc_live_cycle(
+            settings,
+            event,
+            state_store,
+            live_store,
+            observed_at=now,
+            arm_token=None,
+            live_switch_enabled=False,
+            live_confirmation=None,
+            public_exchange=public_exchange,
+            private_exchange=private_exchange,
+        )
+
+    try:
+        authorization = live_store.read_auto_authorization()
+        consumed = live_store.read_auto_authorization_consumption()
+        secret = live_store.read_auto_arm_secret()
+        readiness = live_store.read_readiness() if arm is not None else None
+    except FomcLiveError as exc:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_state_invalid",
+            blockers=(str(exc),),
+        )
+    if arm is not None:
+        blockers = _auto_execution_arm_state_blockers(
+            event,
+            authorization,
+            consumed,
+            readiness,
+            arm,
+            secret,
+        )
+        if blockers:
+            return _auto_cycle_result(
+                event,
+                observed_at=now,
+                status="auto_arm_state_invalid",
+                blockers=blockers,
+            )
+        assert secret is not None
+        return run_fomc_live_cycle(
+            settings,
+            event,
+            state_store,
+            live_store,
+            observed_at=now,
+            arm_token=str(secret["arm_token"]),
+            live_switch_enabled=True,
+            live_confirmation=str(arm["arm_id"]),
+            public_exchange=public_exchange,
+            private_exchange=private_exchange,
+        )
+
+    if authorization is None:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_disarmed",
+            blockers=("fomc_live_auto_authorization_missing",),
+        )
+    if consumed is not None:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_authorization_consumed",
+            blockers=("fomc_live_auto_authorization_consumed",),
+        )
+    try:
+        validate_fomc_live_auto_authorization(authorization)
+    except FomcLiveError as exc:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_authorization_invalid",
+            blockers=(str(exc),),
+        )
+    if now < event.observation_time:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_waiting_for_observation",
+        )
+    if now >= event.entry_cutoff_time:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_entry_window_closed",
+            blockers=("fomc_live_auto_entry_cutoff_reached",),
+        )
+
+    shadow = run_fomc_shadow_cycle(
+        event,
+        state_store,
+        observed_at=now,
+        exchange=public_exchange,
+    )
+    if shadow.get("stage") != "ARMED":
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_waiting_for_signal",
+            blockers=tuple(str(value) for value in shadow.get("blockers") or ()),
+        )
+    readiness, _ = _prepare_fomc_live_readiness_from_shadow(
+        settings,
+        event,
+        live_store,
+        shadow,
+        private_exchange=private_exchange,
+    )
+    blockers = _auto_execution_authorization_blockers(
+        event,
+        authorization,
+        readiness,
+        observed_at=now,
+        consumed=None,
+    )
+    if blockers:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_authorization_blocked",
+            blockers=blockers,
+        )
+    try:
+        token = secrets.token_urlsafe(48)
+        arm = build_fomc_live_arm(
+            readiness,
+            arm_token=token,
+            armed_at=now,
+            confirmed_readiness_hash=str(readiness["readiness_hash"]),
+        )
+        live_store.consume_auto_authorization(authorization, arm, consumed_at=now)
+        live_store.write_arm(arm)
+        live_store.write_auto_arm_secret(arm, arm_token=token)
+    except FomcLiveError as exc:
+        return _auto_cycle_result(
+            event,
+            observed_at=now,
+            status="auto_authorization_blocked",
+            blockers=(str(exc),),
+        )
+    return run_fomc_live_cycle(
+        settings,
+        event,
+        state_store,
+        live_store,
+        observed_at=now,
+        arm_token=token,
+        live_switch_enabled=True,
+        live_confirmation=str(arm["arm_id"]),
+        public_exchange=public_exchange,
+        private_exchange=private_exchange,
+    )
 
 
 def run_fomc_live_cycle(
@@ -5004,14 +7411,17 @@ __all__ = (
     "FomcLiveStore",
     "account_risk_snapshot_from_preflight",
     "build_fomc_live_account_preflight",
+    "build_fomc_live_auto_authorization",
     "build_fomc_live_arm",
     "build_fomc_live_readiness",
     "dispatch_fomc_live_entry",
     "fomc_live_arm_valid",
     "manage_fomc_live_position",
     "prepare_fomc_live_readiness",
+    "run_fomc_auto_execution_cycle",
     "run_fomc_live_cycle",
     "set_fomc_live_environment_switch",
+    "validate_fomc_live_auto_authorization",
     "validate_fomc_live_arm",
     "write_fomc_live_environment",
 )

@@ -16,20 +16,26 @@ from qount.settings import Settings
 from qount.small_account.fomc_adapter import build_fomc_standard_chain
 from qount.small_account.fomc_live import FomcLiveError
 from qount.small_account.fomc_live import FomcLiveStore
+from qount.small_account.fomc_live import _cancel_uncertain_management_replacement_stop
 from qount.small_account.fomc_live import _create_fomc_entry_order
 from qount.small_account.fomc_live import _execution_artifact
+from qount.small_account.fomc_live import _evaluate_fomc_management_policy
+from qount.small_account.fomc_live import _build_fomc_management_batch
 from qount.small_account.fomc_live import _flatten_position
 from qount.small_account.fomc_live import _ledger_native_stop_flatten
 from qount.small_account.fomc_live import _ledgered_flatten_position
 from qount.small_account.fomc_live import _recover_interrupted_fomc_attempt
 from qount.small_account.fomc_live import build_fomc_live_account_preflight
+from qount.small_account.fomc_live import build_fomc_live_auto_authorization
 from qount.small_account.fomc_live import build_fomc_live_arm
 from qount.small_account.fomc_live import dispatch_fomc_live_entry
 from qount.small_account.fomc_live import fomc_live_arm_valid
 from qount.small_account.fomc_live import manage_fomc_live_position
+from qount.small_account.fomc_live import run_fomc_auto_execution_cycle
 from qount.small_account.fomc_live import run_fomc_live_cycle
 from qount.small_account.fomc_live import set_fomc_live_environment_switch
 from qount.small_account.fomc_live import write_fomc_live_environment
+from qount.small_account.fomc_live import validate_fomc_live_auto_authorization
 from qount.small_account.fomc_runtime import FomcEventDefinition
 from qount.small_account.fomc_watcher import FomcStateStore
 from qount.small_account.fomc_watcher import load_fomc_event_definition
@@ -38,6 +44,7 @@ from tests.test_small_account_fomc_adapter import _freeze
 from tests.test_small_account_fomc_adapter import _healthy_account
 from tests.test_small_account_fomc_adapter import _market
 from tests.test_small_account_fomc_adapter import _scan
+from tests.test_small_account_fomc_adapter import _candle
 
 
 UTC = dt.timezone.utc
@@ -842,6 +849,308 @@ class FomcLiveArmTest(unittest.TestCase):
         )
         self.assertEqual(summary["scope"], scope)
 
+    def test_cli_treats_management_early_exit_as_success(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = (
+                "--event-config",
+                str(EVENT_CONFIG),
+                "--state-root",
+                str(Path(directory) / "state"),
+            )
+            with (
+                patch(
+                    "scripts.operations.run_fomc_live.Settings.from_env",
+                    return_value=object(),
+                ),
+                patch(
+                    "scripts.operations.run_fomc_live.run_fomc_live_cycle",
+                    return_value={"status": "management_early_exit_flattened"},
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                cycle_status = fomc_live_main(base + ("cycle",))
+            with (
+                patch(
+                    "scripts.operations.run_fomc_live.Settings.from_env",
+                    return_value=object(),
+                ),
+                patch(
+                    "scripts.operations.run_fomc_live.run_fomc_auto_execution_cycle",
+                    return_value={"status": "management_early_exit_flattened"},
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                auto_status = fomc_live_main(base + ("auto-cycle",))
+
+        self.assertEqual(cycle_status, 0)
+        self.assertEqual(auto_status, 0)
+
+
+class FomcLiveAutoExecutionTest(unittest.TestCase):
+    _authorization_time = "2026-07-29T20:00:00+00:00"
+    _entry_time = "2026-07-29T23:18:00+00:00"
+
+    def _authorization(self) -> dict[str, object]:
+        return build_fomc_live_auto_authorization(
+            _event(),
+            _preflight(),
+            authorized_at=self._authorization_time,
+        )
+
+    def _readiness_with_scope(self, **changes: object) -> dict[str, object]:
+        readiness = _readiness()
+        core = {
+            key: value for key, value in readiness.items() if key != "readiness_hash"
+        }
+        scope = dict(core["scope"])
+        scope.update(changes)
+        core["scope"] = scope
+        return core | {"readiness_hash": canonical_hash(core)}
+
+    def test_authorization_binds_event_account_and_policy(self) -> None:
+        authorization = self._authorization()
+
+        validate_fomc_live_auto_authorization(authorization)
+        self.assertEqual(authorization["event_id"], _event().event_id)
+        self.assertEqual(authorization["account_scope_hash"], ACCOUNT_SCOPE)
+        policy = authorization["policy"]
+        assert isinstance(policy, dict)
+        self.assertEqual(policy["initial_equity_usdt"], 200.0)
+        self.assertEqual(policy["strategy_drawdown_limit_usdt"], 20.0)
+        self.assertEqual(policy["maximum_futures_notional_usdt"], 200.0)
+
+        incomplete = dict(authorization)
+        del incomplete["symbol"]
+        with self.assertRaisesRegex(FomcLiveError, "auto_authorization_invalid"):
+            validate_fomc_live_auto_authorization(incomplete)
+
+    def test_before_observation_does_not_touch_any_exchange(self) -> None:
+        before_observation = dt.datetime(2026, 7, 29, 22, 0, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as directory:
+            settings = _settings(directory)
+            state_store = FomcStateStore(directory, _event().event_id)
+            live_store = FomcLiveStore(directory, _event().event_id)
+            live_store.write_auto_authorization(self._authorization())
+            with (
+                patch(
+                    "qount.small_account.fomc_live.utc_now",
+                    return_value=before_observation,
+                ),
+                patch("qount.small_account.fomc_live.run_fomc_shadow_cycle") as shadow,
+                patch(
+                    "qount.small_account.fomc_live._prepare_fomc_live_readiness_from_shadow"
+                ) as prepare,
+                patch("qount.small_account.fomc_live.run_fomc_live_cycle") as cycle,
+            ):
+                result = run_fomc_auto_execution_cycle(
+                    settings,
+                    _event(),
+                    state_store,
+                    live_store,
+                    observed_at=before_observation,
+                    public_exchange=object(),
+                    private_exchange=object(),
+                )
+
+        self.assertEqual(result["status"], "auto_waiting_for_observation")
+        self.assertFalse(result["exchange_mutation_attempted"])
+        shadow.assert_not_called()
+        prepare.assert_not_called()
+        cycle.assert_not_called()
+
+    def test_non_armed_signal_never_runs_private_preflight_or_arm(self) -> None:
+        observed_at = dt.datetime(2026, 7, 29, 23, 18, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as directory:
+            settings = _settings(directory)
+            state_store = FomcStateStore(directory, _event().event_id)
+            live_store = FomcLiveStore(directory, _event().event_id)
+            live_store.write_auto_authorization(self._authorization())
+            with (
+                patch(
+                    "qount.small_account.fomc_live.utc_now", return_value=observed_at
+                ),
+                patch(
+                    "qount.small_account.fomc_live.run_fomc_shadow_cycle",
+                    return_value={"stage": "OBSERVING", "blockers": ["NO_SIGNAL"]},
+                ) as shadow,
+                patch(
+                    "qount.small_account.fomc_live._prepare_fomc_live_readiness_from_shadow"
+                ) as prepare,
+                patch("qount.small_account.fomc_live.run_fomc_live_cycle") as cycle,
+            ):
+                result = run_fomc_auto_execution_cycle(
+                    settings,
+                    _event(),
+                    state_store,
+                    live_store,
+                    observed_at=observed_at,
+                    public_exchange=object(),
+                    private_exchange=object(),
+                )
+
+            self.assertIsNone(live_store.read_arm())
+            self.assertIsNone(live_store.read_auto_authorization_consumption())
+            self.assertIsNone(live_store.read_auto_arm_secret())
+
+        self.assertEqual(result["status"], "auto_waiting_for_signal")
+        self.assertEqual(result["blockers"], ["NO_SIGNAL"])
+        shadow.assert_called_once()
+        prepare.assert_not_called()
+        cycle.assert_not_called()
+
+    def test_armed_readiness_consumes_once_persists_secret_and_delegates(self) -> None:
+        observed_at = dt.datetime(2026, 7, 29, 23, 18, tzinfo=UTC)
+        readiness = _readiness()
+        preflight = _preflight()
+        expected = {"status": "delegated", "exchange_mutation_attempted": False}
+        with tempfile.TemporaryDirectory() as directory:
+            settings = _settings(directory)
+            state_store = FomcStateStore(directory, _event().event_id)
+            live_store = FomcLiveStore(directory, _event().event_id)
+            authorization = self._authorization()
+            live_store.write_auto_authorization(authorization)
+            with (
+                patch(
+                    "qount.small_account.fomc_live.utc_now", return_value=observed_at
+                ),
+                patch(
+                    "qount.small_account.fomc_live.run_fomc_shadow_cycle",
+                    return_value={
+                        "stage": "ARMED",
+                        "observed_at": self._entry_time,
+                        "blockers": [],
+                    },
+                ),
+                patch(
+                    "qount.small_account.fomc_live._prepare_fomc_live_readiness_from_shadow",
+                    return_value=(readiness, preflight),
+                ),
+                patch(
+                    "qount.small_account.fomc_live.run_fomc_live_cycle",
+                    return_value=expected,
+                ) as cycle,
+            ):
+                result = run_fomc_auto_execution_cycle(
+                    settings,
+                    _event(),
+                    state_store,
+                    live_store,
+                    observed_at=observed_at,
+                    public_exchange=object(),
+                    private_exchange=object(),
+                )
+
+            arm = live_store.read_arm()
+            consumption = live_store.read_auto_authorization_consumption()
+            secret = live_store.read_auto_arm_secret()
+            self.assertIsNotNone(arm)
+            self.assertIsNotNone(consumption)
+            self.assertIsNotNone(secret)
+            assert arm is not None and consumption is not None and secret is not None
+            self.assertEqual(consumption["authorization_id"], authorization["authorization_id"])
+            self.assertEqual(consumption["arm_id"], arm["arm_id"])
+            self.assertEqual(secret["arm_id"], arm["arm_id"])
+            self.assertEqual(
+                live_store.auto_arm_secret_path.stat().st_mode & 0o777, 0o600
+            )
+
+        self.assertEqual(result, expected)
+        cycle.assert_called_once()
+        kwargs = cycle.call_args.kwargs
+        self.assertTrue(kwargs["live_switch_enabled"])
+        self.assertEqual(kwargs["live_confirmation"], arm["arm_id"])
+        self.assertEqual(kwargs["arm_token"], secret["arm_token"])
+
+    def test_account_or_risk_scope_change_blocks_before_arm_or_dispatch(self) -> None:
+        observed_at = dt.datetime(2026, 7, 29, 23, 18, tzinfo=UTC)
+        cases = (
+            (
+                {"account_scope_hash": "e" * 64},
+                "fomc_live_auto_account_scope_changed",
+            ),
+            (
+                {"maximum_stress_loss_usdt": 5.01},
+                "fomc_live_auto_first_risk_limit_exceeded",
+            ),
+        )
+        for changes, expected_blocker in cases:
+            with self.subTest(expected_blocker=expected_blocker), tempfile.TemporaryDirectory() as directory:
+                settings = _settings(directory)
+                state_store = FomcStateStore(directory, _event().event_id)
+                live_store = FomcLiveStore(directory, _event().event_id)
+                live_store.write_auto_authorization(self._authorization())
+                readiness = self._readiness_with_scope(**changes)
+                with (
+                    patch(
+                        "qount.small_account.fomc_live.utc_now",
+                        return_value=observed_at,
+                    ),
+                    patch(
+                        "qount.small_account.fomc_live.run_fomc_shadow_cycle",
+                        return_value={
+                            "stage": "ARMED",
+                            "observed_at": self._entry_time,
+                            "blockers": [],
+                        },
+                    ),
+                    patch(
+                        "qount.small_account.fomc_live._prepare_fomc_live_readiness_from_shadow",
+                        return_value=(readiness, _preflight()),
+                    ),
+                    patch("qount.small_account.fomc_live.run_fomc_live_cycle") as cycle,
+                ):
+                    result = run_fomc_auto_execution_cycle(
+                        settings,
+                        _event(),
+                        state_store,
+                        live_store,
+                        observed_at=observed_at,
+                        public_exchange=object(),
+                        private_exchange=object(),
+                    )
+
+                self.assertEqual(result["status"], "auto_authorization_blocked")
+                self.assertIn(expected_blocker, result["blockers"])
+                self.assertIsNone(live_store.read_arm())
+                self.assertIsNone(live_store.read_auto_authorization_consumption())
+                cycle.assert_not_called()
+
+    def test_foreign_manual_arm_state_fails_closed(self) -> None:
+        observed_at = dt.datetime(2026, 7, 29, 23, 18, tzinfo=UTC)
+        readiness = _readiness()
+        manual_arm = _build_arm(
+            readiness,
+            token="t" * 48,
+            armed_at="2026-07-29T23:17:00+00:00",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            settings = _settings(directory)
+            state_store = FomcStateStore(directory, _event().event_id)
+            live_store = FomcLiveStore(directory, _event().event_id)
+            live_store.write_readiness(readiness)
+            live_store.write_arm(manual_arm)
+            with (
+                patch(
+                    "qount.small_account.fomc_live.utc_now", return_value=observed_at
+                ),
+                patch("qount.small_account.fomc_live.run_fomc_shadow_cycle") as shadow,
+                patch("qount.small_account.fomc_live.run_fomc_live_cycle") as cycle,
+            ):
+                result = run_fomc_auto_execution_cycle(
+                    settings,
+                    _event(),
+                    state_store,
+                    live_store,
+                    observed_at=observed_at,
+                    public_exchange=object(),
+                    private_exchange=object(),
+                )
+
+        self.assertEqual(result["status"], "auto_arm_state_invalid")
+        self.assertIn("fomc_live_auto_authorization_missing", result["blockers"])
+        shadow.assert_not_called()
+        cycle.assert_not_called()
+
 
 class FomcLivePreflightTest(unittest.TestCase):
     def test_credential_swap_changes_account_scope_hash(self) -> None:
@@ -1573,6 +1882,290 @@ class FomcLiveFlattenTest(unittest.TestCase):
 
 
 class FomcLiveManagementTest(unittest.TestCase):
+    def test_two_r_management_batch_is_reduce_only_and_leaves_a_native_stop(self) -> None:
+        parent = _parent_chain().batch
+        management, partial, stop = _build_fomc_management_batch(
+            parent,
+            _event(),
+            action_key="f" * 64,
+            purpose="two-r-partial-and-profit-floor",
+            signed_quantity_before=1.5,
+            signed_quantity_after=1.0,
+            partial_quantity=0.5,
+            replacement_stop_price=105.0,
+            created_at="2026-07-30T01:00:00+00:00",
+        )
+
+        self.assertIsNotNone(partial)
+        assert partial is not None
+        self.assertTrue(partial.reduce_only)
+        self.assertEqual(partial.order_type, "MARKET")
+        self.assertTrue(stop.reduce_only)
+        self.assertTrue(stop.close_position)
+        self.assertEqual(stop.order_type, "STOP_MARKET")
+        self.assertEqual(
+            management.plan.expected_positions[_event().instrument_key], 1.0
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = FomcLiveStore(directory, _event().event_id).ledger()
+            self.assertTrue(ledger.record_verified_batch(management))
+
+    def test_management_waits_for_completed_fifteen_minute_two_r_before_partial(self) -> None:
+        entry_at = dt.datetime(2026, 7, 29, 23, 16, tzinfo=UTC)
+        state = {
+            "side": "long",
+            "entry_at": entry_at.isoformat(),
+            "entry_price": 100.0,
+            "remaining_quantity": 1.0,
+            "full_risk_usdt": 5.0,
+            "net_break_even_price": 100.3,
+            "net_one_r_price": 105.3,
+            "net_two_r_price": 110.3,
+            "active_stop_price": 98.0,
+            "freeze_h0": 100.0,
+            "freeze_l0": 90.0,
+            "price_tick": 0.1,
+            "partial_quantity": 0.333,
+            "partial_exit_confirmed": False,
+            "one_r_confirmed": False,
+        }
+        fifteen = (
+            _candle(
+                interval=15,
+                closed_at=entry_at + dt.timedelta(minutes=14),
+                open=100.0,
+                high=111.0,
+                low=99.0,
+                close=110.0,
+                volume=100.0,
+            ),
+        )
+        hourly = (
+            _candle(
+                interval=60,
+                closed_at=entry_at + dt.timedelta(minutes=44),
+                open=100.0,
+                high=111.0,
+                low=99.0,
+                close=110.0,
+                volume=100.0,
+            ),
+        )
+
+        before_two_r = _evaluate_fomc_management_policy(
+            state,
+            hourly=hourly,
+            fifteen_minute=fifteen,
+            mark_price=110.0,
+            funding_rate=0.0,
+        )
+        at_two_r = _evaluate_fomc_management_policy(
+            state,
+            hourly=hourly,
+            fifteen_minute=(
+                _candle(
+                    interval=15,
+                    closed_at=entry_at + dt.timedelta(minutes=29),
+                    open=110.0,
+                    high=112.0,
+                    low=109.0,
+                    close=111.0,
+                    volume=100.0,
+                ),
+            ),
+            mark_price=111.0,
+            funding_rate=0.0,
+        )
+
+        self.assertEqual(before_two_r["kind"], "action")
+        self.assertIsNone(before_two_r["partial_quantity"])
+        self.assertEqual(at_two_r["kind"], "action")
+        self.assertEqual(at_two_r["partial_quantity"], 0.333)
+
+    def test_trailing_stop_uses_pre_entry_atr_history_after_confirmed_partial(self) -> None:
+        entry_at = dt.datetime(2026, 7, 29, 0, 0, tzinfo=UTC)
+        state = {
+            "side": "long",
+            "entry_at": entry_at.isoformat(),
+            "entry_price": 100.0,
+            "remaining_quantity": 0.667,
+            "full_risk_usdt": 5.0,
+            "net_break_even_price": 100.3,
+            "net_one_r_price": 105.3,
+            "net_two_r_price": 110.3,
+            "active_stop_price": 105.5,
+            "freeze_h0": 100.0,
+            "freeze_l0": 90.0,
+            "price_tick": 0.1,
+            "partial_quantity": 0.333,
+            "partial_exit_confirmed": True,
+            "one_r_confirmed": True,
+        }
+        hourly = tuple(
+            _candle(
+                interval=60,
+                closed_at=entry_at + dt.timedelta(hours=index),
+                open=110.0 + index,
+                high=112.0 + index,
+                low=109.0 + index,
+                close=111.0 + index,
+                volume=100.0,
+            )
+            for index in range(-13, 2)
+        )
+
+        decision = _evaluate_fomc_management_policy(
+            state,
+            hourly=hourly,
+            fifteen_minute=(),
+            mark_price=130.0,
+            funding_rate=0.0,
+        )
+
+        self.assertEqual(decision["kind"], "action")
+        self.assertEqual(decision["purpose"], "post-two-r-atr-trailing-stop")
+        self.assertGreater(decision["replacement_stop_price"], state["active_stop_price"])
+
+    def test_uncertain_replacement_stop_is_canceled_before_emergency_flatten(self) -> None:
+        parent = _parent_chain().batch
+        management, _, replacement = _build_fomc_management_batch(
+            parent,
+            _event(),
+            action_key="a" * 64,
+            purpose="one-r-net-break-even-stop",
+            signed_quantity_before=1.5,
+            signed_quantity_after=1.5,
+            partial_quantity=None,
+            replacement_stop_price=105.0,
+            created_at="2026-07-30T01:00:00+00:00",
+        )
+        replacement_view = {
+            "id": "algo-replacement-1",
+            "clientOrderId": replacement.client_order_id,
+            "symbol": "BTCUSDT",
+            "type": "STOP_MARKET",
+            "workingType": "MARK_PRICE",
+            "side": "SELL",
+            "stopPrice": 105.0,
+            "closePosition": True,
+            "status": "NEW",
+        }
+        terminal = {
+            "id": "algo-replacement-1",
+            "client_order_id": replacement.client_order_id,
+            "status": "canceled",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = FomcLiveStore(directory, _event().event_id).ledger()
+            _seed_open_parent(ledger, parent, stop_acknowledged=True)
+            ledger.record_verified_batch(management)
+            ledger.transition_order(
+                replacement.client_order_id,
+                "SUBMITTING",
+                event_at="2026-07-30T01:00:00.100000+00:00",
+                source_hash="a" * 64,
+            )
+            with (
+                patch(
+                    "qount.small_account.fomc_live._fetch_order_by_client_id",
+                    return_value=replacement_view,
+                ),
+                patch(
+                    "qount.small_account.fomc_live._cancel_protective_stop",
+                    return_value=terminal,
+                ) as cancel,
+            ):
+                cleanup = _cancel_uncertain_management_replacement_stop(
+                    ledger,
+                    parent,
+                    _event(),
+                    exchange=object(),
+                    ccxt_symbol=CCXT_SYMBOL,
+                    replacement_stop_client_order_id=replacement.client_order_id,
+                    signed_remaining_quantity=1.5,
+                    replacement_stop_price=105.0,
+                    price_tick=0.1,
+                    at="2026-07-30T01:00:01+00:00",
+                )
+            replacement_state = ledger.get_order(replacement.client_order_id)
+
+        self.assertEqual(cleanup["terminal"], terminal)
+        self.assertEqual(replacement_state["status"], "CANCELED")
+        cancel.assert_called_once()
+
+    def test_management_market_failure_keeps_native_stop_and_does_not_mutate(self) -> None:
+        chain = _parent_chain()
+        batch = chain.batch
+        scope = _scope_for_batch(batch) | {
+            "management_contract_version": 1,
+            "freeze_h0": 100.0,
+            "freeze_l0": 90.0,
+            "costs": {
+                "entry_fee_rate": 0.0005,
+                "exit_fee_rate": 0.0005,
+                "entry_slippage_rate": 0.0005,
+                "exit_slippage_rate": 0.0005,
+                "adverse_funding_rate": 0.0006,
+            },
+            "one_third_partial_quantity": 0.65,
+            "one_third_remaining_quantity": 1.3,
+        }
+        quantity = float(scope["quantity"])
+        stop = {
+            "id": "algo-1",
+            "client_order_id": scope["stop_client_order_id"],
+            "symbol": CCXT_SYMBOL,
+            "type": "STOP_MARKET",
+            "working_type": "MARK_PRICE",
+            "side": "sell",
+            "trigger_price": scope["stop_price"],
+            "close_position": True,
+            "status": "open",
+        }
+        preflight = _preflight(
+            account_scope_hash=ACCOUNT_SCOPE,
+            positions=[
+                {
+                    "symbol": CCXT_SYMBOL,
+                    "quantity": quantity,
+                    "average_price": 100.0,
+                    "notional_usdt": quantity * 100.0,
+                }
+            ],
+            conditional=[stop],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            settings = _settings(directory)
+            state_store = FomcStateStore(directory, _event().event_id)
+            state_store.publish_batch(chain)
+            live_store = FomcLiveStore(directory, _event().event_id)
+            _seed_open_parent(live_store.ledger(), batch, stop_acknowledged=True)
+            live_store.write_execution(_protected_execution(batch, scope, stop))
+            exchange = _MutationTrackingExchange()
+            with (
+                patch(
+                    "qount.small_account.fomc_live.build_fomc_live_account_preflight",
+                    return_value=preflight,
+                ),
+                patch(
+                    "qount.small_account.fomc_live.collect_fomc_public_market",
+                    side_effect=RuntimeError("public market unavailable"),
+                ),
+            ):
+                result = manage_fomc_live_position(
+                    settings,
+                    _event(),
+                    live_store,
+                    state_store=state_store,
+                    observed_at="2026-07-29T23:20:00+00:00",
+                    exchange=exchange,
+                )
+
+        self.assertEqual(result["status"], "protected")
+        self.assertIn("fomc_live_management_market_unavailable", result["blockers"])
+        self.assertEqual(exchange.created, [])
+        self.assertEqual(exchange.canceled, [])
+
     def test_transient_management_read_failure_then_force_exit_flattens_once(self) -> None:
         chain = _parent_chain()
         batch = chain.batch

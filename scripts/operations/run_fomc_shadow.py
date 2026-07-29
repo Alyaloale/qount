@@ -55,6 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "blockers": result["blockers"],
         "batch_id": standard_chain.get("batch_id"),
         "result_hash": result["result_hash"],
+        "scorecard": result.get("scorecard"),
         "permissions": result["permissions"],
     }
     print(json.dumps(summary, ensure_ascii=True, allow_nan=False, sort_keys=True))

@@ -17,8 +17,11 @@ sys.path.insert(0, str(REPO / "src"))
 
 from qount.settings import Settings  # noqa: E402
 from qount.small_account.fomc_live import FomcLiveStore  # noqa: E402
+from qount.small_account.fomc_live import build_fomc_live_auto_authorization  # noqa: E402
+from qount.small_account.fomc_live import build_fomc_live_account_preflight  # noqa: E402
 from qount.small_account.fomc_live import build_fomc_live_arm  # noqa: E402
 from qount.small_account.fomc_live import prepare_fomc_live_readiness  # noqa: E402
+from qount.small_account.fomc_live import run_fomc_auto_execution_cycle  # noqa: E402
 from qount.small_account.fomc_live import run_fomc_live_cycle  # noqa: E402
 from qount.small_account.fomc_live import set_fomc_live_environment_switch  # noqa: E402
 from qount.small_account.fomc_live import write_fomc_live_environment  # noqa: E402
@@ -48,7 +51,17 @@ def _parser() -> argparse.ArgumentParser:
     switch_group.add_argument("--enable", action="store_true")
     switch_group.add_argument("--disable", action="store_true")
 
+    authorize_auto = subparsers.add_parser(
+        "authorize-auto",
+        help="Bind one owner-authorized automatic entry to the current account.",
+    )
+    authorize_auto.add_argument("--observed-at")
+
     subparsers.add_parser("cycle", help="Run one fail-closed scheduled cycle.")
+    subparsers.add_parser(
+        "auto-cycle",
+        help="Run the bounded owner-authorized automatic event cycle.",
+    )
     return parser
 
 
@@ -134,6 +147,54 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "authorize-auto":
+        observed_at = args.observed_at or dt.datetime.now(dt.timezone.utc)
+        preflight = build_fomc_live_account_preflight(
+            Settings.from_env(),
+            event,
+            observed_at=observed_at,
+            halt_present=live_store.halt_path.exists(),
+        )
+        authorization = build_fomc_live_auto_authorization(
+            event,
+            preflight,
+            authorized_at=observed_at,
+        )
+        live_store.write_auto_authorization(authorization)
+        _summary(
+            {
+                "event_id": event.event_id,
+                "authorization_id": authorization["authorization_id"],
+                "account_scope_hash": authorization["account_scope_hash"],
+                "policy": authorization["policy"],
+                "expires_at": authorization["expires_at"],
+                "exchange_mutation_attempted": False,
+            }
+        )
+        return 0
+
+    if args.command == "auto-cycle":
+        result = run_fomc_auto_execution_cycle(
+            Settings.from_env(),
+            event,
+            state_store,
+            live_store,
+            observed_at=None,
+        )
+        _summary(dict(result))
+        status = str(result.get("status", ""))
+        successful = {
+            "auto_disarmed",
+            "auto_waiting_for_observation",
+            "auto_waiting_for_signal",
+            "protected",
+            "force_exit_flattened",
+            "protection_failure_flattened",
+            "native_stop_flattened",
+            "management_early_exit_flattened",
+        }
+        return 0 if status in successful else 2
+
     result = run_fomc_live_cycle(
         Settings.from_env(),
         event,
@@ -155,6 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "force_exit_flattened",
         "protection_failure_flattened",
         "native_stop_flattened",
+        "management_early_exit_flattened",
     }
     return 0 if status in successful else 2
 
