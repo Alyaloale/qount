@@ -743,6 +743,10 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("reference.file_sha256 !== fileSha256", app)
         self.assertIn("data/releases/${publicationId}/", app)
         self.assertIn("releaseModelPath(path, publication.publication_id)", app)
+        self.assertIn("const responses = Object.fromEntries(entries);", app)
+        self.assertIn("validateModel(response, type, publication)", app)
+        self.assertIn("const models = Object.fromEntries(Object.entries(responses).map", app)
+        self.assertIn("response.value", app)
         for legacy_source in (
             "x4_live.json",
             "x4_paper.json",

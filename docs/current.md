@@ -6,9 +6,14 @@
 
 更新时间：2026-07-29
 
-VPS生产版本：`0.2.25`。当前release的commit、source tree、provenance和逐文件verification均保存在
+VPS生产版本：`0.2.26`。当前release的commit、source tree、provenance和逐文件verification均保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件timer、
 Dashboard只读账户视图和有界微信retry timer均已部署；除本次受限 FOMC live 路径外，所有交易执行权限仍关闭。
+
+- **2026-07-29 `0.2.26`修复 Dashboard v1 读模型解包。** 浏览器先验证带文件 SHA-256 的下载响应，随后只把
+  read-model 本体写入渲染状态；此前错误保留响应包装导致 `overview.payload.account` 未定义并显示错误的
+  `PRODUCTION STOPPED`。桌面和移动端均用 VPS 当前原子发布复验为可用；该修复只涉及只读前端，不读取交易所、
+  不改变订单权限或 FOMC 授权。
 
 - **2026-07-29 `0.2.25`精确策略身份门已部署至FOMC自动路径。** 事件配置必须显式且精确匹配
   `SmallAccount-FOMC-RightSide@0.2`；缺失、错误 ID 或错误版本会在读取运行状态、访问交易所或生成 arm 前失败关闭。

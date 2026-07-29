@@ -11,6 +11,17 @@
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
+## 2026-07-29 (Round 35)
+
+### `0.2.26` Dashboard v1 生产读模型解包修复
+
+- 真实发布可通过 publication、来源 hash 和逐文件 SHA-256 校验，但浏览器错误地把 `{value,fileSha256}` 下载包装
+  放进 `state.models`；所有渲染器期望的是 `value` 本体，因此 live 页面在访问 `overview.payload.account` 时抛错并误报
+  `PRODUCTION STOPPED`。现先校验各响应，再解包 `response.value` 写入渲染状态；完整性校验和 fail-closed 行为不变。
+- 更新 `app.js` cache-bust 版本并加入回归断言。真实 VPS 原子发布在桌面和 `390x844` 移动视口均渲染成功，无错误 banner、
+  横向溢出、重叠或裁切；完整 `unittest discover` 和 `node --check web/site/app.js` 通过。该修复不读取交易所、不改
+  Dashboard 权威输入、FOMC timer、授权或订单路径。
+
 ## 2026-07-29 (Round 34)
 
 ### `0.2.25` FOMC策略身份防错接与实盘发布

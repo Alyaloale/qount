@@ -2,7 +2,7 @@
 
 `qount` 是按当前真实机器拓扑设计的 `AI 决策系统 + 风控执行器 + Binance 执行` 骨架。
 
-仓库版本`0.2.25`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
+仓库版本`0.2.26`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
 `STOP_MARKET closePosition`回读、保护失败紧急平仓和硬截止退出。FOMC live仅接受精确身份
 `SmallAccount-FOMC-RightSide@0.2`，并且已获一次受限自动执行授权；timer 只在事件窗口等待新鲜 shadow 信号。Dashboard
 publisher健康；匿名打开`#/live`得到401是整站Basic Auth策略，不是发布器停止更新。
@@ -11,7 +11,7 @@ publisher健康；匿名打开`#/live`得到401是整站Basic Auth策略，不�
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前 VPS 生产版本为 `0.2.25`；FOMC公共行情watcher、现金窗口/冻结/信号告警、事件专用live service/timer和
+当前 VPS 生产版本为 `0.2.26`；FOMC公共行情watcher、现金窗口/冻结/信号告警、事件专用live service/timer和
 仅覆盖2026年7月事件窗口的systemd timer均已部署并启用。自动路径在观察开始前不读取交易所，只有同一身份的新鲜 shadow、
 私有预检、账户/风险 scope 和原生保护单检查同时通过才可提交一次订单。
 Base 已迁入 `standard_production`：曾获真钱授权的策略

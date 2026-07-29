@@ -6,12 +6,15 @@
 
 更新时间：2026-07-29
 
-VPS生产版本：`0.2.25`；当前release的commit、source tree、provenance和逐文件verification保存在
+VPS生产版本：`0.2.26`；当前release的commit、source tree、provenance和逐文件verification保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`。FOMC不可下单watcher、
 现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；除 2026-07 FOMC 的受限单次 live 授权外，仍没有 paper/live 或订单权限。
 
 `0.2.25`强制 FOMC 事件和自动授权精确绑定 `SmallAccount-FOMC-RightSide@0.2`。缺少身份字段、错误 ID 或版本、
 或试图复用其他策略的授权/风险预算都会 fail closed；不得通过修改事件配置、state 或 env 绕过这一门。
+
+Dashboard v1 `0.2.26` 已修复下载响应包装与实际 read model 混用造成的离线误报；浏览器仍先校验原子
+publication、model hash 和文件 SHA-256，再将 model 本体渲染。该页面始终只读，不能更改 FOMC timer、arm 或订单。
 
 `0.2.24`的FOMC受控live runtime、CLI及`qount-fomc-live.service/.timer`已部署到VPS。VPS production profile为
 `360/360 OK`，模板与安装unit的SHA-256完全一致；live/shadow timer明确保持`disabled/inactive`，无live环境文件、无arm。

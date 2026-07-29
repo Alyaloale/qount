@@ -748,8 +748,12 @@ async function load() {
       type,
       await fetchJSON(releaseModelPath(path, publication.publication_id)),
     ]));
-    const models = Object.fromEntries(entries);
-    Object.entries(models).forEach(([type, model]) => validateModel(model, type, publication));
+    const responses = Object.fromEntries(entries);
+    Object.entries(responses).forEach(([type, response]) => validateModel(response, type, publication));
+    const models = Object.fromEntries(Object.entries(responses).map(([type, response]) => [
+      type,
+      response.value,
+    ]));
     state.status = "ready";
     state.publication = publication;
     state.models = models;
