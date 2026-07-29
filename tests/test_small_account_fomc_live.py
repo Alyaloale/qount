@@ -924,6 +924,13 @@ class FomcLiveAutoExecutionTest(unittest.TestCase):
         with self.assertRaisesRegex(FomcLiveError, "auto_authorization_invalid"):
             validate_fomc_live_auto_authorization(incomplete)
 
+        foreign_strategy = dict(authorization)
+        foreign_strategy["strategy_id"] = "another_strategy"
+        with self.assertRaisesRegex(
+            FomcLiveError, "auto_authorization_strategy_identity_invalid"
+        ):
+            validate_fomc_live_auto_authorization(foreign_strategy)
+
     def test_before_observation_does_not_touch_any_exchange(self) -> None:
         before_observation = dt.datetime(2026, 7, 29, 22, 0, tzinfo=UTC)
         with tempfile.TemporaryDirectory() as directory:

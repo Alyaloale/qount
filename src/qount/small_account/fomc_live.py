@@ -57,6 +57,8 @@ from qount.small_account.fomc_runtime import FomcEventDefinition
 from qount.small_account.fomc_runtime import FomcFreezeSnapshot
 from qount.small_account.fomc_runtime import FomcRuntimeError
 from qount.small_account.fomc_runtime import FomcSignalScan
+from qount.small_account.fomc_runtime import FOMC_STRATEGY_ID
+from qount.small_account.fomc_runtime import FOMC_STRATEGY_VERSION
 from qount.small_account.risk import AccountRiskSnapshot
 from qount.small_account.risk import DEFAULT_SMALL_ACCOUNT_POLICY
 from qount.small_account.risk import size_linear_usdt_futures
@@ -1827,6 +1829,11 @@ def validate_fomc_live_auto_authorization(
         )
     ):
         raise FomcLiveError("fomc_live_auto_authorization_invalid")
+    if (
+        authorization["strategy_id"] != FOMC_STRATEGY_ID
+        or authorization["strategy_version"] != FOMC_STRATEGY_VERSION
+    ):
+        raise FomcLiveError("fomc_live_auto_authorization_strategy_identity_invalid")
     try:
         authorized_at = _utc(str(authorization["authorized_at"]))
         expires_at = _utc(str(authorization["expires_at"]))

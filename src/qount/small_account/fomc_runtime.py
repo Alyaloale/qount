@@ -170,6 +170,8 @@ class FomcEventDefinition:
     def from_mapping(cls, value: Mapping[str, Any]) -> "FomcEventDefinition":
         required = {
             "event_name",
+            "strategy_id",
+            "strategy_version",
             "instrument_key",
             "symbol",
             "source_url",
@@ -198,10 +200,8 @@ class FomcEventDefinition:
             observation_starts_at=str(value["observation_starts_at"]),
             entry_cutoff_at=str(value["entry_cutoff_at"]),
             force_exit_at=str(value["force_exit_at"]),
-            strategy_id=str(value.get("strategy_id") or FOMC_STRATEGY_ID),
-            strategy_version=str(
-                value.get("strategy_version") or FOMC_STRATEGY_VERSION
-            ),
+            strategy_id=str(value["strategy_id"]),
+            strategy_version=str(value["strategy_version"]),
         )
 
     def _core(self) -> dict[str, Any]:
@@ -230,6 +230,11 @@ class FomcEventDefinition:
         for name in ("event_name", "strategy_id", "strategy_version"):
             if not _EVENT_NAME_RE.fullmatch(str(getattr(self, name))):
                 errors.append(f"event_{name}_invalid")
+        if (
+            self.strategy_id != FOMC_STRATEGY_ID
+            or self.strategy_version != FOMC_STRATEGY_VERSION
+        ):
+            errors.append("event_strategy_identity_invalid")
         if not self.instrument_key or not self.symbol:
             errors.append("event_instrument_invalid")
         if not self.source_url.startswith("https://"):

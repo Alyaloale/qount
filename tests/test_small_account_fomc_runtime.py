@@ -182,6 +182,28 @@ class FomcFreezeRuntimeTest(unittest.TestCase):
         with self.assertRaisesRegex(FomcRuntimeError, "event_clock_order_invalid"):
             FomcEventDefinition.create(**invalid_clock)
 
+    def test_event_definition_requires_the_explicit_fomc_strategy_identity(self) -> None:
+        event_mapping = _event().as_dict()
+
+        missing_identity = dict(event_mapping)
+        del missing_identity["strategy_id"]
+        with self.assertRaisesRegex(
+            FomcRuntimeError, "fomc_event_fields_missing:strategy_id"
+        ):
+            FomcEventDefinition.from_mapping(missing_identity)
+
+        for field, value in (
+            ("strategy_id", "another_strategy"),
+            ("strategy_version", "0.3"),
+        ):
+            with self.subTest(field=field):
+                mismatched_identity = dict(event_mapping)
+                mismatched_identity[field] = value
+                with self.assertRaisesRegex(
+                    FomcRuntimeError, "event_strategy_identity_invalid"
+                ):
+                    FomcEventDefinition.from_mapping(mismatched_identity)
+
     def test_freeze_uses_only_completed_pre_event_bars(self) -> None:
         event = _event()
         hourly, fifteen = _history()

@@ -97,6 +97,16 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 - 任何 line 进入 live / paper forward，必须先在本线文档和 `current.md` 写清开关、停止条件和回滚路径。
 - 多 agent 线只能写 research artifact；LLM agent 不得输出订单、目标权重、live 配置或风控 override。
 
+### 4.1 实盘策略身份与权限绑定
+
+- 每个可执行策略必须有不可省略的精确身份对 `strategy_id@strategy_version`；配置加载不得用默认值、空值或“任意合法字符串”补齐。
+- 事件运行时只能接受其代码内声明的策略身份。FOMC 当前唯一允许
+  `SmallAccount-FOMC-RightSide@0.2`；ID 或版本不匹配必须在读取状态、访问交易所或生成 arm 前失败关闭。
+- shadow、readiness、标准决策批次、registry、账本投影、owner authorization、arm、风险预算和 release provenance 必须绑定同一身份对。
+  任一身份、事件定义、账户 scope 或风险 policy 漂移都作新策略处理：重新发布、重新预检和重新授权，禁止复用旧 token、授权或预算。
+- 新策略接入生产前，必须新增“缺失身份、错误 ID、错误版本、跨策略授权/预算复用”四类 fail-closed 回归测试；测试通过不等于 owner
+  授权，仍须遵循本文件的 live 门禁。
+
 ## 5. 执行记录规则
 
 每一批有意义更改完成后，都必须更新记录文档：
