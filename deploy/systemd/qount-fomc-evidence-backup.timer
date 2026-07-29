@@ -1,0 +1,17 @@
+[Unit]
+Description=Back up FOMC replay evidence during the July 2026 event window
+
+[Timer]
+OnCalendar=2026-07-29 17..23:0/15:00 UTC
+OnCalendar=2026-07-30 00..10:0/15:00 UTC
+# Allow the live force-exit cycle to commit before finalizing the immutable bundle.
+OnCalendar=2026-07-30 11:05:00 UTC
+OnCalendar=2026-07-30 11:20:00 UTC
+OnCalendar=2026-07-30 11:35:00 UTC
+Persistent=true
+RandomizedDelaySec=10s
+AccuracySec=1s
+Unit=qount-fomc-evidence-backup.service
+
+[Install]
+WantedBy=timers.target

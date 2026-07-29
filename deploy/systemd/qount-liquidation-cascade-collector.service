@@ -1,0 +1,53 @@
+[Unit]
+Description=Qount public liquidation-cascade forward collector (research-only)
+After=network-online.target
+Wants=network-online.target
+ConditionPathIsDirectory=/root/qount
+ConditionPathIsDirectory=/var/lib/qount/research/liquidation-cascade-v1
+ConditionPathExists=/root/qount/scripts/research/liquidation_cascade_collector.py
+StartLimitIntervalSec=10m
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/root/qount
+Environment=PYTHONPATH=/root/qount/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONNOUSERSITE=1
+Environment=QOUNT_LIVE_ENABLE=false
+Environment=QOUNT_MINI_TREND_LIVE_ENABLE=false
+Environment=http_proxy=
+Environment=https_proxy=
+Environment=all_proxy=
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET BINANCE_SECRET_KEY QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/research/liquidation_cascade_collector.py --state-root /var/lib/qount/research/liquidation-cascade-v1 --symbols BTCUSDT,ETHUSDT,BNBUSDT --snapshot-interval-seconds 300 --event-snapshot-min-interval-seconds 15 --depth-limit 20 --min-free-disk-gb 8 --disk-check-interval-seconds 60 --no-proxy-env
+Restart=on-failure
+RestartSec=30s
+RestartPreventExitStatus=64 75
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryHigh=192M
+MemoryMax=256M
+TasksMax=32
+TimeoutStopSec=45s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/research/liquidation-cascade-v1
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

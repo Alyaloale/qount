@@ -1,0 +1,45 @@
+[Unit]
+Description=Qount FOMC credential-free replay evidence backup
+After=network.target
+ConditionPathExists=/root/qount/deploy/events/fomc-2026-07.json
+ConditionPathExists=/root/qount/scripts/operations/run_fomc_evidence.py
+ConditionPathIsDirectory=/var/lib/qount/fomc
+ConditionPathIsDirectory=/var/lib/qount/fomc-evidence-backups
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+Environment=PYTHONPATH=/root/qount/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=QOUNT_MODE=evidence
+Environment=http_proxy=
+Environment=https_proxy=
+Environment=all_proxy=
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+UnsetEnvironment=QOUNT_LIVE_ENABLE QOUNT_FOMC_ARM_TOKEN QOUNT_FOMC_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_TESTNET_API_KEY QOUNT_TESTNET_API_SECRET BINANCE_API_KEY BINANCE_SECRET
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_fomc_evidence.py --event-config /root/qount/deploy/events/fomc-2026-07.json --state-root /var/lib/qount/fomc --backup-root /var/lib/qount/fomc-evidence-backups --release-provenance-path /root/qount/.qount-release-provenance.json
+UMask=0077
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=30%
+MemoryHigh=256M
+MemoryMax=384M
+TasksMax=32
+TimeoutStartSec=3m
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/fomc
+ReadWritePaths=/var/lib/qount/fomc-evidence-backups
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX

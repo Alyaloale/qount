@@ -2,7 +2,7 @@
 
 `qount` 是按当前真实机器拓扑设计的 `AI 决策系统 + 风控执行器 + Binance 执行` 骨架。
 
-仓库版本`0.2.22`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
+仓库版本`0.2.24`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
 `STOP_MARKET closePosition`回读、保护失败紧急平仓和硬截止退出；VPS已部署FOMC live service/timer，但它保持
 `disabled/inactive`，未生成arm、未写live环境文件、未启用窗口开关或订单授权。Dashboard publisher健康；匿名打开`#/live`得到401是整站Basic Auth策略，不是发布器停止更新。
 
@@ -10,8 +10,8 @@
 策略到订单的追踪链、账本与对账、故障恢复、通知/日报、Dashboard read model、LLM边界和渐进迁移顺序。
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
-当前 VPS 生产版本为 `0.2.21`；FOMC公共行情watcher、现金窗口/冻结/信号告警、事件专用live service/timer和
-仅覆盖2026年7月事件窗口的systemd timer均已部署。所有live开关仍关闭，默认运行路径固定不可下单且不读取私有账户或API。
+当前 VPS 生产版本为 `0.2.24`；FOMC公共行情watcher、现金窗口/冻结/信号告警、事件专用live service/timer和
+仅覆盖2026年7月事件窗口的systemd timer均已部署且交易 timer 保持 `disabled/inactive`。所有live开关仍关闭，默认运行路径固定不可下单且不读取私有账户或API。
 Base 已迁入 `standard_production`：曾获真钱授权的策略
 `MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，
 但 owner 已于 2026-07-26 因长期无订单停止实盘；live/forward timer 与 production cron 均关闭，RiskTier/FundingVeto仍为shadow。

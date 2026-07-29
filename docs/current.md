@@ -2,11 +2,11 @@
 
 > **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-27
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：真钱交易当前未授权；`0.2.21`已部署至VPS，FOMC受控live unit已安装但保持`disabled/inactive`，未生成arm、未写live环境文件、未启用窗口开关。Dashboard可显示用户自有BTC仓位，但ledger成本、订单、PnL、NAV和当前对账仍明确不可用；`minimal_live`只代表历史注册状态且当前执行阻断。
+> **TL;DR**：真钱交易当前未授权；`0.2.24`已部署至VPS，FOMC受控live/shadow timer均保持`disabled/inactive`，未生成arm、未写live环境文件、未启用窗口开关。Dashboard可显示用户自有BTC仓位，但ledger成本、订单、PnL、NAV和当前对账仍明确不可用；`minimal_live`只代表历史注册状态且当前执行阻断。
 
 更新时间：2026-07-27
 
-VPS生产版本：`0.2.21`。当前release的commit、source tree、provenance和逐文件verification均保存在
+VPS生产版本：`0.2.24`。当前release的commit、source tree、provenance和逐文件verification均保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件timer、
 Dashboard只读账户视图和有界微信retry timer均已部署，所有交易执行权限仍关闭。
 

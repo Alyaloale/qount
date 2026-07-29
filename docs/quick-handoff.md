@@ -6,12 +6,12 @@
 
 更新时间：2026-07-27
 
-VPS生产版本：`0.2.21`；当前release的commit、source tree、provenance和逐文件verification保存在
+VPS生产版本：`0.2.24`；当前release的commit、source tree、provenance和逐文件verification保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`。FOMC不可下单watcher、
 现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；仍没有paper/live或订单权限。
 
-`0.2.21`的FOMC受控live runtime、CLI及`qount-fomc-live.service/.timer`已部署到VPS。VPS production profile为
-`360/360 OK`，模板与安装unit的SHA-256完全一致；timer明确保持`disabled/inactive`，无live环境文件、无arm。
+`0.2.24`的FOMC受控live runtime、CLI及`qount-fomc-live.service/.timer`已部署到VPS。VPS production profile为
+`360/360 OK`，模板与安装unit的SHA-256完全一致；live/shadow timer明确保持`disabled/inactive`，无live环境文件、无arm。
 
 当前账户只读证据为run `20260727T073725Z` / observation `ac00bd58...7757`：BTC USD-M用户自有多仓`0.009`、名义约
 `587.62 USDT`，钱包`203.06011455 USDT`、可用`66.0921174 USDT`、普通挂单0、既有条件保护单2。不要撤改或把该仓位归给
