@@ -9,7 +9,7 @@ import urllib.parse
 import zipfile
 from pathlib import Path
 
-from qount.grid.data import Funding
+from qount.research_data.market_data import Funding
 from qount.mini_trend.futures_shadow_inputs import (
     _copy_seed,
     canonical_funding_settlement_timestamp,

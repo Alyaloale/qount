@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Funding
-from qount.grid.data import day_url, funding_url, month_url
-from qount.grid.data import parse_funding_zip_bytes, parse_zip_bytes
+from qount.research_data.market_data import Funding
+from qount.research_data.market_data import day_url, funding_url, month_url
+from qount.research_data.market_data import parse_funding_zip_bytes, parse_zip_bytes
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_recovery import canonical_hash
 from qount.models import utc_now

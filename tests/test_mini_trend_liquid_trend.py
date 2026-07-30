@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import unittest
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.liquid_trend import LiquidTrendCapacityConfig
 from qount.mini_trend.liquid_trend import LiquidTrendPreprocessingContract
 from qount.mini_trend.liquid_trend import build_liquid_trend_capacity_report

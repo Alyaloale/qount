@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/root/qount
 ConditionPathIsDirectory=/var/lib/qount/research/liquidation-cascade-v1
-ConditionPathExists=/root/qount/scripts/research/liquidation_cascade_collector.py
+ConditionPathExists=/root/qount/scripts/research/mini_trend/liquidation_cascade_collector.py
 StartLimitIntervalSec=10m
 StartLimitBurst=5
 
@@ -23,7 +23,7 @@ Environment=HTTP_PROXY=
 Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET BINANCE_SECRET_KEY QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN
-ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/research/liquidation_cascade_collector.py --state-root /var/lib/qount/research/liquidation-cascade-v1 --symbols BTCUSDT,ETHUSDT,BNBUSDT --snapshot-interval-seconds 300 --event-snapshot-min-interval-seconds 15 --depth-limit 20 --min-free-disk-gb 8 --disk-check-interval-seconds 60 --no-proxy-env
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/research/mini_trend/liquidation_cascade_collector.py --state-root /var/lib/qount/research/liquidation-cascade-v1 --symbols BTCUSDT,ETHUSDT,BNBUSDT --snapshot-interval-seconds 300 --event-snapshot-min-interval-seconds 15 --depth-limit 20 --min-free-disk-gb 8 --disk-check-interval-seconds 60 --no-proxy-env
 Restart=on-failure
 RestartSec=30s
 RestartPreventExitStatus=64 75

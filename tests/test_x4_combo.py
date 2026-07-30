@@ -1,4 +1,4 @@
-"""Tests for the C×D combined-book kill-test (src/qount/x4/combo.py)."""
+"""Tests for the C×D combined-book kill-test (src/qount/legacy/x4/combo.py)."""
 
 import math
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from qount.x4.combo import align_curves, combine_fixed, kill_verdict
+from qount.legacy.x4.combo import align_curves, combine_fixed, kill_verdict
 
 
 class TestAlignCurves(unittest.TestCase):

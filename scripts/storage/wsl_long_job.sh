@@ -81,7 +81,7 @@ case "$action" in
       -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
       -u http_proxy -u https_proxy -u all_proxy \
       PYTHONPATH=src \
-      ./.venv/bin/python scripts/research/collect_stablecoin_chain_events.py \
+      ./.venv/bin/python scripts/research/mini_trend/collect_stablecoin_chain_events.py \
       --output-root "$output_root" \
       --start-at "$start_at" \
       --end-exclusive "$end_exclusive"
@@ -108,7 +108,7 @@ case "$action" in
       remediation_args+=(--proxy-url-env "$proxy_url_env")
     fi
     PYTHONPATH=src ./.venv/bin/python \
-      scripts/research/remediate_stablecoin_chain_events.py \
+      scripts/research/mini_trend/remediate_stablecoin_chain_events.py \
       "${remediation_args[@]}"
     ;;
   stablecoin-g0)
@@ -123,7 +123,7 @@ case "$action" in
     source_two="$5"
     source_three="$6"
     output_root="$7"
-    PYTHONPATH=src ./.venv/bin/python scripts/research/run_stablecoin_impulse_g0.py \
+    PYTHONPATH=src ./.venv/bin/python scripts/research/mini_trend/run_stablecoin_impulse_g0.py \
       --run \
       --preregistration-path "$preregistration" \
       --source-capacity-path "$source_capacity" \

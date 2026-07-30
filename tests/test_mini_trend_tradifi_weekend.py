@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.tradifi_weekend import TradifiWeekendConfig
 from qount.mini_trend.tradifi_weekend import _cash_session_bar_open_ms
 from qount.mini_trend.tradifi_weekend import _pooled_event_summary

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.pilot_300_research import PILOT_300_PROTOCOL
 from qount.mini_trend.pilot_300_research import build_pilot_300_research_report

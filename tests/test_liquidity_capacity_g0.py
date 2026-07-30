@@ -4,7 +4,7 @@ import datetime as dt
 import math
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.liquidity_capacity_g0 import (
     LIQUIDITY_CAPACITY_G0_PROTOCOL,
     build_liquidity_capacity_g0_report,

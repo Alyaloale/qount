@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 import unittest
 
-from qount.grid.data import Bar
-from qount.grid.data import Funding
+from qount.research_data.market_data import Bar
+from qount.research_data.market_data import Funding
 from qount.research_data.cost_model import COST_MODEL_TYPES
 from qount.research_data.cost_model import CostComponent
 from qount.research_data.cost_model import FrozenCostModel
@@ -457,7 +457,7 @@ class TestCausalVolTargetRegression(unittest.TestCase):
         # At i=21: uses returns j=1..20, all 100 -> vol=0 -> scale=1.0
         # At i=25: uses returns j=5..24, all 100 -> vol=0 -> scale=1.0
         # (bar 25's spike is the current bar, not included)
-        from scripts.research.run_r0_advancement import vol_target_positions
+        from scripts.research.governance.run_r0_advancement import vol_target_positions
         scaled = vol_target_positions(closes, positions, target_vol=0.02, lookback=20)
         # At bar 20, loop hasn't started (starts at 21), so position unchanged
         self.assertEqual(scaled[20], 1.0)
@@ -475,7 +475,7 @@ class TestCausalVolTargetRegression(unittest.TestCase):
                   90.0, 110.0, 90.0, 110.0, 90.0, 110.0, 90.0, 110.0,
                   90.0, 110.0, 90.0, 110.0, 90.0, 110.0, 90.0, 110.0, 90.0]
         positions = [1.0] * len(closes)
-        from scripts.research.run_r0_advancement import vol_target_positions
+        from scripts.research.governance.run_r0_advancement import vol_target_positions
         scaled = vol_target_positions(closes, positions, target_vol=0.02, lookback=20)
         # At bar 21+ (loop starts at lookback+1=21), realized vol should be very high
         self.assertLess(scaled[21], 1.0)
@@ -518,7 +518,7 @@ class TestFundingAggregation(unittest.TestCase):
         funding: list[Funding] = []
         for d in range(5):
             funding.extend(_funding_3x(d, rate=0.0001))
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         # Days 0-4 each have 3 settlements summed to 0.0003
         for i in range(5):
@@ -531,7 +531,7 @@ class TestFundingAggregation(unittest.TestCase):
         """Only 1 settlement per day; aggregated rate = 1 × rate."""
         bars = _bars(4)
         funding = [Funding(ts_ms=d * _DAY, rate=0.0002) for d in range(4)]
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         for i in range(4):
             self.assertAlmostEqual(result.rates[i], 0.0002, places=10)
@@ -548,7 +548,7 @@ class TestFundingAggregation(unittest.TestCase):
         # day 2: no funding (the gap)
         funding.extend(_funding_3x(3))
         funding.extend(_funding_3x(4))
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         self.assertTrue(result.incomplete)
         self.assertEqual(len(result.missing_intervals), 1)
@@ -563,7 +563,7 @@ class TestFundingAggregation(unittest.TestCase):
         funding.extend(_funding_3x(2))
         funding.extend(_funding_3x(3))
         funding.extend(_funding_3x(4))
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         # Days 0-1 have 0 settlements but no prior data, so not incomplete
         self.assertFalse(result.incomplete)
@@ -585,7 +585,7 @@ class TestFundingAggregation(unittest.TestCase):
             Funding(ts_ms=2 * _DAY + _8H, rate=0.0001),
             Funding(ts_ms=2 * _DAY + _16H, rate=0.0001),
         ]
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         self.assertAlmostEqual(result.rates[0], 0.0003, places=10)
         self.assertAlmostEqual(result.rates[1], 0.0006, places=10)
@@ -608,7 +608,7 @@ class TestFundingAggregation(unittest.TestCase):
             Funding(ts_ms=2 * _DAY + _8H + 2, rate=0.0001),
             Funding(ts_ms=2 * _DAY + _16H + 2, rate=0.0001),
         ]
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         self.assertAlmostEqual(result.rates[0], 0.0003, places=10)
         self.assertAlmostEqual(result.rates[1], 0.0003, places=10)
@@ -627,7 +627,7 @@ class TestFundingAggregation(unittest.TestCase):
             Funding(ts_ms=_DAY + _8H + 5, rate=0.0001),
             Funding(ts_ms=_DAY + _16H + 5, rate=0.0001),
         ]
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         self.assertAlmostEqual(result.rates[0], 0.0003, places=10)
         self.assertEqual(result.settlement_counts[0], 3)
@@ -641,7 +641,7 @@ class TestFundingAggregation(unittest.TestCase):
         funding.extend(_funding_3x(1))
         funding.extend(_funding_3x(2))
         # Day 3 (last bar) has no funding
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         self.assertTrue(result.incomplete)
         self.assertEqual(result.missing_intervals[-1]["bar_index"], 3)
@@ -649,7 +649,7 @@ class TestFundingAggregation(unittest.TestCase):
     def test_empty_funding_not_incomplete(self) -> None:
         """No funding data at all -> incomplete=False (no prior settlements)."""
         bars = _bars(5)
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, [])
         self.assertFalse(result.incomplete)
         self.assertEqual(len(result.missing_intervals), 0)
@@ -660,7 +660,7 @@ class TestFundingAggregation(unittest.TestCase):
         """Known fixture: 3 settlements × 0.0001 = 0.0003 per bar."""
         bars = _bars(3)
         funding = _funding_3x(0, 0.0001) + _funding_3x(1, 0.0001) + _funding_3x(2, 0.0001)
-        from scripts.research.run_r0_runtime import aggregate_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import aggregate_funding_to_bars
         result = aggregate_funding_to_bars(bars, funding)
         self.assertAlmostEqual(result.rates[0], 0.0003, places=10)
         self.assertAlmostEqual(result.rates[1], 0.0003, places=10)
@@ -732,7 +732,7 @@ class TestFundingCompletenessPropagation(unittest.TestCase):
         """align_funding_to_bars (deprecated) still returns a list of floats."""
         bars = _bars(3)
         funding = _funding_3x(0, 0.0001) + _funding_3x(1, 0.0001)
-        from scripts.research.run_r0_runtime import align_funding_to_bars
+        from scripts.research.governance.run_r0_runtime import align_funding_to_bars
         rates = align_funding_to_bars(bars, funding)
         self.assertIsInstance(rates, list)
         self.assertAlmostEqual(rates[0], 0.0003, places=10)

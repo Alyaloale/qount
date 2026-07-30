@@ -18,7 +18,7 @@ from qount.alpha_agents.source_capacity import SOURCE_CAPACITY_VERSION
 from qount.alpha_agents.source_capacity import FrozenOptionsDvolContract
 from qount.alpha_agents.source_capacity import OptionsDvolProtocol
 from qount.alpha_agents.source_capacity import build_options_dvol_preregistration
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 
 
 START_MS = 1_704_067_200_000

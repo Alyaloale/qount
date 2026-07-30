@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.rv.basis import ActiveBar
-from qount.rv.backtest import run_basis_carry
+from qount.research_data.market_data import Bar
+from qount.legacy.rv_c.basis import ActiveBar
+from qount.legacy.rv_c.backtest import run_basis_carry
 
 _DAY_MS = 86_400_000
 _T0 = 1_609_459_200_000  # 2021-01-01 UTC

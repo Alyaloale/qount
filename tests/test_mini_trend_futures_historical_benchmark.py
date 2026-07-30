@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_historical_benchmark import run_buy_hold_benchmark
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.futures_recovery import canonical_hash
 from qount.mini_trend.regime_adaptation_ablation import AdaptationAblationConfig
 from qount.mini_trend.regime_adaptation_ablation import build_adaptation_risk_ablation

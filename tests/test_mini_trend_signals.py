@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.config import MiniTrendConfig
 from qount.mini_trend.signals import target_weights
 

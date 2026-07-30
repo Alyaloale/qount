@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar, Funding
-from qount.x4.funding import holding_period_funding
+from qount.research_data.market_data import Bar, Funding
+from qount.legacy.x4.funding import holding_period_funding
 
 
 _T0 = 1_609_459_200_000

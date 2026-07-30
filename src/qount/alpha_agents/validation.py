@@ -14,9 +14,9 @@ from typing import Any
 
 from qount.artifacts import write_research_json_artifact
 from qount.models import utc_now
-from qount.rv.stats import deflated_sharpe_ratio
-from qount.rv.stats import expected_max_sharpe
-from qount.rv.stats import sharpe
+from qount.research_data.metrics import deflated_sharpe_ratio
+from qount.research_data.metrics import expected_max_sharpe
+from qount.research_data.metrics import sharpe
 from qount.settings import Settings
 
 from .feature_experiment import FeatureExperimentConfig

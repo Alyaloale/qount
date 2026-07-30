@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.high_return_attribution import _all_next_holding_day_funding
 from qount.mini_trend.high_return_attribution import _daily_funding
 

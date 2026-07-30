@@ -19,7 +19,7 @@ from typing import Any
 from typing import Callable
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.settings import Settings
 
 

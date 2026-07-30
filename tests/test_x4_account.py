@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from qount.x4.account import X4Account
+from qount.legacy.x4.account import X4Account
 
 _CAP = 100_000.0
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_base_episode_attribution import BaseEpisodeAttributionConfig
 from qount.mini_trend.futures_base_episode_attribution import build_base_episode_preregistration

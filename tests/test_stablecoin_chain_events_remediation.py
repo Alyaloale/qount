@@ -10,7 +10,7 @@ from typing import Any
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-from scripts.research.remediate_stablecoin_chain_events import (
+from scripts.research.mini_trend.remediate_stablecoin_chain_events import (
     PUBLISH_CODE_RELATIVE_PATHS,
     _ResilientEthereumRpc,
     _build_or_resume_usdt_owner_call_proof,
@@ -248,12 +248,12 @@ class StablecoinChainEventRemediationTests(unittest.TestCase):
             proof = {"complete_owner_history_claimed": True}
             with (
                 patch(
-                    "scripts.research.remediate_stablecoin_chain_events."
+                    "scripts.research.mini_trend.remediate_stablecoin_chain_events."
                     "verified_multisig_execution_semantic_proof",
                     return_value={"source_artifact_sha256": "a" * 64},
                 ),
                 patch(
-                    "scripts.research.remediate_stablecoin_chain_events."
+                    "scripts.research.mini_trend.remediate_stablecoin_chain_events."
                     "ethereum_owner_at",
                     side_effect=(
                         USDT_ETHEREUM_INITIAL_OWNER,
@@ -263,7 +263,7 @@ class StablecoinChainEventRemediationTests(unittest.TestCase):
                     ),
                 ),
                 patch(
-                    "scripts.research.remediate_stablecoin_chain_events."
+                    "scripts.research.mini_trend.remediate_stablecoin_chain_events."
                     "build_usdt_ethereum_owner_call_proof",
                     return_value=proof,
                 ) as build,
@@ -303,7 +303,7 @@ class StablecoinChainEventRemediationTests(unittest.TestCase):
                 side_effect=(error, error, ["0x1"]),
             ) as batch,
             patch(
-                "scripts.research.remediate_stablecoin_chain_events.time.sleep"
+                "scripts.research.mini_trend.remediate_stablecoin_chain_events.time.sleep"
             ) as sleep,
         ):
             self.assertEqual(rpc.batch(requests), ["0x1"])
@@ -320,7 +320,7 @@ class StablecoinChainEventRemediationTests(unittest.TestCase):
         error = PublicChainCollectionError("persistent")
         with (
             patch.object(EthereumRpc, "call", side_effect=error) as call,
-            patch("scripts.research.remediate_stablecoin_chain_events.time.sleep"),
+            patch("scripts.research.mini_trend.remediate_stablecoin_chain_events.time.sleep"),
             self.assertRaisesRegex(PublicChainCollectionError, "persistent"),
         ):
             rpc.call("eth_blockNumber", [])
@@ -334,7 +334,7 @@ class StablecoinChainEventRemediationTests(unittest.TestCase):
                 "src/qount/mini_trend/stablecoin_impulse_g0.py",
                 "src/qount/mini_trend/stablecoin_chain_events.py",
                 "src/qount/mini_trend/stablecoin_chain_events_remediation.py",
-                "scripts/research/remediate_stablecoin_chain_events.py",
+                "scripts/research/mini_trend/remediate_stablecoin_chain_events.py",
             },
         )
 

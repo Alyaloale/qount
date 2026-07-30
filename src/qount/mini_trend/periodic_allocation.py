@@ -12,7 +12,7 @@ from qount.artifacts import write_research_json_artifact
 from qount.mini_trend.futures_recovery import canonical_hash
 from qount.mini_trend.scorecard import max_drawdown_pct
 from qount.models import utc_now
-from qount.rv.stats import sharpe
+from qount.research_data.metrics import sharpe
 from qount.settings import Settings
 
 

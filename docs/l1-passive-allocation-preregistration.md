@@ -42,7 +42,7 @@ The registration command seals its JSON document with no-overwrite, fsync-backed
 publication and then writes the standard immutable registry artifacts:
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/preregister_l1_passive_allocation.py
-PYTHONPATH=src ./.venv/bin/python scripts/research/register_l1_passive_allocation_strategy.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/sleeves/preregister_l1_passive_allocation.py
+PYTHONPATH=src ./.venv/bin/python scripts/research/sleeves/register_l1_passive_allocation_strategy.py \
   --preregistration '<sealed-passive-preregistration.json>'
 ```

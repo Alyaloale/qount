@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_funding_veto import STRONG_BULL_FUNDING_VETO
 from qount.mini_trend.futures_regime_stop_latch import STRONG_BULL_BOOSTED

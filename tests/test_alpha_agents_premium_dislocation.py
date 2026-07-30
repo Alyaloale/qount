@@ -15,7 +15,7 @@ from qount.alpha_agents.premium_dislocation import aggregate_premium_to_hourly
 from qount.alpha_agents.premium_dislocation import build_premium_dislocation_discovery_report
 from qount.alpha_agents.premium_dislocation import build_premium_dislocation_experiment
 from qount.alpha_agents.premium_dislocation import build_premium_dislocation_preregistration
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 
 
 START_MS = 1_704_067_200_000

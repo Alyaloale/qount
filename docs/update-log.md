@@ -732,7 +732,7 @@ CTA-R/C×D仍冻结次级旁路；no-carry/no-short/effective gross`<=1`约束�
 `funding_crowding_meta_v1`、`liquidity_capacity_meta_v1`和`oi_flow_forward_v1`六个互相独立的假设族。
 
 **实现与预登记**：
-- 新增`src/qount/mini_trend/multi_speed_trend.py`和`scripts/research/run_crypto_multi_speed_trend.py`；现有UM历史执行器
+- 新增`src/qount/mini_trend/multi_speed_trend.py`和`scripts/research/mini_trend/run_crypto_multi_speed_trend.py`；现有UM历史执行器
   新增显式的候选target selector、交易成本倍率和funding倍率入口，默认Base行为不变。
 - Trial 145是`multi_speed_trend_v1`的第1/3个冻结trial：20/60/120日总收益全票为正，120日BTC或2/3 breadth
   慢门，long/cash、gross`<=1`；风险预算、相关惩罚、deadband、3xATR、3日冷却、funding和12bps成本均与Base对齐。
@@ -779,7 +779,7 @@ UM执行器和runner的`compileall`通过；预登记CLI幂等复跑返回同一
 - `src/qount/cta_eval.py`的grid/gate/walk-forward新增并传播`cost_per_side_pct`；`cta_sim` CLI的
   `--cost-per-side-pct`现在对gate和walk-forward真实生效，不再被静默忽略。
 - `default_cta_r_etf_cost_model`场所从`us_etf_brokerage`修正为`cn_etf_brokerage`。
-- 新增`scripts/research/run_cta_r_revalidation.py`：固定8 ETF、`63/126/252`多周期、long-only、gross<=1，
+- 新增`scripts/archive/research-legacy/line-a/run_cta_r_revalidation.py`：固定8 ETF、`63/126/252`多周期、long-only、gross<=1，
   读取压缩源并保存数据/代码/配置/成本/结果/GlobalExperimentRecord/CandidateRevalidationRecord的manifest-last bundle。
 - 新增2条成本传播回归测试，并给ETF成本场所补断言。
 
@@ -817,7 +817,7 @@ R0 advancement的CTA-R `1.56x`降为单规则探索读数，不再代表CTA-R主
 
 **目标**：在修正后的 artifact 上完成四项深度验证，评估趋势候选的时间稳定性、成本鲁棒性和 alpha 一致性。
 
-**新增**：`scripts/research/run_r0_validation.py` - 四项验证脚本，使用 `CandidateConfig.default()` (fast=20, slow=100, regime_sma=0)，生成 immutable validation artifact。
+**新增**：`scripts/research/governance/run_r0_validation.py` - 四项验证脚本，使用 `CandidateConfig.default()` (fast=20, slow=100, regime_sma=0)，生成 immutable validation artifact。
 
 **验证结果**：
 
@@ -855,7 +855,7 @@ R0 advancement的CTA-R `1.56x`降为单规则探索读数，不再代表CTA-R主
 **问题**：v5 GlobalExperimentRecord 仍指向旧 `b90c6d...` runtime bundle（carry 0.76x），未绑定修正后的三个 bundle。`docs/current.md:19` 仍称"RETAIN 不再 provisional"。`docs/carry-active-basis-hypothesis.md:5` 仍以"0.76x rejected"为前提。`docs/research-advancement-roadmap.md:302-311` 仍引用旧数字和 bundle IDs。
 
 **修复**：
-- 新建 `scripts/research/update_r0_records_v6.py`：读取 Round 2 runtime (`7e827743...`)、Round 3 decision (`a26fba9a...`)、Round 4 advancement (`443a4ebb...`) bundle manifests，生成 v6 governance bundle。`GlobalExperimentRecord.result_artifact_hash` 指向新 runtime，`source_hashes` 含三个 bundle ID + `candidate_config_hash`。`CandidateRevalidationRecord.decision="revise"`，`execution_contract.candidate_pnl_ready=False`。manifest 增加 `r0_decision_bundle_id`/`r0_advancement_bundle_id`/`supersedes` 字段。
+- 新建 `scripts/research/governance/update_r0_records_v6.py`：读取 Round 2 runtime (`7e827743...`)、Round 3 decision (`a26fba9a...`)、Round 4 advancement (`443a4ebb...`) bundle manifests，生成 v6 governance bundle。`GlobalExperimentRecord.result_artifact_hash` 指向新 runtime，`source_hashes` 含三个 bundle ID + `candidate_config_hash`。`CandidateRevalidationRecord.decision="revise"`，`execution_contract.candidate_pnl_ready=False`。manifest 增加 `r0_decision_bundle_id`/`r0_advancement_bundle_id`/`supersedes` 字段。
 - `docs/current.md:19-43`：替换为 Round 1-4 修正后的完整状态。RETAIN 降级为 **retain_for_discovery_revalidation**。全部 bundle IDs 和数字更新。
 - `docs/carry-active-basis-hypothesis.md:3-14`：更新前置条件为"REVISE（kill test 3 FAIL）"，carry Standalone NAV 1.38x（cost_incomplete=True）。旧 0.76x 作为历史记录保留。
 - `docs/research-advancement-roadmap.md:302-311`：替换为 Round 1-4 修正后的数字和 bundle IDs。
@@ -968,7 +968,7 @@ R0 advancement的CTA-R `1.56x`降为单规则探索读数，不再代表CTA-R主
 - `src/qount/research_data/nav.py:compute_carry_signal_nav`：重定义为 basis 收敛信号。`basis_t = (perp_t - spot_t) / spot_t`，per-bar signal return = `basis_{t-1} - basis_t`（basis 缩窄 = 正收益）。`basis_at_entry` 改为可选（`None` 时从首 bar 自动计算），作为参考元数据存储，不影响 per-bar 计算。
 - `src/qount/research_data/nav.py:compute_carry_standalone_nav`：① 新增 `weight=0.5` 参数（每腿 0.5x，gross = 2*weight = 1.0）；② NAV 改为加性（`nav += market_pnl - bar_cost`，非乘性），固定名义量不复合；③ 持仓成本按 `weight` 缩放（`_compute_holding_costs(-weight, ...)`）；④ turnover = `4*weight = 2.0`（非 4.0）。
 - `src/qount/research_data/cost_model.py:default_cxd_carry_cost_model`：`collateral_cost` 和 `tail_cost` 的 source 从 `"estimated"` 改为 `"unavailable"`。`has_unavailable` 返回 `True` -> `cost_incomplete=True`。无需新属性。
-- `scripts/research/run_r0_runtime.py`：`compute_carry_signal_nav` 调用不再传 `basis_at_entry=0.0`（改为自动计算）。
+- `scripts/research/governance/run_r0_runtime.py`：`compute_carry_signal_nav` 调用不再传 `basis_at_entry=0.0`（改为自动计算）。
 
 **验证**：
 - 更新 `tests/test_research_data_cost_nav.py`：新增 4 条测试（basis_at_entry 自动计算、signal 跟踪 basis 非 delta-PnL、gross≤1 turnover=2.0、additive NAV 不复合、cost_incomplete 因 unavailable），更新 3 条（turnover 4.0->2.0、cost_incomplete False->True、standalone<signal 改为 standalone has costs）。
@@ -1030,7 +1030,7 @@ R0 advancement的CTA-R `1.56x`降为单规则探索读数，不再代表CTA-R主
 审查发现 P0.5 阻断项：funding 仍按"每日一条最近费率"计入而非按真实 8h 结算逐笔累计。本轮修复了 funding 聚合、completeness 检测、
 decision provenance 链和 vol-target 窗口契约。所有工作固定 `orders_authorized=false`，不改变 Base 生产或路由订单。
 
-**P0.5-1 funding 结算聚合错误**（`scripts/research/run_r0_runtime.py`）：
+**P0.5-1 funding 结算聚合错误**（`scripts/research/governance/run_r0_runtime.py`）：
 - 旧 `align_funding_to_bars` 对每个 bar 取"最近一条 ≤ bar open"的费率，7,119 次原始结算仅累计约三分之一（0.2587 vs 0.7752）。
 - 新增 `FundingAlignment` dataclass + `aggregate_funding_to_bars()`：对每个持有区间 `[bar_i.ts_ms, bar_{i+1}.ts_ms)` 求和全部 settlement rate。
 - 复用 `grid/backtest.py:899` 的双指针扫描模式，自然解决毫秒偏移（2,394 个 bar open 中 1,091 个无精确匹配 settlement）。
@@ -1041,18 +1041,18 @@ decision provenance 链和 vol-target 窗口契约。所有工作固定 `orders_
 - `compute_standalone_nav` / `compute_carry_standalone_nav` 新增 `funding_incomplete: bool` 参数，OR 入 `cost_incomplete`。
 - `candidate_pnl_ready` 现在受 `funding_incomplete` 阻断。
 
-**P1 decision provenance 闭合**（`scripts/research/run_r0_decision.py`）：
+**P1 decision provenance 闭合**（`scripts/research/governance/run_r0_decision.py`）：
 - 新增 `--runtime-bundle` CLI 参数（原 docstring 提到但未实现）。
 - 从 runtime bundle manifest 读取 `um_closes_hash` / `funding_raw_hash` / `trend_standalone_nav.final_nav`，
   重载 cache 数据后验证三者匹配，任一不匹配 fail-closed 拒绝生成 decision。
 - Decision manifest 新增 `runtime_bundle_id` / `runtime_bundle_verified` / `input_verification` 字段。
 
-**P1 advancement manifest-last artifact**（`scripts/research/run_r0_advancement.py`）：
+**P1 advancement manifest-last artifact**（`scripts/research/governance/run_r0_advancement.py`）：
 - 新增 write-once artifact 输出到 `state/research_governance/r0_advancement/`。
 - Manifest 绑定 `source_hashes`（ETF zip）、`universe`（crypto + ETF panel）、`holdout_role=discovery_pool`、`config`、`results`。
 - 新增 `--output-dir` / `--dry-run` CLI 参数。
 
-**P1 vol-target 窗口契约**（`scripts/research/run_r0_advancement.py`）：
+**P1 vol-target 窗口契约**（`scripts/research/governance/run_r0_advancement.py`）：
 - `range(lookback, len)` -> `range(lookback + 1, len)`，明确"lookback=20 = 20 个 completed returns"语义。
 - 旧逻辑在 i=20 时仅用 19 个 returns；新逻辑在 i=21 时用 20 个 returns。
 
@@ -1111,7 +1111,7 @@ carry 腿 kill test `standalone_nav_non_positive_after_tail` 从 FAIL 变为 PAS
 Signal maxDD 从 -92.28% 变为 -50.91%、Standalone maxDD 从 -90.48% 变为 -53.17%；CTA-R 等权 maxDD 从 -35.64% 变为 -8.72%；
 3 币等权 maxDD 从 -96.92% 变为 -34.89%。buy-hold maxDD 也被修正（BTC 从 -96.18% 变为 -76.67%）。
 
-**P0-3 因果 vol-target 修复**（`scripts/research/run_r0_advancement.py` `vol_target_positions`）：旧代码在 bar `i` 使用
+**P0-3 因果 vol-target 修复**（`scripts/research/governance/run_r0_advancement.py` `vol_target_positions`）：旧代码在 bar `i` 使用
 `range(i - lookback + 1, i + 1)` 计算已实现波动率，包含 `closes[i] / closes[i-1]`（当期收益），属于未来函数。新代码改为
 `range(max(1, i - lookback), i)`，只使用 bar `i-1` 及之前的收益。同时修复了 `j=0` 时 `closes[j-1]` 回绕到列表末尾的 Python
 索引 bug。修复后 vol-target maxDD 从 -10.04% 变为 -2.37%（BTC），-10.69% 变为 -2.14%（ETH），-11.49% 变为 -2.33%（BNB）。
@@ -1173,7 +1173,7 @@ artifact；先修复并补测，再在同一冻结输入上生成新的 manifest
 
 **R0-DATA（point-in-time 数据真相）**：新建 `src/qount/research_data/` 包（`lifecycle.py` / `availability.py` /
 `universe.py`），从 Binance exchangeInfo（spot/um/cm）采集 `PointInTimeSymbolLifecycle` 并生成冻结
-`PointInTimeUniverseRevision`。`scripts/research/build_r0_data.py` 编排脚本在 WSL 生成真实 bundle `b9fa27ec...`：
+`PointInTimeUniverseRevision`。`scripts/research/governance/build_r0_data.py` 编排脚本在 WSL 生成真实 bundle `b9fa27ec...`：
 UM 846 symbols（721 active）、27 季度 revisions（2020-2026）、source hash + contamination role + write-once 0700/0600。
 ETF 数据入库 `state/cta_r/etf_source/`（etf_data.zip SHA `3593d47048409c717cf64faeaa0522001518beb228a5ab74ad7cd08224077f3b`、
 stocks.zip SHA `233f5f06c2ffbb3bdc5479d6883c8f8a767f8c13973e1cbea399825f8b7bd350`），含 1733 ETF 日线 + adj factor +
@@ -1186,26 +1186,26 @@ etf_fee/spread/slippage/tax/fx 5 组件；CTA-R futures: futures_fee/spread/slip
 `compute_standalone_nav`（信号 - 冻结成本）、`compute_carry_signal_nav` / `compute_carry_standalone_nav`（delta-neutral basis）。
 110 个标准库单测通过；当时尚无测试覆盖空头 funding 的收入方向。
 
-**R0-RUNTIME（初步 NAV 计算）**：`scripts/research/run_r0_runtime.py` 加载 BTCUSDT UM 日线 2395 bars + spot 2393 bars +
+**R0-RUNTIME（初步 NAV 计算）**：`scripts/research/governance/run_r0_runtime.py` 加载 BTCUSDT UM 日线 2395 bars + spot 2393 bars +
 funding 7119 条。趋势腿（SMA 20/100 + regime 200 闸）Signal NAV 10.62x、Standalone NAV 8.57x（成本 0.2151 = taker 0.0136 +
 slippage 0.0068 + funding 0.1947，cost_incomplete=False）。carry 腿（spot long + perp short delta-neutral）Signal NAV 0.99x、
 Standalone NAV 0.76x（成本 0.2638，cost_incomplete=False）。Bundle `b90c6d1569d2fcc0...`，7 members，0700/0600 verified。carry
 funding 符号和 max drawdown 后被审计判定需重算，不能用作最终候选结论。
 
-**R0-RECORD（回填治理记录 v5）**：`scripts/research/update_r0_records_v5.py` 读取 R0-DATA + R0-RUNTIME bundle，用真实
+**R0-RECORD（回填治理记录 v5）**：`scripts/research/governance/update_r0_records_v5.py` 读取 R0-DATA + R0-RUNTIME bundle，用真实
 dataset IDs、cost model hashes 和 NAV artifacts 回填 `GlobalExperimentRecord` / `CandidateRevalidationRecord`。v5 bundle
 `47aa0e88c70d3d2d...`（11 members = 8 evidence + 2 candidate + 1 global experiment），`candidate_pnl_ready=True`（仅 C×D 初步成本完整、
 NAV 已计算），`orders_authorized=False`，`promotion_evidence=False`。C×D candidate 现引用 R0-DATA bundle ID 和 R0-RUNTIME
 bundle ID；CTA-R 仍为 partial（无 cross-asset runtime）。
 
-**R0-DECISION（初步 retain/revise/reject）**：`scripts/research/run_r0_decision.py` 运行 4 种尾部压力测试并应用 3 个 kill test。
+**R0-DECISION（初步 retain/revise/reject）**：`scripts/research/governance/run_r0_decision.py` 运行 4 种尾部压力测试并应用 3 个 kill test。
 C×D 趋势腿 **RETAIN**：成本翻倍 NAV 8.39x、延迟 1 bar 8.93x、10% 漏单 7.35x、5x 滑点 8.33x——全部 NAV > 1.0，但 maxDD 持续
 ~-90% 需后续 beta-residual 审计。C×D carry 腿 **REJECT**：Standalone NAV 0.76x ≤ 1.0，kill test
 `standalone_nav_non_positive_after_tail` FAIL；静态 delta-neutral carry 不 work，允许带 active basis-capture 的新版本。
 CTA-R **BLOCKED**：无 runtime NAV，证据不足。Decision bundle `d382f8e931d7a3cb...`。该脚本未绑定 runtime bundle，且继承上述计算问题；
 三个标签均为 provisional。
 
-**三线推进（初步控制台输出）**：`scripts/research/run_r0_advancement.py` 同时运行三条研究线。
+**三线推进（初步控制台输出）**：`scripts/research/governance/run_r0_advancement.py` 同时运行三条研究线。
 ① 趋势 beta-residual：BTC trend vs BTC buy-hold 回归得 **alpha = +18.66%/yr、beta = 0.41、R² = 0.41**——趋势策略以 41% 的
 方向暴露获得正 alpha，59% 方差是时机 alpha。BTC Standalone NAV 8.57x vs buy-hold 9.18x（绝对收益略低但风险暴露减半）。
 ② 多币广度 + vol-target：BTC/ETH/BNB 三币 Standalone NAV 均为正（8.57x / 15.23x / 29.32x）；vol-target 2% 年化把 maxDD 从
@@ -1224,7 +1224,7 @@ CTA-R **BLOCKED**：无 runtime NAV，证据不足。Decision bundle `d382f8e931
 manifest/member hash，未复跑全仓或访问 WSL。
 
 新增文件：`src/qount/research_data/`（`__init__.py` / `lifecycle.py` / `availability.py` / `universe.py` / `cost_model.py` /
-`nav.py`）、`scripts/research/build_r0_data.py` / `run_r0_runtime.py` / `update_r0_records_v5.py` / `run_r0_decision.py` /
+`nav.py`）、`scripts/research/governance/build_r0_data.py` / `run_r0_runtime.py` / `update_r0_records_v5.py` / `run_r0_decision.py` /
 `run_r0_advancement.py`、`tests/test_research_data_*.py`（4 文件）、`docs/carry-active-basis-hypothesis.md`。
 新增 artifacts：`state/research_governance/r0_data/b9fa27ec...`（WSL）、`state/research_governance/r0_runtime/b90c6d15...`、
 `state/research_governance/r0/47aa0e88...`（v5）、`state/research_governance/r0_decision/d382f8e9...`。

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import unittest
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.regime_ml import FEATURE_NAMES
 from qount.mini_trend.regime_ml import RegimeMLConfig

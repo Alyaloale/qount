@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.backtest import run_directional, run_grid
-from qount.x4.papersim import DEPLOYED_SLEEVES, PaperConfig, run_paper
-from qount.x4.portfolio import combine
-from qount.x4.strategies import GridStrategy, MomentumBreakout, TrendFollow
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.backtest import run_directional, run_grid
+from qount.legacy.x4.papersim import DEPLOYED_SLEEVES, PaperConfig, run_paper
+from qount.legacy.x4.portfolio import combine
+from qount.legacy.x4.strategies import GridStrategy, MomentumBreakout, TrendFollow
 
 _T0 = 1_609_459_200_000
 _D = 86_400_000

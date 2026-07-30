@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_recovery import FUTURES_RECOVERY_PREREG_VERSION
 from qount.mini_trend.futures_recovery import FUTURES_RECOVERY_PROTOCOL

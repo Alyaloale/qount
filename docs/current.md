@@ -74,7 +74,8 @@ Dashboard只读账户视图和有界微信retry timer均已部署；除本次受
   `{13,26,39,52}` 周回看与所引用提交中的 13 ETF、`{13,26,52}` 默认配置不一致；此前外部盘上的缓存和
   回放结论不作为当前可验证事实。本线不再拉取 Tiingo 数据、回放、登记策略、生成目标或新增自动化流程。
 需要重新研究时，从新的个人研究问题和最小可用脚本开始，不复用这条历史流程。
-代码、脚本、测试和专属研究文档已移至 [archive/legacy/l1-personal-carrier/](../archive/legacy/l1-personal-carrier/)。
+代码和测试已移至 [`src/qount/legacy/l1/`](../src/qount/legacy/l1/)，专属研究文档移至
+[`docs/archive/legacy/l1-personal-carrier/`](archive/legacy/l1-personal-carrier/)。
 
 - **2026-07-30 Sleeve 1 被动长期配置已独立预登记并接入 research registry。** `l1_passive_sixty_forty@0.1.0`
   固定为 `SPY 60% / TLT 40% / USD 现金目标 0%`，年度首个完整 NYSE 常规交易日为唯一再平衡锚点；现金流仅留至下一锚点，

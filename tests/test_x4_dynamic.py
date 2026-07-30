@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.backtest import run_grid, run_kalman_pair
-from qount.x4.indicators import KalmanHedge
-from qount.x4.strategies import GridStrategy, KalmanPair
-from qount.grid.trend import TrendState
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.backtest import run_grid, run_kalman_pair
+from qount.research_data.indicators import KalmanHedge
+from qount.legacy.x4.strategies import GridStrategy, KalmanPair
+from qount.legacy.grid_b.trend import TrendState
 
 _T0 = 1_609_459_200_000
 _D = 86_400_000

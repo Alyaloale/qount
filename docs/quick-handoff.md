@@ -166,7 +166,7 @@ git status --short --branch
 ```bash
 ssh qount-vps 'systemctl status qount-liquidation-cascade-collector.service --no-pager'
 ssh qount-vps 'PYTHONPATH=/root/qount/src /root/qount/.venv/bin/python \
-  /root/qount/scripts/research/liquidation_cascade_collector.py \
+  /root/qount/scripts/research/mini_trend/liquidation_cascade_collector.py \
   --state-root /var/lib/qount/research/liquidation-cascade-v1 --status'
 ssh qount-vps 'journalctl -u qount-liquidation-cascade-collector.service -n 40 --no-pager'
 ```
@@ -185,7 +185,7 @@ ssh qount-vps 'cd /root/qount-alpha && find state/alpha-collector-current/segmen
   -name "events.jsonl.gz.partial" -printf "%p %s bytes\n"'
 launchctl print gui/$(id -u)/com.qount.alpha-collector-offload
 tail -n 80 state/logs/alpha_collector_offload.log
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_live_collector.py \
   --verify-session-dir \
   state/research_runs/20260714T135630Z-alpha-agent-live-collector-session-7d-vps
 ```
@@ -202,10 +202,10 @@ ssh qount-vps 'systemctl stop qount-alpha-collector.service'
 checksum-verified Binance 历史归档：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_historical_microstructure.py
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_historical_derivatives.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_historical_microstructure.py
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_historical_derivatives.py \
   --start-date 2024-01-01 --end-date 2024-03-31
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_historical_tradeflow.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_historical_tradeflow.py \
   --symbols ETHUSDT --start-date 2024-01-01 --end-date 2024-03-31 \
   --datasets aggTrades --cadence monthly
 ```
@@ -407,8 +407,8 @@ Phase D 本地测试：
 R0 记录合同已随 `0.2.15` 同步到 VPS；allocator 仍只在本地运行，VPS不运行候选 PnL：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/run_multi_sleeve_virtual_runtime.py
-PYTHONPATH=src ./.venv/bin/python scripts/research/build_r0_records.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/governance/run_multi_sleeve_virtual_runtime.py
+PYTHONPATH=src ./.venv/bin/python scripts/research/governance/build_r0_records.py \
   --virtual-runtime-artifact state/research_governance/runtime/d4faa121a0e57a32a2210901f7789676153b7d59d37714874629ea0f38548a80
 PYTHONPATH=src ./.venv/bin/python -m unittest \
   tests.test_multi_sleeve_virtual_runtime \
@@ -880,7 +880,7 @@ VPS 测试：
   交互式 WSL 终端起、且该终端常开,后台才活。**从 Mac 远程驱动时,可靠做法是前台阻塞跑**:
   ```bash
   ssh -o ClearAllForwardings=yes home 'wsl.exe bash -s' <<'EOF'
-  cd ~/Code/qount && bash scripts/research/l6_pipeline.sh 2>&1 | tee /tmp/l6_pipeline.log
+  cd ~/Code/qount && bash scripts/archive/research-legacy/l6/l6_pipeline.sh 2>&1 | tee /tmp/l6_pipeline.log
   EOF
   ```
   ssh 连接全程挂着 = WSL 不回收,任务能跑完。命令行工具会把长任务转后台,但本地 ssh 进程仍挂着,
@@ -1024,11 +1024,11 @@ python -m qount.main walk-forward \
 - AI：`src/qount/ai_client.py`、`src/qount/orchestrator.py`
 - review / scan：`src/qount/review.py`、`src/qount/research_slice_scan.py`
 - artifact：`src/qount/artifacts.py`
-- 线 B GRID：`src/qount/grid/`、`scripts/research/grid_b_*.py`
-- 线 C RV：`src/qount/rv/`、`scripts/archive/desktop-legacy/rv_live.py`
-- 线 D X4 / C×D：`src/qount/x4/`、`scripts/archive/desktop-legacy/`
+- 线 B GRID：`src/qount/legacy/grid_b/`、`scripts/archive/research-legacy/grid-b/grid_b_*.py`
+- 线 C RV：`src/qount/legacy/rv_c/`、`scripts/archive/desktop-legacy/rv_live.py`
+- 线 D X4 / C×D：`src/qount/legacy/x4/`、`scripts/archive/desktop-legacy/`
 - 重启线 L1/L3/L4/L6：`src/qount/l*_*.py`、`scripts/research/l*_*.py`
-- Alpha Agents / S3 collector：`src/qount/alpha_agents/`、`scripts/research/alpha_agent_*.py`
+- Alpha Agents / S3 collector：`src/qount/alpha_agents/`、`scripts/research/alpha_agents/alpha_agent_*.py`
 - Phase A 架构演进：`src/qount/certification/`、`src/qount/halt/`、`src/qount/venue/`、`src/qount/shadow_accounting/`
 - 主测试：`tests/test_strategy_optimization.py`
 - 交易所边界测试：`tests/test_exchange_throttling.py`

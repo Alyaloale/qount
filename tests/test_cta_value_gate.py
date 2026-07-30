@@ -1,4 +1,4 @@
-"""V-GATE unit tests (docs/cta-r-value-gate-plan.md, step 1).
+"""V-GATE unit tests (docs/archive/legacy/line-a/cta-r-value-gate-plan.md, step 1).
 
 The valuation filter is a single new layer on the validated CTA-R engine. These tests pin
 the contract BEFORE any data/API work: (1) gate off == byte-identical to the current engine,

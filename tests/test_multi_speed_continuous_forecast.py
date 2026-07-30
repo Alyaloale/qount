@@ -5,7 +5,7 @@ import datetime as dt
 import math
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.multi_speed_continuous_forecast import (
     CONTINUOUS_FORECAST_PROTOCOL,

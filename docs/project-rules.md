@@ -1,230 +1,88 @@
-# qount 项目规则与文档分类
+# qount 项目规则
 
-> **状态**：active｜**权威**：L1 规则（#2）｜**最后更新**：2026-07-30
-> **本文回答**：项目规则、文档分类、研究线隔离、反过拟合、代码架构、清理与文档维护纪律。
-> **TL;DR**：权威顺序 current>本文>quick-handoff>线文档>update-log；遗留正文集中归档，根路径保留指针；清理=移动不删除。
+> **状态**：active｜**权威**：L1 项目规则｜**最后更新**：2026-07-30
+> **本文回答**：代码放哪里、文档怎么分、研究线如何隔离、什么可以直接删。
+> **TL;DR**：生产代码、活跃研究、历史研究三层分开；脚本按线路归目录；规则以快速验证和及时删除为优先。
 
-更新时间：2026-07-30
+当前事实只看 [`current.md`](current.md)。本文件只管结构和工作方式，不重复生产版本、余额、订单或实验结果。
 
-这份文档定义项目级规则、文档分类、研究线隔离和代码整理纪律。它不替代
-[current.md](current.md)：`current.md` 仍是当前事实、生产状态和下一步的入口。
+## 1. 目录地图
 
-## 1. 权威顺序
+```text
+src/qount/
+  contracts/ execution/ governance/ halt/ ledger/ notifications/
+  operations/ persistence/ portfolio/ reporting/ risk/ shadow_accounting/ venue/
+      生产控制面和公共合同
+  small_account/                         FOMC 与 PreEvent 事件线
+  mini_trend/                            加密趋势研究与公共前向采集
+  alpha_agents/                          主动 research-only 多智能体线
+  research_data/                         共享市场数据、指标和研究统计
+  research/sleeves/                      主动 Sleeve 研究合同
+  legacy/{grid_b,rv_c,line_a,l1,l3,l4,l6,ashare_etf,x4}/ 已冻结线路实现
 
-当文档互相冲突时，按下面顺序判定：
+scripts/
+  operations/                            生产/运维薄入口
+  desktop/                               当前 MiniTrend 运维入口
+  research/{alpha_agents,mini_trend,sleeves,small_account,governance}/
+                                          活跃研究薄入口
+  archive/research-legacy/{grid-b,rv-c,x4,line-a,l6,ashare-etf}/
+                                          冻结线路脚本，不参与当前研究导航
 
-1. [current.md](current.md)：当前事实、运行状态、owner 决策、硬边界。
-2. 本文件：项目规则、文档分类、研究线隔离、代码治理。
-3. [quick-handoff.md](quick-handoff.md)：可执行命令、跨主机操作、运维坑。
-4. 各研究线主文档：只约束本线，不能越权改变其他线或生产状态。
-5. [update-log.md](update-log.md)：证据链、artifact、执行记录。
-6. 历史计划文档：仅作为背景，除非被 `current.md` 或本文件重新引用。
+docs/
+  current.md project-rules.md quick-handoff.md storage-topology.md holdout.md
+                                          当前事实、规则、运维和验证边界
+  *-plan.md / *-study.md                 活跃研究或分析文档
+  archive/                               历史正文和旧记录
+```
 
-`CLAUDE.md`（仓库根）是给接手模型的**导航入口**：只做文档地图与纪律提要，不是事实真相；它与本文冲突时，
-以 `current.md` 和本文为准。
+代码的真实实现必须放在线路目录；顶层旧模块只允许是兼容转发，不得新增业务逻辑。
 
-旧文档里凡是写“WSL 是生产真相”的内容，自 2026-07-07 起只按历史语境读取。当前
-live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
+## 2. 线路状态
 
-## 2. 主机职责
+| 线路 | 状态 | 实现目录 | 脚本目录 | 权限 |
+| --- | --- | --- | --- | --- |
+| FOMC / PreEvent | 当前事件线 | `src/qount/small_account/` | `scripts/operations/` | 由 `current.md` 的单次 owner 授权决定 |
+| MiniTrend | 已停止的历史生产链 + research | `src/qount/mini_trend/` | `scripts/research/mini_trend/` | 不因研究结果恢复 live |
+| Alpha Agents | active research-only | `src/qount/alpha_agents/` | `scripts/research/alpha_agents/` | 不写订单、目标权重或 live 配置 |
+| Sleeve 1 被动配置 | preregistered research-only | `src/qount/research/sleeves/` | `scripts/research/sleeves/` | 不产生 StrategyIntent 或 scheduler |
+| Liquidation cascade | public-data-only forward collection | `src/qount/mini_trend/` | `scripts/research/mini_trend/` | 不读私有账户，不下单 |
+| GRID / RV / X4 / CTA-R / L1/L3/L4/L6 / A 股 | archived / frozen | `src/qount/legacy/{grid_b,rv_c,x4,line_a,l1,l3,l4,l6,ashare_etf}/` | `scripts/archive/research-legacy/` | 不恢复，不新增实验 |
 
-| 主机 | 职责 | 禁止 |
-| --- | --- | --- |
-| Mac `/Users/alyaloale/Code/qount` | 研究设计、代码主仓、git、文档、轻量验证、任务编排 | 不跑实盘，不长期保存全量数据或模型批次 |
-| Windows外置盘 `E:\qount_data` | 大数据、最终artifact、环境锁和备份的存储真相 | 不存`.env`/密钥，不直接运行SQLite/venv |
-| WSL `/home/alyaloale/Code/qount` | 7945HX/RTX 4060大型CPU/GPU计算、权威复跑、临时scratch | 不作为实盘真相，不把完成数据长期留ext4 |
-| VPS `qount-vps:/root/qount` | 当前唯一 live / paper forward / dashboard 生产真相 | 真实host只存仓库外inventory；不保存研究大数据，不用手工改动绕过仓库规则 |
+## 3. 硬规则
 
-生产判断优先读VPS state、cron和log。WSL是计算节点但不是生产判断依据；
-`scripts/sync-to-wsl.sh`只在计算接口变化时显式使用，`scripts/run-wsl-tests.sh`验证WSL计算环境，不应成为每次
-研究的无条件同步步骤。数据路径和清理门见[storage-topology.md](storage-topology.md)。
+1. `current.md` 是当前事实唯一来源；README、CLAUDE 和研究文档只做导航。
+2. 生产控制面不得依赖 `scripts/research`、optional research extra 或 legacy 实现。
+3. 共享纯函数放 `research_data/` 或已有公共域；不要从一条策略目录复制一份。
+4. 研究脚本只解析参数、调用可测试代码、写 artifact；复杂逻辑放 `src/qount/`。
+5. 每条研究线独立保存代码、配置、数据、artifact 和结论；只复用方法，不复用 promotion 资格。
+6. 新研究先写一句问题、停止条件和最小验证；没有明确问题就不新建目录或文档。
+7. 研究默认 `research_only=true`、`orders_authorized=false`；任何生产权限必须在 `current.md` 明确写出。
+8. 发现决定性问题后，写简短弃用原因，停止拉取、回放和自动化；旧材料移入 archive，不为弃用线造防误用系统。
+9. 改代码先跑最窄相关测试；改结构再跑导入扫描、架构边界和全量回归（能跑就跑）。
+10. 不确定是否还需要的代码先做引用审计；无引用、无 artifact 依赖、无当前文档价值的文件直接删除。
 
-## 3. 文档分类
+## 4. 研究最小标准
 
-| 分类 | 文件 | 用途 | 更新触发 |
-| --- | --- | --- | --- |
-| 当前事实 / 规则 | `current.md`, `project-rules.md` | 当前结论、硬边界、项目规范 | 改变生产真相、研究状态、全局规则 |
-| 存储 / 计算拓扑 | `storage-topology.md` | 外置盘、WSL scratch、迁移校验、节点分工 | 数据位置、计算节点或迁移规则变化 |
-| 接手 / 运维 | `quick-handoff.md`, `README.md` | 新会话启动、命令入口、主机职责 | 命令、主机、验证入口变化 |
-| 验证边界 | `holdout.md` | discovery / validation / promotion gate | 样本池或晋级规则变化 |
-| 记录链 | `update-log.md` | 每批有意义执行的结果、artifact、验证 | 代码、运行、规则或跨线结论变化 |
-| 归档索引 | `archive/README.md` | legacy研究线、旧运行手册和历史计划的状态与入口 | legacy状态或引用边界变化 |
-| 线 A legacy | `archive/legacy/line-a/` | 旧 `qount.main` / ETH-only / CTA-R 研究 | 仅追溯或 owner 授权重启 |
-| 线 B GRID | `archive/legacy/grid-b/` | 网格实验线 | 本线 changelog；不污染 current，除非影响全局 |
-| MiniTrend Base | `current.md`, `crypto-portfolio-system-plan.md`, `system-architecture-design.md` | 当前唯一100 USDT minimal-live线；`mini-trend-agent/`为历史设计 | VPS production、risk、sizing、execution 变化 |
-| 线 C RV | `archive/legacy/x4-rv/rv-c-plan.md` | 相对价值 carry legacy线 | 仅追溯或owner授权重启 |
-| 线 D X4 / CxD | `archive/legacy/x4-rv/` | 旧加密趋势 / 组合实盘线 | 仅追溯或owner授权重启 |
-| 重启线 L1/L3/L4/L6 | `archive/legacy/restart-lines/` | 已证伪、固化或暂停的结构性重启线 | 只在 owner 授权重启或修正结论时更新 |
-| A股 ETF 20 日 | `archive/legacy/ashare-etf/` | 主题状态、固定组合月度研究、收盘触发 | 数据、状态合同、风险上限或 evidence gate 变化 |
-| 重构蓝图 | `archive/legacy/line-a/rebuild-plan.md` | CTA-R / A股系统化思路 | 蓝图变化；不得覆盖当前生产事实 |
-| Alpha Agents | `alpha-agent-plan.md` | 多 agent 研究组织、资料搜集、量化接入骨架 | 角色、任务、source book、agent 边界变化 |
-| 200U个人事件策略 | `personal-200u-event-strategy.md` | FOMC/宏观事件后右侧确认、全成本仓位和小账户风险合同 | owner风险目标、事件规则、shadow证据或权限状态变化 |
-| 事件前区间 fade | `pre-event-range-strategy.md` | FOMC 前独立区间高抛低吸线，plan-only + owner 手工执行 | 事件窗口、风险预算、执行边界或 canary 证据变化 |
-| 个人组合设计 / 方向候选 | `long-run-personal-strategy-design.md`, `personal-strategy-research-directions.md`, `fomc-trigger-study-and-v03-extension.md` | 长期组合形态分析、低数据/厚利润新方向候选、FOMC 触发率 discovery 笔记；均分析级、`orders_authorized=false` | owner 方向决策、候选状态或 discovery 证据变化 |
-| 系统演进 / 研究路线 | `trading-system-evolution-plan.md`, `research-advancement-roadmap.md` | 跨线生产控制面演进、全局实验治理和情报来源路线 | owner方向、架构阶段门、跨线研究优先级变化；不得直接改变任一线promotion/live状态 |
-| 加密研究草稿 / 外部拆解 | `carry-active-basis-hypothesis.md`, `crypto-vol-crisis-state-preregistration.md`, `external-bot-cra-teardown.md` | 加密研究假设、无结果预登记草稿、外部来源(T4)拆解；均 research-only、`orders_authorized=false` | 假设/预登记/外部来源变化；不构成 promotion/paper/live，不改 Base |
-| 接手导航（Claude） | `CLAUDE.md`（仓库根） | 接手模型的文档地图与纪律提要 | 文档分类、权威顺序、主机/工具/纪律边界变化 |
+- 时间序列实验不能使用未来数据；重叠标签使用 purged split / embargo 或等价方法。
+- 参数搜索记录 trial 数；结果至少报告成本、OOS fold、DSR/PBO 或明确说明未做。
+- 横截面研究报告有效广度，不把标的数量当独立样本数。
+- 公开数据采集不得携带私钥；collector 不得混入订单或账户路径。
+- 结果不自动升级策略；promotion、paper、live 都需要单独 owner 决策。
 
-新增文档前先判断是否能放进现有分类。新策略计划文件只有在 owner 明确授权新研究线时创建。
+## 5. 文档规则
 
-`archive/README.md`列出的文件保留历史证据和可追溯链接，但不属于当前生产入口；其中的运行命令、余额、订单、timer和live状态
-一律按历史语境读取，不能覆盖`current.md`或VPS只读事实。2026-07-29 起，已冻结正文统一放在
-`docs/archive/legacy/`；根目录保留同名短指针，保证既有链接可达。
+- 当前只维护：`current.md`、`project-rules.md`、`quick-handoff.md`、`storage-topology.md`、`holdout.md`、架构主设计、活跃研究文档和近期 `update-log.md`。
+- 历史计划、旧运行手册、失败实验和完整记录放 `docs/archive/`；不为兼容旧链接保留大量正文副本。
+- 活跃文档 H1 后必须有状态、权威、更新时间和一句 TL;DR；研究结果变更才更新研究文档，当前事实变更才更新 `current.md`。
+- 记录文档只记录“做了什么、验证了什么、结论是什么”，不重新维护第二份状态表。
+- 新文档先放现有分类；同一主题只有一个主文档，重复草稿直接合并或删除。
 
-## 4. 研究线隔离
+## 6. 清理流程
 
-每条研究线必须有明确状态、文档归属、代码边界和 artifact 归属。
+```text
+rg 引用 -> 判断生产/活跃/历史 -> 移到线路目录或 archive -> 删除无价值文件
+         -> 更新 current / docs index -> 导入扫描 + 相关测试 + git diff --check
+```
 
-| 线 | 当前状态 | 主文档 | 代码边界 |
-| --- | --- | --- | --- |
-| A legacy `qount.main` / ETH-only | research-only / live disabled | `current.md`, `profit-*.md` | `src/qount/*.py` legacy core |
-| B GRID | archived / falsified | `grid-binance-*.md` | `src/qount/grid/`, `scripts/research/grid_b_*.py` |
-| MiniTrend Base v0.2 | historical production / stopped，固定100 USDT | `current.md`, `crypto-portfolio-system-plan.md`, `system-architecture-design.md`；`mini-trend-agent/`为历史设计 | `src/qount/mini_trend/`, `scripts/desktop/mini_trend_um_*` |
-| C RV-C | research-only / carry disabled | `archive/legacy/x4-rv/rv-c-plan.md` | `src/qount/rv/`, `scripts/archive/desktop-legacy/rv_live.py` |
-| D X4 / CxD | legacy / live disabled | `archive/legacy/x4-rv/` | `src/qount/x4/`, `scripts/archive/desktop-legacy/` |
-| L1 / L3 / L4 / L6 | frozen / falsified / lessons retained | 对应 `l*-plan.md` | `src/qount/l*_*.py`, `scripts/research/l*_*.py` |
-| A股 ETF 20 日 | frozen / owner-deprioritized / discovery blocked | `ashare-etf-month-plan.md` | `src/qount/ashare_etf_month.py`, `scripts/research/ashare_etf_month.py` |
-| CTA-R rebuild | blueprint / guarded | `rebuild-plan.md`, `cta-r-value-gate-plan.md` | `src/qount/cta_*.py`, `scripts/research/cta_*.py` |
-| Alpha Agents | active research-only new-source restart | `alpha-agent-plan.md` | `src/qount/alpha_agents/`, `scripts/research/alpha_agent_*.py` |
-| 200U个人事件右侧 | shadow-ready local / orders unauthorized / VPS pending | `personal-200u-event-strategy.md` | `src/qount/small_account/`、`scripts/operations/run_fomc_shadow.py`、`deploy/events/` |
-| 200U FOMC 受限事件执行 | one-event restricted authorization / no current order | `current.md`, `personal-200u-event-strategy.md` | `src/qount/small_account/`, `src/qount/fomc_live.py`, `deploy/events/` |
-| Sleeve 1 被动配置 | research-only / preregistered | `l1-passive-allocation-preregistration.md` | `src/qount/l1_passive_allocation.py`, `src/qount/strategies/passive_allocation.py` |
-| Liquidation cascade collector | forward collection / public-data-only | `current.md` | `src/qount/mini_trend/liquidation_cascade_collection.py`, `scripts/research/liquidation_cascade_collector.py` |
-| PreEvent-Range 区间 fade | draft / plan-only / owner 手工执行 canary | `pre-event-range-strategy.md` | `src/qount/small_account/range_signal.py`、`scripts/operations/run_pre_event_range_plan.py` |
-
-隔离规则：
-
-- 一条线的配置、数据、artifact、changelog 不能默认复用到另一条线。
-- 跨线复用只能复用“方法”和“纯函数工具”，不能复用结论或 promotion 资格。
-- 共享代码必须放在稳定模块中，带单测，并保持 production / research 导入方向清楚。
-- 研究脚本应是薄入口；核心逻辑放在 `src/qount/<line>/` 或明确的 research-only 模块。
-- 任何 line 进入 live / paper forward，必须先在本线文档和 `current.md` 写清开关、停止条件和回滚路径。
-- 多 agent 线只能写 research artifact；LLM agent 不得输出订单、目标权重、live 配置或风控 override。
-
-### 4.1 个人研究的简化与弃用
-
-个人研究以快速缩短不确定性为目标，不把已放弃的想法做成治理工程。
-
-- 发现策略、来源或假设存在决定性问题时，写一条简短的弃用原因并停止使用；不为它新增预登记、继任合同、一次性消费账本、策略注册、调度器或多层“拒绝使用”代码。
-- 这类弃用线保留必要的已有材料以便追溯，但不再拉取数据、回放、补测、自动化或产生新 artifact。重新研究必须由 owner 明确提出一个新的问题，而不是复活旧流程。
-- 个人 research-only 代码和文档保持薄、可删、局部化；不要为了未来可能发生的误用建立复杂状态机、权限链或跨主机流程。
-- 本节不放宽真实账户、paper/live、共享生产接口或正式 holdout/promotion 的风控、权限和可追溯要求；这些路径仍按本文件其余规则执行。
-
-### 4.2 实盘策略身份与权限绑定
-
-- 每个可执行策略必须有不可省略的精确身份对 `strategy_id@strategy_version`；配置加载不得用默认值、空值或“任意合法字符串”补齐。
-- 事件运行时只能接受其代码内声明的策略身份。FOMC 当前唯一允许
-  `SmallAccount-FOMC-RightSide@0.2`；ID 或版本不匹配必须在读取状态、访问交易所或生成 arm 前失败关闭。
-- shadow、readiness、标准决策批次、registry、账本投影、owner authorization、arm、风险预算和 release provenance 必须绑定同一身份对。
-  任一身份、事件定义、账户 scope 或风险 policy 漂移都作新策略处理：重新发布、重新预检和重新授权，禁止复用旧 token、授权或预算。
-- 新策略接入生产前，必须新增“缺失身份、错误 ID、错误版本、跨策略授权/预算复用”四类 fail-closed 回归测试；测试通过不等于 owner
-  授权，仍须遵循本文件的 live 门禁。
-
-## 5. 执行记录规则
-
-每一批有意义更改完成后，都必须更新记录文档：
-
-- 只改本线研究代码或脚本：更新本线文档 changelog；如果结论影响当前状态，再更新
-  `current.md` 和 `update-log.md`。
-- 改 production、VPS、dashboard、live/paper forward、全局规则：更新 `current.md`、
-  `quick-handoff.md`、`update-log.md`。
-- 改文档分类或项目规范：更新本文件、`README.md` / `quick-handoff.md` 入口和 `update-log.md`。
-- 改代码但未跑测试：记录“未跑”的具体原因，不允许写成已验证。
-- 新 artifact 必须记录命令、窗口、holdout role、成本假设、数据源、输出路径和读法。
-
-`update-log.md` 不是杂记。它只记录足以让下一轮判断“做了什么、验证了什么、结论是什么”的内容。
-
-## 6. 验证与反过拟合规则
-
-项目默认继承以下研究纪律：
-
-- 研究阶段、日历时长、样本数量、promotion状态、sleeve数量和trial复盘目标都不是本地研发许可；它们只描述证据成熟度。
-- discovery、历史重放、数据工程、virtual allocator和shadow建模可以并行推进。缺数据或失败结果必须降级结论强度并记录，不能冻结整个family。
-- `3`个formal trial是强制复盘里程碑，不是上限；后续trial继续编号、预注册并记录已消费窗口。
-- `30`个Phase B有效批次是生产观测目标，不是Phase B退出门，也不阻止本地研究、allocator开发或其它workstream。
-- allocator本地开发允许零sleeve fixture、单sleeve passthrough和多个synthetic/research sleeve，不要求先有两个promotion候选。
-- 只有真实账户mutation继续受显式owner授权、arm、订单幂等、UNKNOWN/HALT、仓位归零、对账、密钥隔离和风险预算约束。
-
-- 已看过窗口只能算 `discovery_pool`，不能调参后再当 validation。
-- promotion 必须走 `holdout.md` 的 once-only 规则。
-- 时间序列或重叠标签必须使用 purged split / embargo 或等价防泄漏设计。
-- 任何网格搜索、参数扫描、模型选择都要记录 trial 数，并优先看 DSR、PBO/CSCV、OOS fold 稳定性。
-- 横截面策略必须同时报告 rank-IC 和 effective breadth；不能只用币数或标的数当广度。
-- 所有收益读数必须扣真实可执行成本，至少区分 taker、maker/auction、资金占用、换手、滑点或价差。
-- 交易所字段顺序、funding 口径、费率和最小名义价值必须以官方文档或交易所返回为准。
-
-### 6.1 数据下载代理边界
-
-- 大批量public data只在Windows/WSL侧下载并直接写外置盘；Mac和VPS不得作为下载或数据中转节点。
-- Windows/WSL可直连，也可使用owner-approved Liangxin Cloud proxy；永不使用owner的苏菲家宽代理。
-  URL、token和代理凭据只存在仓库外的本地环境，不得写入源码、文档、artifact、命令输出或git。
-- 能复用外置盘缓存就不新增下载；明确标为offline的实验在缓存缺失时必须fail closed，不能静默改成联网运行。
-
-外部参考固定如下，后续新增资料要写进相关线文档或本节：
-
-- Deflated Sharpe Ratio: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551
-- Probability of Backtest Overfitting / CSCV: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253
-- Advances in Financial Machine Learning, purged CV / embargo: https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086
-- Binance Spot Kline 字段顺序: https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints#klinecandlestick-data
-- Binance USD-M funding history: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-History
-- CCXT rate limit / exchange behavior: https://docs.ccxt.com/
-
-## 7. 代码架构规则
-
-- `src/qount/main.py` 只做 CLI 分发，不堆研究逻辑。
-- production 代码不得 import `scripts/research/*` 或隐式依赖 optional research extra。
-- `scripts/research/*` 只做参数解析、读写 artifact、调用 `src/qount` 里的可测试函数。
-- `scripts/desktop/*` 是运维入口；会下单或写生产 state 的脚本必须有 dry-run / armed 边界。
-- 新共享能力优先放进已有模块：artifact 写入用 `artifacts.py`，交易所差异用 `exchange_utils.py`
-  或本线 data 模块，统计方法优先沉淀成可单测函数。
-- 新依赖默认不能进基础依赖；研究依赖走 optional extra，live 路径保持最小。
-- 生成物和包元数据不是源代码真相。`src/qount.egg-info/*` 只随安装流程变化，不手写当设计入口。
-
-## 8. 弃用和清理规则
-
-清理无效代码必须先做引用审计：
-
-1. `rg` 查 README、docs、scripts、src、tests 是否仍引用。
-2. 如果是 production 入口，先加显式拒绝或 legacy guard，而不是直接删除。
-3. 如果连续无引用、无 artifact 依赖、无文档保留价值，才删除文件。
-4. 删除后跑最小相关测试；无法跑要写明原因。
-5. 同步更新文档入口和 changelog，避免“代码删了但文档仍指向它”。
-
-当前已知legacy入口：
-
-- `scripts/mac-monitor.sh`、`qount-monitor`：旧line A/WSL桌面状态入口，不能作为生产状态。
-- `scripts/sync-to-wsl.sh`和`run-wsl-tests.sh`已重新定位为按需计算工作区更新/验证，不再带legacy授权门，仍不得
-  推断WSL是live/paper真相。
-- 旧 WSL / line A 桌面面板不得作为当前加密实盘状态入口。
-
-## 9. 跨线经验库
-
-以下经验可以跨线复用，但不能把某线结果直接当另一线的证据：
-
-- 广度比标的数量重要：majors / ETF / token 横截面多次证明高相关会把有效广度压到 1.5-2 左右。
-- 真实 edge 常被成本墙吃掉：5m、L4、L6 都显示 gross 正不等于可执行净正。
-- maker 假设必须实测：只要 required maker fill 接近 1，本项目默认判为不可由慢系统兑现。
-- 组合权重和参数选择必须 OOS 复核：D4 in-sample 组合提升被 purged-CV 推翻，应作为模板教训。
-- 数据源换新不等于约束解除：L3/L6 找到新信号后仍要重新过 breadth、cost、timing、capacity。
-- 生产真相必须单一：Mac研究、外置盘数据、WSL计算、VPS运行，不能跨节点混读不同state后下结论。
-
-## 10. 文档维护规则
-
-为让接手模型最快定位信息并避免文档漂移，所有文档改动遵守：
-
-1. **文档头模板（强制）**：每份活跃文档 H1 标题下加统一状态头，遗留文档加一行 frozen 标签指向 `archive/README.md`：
-   ```
-   > **状态**：active|frozen|draft｜**权威**：L0接手/L1事实/L2架构/L3研究/L4运维/L5记录/L6归档｜**最后更新**：YYYY-MM-DD
-   > **本文回答**：<一句话>
-   > **TL;DR**：<3 行内结论>
-   ```
-   新文档必须带头。分层：L0=`CLAUDE.md`；L1=`current.md`/`project-rules.md`/`holdout.md`；L2=`system-architecture-design.md`；
-   L3=`research-advancement-roadmap.md` + 研究草稿；L4=`quick-handoff.md`/`storage-topology.md`；L5=`update-log.md`；
-   L6=`archive/`。
-2. **单一事实源（防漂移）**：
-   - 硬边界、生产事实只写在 `current.md`；`CLAUDE.md`/`README.md`/`archive` 一律**指针化引用**，不复述具体数值。
-   - family 状态只在 `research-advancement-roadmap.md` R1.1 表；`update-log.md` 只记事件，不重复状态表。
-   - 命令/运维只在 `quick-handoff.md`；架构权威链只在 `system-architecture-design.md`。
-3. **清理=移动不删除**（重申 §8）：过时内容移入 `docs/archive/` 并在原位留短指针，逐行守恒（`原 = 主文件 + 归档`），
-   `git diff --check` 干净，链接不断。已冻结研究线正文统一归入 `docs/archive/legacy/`；根路径短指针保留，避免历史引用失效。
-4. **接手可达性**：从 `CLAUDE.md` 出发应能 3 步内定位：当前生产事实、硬边界、当前研究状态、运维命令、架构骨架。
+删除生产入口前必须保留 fail-closed guard；删除纯研究旧代码不需要保留空壳。`qount.main` 和
+`qount-monitor` 是公开入口，除非重新确认替代入口，否则不删除。

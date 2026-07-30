@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.config import MiniTrendConfig
 from qount.mini_trend.futures_base_forward import BASE_FORWARD_PREREG_VERSION
 from qount.mini_trend.futures_base_forward import FUTURES_BASE_FORWARD_PROTOCOL

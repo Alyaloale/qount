@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.config import MiniTrendConfig
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_base_forward import BASE_FORWARD_PREREG_VERSION

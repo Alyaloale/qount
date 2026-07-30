@@ -15,18 +15,18 @@ from dataclasses import asdict
 from typing import Any, Callable, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_base_forward import FUTURES_BASE_FORWARD_PROTOCOL
 from qount.mini_trend.futures_recovery import FUTURES_RECOVERY_PROTOCOL, selected_um_rules
 from qount.mini_trend.futures_recovery_backtest import run_variant
 from qount.models import utc_now
-from qount.rv.stats import returns_from_curve, sharpe
+from qount.research_data.metrics import returns_from_curve, sharpe
 from qount.settings import Settings
-from qount.x4.backtest import X4Result, run_directional
-from qount.x4.funding import holding_period_funding
-from qount.x4.strategies import MomentumBreakout, TrendFollow
+from qount.legacy.x4.backtest import X4Result, run_directional
+from qount.legacy.x4.funding import holding_period_funding
+from qount.legacy.x4.strategies import MomentumBreakout, TrendFollow
 
 
 ATTRIBUTION_VERSION = "mini_trend_high_return_attribution_v0.1"

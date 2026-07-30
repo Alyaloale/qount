@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.capitulation_rebound import CAPITULATION_REBOUND_PROTOCOL
 from qount.mini_trend.capitulation_rebound import _signal_state
 from qount.mini_trend.capitulation_rebound import _symbol_outcome

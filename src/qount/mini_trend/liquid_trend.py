@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.futures_recovery import canonical_hash
 from qount.models import utc_now
 from qount.settings import Settings

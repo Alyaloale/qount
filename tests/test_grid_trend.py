@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.trend import HybridRegime
-from qount.grid.trend import TrendState
-from qount.grid.trend import hybrid_regimes
-from qount.grid.trend import sma
-from qount.grid.trend import trend_states
+from qount.legacy.grid_b.trend import HybridRegime
+from qount.legacy.grid_b.trend import TrendState
+from qount.legacy.grid_b.trend import hybrid_regimes
+from qount.legacy.grid_b.trend import sma
+from qount.legacy.grid_b.trend import trend_states
 
 
 class TestSMA(unittest.TestCase):

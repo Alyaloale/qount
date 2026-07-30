@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
 
 from qount.contracts import canonical_hash
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.liquid_trend import (
     LIQUID_TREND_UNIVERSE,
     _correlation_clusters,

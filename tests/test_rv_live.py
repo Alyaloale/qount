@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from qount.rv.data import quarterly_contracts  # noqa: E402
-from qount.rv.live import (  # noqa: E402
+from qount.legacy.rv_c.data import quarterly_contracts  # noqa: E402
+from qount.legacy.rv_c.live import (  # noqa: E402
     _DAY_MS,
     CarryConfig,
     CarryLeg,
@@ -376,7 +376,7 @@ class TestExecuteFundingTransfer(unittest.TestCase):
     def test_coin_transfer_uses_free_not_estimate(self):
         os.environ["QOUNT_RV_LIVE_ENABLE"] = "1"
         try:
-            from qount.rv.live import FundingAction, FundingPlan
+            from qount.legacy.rv_c.live import FundingAction, FundingPlan
             # plan wants to move 0.0146 ETH, but only 0.0140 actually filled (fees) -> must cap to free
             plan = FundingPlan(actions=[FundingAction("transfer_coin_to_cm", "ETH", 0.0146,
                                                       reason="margin SPOT->COIN-M")])

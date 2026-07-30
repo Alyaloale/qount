@@ -7,7 +7,7 @@ import unittest
 from dataclasses import asdict
 from pathlib import Path
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.forward import FROZEN_TOP3_FORWARD_PROTOCOL
 from qount.mini_trend.forward import MINI_TREND_FORWARD_PREREG_VERSION
 from qount.mini_trend.forward import MINI_TREND_FORWARD_VERSION

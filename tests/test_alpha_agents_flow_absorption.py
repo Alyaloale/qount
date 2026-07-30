@@ -13,7 +13,7 @@ from qount.alpha_agents.flow_absorption import build_flow_absorption_discovery_r
 from qount.alpha_agents.flow_absorption import build_flow_absorption_preregistration
 from qount.alpha_agents.tradeflow_experiment import TRADEFLOW_EXPERIMENT_VERSION
 from qount.alpha_agents.tradeflow_experiment import TradeFlowExperimentConfig
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 
 
 START_MS = 1_704_067_200_000

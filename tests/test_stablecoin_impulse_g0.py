@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from scripts.research.run_stablecoin_impulse_g0 import _hydrate_source_events
+from scripts.research.mini_trend.run_stablecoin_impulse_g0 import _hydrate_source_events
 from qount.contracts import canonical_hash
 from qount.mini_trend.stablecoin_chain_events import (
     LEGACY_STABLECOIN_CHAIN_SOURCE_VERSION,

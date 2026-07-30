@@ -20,13 +20,13 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar
-from qount.grid.data import Funding
-from qount.grid.data import load_funding
-from qount.grid.data import load_klines
+from qount.research_data.market_data import Bar
+from qount.research_data.market_data import Funding
+from qount.research_data.market_data import load_funding
+from qount.research_data.market_data import load_klines
 from qount.models import utc_now
-from qount.rv.stats import deflated_sharpe_ratio
-from qount.rv.stats import sharpe
+from qount.research_data.metrics import deflated_sharpe_ratio
+from qount.research_data.metrics import sharpe
 from qount.settings import Settings
 
 from .exchange_rules import SymbolRules

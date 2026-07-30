@@ -1,6 +1,6 @@
 # 历史文档与 Legacy 研究线
 
-本目录是文档状态索引。明确冻结的正文集中在 `legacy/` 下，根目录只保留同名短指针以兼容历史链接；
+本目录是文档状态索引。明确冻结的正文集中在 `legacy/` 下，根目录不再保留重复正文或旧方案指针；
 所有内容仍保留原始实验、回测和失败证据，但不属于当前生产入口。余额、订单、timer、live 开关、版本和“当前”措辞
 都必须按文件日期读取。
 
@@ -36,7 +36,7 @@
 - [legacy/restart-lines/](legacy/restart-lines/)：L1/L3/L4/L6 重启线历史证据。
 - [legacy/ashare-etf/](legacy/ashare-etf/)：A股 ETF 线，owner-deprioritized/frozen。
 - [legacy/line-a/](legacy/line-a/)：旧架构、盈利路线和 CTA-R 重构蓝图。
-- [legacy/l1-personal-carrier/](legacy/l1-personal-carrier/)：L1-S2 personal-carrier 终止线的代码、脚本、测试和研究历史。
+- [../../src/qount/legacy/l1/](../../src/qount/legacy/l1/)：L1-S2 personal-carrier 终止线代码；脚本和文档分别见归档线路目录。
 
 ## 历史入口代码
 

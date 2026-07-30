@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_funding_veto_shadow_forward import (
@@ -23,7 +23,7 @@ from qount.mini_trend.live_pilot import LIVE_PILOT_CONTRACT
 from qount.mini_trend.pilot_paper import PILOT_PAPER_PROTOCOL, PilotPaperProtocol
 from qount.models import utc_now
 from qount.settings import Settings
-from qount.x4.indicators import ATR
+from qount.research_data.indicators import ATR
 
 
 PILOT_PROJECTION_VERSION = "mini_trend_um_pilot_latest_projection_v0.2"

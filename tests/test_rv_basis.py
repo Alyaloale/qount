@@ -1,4 +1,4 @@
-"""Unit tests for RV-C basis primitives (线 C, isolated). Plan: ``docs/rv-c-plan.md`` §2/§4.
+"""Unit tests for RV-C basis primitives (线 C, isolated). Plan: ``docs/archive/legacy/x4-rv/rv-c-plan.md`` §2/§4.
 
 Covers the StatArb命门: annualized basis math, point-in-time roll selection (no look-ahead),
 splicing + roll flags, and expiry convergence reconciliation (the hard anchor).
@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.rv.basis import ActiveBar
-from qount.rv.basis import active_expiry
-from qount.rv.basis import annualized_basis
-from qount.rv.basis import build_active_series
-from qount.rv.basis import raw_basis
+from qount.research_data.market_data import Bar
+from qount.legacy.rv_c.basis import ActiveBar
+from qount.legacy.rv_c.basis import active_expiry
+from qount.legacy.rv_c.basis import annualized_basis
+from qount.legacy.rv_c.basis import build_active_series
+from qount.legacy.rv_c.basis import raw_basis
 
 _DAY_MS = 86_400_000
 _T0 = 1_609_459_200_000  # 2021-01-01 00:00 UTC

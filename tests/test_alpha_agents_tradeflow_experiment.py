@@ -13,8 +13,8 @@ from qount.alpha_agents.tradeflow_experiment import _funding_by_hour
 from qount.alpha_agents.tradeflow_experiment import aggregate_five_minute_to_hourly
 from qount.alpha_agents.tradeflow_experiment import build_tradeflow_experiment
 from qount.alpha_agents.tradeflow_experiment import write_tradeflow_experiment_artifact
-from qount.grid.data import Bar
-from qount.grid.data import Funding
+from qount.research_data.market_data import Bar
+from qount.research_data.market_data import Funding
 from qount.settings import Settings
 
 

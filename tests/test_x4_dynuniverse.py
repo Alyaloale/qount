@@ -6,8 +6,8 @@ drop-out (a stale coin falls out), and the monthly-rebalanced book mechanics (BT
 """
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.dynuniverse import (
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.dynuniverse import (
     run_dynamic_trend_portfolio,
     select_universe,
     trailing_dollar_volume,

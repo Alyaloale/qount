@@ -5,14 +5,14 @@ from __future__ import annotations
 import math
 import unittest
 
-from qount.grid.engine import GridConfigError
-from qount.grid.engine import GridLadder
-from qount.grid.engine import build_grid
-from qount.grid.engine import count_for_step
-from qount.grid.engine import geometric_ratio
-from qount.grid.engine import grid_prices
-from qount.grid.engine import net_per_grid
-from qount.grid.engine import validate_step
+from qount.legacy.grid_b.engine import GridConfigError
+from qount.legacy.grid_b.engine import GridLadder
+from qount.legacy.grid_b.engine import build_grid
+from qount.legacy.grid_b.engine import count_for_step
+from qount.legacy.grid_b.engine import geometric_ratio
+from qount.legacy.grid_b.engine import grid_prices
+from qount.legacy.grid_b.engine import net_per_grid
+from qount.legacy.grid_b.engine import validate_step
 
 
 class TestGeometry(unittest.TestCase):

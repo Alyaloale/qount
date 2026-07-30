@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.backtest import run_directional
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.backtest import run_directional
 
 _T0 = 1_609_459_200_000
 _D = 86_400_000

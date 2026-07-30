@@ -1,6 +1,6 @@
 """Shared research statistics: Sharpe, DSR and PBO/CSCV (pure, no IO).
 
-S3 of ``docs/rv-c-plan.md``: the breadth panel tried 10 COIN-M symbols and 4 passed the L=3
+S3 of ``docs/archive/legacy/x4-rv/rv-c-plan.md``: the breadth panel tried 10 COIN-M symbols and 4 passed the L=3
 gate. Is "4 of 10 pass" consistent with luck (杀手3, multiple testing)? Two standard tools
 (Bailey & López de Prado):
 

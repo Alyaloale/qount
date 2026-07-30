@@ -6,11 +6,11 @@ import datetime as dt
 import math
 from collections.abc import Mapping
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.config import MiniTrendConfig
 from qount.mini_trend.models import GateState, SignalResult
-from qount.x4.indicators import ATR
-from qount.x4.portfolio import correlation
+from qount.research_data.indicators import ATR
+from qount.legacy.x4.portfolio import correlation
 
 
 def sma(xs: list[float], n: int) -> float | None:

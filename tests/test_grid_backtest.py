@@ -5,15 +5,15 @@ from __future__ import annotations
 import datetime as _dt
 import unittest
 
-from qount.grid.backtest import _hold_above_ma
-from qount.grid.backtest import _seed_range_ladder
-from qount.grid.backtest import _trailing_daily_vol
-from qount.grid.backtest import active_fraction
-from qount.grid.backtest import daily_states_by_date
-from qount.grid.backtest import regime_slices
-from qount.grid.backtest import run_s1
-from qount.grid.backtest import run_s1e
-from qount.grid.data import Bar
+from qount.legacy.grid_b.backtest import _hold_above_ma
+from qount.legacy.grid_b.backtest import _seed_range_ladder
+from qount.legacy.grid_b.backtest import _trailing_daily_vol
+from qount.legacy.grid_b.backtest import active_fraction
+from qount.legacy.grid_b.backtest import daily_states_by_date
+from qount.legacy.grid_b.backtest import regime_slices
+from qount.legacy.grid_b.backtest import run_s1
+from qount.legacy.grid_b.backtest import run_s1e
+from qount.research_data.market_data import Bar
 
 
 def _bar(date_ms: int, o: float, h: float, l: float, c: float) -> Bar:

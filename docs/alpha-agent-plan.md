@@ -58,18 +58,18 @@ alpha。Alpha Agents 的目标不是继续调 long/cash trend，而是把研究�
 - `src/qount/alpha_agents/feature_experiment.py`：deterministic feature-grid train/OOS experiment runner。
 - `src/qount/alpha_agents/derivatives_state.py`：Binance USD-M OI / taker buy-sell recent-state loader。
 - `src/qount/alpha_agents/validation.py`：DSR/PBO/purged-CV/walk-forward validation adapter。
-- `scripts/research/alpha_agent_plan.py`：薄 CLI，生成 `state/research_runs/*/alpha_agent_plan.json`。
-- `scripts/research/alpha_agent_official_source_review.py`：单个allowlisted官方文档的无代理抓取、hash和LLM审阅CLI。
-- `scripts/research/alpha_agent_scorecard.py`：薄 CLI，读 metrics JSON，生成
+- `scripts/research/alpha_agents/alpha_agent_plan.py`：薄 CLI，生成 `state/research_runs/*/alpha_agent_plan.json`。
+- `scripts/research/alpha_agents/alpha_agent_official_source_review.py`：单个allowlisted官方文档的无代理抓取、hash和LLM审阅CLI。
+- `scripts/research/alpha_agents/alpha_agent_scorecard.py`：薄 CLI，读 metrics JSON，生成
   `state/research_runs/*/alpha_agent_scorecard.json`。
-- `scripts/research/alpha_agent_beta_metrics.py`：薄 CLI，读对齐 period returns，生成
+- `scripts/research/alpha_agents/alpha_agent_beta_metrics.py`：薄 CLI，读对齐 period returns，生成
   beta-residual promotion metrics。
-- `scripts/research/alpha_agent_sources.py`：薄 CLI，输出 source trust report。
-- `scripts/research/alpha_agent_binance_returns.py`：薄 CLI，从 Binance public dump 输出对齐 returns。
-- `scripts/research/alpha_agent_exchange_rules.py`：薄 CLI，拉 Binance 公共 `exchangeInfo` 并输出 rules artifact。
-- `scripts/research/alpha_agent_feature_experiment.py`：薄 CLI，跑特征网格 train/OOS 实验并输出 OOS returns。
-- `scripts/research/alpha_agent_derivatives_state.py`：薄 CLI，拉 OI history、taker buy/sell ratio 和当前 OI。
-- `scripts/research/alpha_agent_validation.py`：重放 feature config 并输出 G4 validation artifact。
+- `scripts/research/alpha_agents/alpha_agent_sources.py`：薄 CLI，输出 source trust report。
+- `scripts/research/alpha_agents/alpha_agent_binance_returns.py`：薄 CLI，从 Binance public dump 输出对齐 returns。
+- `scripts/research/alpha_agents/alpha_agent_exchange_rules.py`：薄 CLI，拉 Binance 公共 `exchangeInfo` 并输出 rules artifact。
+- `scripts/research/alpha_agents/alpha_agent_feature_experiment.py`：薄 CLI，跑特征网格 train/OOS 实验并输出 OOS returns。
+- `scripts/research/alpha_agents/alpha_agent_derivatives_state.py`：薄 CLI，拉 OI history、taker buy/sell ratio 和当前 OI。
+- `scripts/research/alpha_agents/alpha_agent_validation.py`：重放 feature config 并输出 G4 validation artifact。
 - `tests/test_alpha_agents.py` / `tests/test_alpha_agents_promotion.py`：离线运行、artifact、角色替换、
   validator、promotion gate 测试。
 - `tests/test_alpha_agents_metrics.py`：beta-residual metrics builder 测试。
@@ -113,13 +113,13 @@ alpha。Alpha Agents 的目标不是继续调 long/cash trend，而是把研究�
 离线生成全量 agent 计划，不调用 LLM：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_plan.py
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_plan.py
 ```
 
 只跑一个 task 并打印 JSON：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_plan.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_plan.py \
   --task-id beta_residual_target_v0 --print-json
 ```
 
@@ -136,7 +136,7 @@ export QOUNT_ALPHA_AGENT_MAX_TOKENS=8000
 export QOUNT_ALPHA_AGENT_MAX_RETRIES=1
 export QOUNT_ALPHA_AGENT_RETRY_BASE_SECONDS=10
 export QOUNT_ALPHA_AGENT_MAX_RETRY_DELAY_SECONDS=60
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_plan.py --with-llm
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_plan.py --with-llm
 ```
 
 不要把token写入仓库、artifact、prompt或文档。第一阶段只运行固定fixture和有真实研究任务的单次调用；禁止
@@ -224,7 +224,7 @@ Coding Plan走Chat Completions `json_object`；方舟在复杂提示下可能返
 后续要把角色换成量化 worker，不改 orchestrator，传 JSON：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_plan.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_plan.py \
   --roles-path configs/alpha_roles.json \
   --tasks-path configs/alpha_tasks.json
 ```
@@ -270,7 +270,7 @@ PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_plan.py \
 资料源评分入口：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_sources.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_sources.py \
   --tags binance_market_data,validation,agent_security
 ```
 
@@ -280,7 +280,7 @@ PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_sources.py \
 Binance 公共规则入口：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_exchange_rules.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_exchange_rules.py \
   --market um \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT
 ```
@@ -289,7 +289,7 @@ PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_exchange_rules.py
 复用：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_binance_returns.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_binance_returns.py \
   --start-month 2024-01 \
   --end-month 2024-03 \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT \
@@ -379,7 +379,7 @@ public/REST klines + funding/OI/taker ratio -> feature grid -> train split selec
 运行示例：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_feature_experiment.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_feature_experiment.py \
   --start-month 2024-01 \
   --end-month 2024-03 \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT \
@@ -958,7 +958,7 @@ March anchor 和 2025Q1 时间复验失败，到此关闭。下一条模型线�
     overflow、future/stale event 和连接错误。
   - replay audit 用 Decimal 档位实际应用 snapshot + diff，报告非法价量、空簿、crossed book、应用更新数
     和每个 symbol 的最终 top-of-book；不再只凭 update-id 链声称 replayable。
-- `scripts/research/alpha_agent_live_collector.py`
+- `scripts/research/alpha_agents/alpha_agent_live_collector.py`
   - 默认流对齐 S3 为 `bookTicker,aggTrade,depth,forceOrder`；暴露 snapshot retry 次数/延迟和严格错误率。
 - `tests/test_alpha_agents_live_collector.py`
   - 覆盖流路由、标准化、gap/乱序/future event、snapshot retry 成功/耗尽、gzip replay、订单簿应用和
@@ -967,7 +967,7 @@ March anchor 和 2025Q1 时间复验失败，到此关闭。下一条模型线�
 最终实采命令：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_live_collector.py \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT \
   --duration-seconds 60 \
   --snapshot-interval-seconds 15
@@ -1017,14 +1017,14 @@ scorecard、paper 或 live。下节已继续固化长跑 session 合同，并发
 暂停/恢复 smoke：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_live_collector.py \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT \
   --snapshot-interval-seconds 5 \
   --session-duration-seconds 30 \
   --segment-duration-seconds 15 \
   --max-segments 1
 
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_live_collector.py \
   --resume-session-dir state/research_runs/20260714T094828Z-alpha-agent-live-collector-session
 ```
 
@@ -1039,7 +1039,7 @@ artifact：
 不暂停、自动跑两段的 kill-test：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_live_collector.py \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT \
   --snapshot-interval-seconds 5 \
   --session-duration-seconds 30 \
@@ -1079,7 +1079,7 @@ worker 的时间掩盖，已由 `100453Z` route-coverage 口径取代，不作�
 最终双段命令：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_live_collector.py \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT \
   --snapshot-interval-seconds 5 \
   --session-duration-seconds 30 \
@@ -1138,7 +1138,7 @@ segment，不作为数据证据。新正式 session 当前只证明进程、单�
 `verify_live_collector_session()`，CLI 为：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_live_collector.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_live_collector.py \
   --verify-session-dir state/research_runs/20260714T135630Z-alpha-agent-live-collector-session-7d-vps
 ```
 
@@ -1199,7 +1199,7 @@ rolling beta/forward residual label 也已改为前缀统计一次性预计算�
 walk-forward 使用 expanding prior-only 训练。
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_validation.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_validation.py \
   --feature-experiment-path state/research_runs/20260710T132950Z-alpha-agent-feature-experiment/alpha_agent_feature_experiment.json \
   --fold-count 5 --embargo-periods 1 --pbo-splits 10
 ```
@@ -1233,7 +1233,7 @@ G4 blockers 为 `dsr_below_threshold`、`pbo_above_threshold`、`purged_cv_not_p
 2026-07-08 已实现 `derivative_state_v0` 数据层：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_derivatives_state.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_derivatives_state.py \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT \
   --period 5m \
   --days 1
@@ -1292,7 +1292,7 @@ feature runner 前必须标记为 recent-history / forward-research 特征。
 paper/live state，只读一个 metrics JSON 并输出 gate 结果。
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_scorecard.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_scorecard.py \
   --metrics-path tests/fixtures/alpha_agent_passing_metrics.json \
   --target paper
 ```
@@ -1369,7 +1369,7 @@ baseline 的超额，并生成 scorecard 所需 metrics。
 运行：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_beta_metrics.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_beta_metrics.py \
   --returns-path tests/fixtures/alpha_agent_returns.json \
   --holdout-role discovery \
   --source-label fixture-beta
@@ -1381,14 +1381,14 @@ blocking value，必须由后续真实 quant artifact 补齐。示例 fixture �
 
 ## Binance Public Returns
 
-`alpha_agent_binance_returns.py` 复用 `qount.grid.data` 的 Binance public dump loader，拉
+`alpha_agent_binance_returns.py` 复用 `qount.research_data.market_data` 的 Binance public dump loader，拉
 `data.binance.vision` 的 spot / USD-M futures klines，生成对齐 returns。它不需要 Binance 私钥，
 不访问账户，不写 paper/live state。
 
 示例：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agent_binance_returns.py \
+PYTHONPATH=src ./.venv/bin/python scripts/research/alpha_agents/alpha_agent_binance_returns.py \
   --start-month 2024-01 \
   --end-month 2024-03 \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT \

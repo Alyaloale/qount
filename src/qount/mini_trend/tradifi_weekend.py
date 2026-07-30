@@ -10,7 +10,7 @@ from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.futures_recovery import canonical_hash
 from qount.mini_trend.scorecard import max_drawdown_pct
 from qount.models import utc_now

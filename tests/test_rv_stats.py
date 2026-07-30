@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import unittest
 
-from qount.rv.stats import deflated_sharpe_ratio
-from qount.rv.stats import expected_max_sharpe
-from qount.rv.stats import pbo_cscv
-from qount.rv.stats import returns_from_curve
-from qount.rv.stats import sharpe
+from qount.research_data.metrics import deflated_sharpe_ratio
+from qount.research_data.metrics import expected_max_sharpe
+from qount.research_data.metrics import pbo_cscv
+from qount.research_data.metrics import returns_from_curve
+from qount.research_data.metrics import sharpe
 
 
 class TestSharpe(unittest.TestCase):

@@ -7,7 +7,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/Users/alyaloale/Code/qount/.venv/bin/python</string>
-    <string>/Users/alyaloale/Code/qount/scripts/research/alpha_agent_collector_offload.py</string>
+    <string>/Users/alyaloale/Code/qount/scripts/research/alpha_agents/alpha_agent_collector_offload.py</string>
     <string>pull</string>
     <string>--remote-host</string>
     <string>qount-vps</string>

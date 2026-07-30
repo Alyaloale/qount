@@ -6,7 +6,7 @@ import statistics
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_risk_tier import FUTURES_RISK_TIER_PROTOCOL
@@ -15,7 +15,7 @@ from qount.mini_trend.futures_risk_tier import validate_risk_tier_registration
 from qount.mini_trend.futures_recovery import canonical_hash, selected_um_rules
 from qount.mini_trend.futures_recovery_backtest import VariantResult, run_variant
 from qount.models import utc_now
-from qount.rv.stats import returns_from_curve, sharpe
+from qount.research_data.metrics import returns_from_curve, sharpe
 from qount.settings import Settings
 
 

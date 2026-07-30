@@ -102,7 +102,7 @@ cd "$REPO"
   --service-unit-path /etc/systemd/system/qount-mini-trend-forward.service \
   --output-path "$RUNTIME_PROOF_PATH"
 
-"$PYTHON" scripts/research/alpha_agent_exchange_rules.py \
+"$PYTHON" scripts/research/alpha_agents/alpha_agent_exchange_rules.py \
   --market um \
   --symbols BTCUSDT,ETHUSDT,BNBUSDT \
   --output-path "$RULES_PATH"
@@ -117,7 +117,7 @@ input_args=(
 if [[ -d "$REPO/state/grid_b/klines" ]]; then
   input_args+=(--seed-cache-dir "$REPO/state/grid_b/klines")
 fi
-"$PYTHON" scripts/research/mini_trend_futures_shadow_inputs.py "${input_args[@]}"
+"$PYTHON" scripts/research/mini_trend/mini_trend_futures_shadow_inputs.py "${input_args[@]}"
 
 "$PYTHON" scripts/desktop/mini_trend_um_preflight.py \
   --output-path "$PREFLIGHT_PATH"
@@ -212,7 +212,7 @@ if [[ "$legacy_runtime_disabled" == true ]]; then
   readiness_args+=(--legacy-production-cron-disabled)
 fi
 
-"$PYTHON" scripts/research/mini_trend_live_pilot_readiness.py \
+"$PYTHON" scripts/research/mini_trend/mini_trend_live_pilot_readiness.py \
   "${readiness_args[@]}" \
   --output-path "$DISPATCH_READINESS_PATH"
 
@@ -245,7 +245,7 @@ env -u BINANCE_API_KEY -u BINANCE_SECRET \
 
 # A newly validated decision and the matching standard authority must count in
 # this run's final readiness. Elapsed-day targets remain visible observations.
-"$PYTHON" scripts/research/mini_trend_live_pilot_readiness.py \
+"$PYTHON" scripts/research/mini_trend/mini_trend_live_pilot_readiness.py \
   "${readiness_args[@]}" \
   --authority-root "$AUTHORITY_ROOT" \
   --authority-result-path "$AUTHORITY_RESULT_PATH" \

@@ -8,13 +8,13 @@ from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
 
 from qount.contracts import canonical_hash
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_recovery import FUTURES_RECOVERY_PROTOCOL
 from qount.mini_trend.futures_recovery_backtest import allocate_with_filters, run_variant
 from qount.mini_trend.scorecard import max_drawdown_pct
-from qount.x4.indicators import ATR
+from qount.research_data.indicators import ATR
 
 
 MULTI_SPEED_PREREG_VERSION = "crypto_multi_speed_trend_preregistration_v0.1"

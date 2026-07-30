@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.data import OpenInterest
-from qount.x4.data import align_oi_to_bars
-from qount.x4.data import parse_metrics_csv
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.data import OpenInterest
+from qount.legacy.x4.data import align_oi_to_bars
+from qount.legacy.x4.data import parse_metrics_csv
 
 _T0 = 1_609_459_200_000  # 2021-01-01 00:00:00 UTC
 _H = 3_600_000

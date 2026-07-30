@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.futures_recovery import canonical_hash
 from qount.mini_trend.forward import TOP3

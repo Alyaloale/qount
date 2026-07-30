@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from qount.grid.data import Bar  # noqa: E402
-from qount.x4.live import (  # noqa: E402
+from qount.research_data.market_data import Bar  # noqa: E402
+from qount.legacy.x4.live import (  # noqa: E402
     LiveConfig,
     Order,
     SymbolFilter,

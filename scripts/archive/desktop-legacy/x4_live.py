@@ -27,10 +27,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
-from qount.grid.data import load_klines  # noqa: E402
+from qount.research_data.market_data import load_klines  # noqa: E402
 from qount.settings import Settings  # noqa: E402
 from qount.exchange_utils import build_exchange  # noqa: E402
-from qount.x4.live import (  # noqa: E402
+from qount.legacy.x4.live import (  # noqa: E402
     LiveConfig,
     apply_chandelier_stops,
     apply_scale_out,

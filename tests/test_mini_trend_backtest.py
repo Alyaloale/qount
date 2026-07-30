@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.backtest import align_bars, research_filters, run_backtest, write_backtest_artifact
 from qount.mini_trend.config import MiniTrendConfig
 

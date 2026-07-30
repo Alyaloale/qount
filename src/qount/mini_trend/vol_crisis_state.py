@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
 from qount.contracts import canonical_hash
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_recovery import FUTURES_RECOVERY_PROTOCOL
@@ -44,7 +44,7 @@ from qount.mini_trend.multi_speed_trend import (
     compact_rows,
 )
 from qount.mini_trend.scorecard import max_drawdown_pct
-from qount.x4.indicators import ATR  # noqa: F401
+from qount.research_data.indicators import ATR  # noqa: F401
 
 
 CRISIS_STATE_PREREG_VERSION = "crypto_vol_crisis_state_preregistration_v0.1"

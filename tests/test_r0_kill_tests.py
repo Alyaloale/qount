@@ -8,9 +8,9 @@ from qount.research_data.cost_model import default_cxd_carry_cost_model
 from qount.research_data.cost_model import default_cxd_trend_cost_model
 from qount.research_data.nav import compute_carry_standalone_nav
 from qount.research_data.nav import compute_standalone_nav
-from scripts.research.run_r0_decision import _independent_carry_nav
-from scripts.research.run_r0_decision import _independent_trend_nav
-from scripts.research.run_r0_decision import evaluate_kill_tests
+from scripts.research.governance.run_r0_decision import _independent_carry_nav
+from scripts.research.governance.run_r0_decision import _independent_trend_nav
+from scripts.research.governance.run_r0_decision import evaluate_kill_tests
 
 
 class TestIndependentTrendNav(unittest.TestCase):

@@ -4,7 +4,7 @@ import datetime as dt
 import math
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.market_breadth_g0 import (
     MARKET_BREADTH_G0_PROTOCOL,
     build_market_breadth_g0_report,

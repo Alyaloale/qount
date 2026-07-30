@@ -12,13 +12,13 @@ import tempfile
 import unittest
 import zipfile
 
-from qount.rv.data import dated_day_url
-from qount.rv.data import dated_month_url
-from qount.rv.data import dated_symbol
-from qount.rv.data import expiry_ms
-from qount.rv.data import last_friday
-from qount.rv.data import load_dated_klines
-from qount.rv.data import quarterly_contracts
+from qount.legacy.rv_c.data import dated_day_url
+from qount.legacy.rv_c.data import dated_month_url
+from qount.legacy.rv_c.data import dated_symbol
+from qount.legacy.rv_c.data import expiry_ms
+from qount.legacy.rv_c.data import last_friday
+from qount.legacy.rv_c.data import load_dated_klines
+from qount.legacy.rv_c.data import quarterly_contracts
 
 
 def _kline_zip(rows: list[tuple[int, float]]) -> bytes:

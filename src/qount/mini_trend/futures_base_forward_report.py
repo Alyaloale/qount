@@ -6,7 +6,7 @@ import datetime as dt
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_base_forward import BASE_FORWARD_PREREG_VERSION

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_base_forward import BASE_FORWARD_PREREG_VERSION
@@ -28,7 +28,7 @@ from qount.mini_trend.futures_recovery_backtest import VariantResult
 from qount.mini_trend.futures_risk_tier import file_sha256
 from qount.mini_trend.scorecard import max_drawdown_pct
 from qount.models import utc_now
-from qount.rv.stats import sharpe
+from qount.research_data.metrics import sharpe
 from qount.settings import Settings
 
 

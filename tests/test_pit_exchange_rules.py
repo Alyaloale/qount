@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from qount.mini_trend.liquid_trend import LIQUID_TREND_UNIVERSE
-from scripts.research.build_pit_exchange_rules import build_pit_exchange_rules
+from scripts.research.governance.build_pit_exchange_rules import build_pit_exchange_rules
 
 
 def _mock_fetch(url: str) -> bytes:

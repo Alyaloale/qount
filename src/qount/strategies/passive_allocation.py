@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from qount.governance.registry import StrategyRegistration
-from qount.l1_passive_allocation import L1_PASSIVE_ALLOCATION_STRATEGY_ID
-from qount.l1_passive_allocation import L1_PASSIVE_ALLOCATION_STRATEGY_VERSION
-from qount.l1_passive_allocation import validate_l1_passive_allocation_preregistration
+from qount.research.sleeves.l1_passive_allocation import L1_PASSIVE_ALLOCATION_STRATEGY_ID
+from qount.research.sleeves.l1_passive_allocation import L1_PASSIVE_ALLOCATION_STRATEGY_VERSION
+from qount.research.sleeves.l1_passive_allocation import validate_l1_passive_allocation_preregistration
 
 
 def passive_allocation_strategy_registration(

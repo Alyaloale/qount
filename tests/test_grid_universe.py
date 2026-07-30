@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.grid.universe import select_universe
-from qount.grid.universe import trailing_adv
+from qount.research_data.market_data import Bar
+from qount.legacy.grid_b.universe import select_universe
+from qount.legacy.grid_b.universe import trailing_adv
 
 _DAY_MS = 86_400_000
 _T0 = 1_609_459_200_000  # 2021-01-01

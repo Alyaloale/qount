@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_base_forward import build_futures_base_forward_preregistration
 from qount.mini_trend.futures_recovery import selected_um_rules

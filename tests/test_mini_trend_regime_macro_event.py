@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.regime_macro_event import MACRO_EVENT_SPECS
 from qount.mini_trend.regime_macro_event import MacroEventConfig

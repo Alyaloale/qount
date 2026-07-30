@@ -8,14 +8,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.config import MiniTrendConfig
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_recovery import FUTURES_RECOVERY_PROTOCOL
 from qount.mini_trend.scorecard import max_drawdown_pct
 from qount.mini_trend.signals import sma, target_weights
-from qount.x4.indicators import ATR
+from qount.research_data.indicators import ATR
 
 
 _DAY_MS = 86_400_000

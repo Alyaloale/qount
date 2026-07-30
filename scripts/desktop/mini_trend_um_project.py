@@ -12,7 +12,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
-from qount.grid.data import load_funding, load_klines  # noqa: E402
+from qount.research_data.market_data import load_funding, load_klines  # noqa: E402
 from qount.mini_trend.forward import TOP3  # noqa: E402
 from qount.mini_trend.futures_shadow_inputs import (  # noqa: E402
     load_funding_snapshots,

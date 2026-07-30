@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.backtest import run_scalper
-from qount.x4.strategies import EfficiencyRegime, GatedVelocityScalper, VelocityScalper
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.backtest import run_scalper
+from qount.legacy.x4.strategies import EfficiencyRegime, GatedVelocityScalper, VelocityScalper
 
 _T0 = 1_609_459_200_000
 _M = 60_000  # 1-minute bars

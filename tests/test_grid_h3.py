@@ -1,6 +1,6 @@
 """Unit tests for GRID-B H3 delta-neutral carry primitives (线 B, isolated from line A).
 
-H3 plan: ``docs/grid-binance-h3-plan.md``. This file is Increment 1 -- the *pure* perp
+H3 plan: ``docs/archive/legacy/grid-b/grid-binance-h3-plan.md``. This file is Increment 1 -- the *pure* perp
 hedge + funding ledger (``grid/perp.py``), which is where the 6 hardening holes live:
 
   洞5  test_delta_neutral_offset_*  : harvest(θ) and rehedge(½Γ(dS)²) cancel; discrete
@@ -20,13 +20,13 @@ from __future__ import annotations
 import math
 import unittest
 
-from qount.grid.backtest import run_h3
-from qount.grid.backtest import run_h3_carry
-from qount.grid.data import Bar
-from qount.grid.data import Funding
-from qount.grid.engine import GridLadder
-from qount.grid.engine import build_grid
-from qount.grid.perp import PerpHedgeLeg
+from qount.legacy.grid_b.backtest import run_h3
+from qount.legacy.grid_b.backtest import run_h3_carry
+from qount.research_data.market_data import Bar
+from qount.research_data.market_data import Funding
+from qount.legacy.grid_b.engine import GridLadder
+from qount.legacy.grid_b.engine import build_grid
+from qount.legacy.grid_b.perp import PerpHedgeLeg
 
 _HOUR_MS = 3_600_000
 _T0 = 1_609_459_200_000  # 2021-01-01 00:00 UTC

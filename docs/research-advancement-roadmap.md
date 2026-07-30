@@ -281,9 +281,9 @@ blocked_reasons
 - point-in-time universe builder 只按 `valid_from <= as_of < valid_to` 选择当时 active symbol，不用未来上市或已退市状态反填；
 - 统一 scorecard 同时保存 Signal NAV、Standalone Executable NAV、Portfolio Realized NAV、beta residual、成本、trial count
   和 fold metrics；它是报告合同，不是 allocator 或 promotion；
-- `scripts/research/run_multi_sleeve_virtual_runtime.py`已生成固定两sleeve标准链artifact，result=`a98977dd...1672f`；它验证
+- `scripts/research/governance/run_multi_sleeve_virtual_runtime.py`已生成固定两sleeve标准链artifact，result=`a98977dd...1672f`；它验证
   allocator/Risk/OrderPlan/virtual ledger/fees/funding/三NAV/reconciliation，不是候选表现；
-- `scripts/research/build_r0_records.py`现读取并验证上述artifact，生成8份readiness、1份GlobalExperimentRecord和两个v4候选。
+- `scripts/research/governance/build_r0_records.py`现读取并验证上述artifact，生成8份readiness、1份GlobalExperimentRecord和两个v4候选。
   CxD实际映射到`x4_s7_trend_portfolio/rv_c_basis_carry/x4_cxd_combo_v1_9`，CTA-R映射到
   `l1_cross_asset_v1/cta_r_selection_free_a_share_etf`；来源文件均绑定SHA-256，不继承旧promotion结论。
 - **R0-DATA**：✅ 已实现 `lifecycle.py` / `availability.py` / `universe.py`，并记录外置盘 bundle
@@ -1022,7 +1022,7 @@ SSRN `2949379`、用户提供的2026 Bitcoin ML SSRN `6795938`及任何2026新�
 
 1. **`liquidity_capacity_meta_v1` capacity calibration**（P0）-- ✅ **首轮完成（2026-07-25）**。
    模块 `src/qount/mini_trend/liquidity_capacity_calibration.py`（21 单测）消费冻结 G0 artifact
-   （hash `fa02ed8b...bf95`，10/10 通过），脚本 `scripts/research/run_liquidity_capacity_calibration.py` 产出不可变
+   （hash `fa02ed8b...bf95`，10/10 通过），脚本 `scripts/research/mini_trend/run_liquidity_capacity_calibration.py` 产出不可变
    scorecard `state/research_runs/20260724T184308-liquidity-capacity-meta-calibration/`（SHA `bad32d63...72b4`，
    contract `01f3c651...12a9`）。成本模型：half-spread=CS/2、impact=`amihud_x_1e6·N/100`（线性 Amihud 上界代理）、
    friction=half-spread+impact（不含费）、total 另加 Binance UM taker 4bps。**读数**：①robust participation-only 全宇宙容量

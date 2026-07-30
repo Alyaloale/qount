@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.config import MiniTrendConfig
 from qount.mini_trend.execution import compute_orders
 from qount.mini_trend.models import Position, Scorecard, SymbolFilter

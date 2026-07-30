@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 from qount.mini_trend.backtest import align_bars, research_filters, run_backtest
 from qount.mini_trend.config import MiniTrendConfig
 from qount.mini_trend.models import SymbolFilter

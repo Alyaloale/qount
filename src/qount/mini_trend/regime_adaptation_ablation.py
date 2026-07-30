@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, replace
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.backtest import align_bars
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_base_forward import FUTURES_BASE_FORWARD_PROTOCOL
@@ -16,7 +16,7 @@ from qount.mini_trend.futures_recovery import canonical_hash, selected_um_rules
 from qount.mini_trend.futures_recovery_backtest import VariantResult, run_variant
 from qount.mini_trend.scorecard import max_drawdown_pct
 from qount.models import utc_now
-from qount.rv.stats import sharpe
+from qount.research_data.metrics import sharpe
 from qount.settings import Settings
 
 

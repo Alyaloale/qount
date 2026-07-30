@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.futures_base_episode_attribution import BASE_EPISODE_REPORT_VERSION
 from qount.mini_trend.futures_base_episode_attribution import extract_base_episodes

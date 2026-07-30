@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.backtest import run_directional, run_trend_portfolio
-from qount.x4.portfolio import combine
-from qount.x4.strategies import TrendFollow, sma_regime_mask, sma_slope_up_mask
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.backtest import run_directional, run_trend_portfolio
+from qount.legacy.x4.portfolio import combine
+from qount.legacy.x4.strategies import TrendFollow, sma_regime_mask, sma_slope_up_mask
 
 # Small windows so synthetic series stay short. Zero fees + no vol-parity -> clean, exact curves.
 _PARAMS = dict(fast=2, slow=4, regime_sma=5, vol_target=0.0, max_leverage=1.0,

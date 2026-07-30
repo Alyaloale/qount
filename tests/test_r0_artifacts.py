@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.research.build_r0_records import _verify_bundle
-from scripts.research.build_r0_records import build_bundle
-from scripts.research.run_multi_sleeve_virtual_runtime import run_fixture
+from scripts.research.governance.build_r0_records import _verify_bundle
+from scripts.research.governance.build_r0_records import build_bundle
+from scripts.research.governance.run_multi_sleeve_virtual_runtime import run_fixture
 
 
 class R0ArtifactsTest(unittest.TestCase):

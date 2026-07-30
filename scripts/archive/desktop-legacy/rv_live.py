@@ -31,7 +31,7 @@ sys.path.insert(0, str(REPO / "src"))
 import ccxt  # noqa: E402
 from qount.settings import Settings  # noqa: E402
 from qount.exchange_utils import build_exchange  # noqa: E402
-from qount.rv.live import (  # noqa: E402
+from qount.legacy.rv_c.live import (  # noqa: E402
     CarryConfig,
     CONTRACT_USD,
     compute_carry_orders,

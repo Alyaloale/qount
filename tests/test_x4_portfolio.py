@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import unittest
 
-from qount.x4.portfolio import combine, correlation, sharpe_of
+from qount.legacy.x4.portfolio import combine, correlation, sharpe_of
 
 
 def _curve_from_rets(rets, initial=100_000.0):

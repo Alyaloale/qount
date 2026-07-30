@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from qount.grid.data import Bar, Funding
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3
 from qount.mini_trend.pilot_paper import PILOT_PAPER_PROTOCOL
 from qount.mini_trend.pilot_paper import build_pilot_paper_replay

@@ -15,7 +15,7 @@ from qount.alpha_agents.residual_trend_replay import build_residual_trend_replay
 from qount.alpha_agents.residual_trend_replay import build_residual_trend_replay_report
 from qount.alpha_agents.residual_trend_replay import predict_from_frozen_model
 from qount.alpha_agents.residual_trend_replay import _audit_price_bars
-from qount.grid.data import Bar
+from qount.research_data.market_data import Bar
 
 
 def _model_card() -> dict:

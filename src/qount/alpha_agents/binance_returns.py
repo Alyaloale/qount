@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from qount.artifacts import write_research_json_artifact
-from qount.grid.data import Bar
-from qount.grid.data import load_funding
-from qount.grid.data import load_klines
+from qount.research_data.market_data import Bar
+from qount.research_data.market_data import load_funding
+from qount.research_data.market_data import load_klines
 from qount.settings import Settings
 
 from .exchange_rules import evaluate_period_filter_coverage

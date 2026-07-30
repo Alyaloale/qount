@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import unittest
 
-from qount.grid.data import Bar
-from qount.x4.strategies import MomentumBreakout
-from qount.x4.strategies import TrendFollow
+from qount.research_data.market_data import Bar
+from qount.legacy.x4.strategies import MomentumBreakout
+from qount.legacy.x4.strategies import TrendFollow
 
 _T0 = 1_609_459_200_000
 _H = 3_600_000

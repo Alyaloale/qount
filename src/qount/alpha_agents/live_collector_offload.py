@@ -341,7 +341,7 @@ def pull_offloaded_segments(
     min_local_free_bytes: int = 20 * 1024**3,
     connect_timeout_seconds: int = 15,
     remote_python: str = "/root/qount-alpha/.venv/bin/python",
-    remote_cli: str = "/root/qount-alpha/scripts/research/alpha_agent_collector_offload.py",
+    remote_cli: str = "/root/qount-alpha/scripts/research/alpha_agents/alpha_agent_collector_offload.py",
 ) -> dict[str, Any]:
     remote_host = _validated_host(remote_host)
     remote_session_dir = _validated_remote_session_dir(remote_session_dir)
