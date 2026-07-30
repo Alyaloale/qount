@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from qount.contracts import MarketSnapshot
 from qount.contracts import OrderPlan
@@ -282,6 +284,23 @@ class ImmutableContractArtifactTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 write_immutable_artifact(path, snapshot)
             self.assertEqual(read_immutable_artifact(path), snapshot)
+            self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
+
+    def test_write_falls_back_to_exclusive_create_without_hard_link_support(self) -> None:
+        snapshot = _objects()[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "snapshot.json"
+            with patch(
+                "qount.persistence.immutable_json.os.link",
+                side_effect=OSError(errno.EPERM, "hard links unsupported"),
+            ):
+                receipt = write_immutable_artifact(path, snapshot)
+
+            self.assertEqual(receipt["object"], snapshot)
+            self.assertEqual(read_immutable_artifact(path), snapshot)
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            with self.assertRaises(FileExistsError):
+                write_immutable_artifact(path, snapshot)
             self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
 
     def test_temporary_or_partial_paths_are_not_completed_artifacts(self) -> None:

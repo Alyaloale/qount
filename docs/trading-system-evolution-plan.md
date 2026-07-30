@@ -1,25 +1,25 @@
 # qount 交易系统架构优化与扩展计划
 
-> **状态**：active｜**权威**：L2/L3 控制面演进｜**最后更新**：2026-07-23
+> **状态**：active｜**权威**：L2/L3 控制面演进｜**最后更新**：2026-07-30
 > **本文回答**：独立执行认证、shadow accountant、分层 HALT、venue capability provenance、多 sleeve 前置门。
 > **TL;DR**：定义生产控制面演进阶段门，不直接改任一线 promotion/live 状态。
 
 版本：`v0.3`
 
-更新时间：`2026-07-23`
+更新时间：`2026-07-30`
 
 状态：owner要求形成的架构演进合同；只授权设计、拆解和离线验证，不授权真实认证订单、策略晋级、资金扩容、
 carry、short、杠杆提升或恢复legacy交易入口。
 
 ## 0. 文档定位
 
-本文定义从当前单策略`100 USDT` minimal-live系统，演进到可独立认证执行、独立复核会计、分层停机和可安全承载
+本文定义从已停止的历史`100 USDT` Base生产链，演进到可独立认证执行、独立复核会计、分层停机和可安全承载
 未来多sleeve的生产架构。当前生产事实仍以[current.md](current.md)和VPS只读证据为准，基础目标架构仍以
 [system-architecture-design.md](system-architecture-design.md)为准。
 
 本文不改变以下当前事实：
 
-- 唯一有真钱权限的策略是`MiniTrend-UM-Base-v0.2`；
+- `MiniTrend-UM-Base-v0.2`的历史生产链已停止；当前仅本次FOMC存在事件绑定的受限自动授权；
 - Base固定`100 USDT`、TOP3日线、long/cash、one-way、isolated 1x、effective gross `<=1`；
 - X4、C×D、RV-C和旧line A交易入口关闭；
 - RiskTier和FundingVeto只能shadow；

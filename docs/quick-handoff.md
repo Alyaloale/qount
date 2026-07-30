@@ -24,9 +24,16 @@ publication、model hash 和文件 SHA-256，再将 model 本体渲染。该页�
 `360/360 OK`，模板与安装unit的SHA-256完全一致；当前 live/shadow timer 已启用用于事件观察，但仍无可消费 arm、
 无授权订单，且 `exchange_mutation_attempted=false`。
 
-当前账户只读证据为run `20260727T073725Z` / observation `ac00bd58...7757`：BTC USD-M用户自有多仓`0.009`、名义约
-`587.62 USDT`，钱包`203.06011455 USDT`、可用`66.0921174 USDT`、普通挂单0、既有条件保护单2。不要撤改或把该仓位归给
-MiniTrend；Dashboard只可发布`available_readonly`，成本、PnL、NAV、订单沿袭和ledger reconciliation继续unavailable。
+`liquidation_cascade_forward_v1`是独立的公共数据研究服务：
+`qount-liquidation-cascade-collector.service=enabled/active`，启动于`2026-07-28T09:25:07Z`，数据根为
+`/var/lib/qount/research/liquidation-cascade-v1`。它不是 systemd timer，不能用间歇调度替换连续 `forceOrder`
+订阅；每5分钟的 OI/20档深度/mark-index 是进程内部快照节拍。它没有凭据、私有 API、PnL、信号或订单权限，
+结果读取不得早于`2027-01-24T09:25:07Z`。不要恢复或拼接旧 `qount-alpha-collector.service`。
+
+历史账户只读证据为run `20260727T073725Z` / observation `ac00bd58...7757`：当时 BTC USD-M用户自有多仓`0.009`、名义约
+`587.62 USDT`，普通挂单0、既有条件保护单2。它不是当前账户状态。2026-07-29 的`authorize-auto`私有只读预检已通过，
+确认 BTC USD-M 空仓、普通单/条件单为 0、isolated `3x`；没有账户 mutation 或订单尝试。Dashboard只可发布`available_readonly`，
+成本、PnL、NAV、订单沿袭和ledger reconciliation继续unavailable。
 `minimal_live`是registry历史状态，当前执行状态为`blocked`且`live_orders_allowed=false`。
 
 FOMC live runtime、CLI及`qount-fomc-live.service/.timer`已经形成VPS release并安装。生产仍不存在已授权的
@@ -123,6 +130,21 @@ ssh -o ClearAllForwardings=yes qount-vps \
   同步更新 [current.md](current.md) 和 [update-log.md](update-log.md)。
 - 新增研究或清理弃用代码前先按 [project-rules.md](project-rules.md) 做线归属和引用审计。
 
+### 本地资源与密钥加载
+
+- `QOUNT_TIINGO_API_KEY` 是 L1 Tiingo EOD 缓存准备所需的本地资源。它保存在各计算节点私有的
+  `<repo>/.env`（`0600`、gitignored），绝不写入源码、文档、artifact、命令输出或 git。当前 Mac 的该条目已核验存在。
+- `Settings.from_env()` 只读取当前进程已导出的环境变量，不会自动加载 `.env`。运行 Tiingo 准备器前需在**对应节点**加载私有配置；
+  Mac 的 `.env` 不会自动同步到 WSL，WSL 必须有自己的私有配置或由其安全环境管理注入。
+- 不回显密钥的检查和加载方式：
+
+```bash
+set -a
+source .env
+set +a
+test -n "${QOUNT_TIINGO_API_KEY:-}" && echo 'QOUNT_TIINGO_API_KEY=set'
+```
+
 WSL存储预检：
 
 ```bash
@@ -138,6 +160,19 @@ ssh -o ClearAllForwardings=yes home \
 cd /Users/alyaloale/Code/qount
 git status --short --branch
 ```
+
+清算级联前向采集器（当前 active）的只读检查：
+
+```bash
+ssh qount-vps 'systemctl status qount-liquidation-cascade-collector.service --no-pager'
+ssh qount-vps 'PYTHONPATH=/root/qount/src /root/qount/.venv/bin/python \
+  /root/qount/scripts/research/liquidation_cascade_collector.py \
+  --state-root /var/lib/qount/research/liquidation-cascade-v1 --status'
+ssh qount-vps 'journalctl -u qount-liquidation-cascade-collector.service -n 40 --no-pager'
+```
+
+当前 UTC 小时段以`.jsonl.gz.partial`形式追加；仅在正常轮换或服务停止时原子封存为`.jsonl.gz`并写入 SHA-256
+segment manifest。不得覆盖或删除 partial/final 段；断线、重启和未封存 partial 都会作为原始记录保留。
 
 Alpha S3 的正式 7 天 public-data session 已在约 21 小时后中断并 fail closed；它不是训练或 promotion
 证据。以下命令只用于检查和保留失败现场，不得 resume 或拼接：
@@ -435,7 +470,7 @@ Phase A 架构演进合同与离线认证验证：
 
 当前读法：Phase B/C/D dispatcher已接标准RuntimeLedger，market成交必须由exchange order和逐笔trade/USDT fee确认；
 `SUBMITTING -> UNKNOWN + HALT`超时路径不会重发，异常authority发布halted registry。历史阶段manual arm曾把同一hash绑定的registry
-提升为`minimal_live`并在`0.2.15`迁入`standard_production`；该执行链现已停止。当前VPS为`0.2.20`，仓库为`0.2.21`。
+提升为`minimal_live`并在`0.2.15`迁入`standard_production`；该执行链现已停止。当前VPS为`0.2.22`，仓库包版本为`0.2.24`。
 更早的`0.2.13`/`0.2.14`及`1542/328/29/1488/299/71/37/101 OK`等读数只保留历史语境，不覆盖当前release。
 NotificationStore、incident sync、DailyBrief、Daily Intelligence、个人微信transport和
 Dashboard v1均已在生产运行，但都不能直接赋予订单权；publisher只读标准source，不查询交易所。不要用fixture创建生产DB/read model，
@@ -990,8 +1025,8 @@ python -m qount.main walk-forward \
 - review / scan：`src/qount/review.py`、`src/qount/research_slice_scan.py`
 - artifact：`src/qount/artifacts.py`
 - 线 B GRID：`src/qount/grid/`、`scripts/research/grid_b_*.py`
-- 线 C RV：`src/qount/rv/`、`scripts/desktop/rv_live.py`
-- 线 D X4 / C×D：`src/qount/x4/`、`scripts/desktop/*x4*`、`scripts/desktop/cxd_*`
+- 线 C RV：`src/qount/rv/`、`scripts/archive/desktop-legacy/rv_live.py`
+- 线 D X4 / C×D：`src/qount/x4/`、`scripts/archive/desktop-legacy/`
 - 重启线 L1/L3/L4/L6：`src/qount/l*_*.py`、`scripts/research/l*_*.py`
 - Alpha Agents / S3 collector：`src/qount/alpha_agents/`、`scripts/research/alpha_agent_*.py`
 - Phase A 架构演进：`src/qount/certification/`、`src/qount/halt/`、`src/qount/venue/`、`src/qount/shadow_accounting/`

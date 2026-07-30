@@ -1,10 +1,10 @@
 # qount 项目规则与文档分类
 
-> **状态**：active｜**权威**：L1 规则（#2）｜**最后更新**：2026-07-29
+> **状态**：active｜**权威**：L1 规则（#2）｜**最后更新**：2026-07-30
 > **本文回答**：项目规则、文档分类、研究线隔离、反过拟合、代码架构、清理与文档维护纪律。
-> **TL;DR**：权威顺序 current>本文>quick-handoff>线文档>update-log；遗留文档原地保留；清理=移动不删除。
+> **TL;DR**：权威顺序 current>本文>quick-handoff>线文档>update-log；遗留正文集中归档，根路径保留指针；清理=移动不删除。
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 这份文档定义项目级规则、文档分类、研究线隔离和代码整理纪律。它不替代
 [current.md](current.md)：`current.md` 仍是当前事实、生产状态和下一步的入口。
@@ -49,14 +49,14 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | 验证边界 | `holdout.md` | discovery / validation / promotion gate | 样本池或晋级规则变化 |
 | 记录链 | `update-log.md` | 每批有意义执行的结果、artifact、验证 | 代码、运行、规则或跨线结论变化 |
 | 归档索引 | `archive/README.md` | legacy研究线、旧运行手册和历史计划的状态与入口 | legacy状态或引用边界变化 |
-| 线 A legacy | `profit-*.md`, `optimization-plan.md`, `cta-r-value-gate-plan.md` | 旧 `qount.main` / ETH-only / CTA-R 研究 | 仅追溯或 owner 授权重启 |
-| 线 B GRID | `grid-binance-*.md` | 网格实验线 | 本线 changelog；不污染 current，除非影响全局 |
+| 线 A legacy | `archive/legacy/line-a/` | 旧 `qount.main` / ETH-only / CTA-R 研究 | 仅追溯或 owner 授权重启 |
+| 线 B GRID | `archive/legacy/grid-b/` | 网格实验线 | 本线 changelog；不污染 current，除非影响全局 |
 | MiniTrend Base | `current.md`, `crypto-portfolio-system-plan.md`, `system-architecture-design.md` | 当前唯一100 USDT minimal-live线；`mini-trend-agent/`为历史设计 | VPS production、risk、sizing、execution 变化 |
-| 线 C RV | `rv-c-plan.md` | 相对价值 carry legacy线 | 仅追溯或owner授权重启 |
-| 线 D X4 / CxD | `crypto-x4-plan.md`, `x4-live-position-management.md` | 旧加密趋势 / 组合实盘线 | 仅追溯或owner授权重启 |
-| 重启线 L1/L3/L4/L6 | `l*-*.md` | 已证伪、固化或暂停的结构性重启线 | 只在 owner 授权重启或修正结论时更新 |
-| A股 ETF 20 日 | `ashare-etf-month-plan.md` | 主题状态、固定组合月度研究、收盘触发 | 数据、状态合同、风险上限或 evidence gate 变化 |
-| 重构蓝图 | `rebuild-plan.md` | CTA-R / A股系统化思路 | 蓝图变化；不得覆盖当前生产事实 |
+| 线 C RV | `archive/legacy/x4-rv/rv-c-plan.md` | 相对价值 carry legacy线 | 仅追溯或owner授权重启 |
+| 线 D X4 / CxD | `archive/legacy/x4-rv/` | 旧加密趋势 / 组合实盘线 | 仅追溯或owner授权重启 |
+| 重启线 L1/L3/L4/L6 | `archive/legacy/restart-lines/` | 已证伪、固化或暂停的结构性重启线 | 只在 owner 授权重启或修正结论时更新 |
+| A股 ETF 20 日 | `archive/legacy/ashare-etf/` | 主题状态、固定组合月度研究、收盘触发 | 数据、状态合同、风险上限或 evidence gate 变化 |
+| 重构蓝图 | `archive/legacy/line-a/rebuild-plan.md` | CTA-R / A股系统化思路 | 蓝图变化；不得覆盖当前生产事实 |
 | Alpha Agents | `alpha-agent-plan.md` | 多 agent 研究组织、资料搜集、量化接入骨架 | 角色、任务、source book、agent 边界变化 |
 | 200U个人事件策略 | `personal-200u-event-strategy.md` | FOMC/宏观事件后右侧确认、全成本仓位和小账户风险合同 | owner风险目标、事件规则、shadow证据或权限状态变化 |
 | 事件前区间 fade | `pre-event-range-strategy.md` | FOMC 前独立区间高抛低吸线，plan-only + owner 手工执行 | 事件窗口、风险预算、执行边界或 canary 证据变化 |
@@ -68,7 +68,8 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 新增文档前先判断是否能放进现有分类。新策略计划文件只有在 owner 明确授权新研究线时创建。
 
 `archive/README.md`列出的文件保留历史证据和可追溯链接，但不属于当前生产入口；其中的运行命令、余额、订单、timer和live状态
-一律按历史语境读取，不能覆盖`current.md`或VPS只读事实。
+一律按历史语境读取，不能覆盖`current.md`或VPS只读事实。2026-07-29 起，已冻结正文统一放在
+`docs/archive/legacy/`；根目录保留同名短指针，保证既有链接可达。
 
 ## 4. 研究线隔离
 
@@ -78,14 +79,17 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 | --- | --- | --- | --- |
 | A legacy `qount.main` / ETH-only | research-only / live disabled | `current.md`, `profit-*.md` | `src/qount/*.py` legacy core |
 | B GRID | archived / falsified | `grid-binance-*.md` | `src/qount/grid/`, `scripts/research/grid_b_*.py` |
-| MiniTrend Base v0.2 | `minimal_live`，固定100 USDT，唯一真钱策略 | `current.md`, `crypto-portfolio-system-plan.md`, `system-architecture-design.md`；`mini-trend-agent/`为历史设计 | `src/qount/mini_trend/`, `scripts/desktop/mini_trend_um_*` |
-| C RV-C | research-only / carry disabled | `rv-c-plan.md` | `src/qount/rv/`, `scripts/desktop/rv_live.py` |
-| D X4 / CxD | legacy / live disabled | `crypto-x4-plan.md`, `x4-live-position-management.md` | `src/qount/x4/`, `scripts/desktop/*x4*`, `scripts/desktop/cxd_*` |
+| MiniTrend Base v0.2 | historical production / stopped，固定100 USDT | `current.md`, `crypto-portfolio-system-plan.md`, `system-architecture-design.md`；`mini-trend-agent/`为历史设计 | `src/qount/mini_trend/`, `scripts/desktop/mini_trend_um_*` |
+| C RV-C | research-only / carry disabled | `archive/legacy/x4-rv/rv-c-plan.md` | `src/qount/rv/`, `scripts/archive/desktop-legacy/rv_live.py` |
+| D X4 / CxD | legacy / live disabled | `archive/legacy/x4-rv/` | `src/qount/x4/`, `scripts/archive/desktop-legacy/` |
 | L1 / L3 / L4 / L6 | frozen / falsified / lessons retained | 对应 `l*-plan.md` | `src/qount/l*_*.py`, `scripts/research/l*_*.py` |
 | A股 ETF 20 日 | frozen / owner-deprioritized / discovery blocked | `ashare-etf-month-plan.md` | `src/qount/ashare_etf_month.py`, `scripts/research/ashare_etf_month.py` |
 | CTA-R rebuild | blueprint / guarded | `rebuild-plan.md`, `cta-r-value-gate-plan.md` | `src/qount/cta_*.py`, `scripts/research/cta_*.py` |
 | Alpha Agents | active research-only new-source restart | `alpha-agent-plan.md` | `src/qount/alpha_agents/`, `scripts/research/alpha_agent_*.py` |
 | 200U个人事件右侧 | shadow-ready local / orders unauthorized / VPS pending | `personal-200u-event-strategy.md` | `src/qount/small_account/`、`scripts/operations/run_fomc_shadow.py`、`deploy/events/` |
+| 200U FOMC 受限事件执行 | one-event restricted authorization / no current order | `current.md`, `personal-200u-event-strategy.md` | `src/qount/small_account/`, `src/qount/fomc_live.py`, `deploy/events/` |
+| Sleeve 1 被动配置 | research-only / preregistered | `l1-passive-allocation-preregistration.md` | `src/qount/l1_passive_allocation.py`, `src/qount/strategies/passive_allocation.py` |
+| Liquidation cascade collector | forward collection / public-data-only | `current.md` | `src/qount/mini_trend/liquidation_cascade_collection.py`, `scripts/research/liquidation_cascade_collector.py` |
 | PreEvent-Range 区间 fade | draft / plan-only / owner 手工执行 canary | `pre-event-range-strategy.md` | `src/qount/small_account/range_signal.py`、`scripts/operations/run_pre_event_range_plan.py` |
 
 隔离规则：
@@ -97,7 +101,16 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
 - 任何 line 进入 live / paper forward，必须先在本线文档和 `current.md` 写清开关、停止条件和回滚路径。
 - 多 agent 线只能写 research artifact；LLM agent 不得输出订单、目标权重、live 配置或风控 override。
 
-### 4.1 实盘策略身份与权限绑定
+### 4.1 个人研究的简化与弃用
+
+个人研究以快速缩短不确定性为目标，不把已放弃的想法做成治理工程。
+
+- 发现策略、来源或假设存在决定性问题时，写一条简短的弃用原因并停止使用；不为它新增预登记、继任合同、一次性消费账本、策略注册、调度器或多层“拒绝使用”代码。
+- 这类弃用线保留必要的已有材料以便追溯，但不再拉取数据、回放、补测、自动化或产生新 artifact。重新研究必须由 owner 明确提出一个新的问题，而不是复活旧流程。
+- 个人 research-only 代码和文档保持薄、可删、局部化；不要为了未来可能发生的误用建立复杂状态机、权限链或跨主机流程。
+- 本节不放宽真实账户、paper/live、共享生产接口或正式 holdout/promotion 的风控、权限和可追溯要求；这些路径仍按本文件其余规则执行。
+
+### 4.2 实盘策略身份与权限绑定
 
 - 每个可执行策略必须有不可省略的精确身份对 `strategy_id@strategy_version`；配置加载不得用默认值、空值或“任意合法字符串”补齐。
 - 事件运行时只能接受其代码内声明的策略身份。FOMC 当前唯一允许
@@ -212,6 +225,6 @@ live / paper forward / dashboard 的生产真相是 VPS `/root/qount`。
    - 硬边界、生产事实只写在 `current.md`；`CLAUDE.md`/`README.md`/`archive` 一律**指针化引用**，不复述具体数值。
    - family 状态只在 `research-advancement-roadmap.md` R1.1 表；`update-log.md` 只记事件，不重复状态表。
    - 命令/运维只在 `quick-handoff.md`；架构权威链只在 `system-architecture-design.md`。
-3. **清理=移动不删除**（重申 §8）：过时内容移入 `docs/archive/` 并在原位留指针，逐行守恒（`原 = 主文件 + 归档`），
-   `git diff --check` 干净，链接不断。遗留研究线文档正文一律**原地保留**（每份被引用多处），不移动不删除。
+3. **清理=移动不删除**（重申 §8）：过时内容移入 `docs/archive/` 并在原位留短指针，逐行守恒（`原 = 主文件 + 归档`），
+   `git diff --check` 干净，链接不断。已冻结研究线正文统一归入 `docs/archive/legacy/`；根路径短指针保留，避免历史引用失效。
 4. **接手可达性**：从 `CLAUDE.md` 出发应能 3 步内定位：当前生产事实、硬边界、当前研究状态、运维命令、架构骨架。

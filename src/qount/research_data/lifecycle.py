@@ -310,7 +310,7 @@ def probe_kline_month(
     (404, timeout, corrupt zip) is treated as ``False``.
     """
 
-    from qount.grid.data import month_url
+    from qount.research_data.market_data import month_url
 
     url = month_url(symbol, "1d", year, month, market=market)
     try:

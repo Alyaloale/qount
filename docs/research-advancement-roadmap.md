@@ -62,7 +62,7 @@ liquidity真实盘口校准、stablecoin market-state 新预登记、carry activ
 
 当前共同基线：
 
-- Base v0.2是唯一真钱策略和所有加密方向研究的生产对照；
+- Base v0.2是已停止的历史生产对照；本次 FOMC 受限自动授权只绑定单一事件，不授予其它研究线权限；
 - BTC、ETH、BNB是三个交易载体，不默认视为三个独立收益源；必须用共同market/momentum/size等暴露和有效广度证明分散；
 - X4、C×D、RV-C、CTA-R历史读数均为legacy/guarded/consumed evidence，不是可直接组合的已晋级edge；
 - LiquidTrend10首个G0有效广度仅`1.438`，原10币横截面trial被阻断；
@@ -586,7 +586,7 @@ overlap with local negative evidence / promotion blockers
 | `funding_crowding_meta_v1` | 极端funding是杠杆需求、拥挤和持仓成本共同状态，不等同于可得carry | 完成结算as-of日线；横截面分散、持续时间、price/funding背离、funding变化而非单一水平；条件化趋势风险 | 旧50% TOP3 Funding Veto、无funding趋势；主指标为残差收益/回撤/换手增量；等价旧veto、事件不足或完整状态路径吞噬增量即拒绝 | 3；P1 |
 | `basis_curve_dislocation_v1` | perp premium、dated-future basis和曲线斜率反映杠杆需求、套利资本约束及崩盘风险 | premium-index、funding与dated basis；先做前向日线/4h state，不做现金carry | funding-only和price-only state；主指标为对未来尾部或趋势失效的增量；若30日历史容量不足、与funding高度重复或扣延迟后失效则阻断/拒绝 | 2；P1前向 |
 | `oi_flow_forward_v1` | OI变化与主动买卖流组合可区分新风险建立、平仓和挤压，而单独OI方向含义不稳定 | 当前起append-only 5m/1h聚合到4h/1d；`price x OI x taker imbalance x funding`状态，不回填长历史 | 常数、价格、简单趋势、单变量OI/taker；主指标为future-only rank IC和残差/风险增量；时点、覆盖不足或baseline不败即拒绝 | 2；仅前向 |
-| `liquidation_cascade_forward_v1` | 强平流在流动性变薄时可能形成短暂价格冲击、相关性同步和后续风险持续 | 官方实时liquidation stream + OI/depth/price；按事件强度/OI、方向、集中度和恢复速度聚合，首测为de-risk/entry veto而非抄底 | 同幅度price shock和vol spike；主指标为尾部损失避免与误杀成本；重复事件、clock gap、观察延迟后无增量或只支持已拒绝capitulation rebound即拒绝 | 2；仅前向 |
+| `liquidation_cascade_forward_v1` | 强平流在流动性变薄时可能形成短暂价格冲击、相关性同步和后续风险持续 | 官方实时liquidation stream + OI/depth/price；按事件强度/OI、方向、集中度和恢复速度聚合，首测为de-risk/entry veto而非抄底 | 同幅度price shock和vol spike；主指标为尾部损失避免与误杀成本；重复事件、clock gap、观察延迟后无增量或只支持已拒绝capitulation rebound即拒绝 | 2；VPS public-only采集已于2026-07-28启动；仅前向，最早2027-01-24读结果 |
 
 #### C. 流动性、场所与事件结构
 
@@ -1037,8 +1037,43 @@ SSRN `2949379`、用户提供的2026 Bitcoin ML SSRN `6795938`及任何2026新�
 3. **`crypto_vol_crisis_state_v1` Trial 2/3**（P1，可选）：148 已证明合成危机降险尾部不够有效。若继续，Trial 2/3 须引入
    与148不同的信息或目标（见 `docs/crypto-vol-crisis-state-preregistration.md`），否则按低效降险直接关闭family，不救援。
 4. **carry active-basis**（R5，可并行）：`docs/carry-active-basis-hypothesis.md`，做 historical/discovery，不进 paper/live。
-5. **前向采集器启动决策**（owner）：Wave 3 四个 schema 已冻结；是否/何时在 WSL 侧启动实际 append-only 采集器
-   （OI/basis/liquidation/cross-venue）由 owner 决定，达到预登记独立窗口前不读结果。
+5. **前向采集器启动决策**（owner）：Wave 3 四个 schema 已冻结；owner已批准并在VPS启动
+   `liquidation_cascade_forward_v1` 的独立 public-only append-only service（不是旧Alpha S3，亦非WSL定时任务）。
+   OI/basis/cross-venue仍是单独 owner 决策；所有family达到各自预登记独立窗口前不读结果。
+
+### 下一轮研究执行步骤（2026-07-27，owner 询问后细化；全部 `orders_authorized=false`）
+
+事件执行（7/28-7/30，非研究但占日历）：PreEvent-Range freeze/scan 与 FOMC readiness/arm 均为 owner 手工步骤，
+不阻塞下面任何研究步骤。
+
+**Step 1（D1，P0，~1 天，Mac/Devin 即可）**：CPI/NFP 触发率复现。
+收集 2024-01..2026-06 的 CPI（BLS 08:30 ET）与 NFP（BLS 08:30 ET）发布时间戳（各 ~30 个事件），
+复用 fomc-trigger-study 的冻结口径脚本（72×1h H0/L0、ATR(14)、±0.25ATR 线、事件后 10h 锚、D0/D+1/D+3 幅度）。
+判据（看结果前冻结）：锚触发率 ≥40% 且 D0≥2ATR 条件比例不低于 FOMC 读数的 70%，则该事件类型进入执行篮子候选；
+弱锚反噬模式需同向复现。产出：`docs/` 研究笔记 + 逐事件表。
+
+**Step 2（D3，P0.5，Mac）-- COMPLETED 2026-07-30**：跨资产个人载体重认证。
+原结果前合同冻结 L1-S2 趋势规则不动，唯一变化为双基准（60/40 与 BTC 满仓；maxDD 减半且年化不落后基准
+2pp）。owner 在未读数前创建仅取消 embargo 的继任合同；原 21 ETF Tiingo/BTC cache admission 没有刷新。
+一次性评估显示 60/40 与 BTC 两条 maxDD 门均通过，但 CAGR 门均失败，故已按合同接受
+`buy_and_hold_plus_rebalance` 为 Sleeve 1 终态。不得调参、扩 universe、重跑、写趋势目标或接入 scheduler/paper/live。
+
+**Step 3（D5 G0，P1，Mac）-- CLOSED（2026-07-28）**：11 个 SPDR 行业 ETF 日线面板（Tiingo）
+的 `_panel_effective_breadth` 为 **1.52072 < 2.0**（11 标的平均绝对相关 0.62334），未过广度门。
+不单列“行业 vs 宽基”二元择时，不写简单动量基线或任何 ML；与加密横截面同一处置。只有 Step 2 个人载体
+重认证未来通过时，行业才能作为 Sleeve 1 内部细化重新评估，不能恢复本 D5 family。
+
+**Step 4（D2 G0，P1，~1 天，WSL 可选）**：funding 极值事件独立性检验。
+Binance UM 公开 funding 全历史（BTC/ETH/TOP N），定义极值分位事件（如 |8h funding| 年化 >50% 持续 ≥2 期），
+计算与 Trial 144 价格口径事件（TOP3 全负 + 5 日中位 ≤-8%）的重叠率。≥60% 重叠 → 判换名关闭；
+<60% → 才允许写 kill-test 预登记（扣成本事件收益 + BTC beta 残差门）。
+
+**Step 5（既有线，与上并行）**：stablecoin market-state 增量合同预登记（§11 第 2 项，不读 PnL）；
+WSL book-depth 采集决策（liquidity capacity 第二轮）与 OI/basis/cross-venue Wave 3 前向采集器启动仍为 owner
+决策项；`liquidation_cascade_forward_v1` 已按独立公共服务启动，仍不得在窗口内读数。
+
+**排程建议**：7/28 做 Step 1；7/29 做 Step 2 预登记 + Step 3；7/30 事件日不开新研究；
+7/31 起做 Step 2 读数与 Step 4。FOMC 事件证据（无论是否成交）当天记入 update-log。
 
 ### 优先级建议
 
@@ -1059,8 +1094,8 @@ D1 宏观事件右侧篮子扩展（CPI/NFP/PCE/GDP 复用 FOMC 链）  P0
 D3 跨资产趋势个人载体重新认证（R7 提级，评估基准改为个人默认持仓）  P0.5
 D2 极端 funding + 清算级联 forced-flow 均值回复（须先过与 Trial 144 的独立性 G0）  P1
 D4 已知事件前低波动区间 fade 泛化（依赖 7/30 PreEvent-Range canary 证据）  P2
-D5 美股行业 ETF 趋势轮动 + 受约束 ML 特征选择（owner 2026-07-27 提出；先过 11 行业有效广度 G0，
-   ML 仅限特征排序辅助且须过 purged-CV/DSR/PBO 对简单动量基线的显著性门）  P1
+D5 美股行业 ETF 趋势轮动 + 受约束 ML 特征选择 -- CLOSED（2026-07-28；11 行业有效广度 1.52072 < 2.0，
+   不做二元择时、动量基线或 ML）
 ```
 
 排除：币内横截面轮动（广度墙）、日内时段效应（成本墙）、期权 VRP（PIT 数据墙）、

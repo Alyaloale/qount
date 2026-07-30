@@ -470,16 +470,16 @@ ssh qount-vps 'cd /root/qount && find state/mini_trend/forward/runs -mindepth 1 
 - 研究与情报路线：[docs/research-advancement-roadmap.md](docs/research-advancement-roadmap.md)，定义全局实验账本、
   文献/研报来源、LLM旁路、多速度趋势及后续候选的阶段门；§11 为下一轮执行步骤。
 - 200 USDT个人事件右侧策略：[docs/personal-200u-event-strategy.md](docs/personal-200u-event-strategy.md)，定义
-  FOMC后1h方向锚与15m回踩确认、全成本仓位、单一crypto-beta暴露和20U/32U/40U分层停机；当前仅research/shadow。
+  FOMC后1h方向锚与15m回踩确认、全成本仓位、单一crypto-beta暴露和20U/32U/40U分层停机；本次事件仅受限自动授权，当前无订单。
 - 当前加密研究草稿：[docs/carry-active-basis-hypothesis.md](docs/carry-active-basis-hypothesis.md)（carry 新假设）、
   [docs/crypto-vol-crisis-state-preregistration.md](docs/crypto-vol-crisis-state-preregistration.md)（危机状态预登记草稿）、
   [docs/external-bot-cra-teardown.md](docs/external-bot-cra-teardown.md)（外部机器人 CRA 拆解，T4）。
 - 旧研究线与历史文档索引：[docs/archive/README.md](docs/archive/README.md)。
 - 历史执行记录（2026-07-14 及更早）：[docs/archive/update-log-archive.md](docs/archive/update-log-archive.md)。
 
-当前基线：VPS为`0.2.21`；旧 line A `qount.main`、X4、C×D以及MiniTrend live/forward timer和production cron全部关闭。
+当前基线：VPS为`0.2.22`；旧 line A `qount.main`、X4、C×D以及MiniTrend live/forward timer和production cron全部关闭。
 MiniTrend registry仍保留`minimal_live`历史状态，但执行为`blocked/live_orders_allowed=false`；FOMC live能力已部署但保持
-`disabled/inactive`、未arm、未启用。Dashboard静态前端已部署，publisher timer为`enabled/active`，只读完整authority并刷新系统健康、release、备份和恢复演练。
+本次事件已获得受限自动授权，但仍未生成arm、未产生订单。Dashboard静态前端已部署，publisher timer为`enabled/active`，只读完整authority并刷新系统健康、release、备份和恢复演练。
 2026-07-27最新order-free观察显示用户自有BTC USD-M多仓`0.009`、普通挂单0和两张既有条件保护单；该仓位未进入Qount ledger，
 因此成本、Qount订单、PnL、NAV与当前ledger reconciliation均明确不可用。NotificationStore通过腾讯个人微信iLink provider投递；
 `DELIVERED/SUCCEEDED`只证明通道已接受，不代表微信客户端已展示或用户已读，WeCom仅保留为未启用兼容adapter。

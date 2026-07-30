@@ -16,6 +16,7 @@ from qount.persistence.codec import dump_artifact
 from qount.persistence.codec import load_artifact
 from qount.persistence.immutable_json import read_immutable_artifact
 from qount.persistence.immutable_json import write_immutable_artifact
+from qount.persistence.immutable_json import write_immutable_json_document
 
 __all__ = [
     "ARTIFACT_SCHEMA_VERSION",
@@ -34,4 +35,5 @@ __all__ = [
     "resume_incomplete_decision_batch",
     "read_immutable_artifact",
     "write_immutable_artifact",
+    "write_immutable_json_document",
 ]

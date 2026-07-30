@@ -27,7 +27,7 @@ def _credential(**overrides) -> str:
 
 
 class _Response:
-    def __init__(self, status=200, body=b'{"message_id":123456789}'):
+    def __init__(self, status=200, body=b'{"ret":0}'):
         self.status = status
         self.body = body
 
@@ -92,7 +92,9 @@ class OpenClawWeixinNotificationTest(unittest.TestCase):
         )
 
         self.assertEqual(response["provider"], OPENCLAW_WEIXIN_PROVIDER_NAME)
-        self.assertEqual(response["provider_message_id"], "123456789")
+        self.assertEqual(
+            response["provider_message_id"], f"qount:{delivery_key[:32]}"
+        )
         request, timeout = opener.calls[0]
         self.assertEqual(timeout, 15)
         self.assertEqual(
@@ -226,14 +228,20 @@ class OpenClawWeixinNotificationTest(unittest.TestCase):
         )
         self.assertNotIn("fixture-secret-token", str(raised.exception))
 
-    def test_http_success_with_invalid_body_is_rejected(self) -> None:
+    def test_official_success_responses_do_not_require_message_id(self) -> None:
+        delivery_key = canonical_hash({"delivery": "official-success"})
+        for body in (b"", b'{"ret":0}', b'{"ret":0,"message_id":true}'):
+            with self.subTest(body=body):
+                provider = OpenClawWeixinProvider(opener=_Opener(_Response(body=body)))
+                response = provider.send({}, delivery_key, _credential())
+                self.assertEqual(
+                    response["provider_message_id"], f"qount:{delivery_key[:32]}"
+                )
+
+    def test_http_success_with_invalid_nonempty_body_is_rejected(self) -> None:
         for body in (
-            b"",
             b"not-json",
             b"[]",
-            b'{"ret":0}',
-            b'{"message_id":0}',
-            b'{"message_id":true}',
         ):
             with self.subTest(body=body):
                 provider = OpenClawWeixinProvider(opener=_Opener(_Response(body=body)))

@@ -1,13 +1,13 @@
 # qount 加密多策略组合系统计划
 
-> **状态**：active｜**权威**：L3 MiniTrend 计划｜**最后更新**：2026-07-25
+> **状态**：active｜**权威**：L3 MiniTrend 计划｜**最后更新**：2026-07-30
 > **本文回答**：100 USDT Base minimal-live 合同与未来多策略组合目标。
-> **TL;DR**：Base 是唯一真钱策略；多策略部分仍 research_sandbox，不获真钱订单权。
+> **TL;DR**：Base 已停止；本次 FOMC 仅有事件/账户/风控绑定的受限自动授权，多策略与 Sleeve 1 仍 research-only。
 
 更新时间：2026-07-25
 
-状态：源码与VPS生产版本`0.2.15`已完成完整升级验收；多策略部分仍为`research_sandbox`；
-唯一允许在升级验收后恢复的例外是已单独授权的Base `100 USDT` minimal-live。本文记录未来
+状态：Base 的历史生产链已停止；多策略部分仍为`research_sandbox`；本次 FOMC 是唯一单独授权的受限事件例外，
+不代表 Base 恢复。本文记录未来
 `1000 USDT`目标架构，不构成扩容或其它sleeve下单授权。60/10 forward、30 paper days和7 dry days仍是观察项；
 账户、订单、funding、标准authority/RuntimeLedger/对账、HALT和arm继续是每轮硬门。RiskTier与FundingVeto只做shadow。
 

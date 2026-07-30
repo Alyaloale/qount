@@ -16,8 +16,8 @@ import datetime as _dt
 from dataclasses import dataclass
 from typing import Callable
 
-from qount.grid.data import funding_url
-from qount.grid.data import month_url
+from qount.research_data.market_data import funding_url
+from qount.research_data.market_data import month_url
 
 
 # --- Data types -------------------------------------------------------------

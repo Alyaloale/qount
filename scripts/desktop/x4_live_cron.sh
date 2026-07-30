@@ -1,53 +1,6 @@
-#!/bin/bash
-# Linux/VPS cron version of the X4 fixed-TOP7 LIVE run (线 D §21 v2) — for a 墙外 VPS with a
-# STATIC IP (no proxy, direct to Binance). Counterpart of the macOS x4_live_daily.sh (launchd).
-#
-# Strategy: BTC/ETH/BNB/SOL/XRP/ADA/LINK · USDⓈ-M 永续 2x · vol 平价 sizing · BTC 200d master gate
-#           · 盘中 chandelier 硬止损. (旧"现货 1x"已过时 — v2 改永续杠杆博收益,可强平.)
-# Secrets + arm switch in ~/.config/qount/x4_live.env (chmod 600), sourced if present. The VPS reaches
-# Binance directly, so NO proxy line is needed in that file. Order placement is self-gated by
-# QOUNT_X4_LIVE_ENABLE. Alerts are written to the log (no desktop notifier on a headless VPS).
-set -u
-REPO="${QOUNT_REPO:-$HOME/qount}"
-LOG="$HOME/x4_live.log"
-ENV_FILE="$HOME/.config/qount/x4_live.env"
-echo "=== $(date '+%Y-%m-%d %H:%M:%S %Z') ===" >> "$LOG"
-cd "$REPO" || { echo "[ALERT] cannot cd $REPO" >> "$LOG"; exit 1; }
-# shellcheck disable=SC1090
-[ -f "$ENV_FILE" ] && source "$ENV_FILE"
+#!/usr/bin/env bash
+set -euo pipefail
 
-# WeChat push via Server酱 (set QOUNT_SERVERCHAN_KEY in the env file; no-op if unset).
-notify() {  # $1=title  $2=body
-  [ -n "${QOUNT_SERVERCHAN_KEY:-}" ] || return 0
-  curl -s --max-time 12 "https://sctapi.ftqq.com/${QOUNT_SERVERCHAN_KEY}.send" \
-    --data-urlencode "title=$1" --data-urlencode "desp=$2" -o /dev/null 2>/dev/null
-}
-
-# Optional proxy normalization (a VPS usually needs none; harmless if unset).
-PROXY="${QOUNT_HTTPS_PROXY:-${HTTPS_PROXY:-${HTTP_PROXY:-}}}"
-if [ -n "$PROXY" ]; then
-  export HTTP_PROXY="$PROXY" HTTPS_PROXY="$PROXY" QOUNT_HTTPS_PROXY="$PROXY"
-  echo "[proxy] $PROXY" >> "$LOG"
-fi
-
-# Preflight: Binance API reachable? (catches a network/region outage before trading)
-if ! curl -sf --max-time 12 https://api.binance.com/api/v3/ping -o /dev/null 2>/dev/null; then
-  echo "[ALERT] api.binance.com unreachable — skipping run" >> "$LOG"
-  notify "X4实盘告警·连不上币安" "$(date '+%F %T') api.binance.com 不可达,本次跳过。检查 VPS 网络。"
-  exit 1
-fi
-
-if [ "${QOUNT_X4_LIVE_ENABLE:-}" = "1" ]; then
-  echo "[armed] real USDⓈ-M perp orders may be placed (2x, 可强平)" >> "$LOG"
-else
-  echo "[unarmed] intended orders logged, nothing sent" >> "$LOG"
-fi
-
-out=$("$REPO/.venv/bin/python" scripts/desktop/x4_live.py live 2>&1)
-rc=$?
-echo "$out" >> "$LOG"
-if [ $rc -ne 0 ] || ! printf '%s' "$out" | grep -qF "[X4-LIVE live]"; then
-  last=$(printf '%s' "$out" | tail -1)
-  echo "[ALERT] x4 live FAILED rc=$rc :: $last" >> "$LOG"
-  notify "X4实盘告警·运行失败" "$(date '+%F %T') rc=$rc%0A$last"
-fi
+echo "[BLOCKED] X4 live cron is retired and cannot be restarted." >&2
+echo "Historical source: scripts/archive/desktop-legacy/x4_live_cron.sh" >&2
+exit 2

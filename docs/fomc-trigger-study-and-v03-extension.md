@@ -63,12 +63,7 @@
 诚实边界：n=11（含 15m 过滤后更少）、OKX 数据、单一资产、discovery 级、未做成本/funding 全复算。
 7/30 canary 仍按 v0.2 执行；v0.3 须先写预登记合同 + 单测 + 用 Binance 数据复算后才可用于 9 月事件。
 
-## 4. 部署推进清单（0.2.21 → VPS，全部为 owner 手工步骤）
+## 4. 部署记录
 
-1. 同步仓库 0.2.21 到 VPS（scripts/sync-to-vps.sh）→ 安装 → `./scripts/run-vps-tests.sh`
-   production profile 全绿；
-2. release 逐文件 verification + systemd unit 校验（沿用 0.2.18 部署流程）；
-3. `run_fomc_live.py prepare`（私有只读预检；verdict 必须 `ready_for_fomc_live_arm`，记下 readiness_hash）；
-4. owner 确认 hash 后 `arm --confirm-readiness-hash <hash>`（开关默认 off）；
-5. 事件窗口临近时 `switch --arm-id <id> --enable`，有限窗口 timer 跑 `cycle`；
-6. 事件后 `switch --disable` + 对账 + 证据写入 update-log。
+本文的旧部署步骤已过期，仅保留为研究历史；当前版本、授权范围、timer 和运行边界一律以
+[`docs/current.md`](current.md) 为准。不要按本节命令重新 prepare、arm、switch 或恢复旧版本。

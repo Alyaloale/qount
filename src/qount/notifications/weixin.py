@@ -364,6 +364,21 @@ class OpenClawWeixinProvider:
             raise OpenClawWeixinProviderError(
                 f"openclaw_weixin_http_status:{status}"
             )
+        # The official OpenClaw Weixin plugin treats a 2xx send response as
+        # successful and documents an empty SendMessage response.  Some
+        # deployments instead return a JSON object with ``ret: 0``.  A
+        # deterministic client ID is therefore the durable local receipt;
+        # requiring a non-standard ``message_id`` would turn an accepted
+        # delivery into a false retry or dead letter.
+        if not raw:
+            return ProviderResponse.create(
+                provider=OPENCLAW_WEIXIN_PROVIDER_NAME,
+                delivery_key=delivery_key,
+                status="ACCEPTED",
+                accepted=True,
+                provider_message_id=client_id,
+                received_at=self.clock().isoformat(),
+            ).as_dict()
         try:
             response_body = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -384,21 +399,12 @@ class OpenClawWeixinProvider:
                 raise OpenClawWeixinProviderError(
                     f"openclaw_weixin_response_rejected:{ret}"
                 )
-        message_id = response_body.get("message_id")
-        if (
-            not isinstance(message_id, int)
-            or isinstance(message_id, bool)
-            or message_id <= 0
-        ):
-            raise OpenClawWeixinProviderError(
-                "openclaw_weixin_response_message_id_invalid"
-            )
         return ProviderResponse.create(
             provider=OPENCLAW_WEIXIN_PROVIDER_NAME,
             delivery_key=delivery_key,
             status="ACCEPTED",
             accepted=True,
-            provider_message_id=str(message_id),
+            provider_message_id=client_id,
             received_at=self.clock().isoformat(),
         ).as_dict()
 

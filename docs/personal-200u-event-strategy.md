@@ -1,10 +1,10 @@
 # 200 USDT 个人事件右侧策略
 
-> **状态**：draft / research-only｜**权威**：L3 新策略合同｜**最后更新**：2026-07-27
-> **本文回答**：如何把 200 USDT、最大容忍回撤 40 USDT 的想法改造成可监控、可计算、可停止的个人交易系统。
-> **TL;DR**：只做一个 crypto-beta 方向；用完成 1h K 定方向、完成 15m K 做突破回踩；首个闭环风险 5 USDT、常规单笔及总并发风险上限 10 USDT；回撤 20 USDT 停止正常交易，32 USDT 紧急平仓，40 USDT 只作灾难红线。公共行情 shadow watcher已部署VPS，不授权 paper/live/订单。
+> **状态**：draft / 2026-07 FOMC 单次受限自动执行已授权｜**权威**：L3 新策略合同｜**最后更新**：2026-07-29
+> **本文回答**：如何把 200 USDT、20 USDT 正常策略回撤停止阈值的想法改造成可监控、可计算、可停止的个人交易系统。
+> **TL;DR**：只做一个 crypto-beta 方向；用完成 1h K 定方向、完成 15m K 做突破回踩；首个闭环风险 5 USDT、常规单笔及总并发风险上限 10 USDT；回撤 20 USDT 停止正常交易。2026-07 FOMC 仅有一个账户、一个事件、一次入场尝试的自动授权。
 
-更新时间：2026-07-27
+更新时间：2026-07-29
 
 ## 1. 决策
 
@@ -25,6 +25,11 @@
 ## 2. 2026-07-26 事实快照
 
 ### 2.1 已核验事实
+
+- 2026-07-29 owner 已授权本次事件的受限自动执行：BTCUSDT USD-M、200 USDT sleeve、20 USDT 正常策略回撤停止阈值。
+  `authorize-auto` 的私有只读预检已通过，授权绑定事件定义、账户 scope 与完整风险 policy。`auto-cycle` 在观察开始前不访问
+  交易所，只有新鲜 shadow `ARMED` 才会重新做私有预检、验证 risk scope、消费授权并创建短时内部 arm。无信号、账户不平、
+  规则/杠杆/保证金模式变化、风险超限或授权过期都不下单。20 USDT 是策略控制阈值，不是跳空或场所故障下的精确成交保证。
 
 - `0.2.18/5fe2b91`已把公共行情watcher、现金窗口告警和固定事件timer部署VPS；timer只覆盖本次窗口，所有结果固定
   `orders_authorized=false/paper_or_live_allowed=false/private_api_used=false/exchange_mutation_attempted=false`。
@@ -203,6 +208,21 @@ pivot low 是冻结结构障碍；障碍前的全成本净收益不足 `2R` 就�
 最终净 `R`，并标记信号发生在 07:00/08:00 前还是后。单个 FOMC 只能验证时效和流程，不能证明正期望；比较结果用于保留、收紧或
 终止 `v0.2`，不自动获得 canary 权限。
 
+### 5.5 v0.2 到期 scorecard
+
+事件强制退出后，shadow watcher只使用公开 Binance USD-M 数据生成一次不可覆盖的
+`fomc-v02-shadow-scorecard.json`。它绑定所有已保存的运行 result hash、首个满足完整仓位/目标/止损门的
+`ARMED` v0.2 candidate、当时的入场价、tick 对齐后的止损、全成本模型和15m outcome K线 hash。
+
+- 结算模型只模拟“原始保护止损的压力成交”或事件强平时的完成15m K收盘价；同时记录冻结目标是否被触及、扣合同成本后的 MFE/MAE 和最终净 `R`。
+- 该模型不伪造真实成交，也不回放 `+1R/+2R` 后的部分止盈和尾仓管理；因此 scorecard 是冻结计划的流程与时效证据，不是实盘 PnL 或完整策略回测。
+- source 不完整、K线断档或旧运行缺少已绑定的成本/止损字段时，scorecard保持 `pending`，不得用新参数或补画价格“修复”旧证据。
+- 若没有 eligible setup，必须有一条在停止入场时刻或之后、强制退出前完成的已保存 shadow scan，才能写出 `no_eligible_v02_shadow_setup`；缺少该覆盖证据时保持 `pending`。
+- `11:00 UTC` 首次结算失败后，timer 模板在 `11:05`、`11:10`、`11:15`、`11:20`、`11:25` 和 `11:30 UTC` 安排公开数据采集重试；重试不访问私有 API、不创建订单，也不改变任何权限。
+- scorecard、CLI 摘要和到期 `EXPIRED` 运行记录均固定
+  `orders_authorized=false`、`paper_or_live_allowed=false`、`promotion_evidence=false`。单个事件无论结果好坏都不能扩容、提升风险预算或自动进入 canary。
+- v0.1 的历史对照仍须使用一份完整冻结的 reference runtime；v0.2 scorecard 不得被冒充为两版本的收益比较。
+
 ## 6. 全成本仓位公式
 
 对 USDT 线性合约，设：
@@ -237,8 +257,8 @@ margin   = notional / leverage
 最终数量取以下最小值并向交易所 quantity step 向下取整：风险公式、200U 合约名义上限、40U 隔离保证金上限、
 实际可用余额和交易所 filters。成交后必须用真实 fill VWAP、真实 fee 和真实数量重算；超出预算时只减仓，不加保证金。
 
-原方案的误差示例：1000U 名义仓位、2% 止损、开平各 5bps、止损越价 20bps、资金费 1bp 时，
-压力损失约为名义价值的 `2.305%`，即 **23.05U**，不是 20U。若风险预算为 10U，单看风险公式的名义上限约 434U；
+压力模型固定使用开仓和退出各 5bps 手续费、各 5bps 滑点、两个不利资金费结算周期合计 6bps，以及 50bps 止损越价。
+例如 1000U 名义仓位、2% 结构止损下，压力损失约为名义价值的 `2.748%`，即 **27.48U**，不是 20U。若风险预算为 10U，单看风险公式的名义上限约 364U；
 但本合同还受 5x/40U 隔离保证金和 200U 名义上限约束，所以最终仍不超过 200U。
 
 ## 7. 下单与保护
@@ -271,6 +291,13 @@ margin   = notional / leverage
 - 通用事件最长持有 72 小时；本次 FOMC 特别版最晚上海时间 7 月 30 日 19:00 全平。
 - 预计下一笔不利资金费超过 `0.1R` 且尚未达到 `+1R`，退出或放弃入场。
 - 新闻、LLM、人工感觉不得放宽止损、增加保证金、摊低成本或扩大已冻结风险。
+
+live dispatcher 的管理边界：
+
+- 入场 fill 后冻结真实 VWAP、真实开仓 USDT 手续费、两期不利 funding reserve 和完整压力 `R`，据此计算净保本、净 `+1R` 和净 `+2R` 价格；不能用开仓价替代净保本价。
+- 准入时必须能按 `quantity_step` 向下取整出非零的 1/3 reduce-only 数量，并保留至少一个最小数量单位的尾仓；否则本次计划不可自动执行。以 BTCUSDT 的常见 `0.001 BTC` 步长计，200U 名义仓在 BTC 高于约 66,667 USDT 时通常无法满足这一条件，结果是 `NO TRADE`，而不是改成 50% 或全平。
+- `+2R` 时原始原生止损会一直保留到部分市价单的完整 fill、剩余仓位和原止损都回读确认；之后才撤销旧单并提交、回读新的 `STOP_MARKET closePosition`。新单提交或回读失败且旧单已撤销时，必须先按新 client order ID 查询并撤销/确认新单终态，再 reduce-only 平掉剩余仓位并 HALT。
+- 追踪仅使用完成的 1h K 与 14 根连续 true range；ATR 可使用入场前已完成的连续 K，`Cmax/Cmin` 仍只取入场后的完成 K。公共行情或 K 线不完整时不换止损，保留当前交易所原生止损。新止损若已被当前 mark price 越过，直接 reduce-only 退出，不提交无效的反向止损。
 
 忽略滑点时的费用净保本价为：
 
@@ -327,17 +354,17 @@ CASH
 
 ## 11. 上线顺序与验收
 
-当前生产 `orders_authorized=false`；本地执行能力已实现，但尚未部署VPS、未访问私有API、未生成一次性arm、未启用live timer，也未产生
-paper/live订单。
+本次生产只获一次精确自动授权，不是常驻交易权限，也不扩大其它策略、事件或账户的权限。
 
-1. **现在至事件前**：公共行情shadow与告警已在VPS运行；本地live路径已实现账户预检、哈希readiness、一次性arm、幂等入场、原生保护、
-   保护失败紧急平仓、持仓回读和19:00硬退出。发布代码和安装disabled unit不等于允许私有API或订单。
-2. **7 月 30 日 FOMC**：默认 shadow。若owner另行授权canary，先显式运行`prepare`读取真实账户并冻结exact
-   account/symbol/side/notional/`<=5U`风险/止损/退出scope，再运行`arm`生成0600且默认off的短时单次环境文件；核对输出hash后，
-   唯一的最终动作才是对同一arm执行`switch --enable`。开关不能创建或放宽readiness，也不能复用已消费arm。
-3. **首个闭环后**：必须能从 order/trade/fee/funding/position/stop 证据重建净 PnL 与最大风险；否则保持 5U 或 HALT。
-4. **提高到 10U 前**：至少一个完整受保护 round trip、无 UNKNOWN、无未保护时间窗、实际压力损失未越过 canary 预算。
-5. **两次正常亏损或 20U 回撤**：停止本策略，不用“最后 20U”救援；复盘交易条件、成本与执行路径后另立版本。
+1. **现在至观察开始**：timer 只读取本地授权状态，不访问公共或私有交易所接口，也不会生成 arm 或订单。
+2. **7 月 30 日 FOMC**：`authorize-auto` 先以私有只读预检将 owner 授权绑定到当前账户；`auto-cycle` 只在新鲜
+   `ARMED` 信号后重新冻结 exact account/symbol/side/notional/`<=5U` 风险/止损/退出 scope。它先消费授权，再写入 0600
+   内部 token 和单次 arm；随后 dispatcher 仍须再次通过信号、报价、账户和订单回读检查才可提交一次 MARKET 入场。
+3. **无条件放行不存在**：无信号、账户不平、普通单或条件单存在、scope/规则/杠杆/保证金模式改变、报价过期、风险超过上限或授权过期时
+   都保持现金；不得改为人工追单或扩大金额。
+4. **首个闭环后**：必须能从 order/trade/fee/funding/position/stop 证据重建净 PnL 与最大风险；否则保持 5U 或 HALT。
+5. **提高到 10U 前**：至少一个完整受保护 round trip、无 UNKNOWN、无未保护时间窗、实际压力损失未越过 canary 预算。
+6. **两次正常亏损或 20U 回撤**：停止本策略，不用“最后 20U”救援；复盘交易条件、成本与执行路径后另立版本。
 
 最小记录字段：event/source hash、freeze values、1h/15m candle IDs、v0.1/v0.2 最早成立时间、decision/reason codes、
 entry/stop/pressure exit、fee/slippage/funding 假设、quantity step 前后数量、计划 `R`、真实或 shadow fills/fees/funding、
@@ -350,6 +377,6 @@ entry/stop/pressure exit、fee/slippage/funding 假设、quantity step 前后数
 - 7 月 30 日 06:00-06:30 左右只是最早可能进入 `OBSERVE` 的时间，不是自动买卖时间。
 - 7 月 30 日 12:00 后不新开 FOMC 仓位，19:00 前全平，避免把单一事件策略带入 20:30 的 GDP/PCE。
 - 没有“完成 1h 方向锚 + 合格 15m 突破 + 未回旧区间的回踩重收 + 全成本 2R + 保护可用”，结果就是 **NO TRADE**。
-- live代码可用不等于本次已授权；生产unit/timer、私有预检、arm和开关当前全部未启用。
+- 本次授权不等于必然交易：生产 unit/timer 只会在符合所有冻结信号、账户和风控条件时创建一次入场；否则保持现金。
 
 该策略追求的是可重复的风险纪律和少量清晰机会，不宣称已有高胜率或正期望证据。

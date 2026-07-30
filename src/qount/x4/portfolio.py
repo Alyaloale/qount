@@ -3,7 +3,7 @@
 The bake-off runs each strategy on its own $100k. A *portfolio* allocates one capital base across
 them and rebalances — equal-weight or inverse-volatility (a simple risk-parity), using only trailing
 data (no look-ahead). Combining low-correlation sleeves is the textbook way to lift portfolio Sharpe
-and crush max-drawdown below any single sleeve's. Pure (no IO), reusing ``rv.stats`` for returns.
+and crush max-drawdown below any single sleeve's. Pure (no IO), reusing shared research metrics.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from collections import deque
 
-from qount.rv.stats import returns_from_curve
+from qount.research_data.metrics import returns_from_curve
 
 
 def correlation(a: list[float], b: list[float]) -> float:
@@ -90,8 +90,8 @@ def combine(
 
 
 def sharpe_of(curve: list[float], *, periods_per_year: float = 365.0) -> float:
-    """Annualized Sharpe of an equity curve (reuses ``rv.stats``)."""
+    """Annualized Sharpe of an equity curve (reuses shared research metrics)."""
 
-    from qount.rv.stats import sharpe as _sharpe
+    from qount.research_data.metrics import sharpe as _sharpe
     r = returns_from_curve(curve)
     return _sharpe(r, periods_per_year=periods_per_year) if len(r) >= 2 else 0.0

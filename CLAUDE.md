@@ -11,10 +11,10 @@
 
 ## 一句话：这是什么
 
-`qount` 是「AI 决策 + 风控执行器 + Binance 执行」骨架。真钱状态（2026-07-27）：
+`qount` 是「AI 决策 + 风控执行器 + Binance 执行」骨架。真钱状态（2026-07-30）：
 `MiniTrend-UM-Base-v0.2` 的 live/forward timer 已于 2026-07-26 由 owner 停用（`disabled/inactive`）；
-`SmallAccount-FOMC-RightSide-v0.2` 的受控 live runtime（`0.2.21`）已部署 VPS 但保持 order-disabled
-（未 prepare/arm/switch）；`SmallAccount-PreEvent-Range-v0.1` 为 plan-only + owner 手工执行。其余所有线（X4/C×D、RV-C、GRID-B、line A、L1/L3/L4/L6、
+`SmallAccount-FOMC-RightSide-v0.2` 的受限 live runtime（VPS `0.2.22`）已获本次事件自动授权，但当前无新鲜信号、无 arm、无订单；
+`SmallAccount-PreEvent-Range-v0.1` 为 plan-only + owner 手工执行。其余所有线（X4/C×D、RV-C、GRID-B、line A、L1/L3/L4/L6、
 A股ETF）均为 legacy/frozen/falsified，**不复活**。主动研究方向为**加密优先**（2026-07-16 起）。
 
 ## 权威顺序（冲突时按此判定，来自 project-rules §1）
@@ -56,12 +56,13 @@ A股ETF）均为 legacy/frozen/falsified，**不复活**。主动研究方向为
   `crypto-vol-crisis-state-preregistration.md`（危机状态预登记草稿）、
   `external-bot-cra-teardown.md`（外部机器人 CRA 拆解，T4）
 
-**归档/legacy（原地保留，不删不移；索引见 `docs/archive/README.md`）**
-- line A：`profit-*.md`、`optimization-plan.md`、`cta-r-value-gate-plan.md`
-- GRID-B：`grid-binance-*.md`（archived/falsified）
-- C RV：`rv-c-plan.md`；D X4/CxD：`crypto-x4-plan.md`、`x4-live-position-management.md`
-- 重启线：`l1/l3/l4/l6-*-plan.md`；A股 ETF：`ashare-etf-month-plan.md`；重构蓝图：`rebuild-plan.md`
-- 早期 MiniTrend 设计：`docs/mini-trend-agent/`
+**归档/legacy（正文已集中归档；索引见 `docs/archive/README.md`）**
+- line A / CTA-R：`docs/archive/legacy/line-a/`
+- GRID-B：`docs/archive/legacy/grid-b/`（archived/falsified）
+- C RV / D X4/CxD：`docs/archive/legacy/x4-rv/`
+- 重启线：`docs/archive/legacy/restart-lines/`；A股 ETF：`docs/archive/legacy/ashare-etf/`
+- 早期 MiniTrend 设计：`docs/archive/legacy/mini-trend-agent/`
+- 已停用桌面入口：`scripts/archive/desktop-legacy/`；不得运行或恢复。
 
 ## 主机职责与工具定位（详见 project-rules §2、storage-topology.md）
 

@@ -48,15 +48,32 @@ from qount.research_data.universe import build_exclusion_reasons
 from qount.research_data.universe import monthly_schedule
 from qount.research_data.universe import quarterly_schedule
 from qount.research_data.universe import summarize_revisions
+from qount.research_data.indicators import ATR
+from qount.research_data.indicators import KalmanHedge
+from qount.research_data.market_data import Bar
+from qount.research_data.market_data import Funding
+from qount.research_data.market_data import load_funding
+from qount.research_data.market_data import load_klines
+from qount.research_data.market_data import parse_funding_csv
+from qount.research_data.market_data import parse_kline_csv
+from qount.research_data.metrics import deflated_sharpe_ratio
+from qount.research_data.metrics import expected_max_sharpe
+from qount.research_data.metrics import pbo_cscv
+from qount.research_data.metrics import returns_from_curve
+from qount.research_data.metrics import sharpe
 
 __all__ = [
     "CANDIDATE_CONFIG_SCHEMA_VERSION",
     "COST_MODEL_TYPES",
     "CandidateConfig",
+    "ATR",
+    "Bar",
     "CostComponent",
     "DataAvailability",
     "EXCHANGE_INFO_URLS",
     "FrozenCostModel",
+    "Funding",
+    "KalmanHedge",
     "NavResult",
     "VENUE_BY_MARKET",
     "build_availability_manifest",
@@ -76,8 +93,12 @@ __all__ = [
     "default_cxd_carry_cost_model",
     "default_cta_r_etf_cost_model",
     "default_cta_r_futures_cost_model",
+    "deflated_sharpe_ratio",
+    "expected_max_sharpe",
     "fetch_exchange_info",
     "infer_spot_listing_date",
+    "load_funding",
+    "load_klines",
     "monthly_schedule",
     "parse_lifecycle_state",
     "parse_valid_from",
@@ -85,10 +106,15 @@ __all__ = [
     "probe_funding_month",
     "probe_kline_month",
     "probe_oi_month",
+    "pbo_cscv",
+    "parse_funding_csv",
+    "parse_kline_csv",
     "quarterly_schedule",
     "scan_funding_availability",
     "scan_kline_availability",
     "scan_oi_availability",
     "summarize_lifecycle_batch",
     "summarize_revisions",
+    "returns_from_curve",
+    "sharpe",
 ]
