@@ -11,6 +11,16 @@
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
+## 2026-07-30 (Round 38)
+
+### FOMC live 收尾停机，shadow 保留事件证据
+
+- 入场截止后再次读取 VPS event state：`execution_exists=false`、`attempt_exists=false`、`arm_exists=false`；
+  没有执行仓位、在途订单或可消费授权需要管理。`qount-fomc-live.timer` 因而已执行
+  `disable --now`，最终为 `disabled/inactive`，最近 service 为 `Result=success/ExecMainStatus=0`。
+- `qount-fomc-shadow.timer` 保持 `enabled/active`，仅继续公共数据和事件证据采集。live 停机没有访问交易所、
+  创建 arm、改变订单或风险权限；`0.2.27` 的截止成功映射仍保留，供下一次受控事件使用。
+
 ## 2026-07-30 (Round 37)
 
 ### `0.2.27` FOMC 无交易复盘与入场截止状态修复

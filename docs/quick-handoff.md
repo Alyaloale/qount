@@ -2,14 +2,14 @@
 
 > **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-30
 > **本文回答**：接手命令、跨主机操作、VPS 运维坑、sync/test 脚本、artifact 规则。
-> **TL;DR**：生产真相在 VPS `/root/qount`；本次 FOMC 完整观察窗口未形成方向锚，未生成 arm 或订单；`0.2.27` 已将无持仓的入场截止映射为成功终态，其余订单路径仍关闭。
+> **TL;DR**：生产真相在 VPS `/root/qount`；本次 FOMC 完整观察窗口未形成方向锚，未生成 arm 或订单；live timer 已在无持仓复核后停用，shadow 保持运行以完成事件证据采集。
 
 更新时间：2026-07-30
 
 VPS生产版本：`0.2.27`；当前release的commit、source tree、provenance和逐文件verification保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`。FOMC不可下单watcher、
-现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；`qount-fomc-live.timer` 与
-`qount-fomc-shadow.timer` 当前均为 `enabled/active/waiting`。本次有效窗口内 live `330` 次均为
+现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；`qount-fomc-live.timer` 当前为
+`disabled/inactive`，`qount-fomc-shadow.timer` 保持 `enabled/active`。本次有效窗口内 live `330` 次均为
 `auto_waiting_for_signal`，shadow `67` 次均为 `OBSERVE/side=none`；最后 signal 原因为
 `direction_anchor_missing`，`orders_authorized=false` 且没有 arm/授权消费记录。`auto_entry_window_closed`
 在无持仓时是预期终态，必须返回成功，不能把截止后的 no-trade 误报为 systemd 故障。
@@ -74,8 +74,9 @@ Dashboard 策略行的标准来源是 `StrategyRegistry.entries`。FOMC 的
 - 不要在 WSL 启动 `qount-runner.timer`；当前加密生产调度看 VPS `crontab -l`。
 - 生产cron当前必须为零entry；`deploy/cron/qount-production.crontab`只保留`DISABLED`历史命令。只读
   `qount-dashboard-publisher.timer`、`qount-daily-intelligence.timer`、`qount-notification-retry.timer`和固定窗口的
-  `qount-fomc-shadow.timer`和事件专用`qount-fomc-live.timer`已获授权并保持`enabled/active`，但 live 只会在
-  所有身份、观察、arm 和订单权限门同时通过时执行；FOMC shadow timer仅在`2026-07-29 17:00 UTC`至`2026-07-30 11:00 UTC`运行公共数据观察，
+  `qount-fomc-shadow.timer`保持`enabled/active`；本次事件无仓位复核后，事件专用
+  `qount-fomc-live.timer`保持`disabled/inactive`，不得重新启用。未来 live 只会在所有身份、观察、arm 和订单权限门同时通过时执行；
+  FOMC shadow timer仅在`2026-07-29 17:00 UTC`至`2026-07-30 11:00 UTC`运行公共数据观察，
   后者每日`04:30 UTC`抓免费官方feed、运行六角色中文LLM、不可覆盖归档并发送个人微信。不得恢复live/paper cron、MiniTrend timer、
   X4/C×D或其他交易systemd timer。未来重新评审时，外层lock仍必须直接放在
   `/run/lock/qount-*.lock`，不能依赖重启后不存在的`/run/lock/qount/`子目录。

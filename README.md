@@ -12,7 +12,8 @@
 当前生产事实仍以 [docs/current.md](docs/current.md) 为准。
 
 当前 VPS 生产版本为 `0.2.27`；FOMC公共行情watcher、现金窗口/冻结/信号告警、事件专用live service/timer和
-仅覆盖2026年7月事件窗口的systemd timer均已部署并启用。自动路径在观察开始前不读取交易所，只有同一身份的新鲜 shadow、
+仅覆盖2026年7月事件窗口的systemd timer均已部署。无交易复盘后 live timer 已停用，shadow timer 继续完成事件证据采集。
+自动路径在观察开始前不读取交易所，只有同一身份的新鲜 shadow、
 私有预检、账户/风险 scope 和原生保护单检查同时通过才可提交一次订单。
 Base 已迁入 `standard_production`：曾获真钱授权的策略
 `MiniTrend-UM-Base-v0.2` 的冻结合同仍为 `100 USDT`、Binance USD-M TOP3、long/cash、one-way、isolated 1x、effective gross `<=1`，

@@ -2,13 +2,19 @@
 
 > **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-30
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：本次 FOMC 已完整运行观察窗口，但未形成方向锚，故没有 arm、订单授权或交易所变更；入场截止后的无持仓状态在 `0.2.27` 中作为成功终态，不再误报 systemd 失败。标准策略注册表只列连续策略，FOMC 是独立事件运行时。
+> **TL;DR**：本次 FOMC 已完整运行观察窗口，但未形成方向锚，故没有 arm、订单授权或交易所变更；live timer 已在无持仓复核后停用，shadow 继续完成事件证据采集。标准策略注册表只列连续策略，FOMC 是独立事件运行时。
 
 更新时间：2026-07-30
 
 VPS生产版本：`0.2.27`。当前release的commit、source tree、provenance和逐文件verification均保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件 live/shadow timer、
 Dashboard只读账户视图和有界微信retry timer均已部署；除本次受限 FOMC live 路径外，所有交易执行权限仍关闭。
+
+- **2026-07-30 FOMC live 收尾停机。** 入场截止已过，且 VPS 复核
+  `execution_exists=false`、`attempt_exists=false`、`arm_exists=false`；没有任何仓位需要持仓管理或强制退出。
+  因此 `qount-fomc-live.timer` 已改为 `disabled/inactive`，最近 service 结果为
+  `Result=success/ExecMainStatus=0`。`qount-fomc-shadow.timer` 继续 `enabled/active` 完成公共数据和复盘证据采集；
+  本操作未访问交易所、未创建 arm、未修改订单或风险权限。
 
 - **2026-07-30 `0.2.27` FOMC 复盘与截止状态修复。** 有效入场窗口 `22:30–03:59 UTC` 内，live cycle 共运行
   `330` 次，全部为 `auto_waiting_for_signal`；shadow 共运行 `67` 次，全部为 `OBSERVE/side=none`。
