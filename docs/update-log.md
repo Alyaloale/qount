@@ -11,6 +11,18 @@
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
+## 2026-07-30 (Round 39)
+
+### Active basis Trial 1 关闭与仓库版本 bump
+
+- 完成 BTCUSDT 正 basis active capture 的 research-only Trial 1：2020-01-01 至 2026-06-30 共 `2,373` 个共同日线，现货多/永续空，33 笔交易，净收益 `+2.69%`、Sharpe `0.759`、最大回撤 `-1.07%`。
+- 同窗口 funding-only baseline 为 `+10.89%`、Sharpe `2.020`；static positive carry 为 `+37.21%`、Sharpe `8.443`。Active 版本执行成本约 `-9.24%`，未形成足够独立的 basis 增量。
+- 按冻结合同关闭为 `reject_mechanism`，不在同一历史池继续调整 z-score、funding 阈值、持有期或成本假设；`orders_authorized=false`，不进入 paper/live。
+- 成本模型已明确标记为 `incomplete`：未覆盖 collateral opportunity cost、basis-tail insurance 和认证后的真实 fill/legging 样本；`complete_executable_cost_model=false` 作为不可绕过的 kill gate。
+- 结果文档为 `docs/carry-active-basis-trial-2026-07-30.md`；不可变 artifact 为 `state/research_runs/20260730T151048Z-btcusdt-active-basis-trial-1/`，contract hash=`6d453400...5bd685fdf`，result hash=`5c40d69c...ca98f8950`。
+- 聚焦回归 `tests.test_active_basis`=`4/4 OK`，`git diff --check`、模块编译和结果 hash 校验通过。下一次只能引入 dated-future curve、真实盘口/legging 样本或独立 forward 数据。
+- 本地仓库包版本由 `0.2.27` bump 为 `0.2.28`；未部署 VPS，VPS 生产版本仍为 `0.2.27`。
+
 ## 2026-07-30 (Round 38)
 
 ### FOMC live 收尾停机，shadow 保留事件证据

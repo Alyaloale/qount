@@ -2,7 +2,7 @@
 
 `qount` 是按当前真实机器拓扑设计的 `AI 决策系统 + 风控执行器 + Binance 执行` 骨架。
 
-仓库版本`0.2.27`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
+仓库版本`0.2.28`已实现FOMC事件专用的私有预检、哈希readiness、短时单次arm、MARKET成交/逐笔fee确认、原生
 `STOP_MARKET closePosition`回读、保护失败紧急平仓和硬截止退出。FOMC live仅接受精确身份
 `SmallAccount-FOMC-RightSide@0.2`，并且已获一次受限自动执行授权；2026-07事件完整观察窗口未形成方向锚，因而没有 arm 或订单。
 无持仓的入场截止已作为预期成功终态处理，不再被 systemd 误报为失败。Dashboard publisher健康；匿名打开`#/live`得到401是整站Basic Auth策略，不是发布器停止更新。
