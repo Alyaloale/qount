@@ -187,6 +187,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "auto_disarmed",
             "auto_waiting_for_observation",
             "auto_waiting_for_signal",
+            "auto_entry_window_closed",
             "protected",
             "force_exit_flattened",
             "protection_failure_flattened",

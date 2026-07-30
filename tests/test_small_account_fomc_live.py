@@ -829,7 +829,22 @@ class FomcLiveArmTest(unittest.TestCase):
                 fomc_live_main(base + ("--confirm-readiness-hash", "9" * 64))
 
             output = io.StringIO()
-            with contextlib.redirect_stdout(output):
+            expected_arm = _build_arm(
+                readiness,
+                token="t" * 48,
+                armed_at="2026-07-29T23:17:00+00:00",
+            )
+            with (
+                patch(
+                    "scripts.operations.run_fomc_live.build_fomc_live_arm",
+                    return_value=expected_arm,
+                ),
+                patch(
+                    "scripts.operations.run_fomc_live.secrets.token_urlsafe",
+                    return_value="t" * 48,
+                ),
+                contextlib.redirect_stdout(output),
+            ):
                 status = fomc_live_main(
                     base
                     + (
@@ -881,9 +896,22 @@ class FomcLiveArmTest(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 auto_status = fomc_live_main(base + ("auto-cycle",))
+            with (
+                patch(
+                    "scripts.operations.run_fomc_live.Settings.from_env",
+                    return_value=object(),
+                ),
+                patch(
+                    "scripts.operations.run_fomc_live.run_fomc_auto_execution_cycle",
+                    return_value={"status": "auto_entry_window_closed"},
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                cutoff_status = fomc_live_main(base + ("auto-cycle",))
 
         self.assertEqual(cycle_status, 0)
         self.assertEqual(auto_status, 0)
+        self.assertEqual(cutoff_status, 0)
 
 
 class FomcLiveAutoExecutionTest(unittest.TestCase):
@@ -1867,6 +1895,10 @@ class FomcLiveFlattenTest(unittest.TestCase):
                         },
                     ),
                 ) as flatten,
+                patch(
+                    "qount.small_account.fomc_live.utc_now",
+                    return_value=dt.datetime(2026, 7, 29, 23, 16, tzinfo=UTC),
+                ),
             ):
                 result = dispatch_fomc_live_entry(
                     settings,

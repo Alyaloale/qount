@@ -2,13 +2,22 @@
 
 > **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-07-30
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：本次 FOMC 的 live/shadow timer 已恢复并处于 `enabled/active/waiting`，但当前 live 运行停在 `auto_waiting_for_observation`，shadow 为 `EVENT_FROZEN`；没有 arm、订单授权或交易所变更。标准策略注册表只列连续策略，FOMC 是独立事件运行时。
+> **TL;DR**：本次 FOMC 已完整运行观察窗口，但未形成方向锚，故没有 arm、订单授权或交易所变更；入场截止后的无持仓状态在 `0.2.27` 中作为成功终态，不再误报 systemd 失败。标准策略注册表只列连续策略，FOMC 是独立事件运行时。
 
 更新时间：2026-07-30
 
-VPS生产版本：`0.2.26`。当前release的commit、source tree、provenance和逐文件verification均保存在
+VPS生产版本：`0.2.27`。当前release的commit、source tree、provenance和逐文件verification均保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件 live/shadow timer、
 Dashboard只读账户视图和有界微信retry timer均已部署；除本次受限 FOMC live 路径外，所有交易执行权限仍关闭。
+
+- **2026-07-30 `0.2.27` FOMC 复盘与截止状态修复。** 有效入场窗口 `22:30–03:59 UTC` 内，live cycle 共运行
+  `330` 次，全部为 `auto_waiting_for_signal`；shadow 共运行 `67` 次，全部为 `OBSERVE/side=none`。
+  最后一轮有效 signal 明确为 `direction_anchor_missing`：冻结 `H0=65722.5`、`L0=62660.1`、`ATR0=356.6571`，
+  需要完成 1h K 收盘高于 `65811.6643` 或低于 `62570.9357` 才进入后续 15m 突破/回踩、私有预检、arm 和订单门。
+  因此本次未下单是策略的无信号结果，而不是交易所、账户或授权拒单；全程
+  `orders_authorized=false`、`exchange_mutation_attempted=false`，没有 arm 或授权消费记录。
+  修复 `auto_entry_window_closed` 被 CLI 错映射为 exit code `2` 的问题，使无持仓的入场截止不再把 systemd 标记为失败；
+  已补 CLI 回归测试。已有仓位/尝试状态仍优先进入持仓管理与 `11:00 UTC` 强制退出路径，未改变任何订单或风控条件。
 
 - **2026-07-30 FOMC 实机运行与 Dashboard 前端复核完成。** VPS 上 `qount-fomc-live.timer` 与
   `qount-fomc-shadow.timer` 均为 `enabled/active/waiting`；live 最近结果为

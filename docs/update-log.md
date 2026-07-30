@@ -11,6 +11,25 @@
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
+## 2026-07-30 (Round 37)
+
+### `0.2.27` FOMC 无交易复盘与入场截止状态修复
+
+- **复盘结论**：这次没有 FOMC 实盘订单。有效窗口 `2026-07-29 22:30 UTC` 至
+  `2026-07-30 03:59 UTC` 内，auto live cycle 运行 `330` 次，均为 `auto_waiting_for_signal`；
+  shadow 运行 `67` 次，均为 `OBSERVE/side=none`。最后一轮 artifact 的唯一信号原因是
+  `direction_anchor_missing`，不是私有账户、风险预算、arm 或交易所拒单。
+- **阈值与链路**：冻结 `H0=65722.5`、`L0=62660.1`、`ATR0=356.6571`，方向锚要求完成 1h K
+  收盘 `>65811.6643`（long）或 `<62570.9357`（short）。该门从未满足，故 15m 突破/回踩、私有 preflight、
+  readiness、arm、订单和保护单均未执行。全程 `orders_authorized=false`、
+  `exchange_mutation_attempted=false`，没有 arm 或自动授权消费记录。
+- **运维缺陷与修复**：入场截止后，无持仓 auto cycle 正确返回
+  `auto_entry_window_closed/fomc_live_auto_entry_cutoff_reached`，但 CLI 未把该预期终态列入成功集合，
+  每分钟以 exit code `2` 让 systemd 误报失败。`0.2.27` 仅将该状态映射为 exit `0`；
+  已有 execution/attempt 仍会优先进入持仓管理和 `11:00 UTC` 强制退出，实际错误继续失败关闭。
+- **回归**：新增 CLI 回归断言 `auto_entry_window_closed` 返回 `0`；FOMC 运行时及全部交易权限、
+  方向阈值、风险上限和授权条件未改变。
+
 ## 2026-07-30 (Round 36)
 
 ### FOMC live/shadow timer 实机恢复与 Dashboard 策略边界复核

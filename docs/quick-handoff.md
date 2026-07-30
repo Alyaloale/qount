@@ -2,15 +2,17 @@
 
 > **状态**：active｜**权威**：L4 运维｜**最后更新**：2026-07-30
 > **本文回答**：接手命令、跨主机操作、VPS 运维坑、sync/test 脚本、artifact 规则。
-> **TL;DR**：生产真相在 VPS `/root/qount`；FOMC live/shadow timer 已运行观察，但当前没有可消费 arm、订单授权或交易所变更，其余订单路径仍关闭。
+> **TL;DR**：生产真相在 VPS `/root/qount`；本次 FOMC 完整观察窗口未形成方向锚，未生成 arm 或订单；`0.2.27` 已将无持仓的入场截止映射为成功终态，其余订单路径仍关闭。
 
 更新时间：2026-07-30
 
-VPS生产版本：`0.2.26`；当前release的commit、source tree、provenance和逐文件verification保存在
+VPS生产版本：`0.2.27`；当前release的commit、source tree、provenance和逐文件verification保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`。FOMC不可下单watcher、
 现金窗口/冻结/信号告警、账户只读Dashboard和微信retry timer已部署；`qount-fomc-live.timer` 与
-`qount-fomc-shadow.timer` 当前均为 `enabled/active/waiting`，但 live 最近为 `auto_waiting_for_observation`、shadow 最近为
-`EVENT_FROZEN`，`orders_authorized=false` 且没有 arm/授权消费记录。
+`qount-fomc-shadow.timer` 当前均为 `enabled/active/waiting`。本次有效窗口内 live `330` 次均为
+`auto_waiting_for_signal`，shadow `67` 次均为 `OBSERVE/side=none`；最后 signal 原因为
+`direction_anchor_missing`，`orders_authorized=false` 且没有 arm/授权消费记录。`auto_entry_window_closed`
+在无持仓时是预期终态，必须返回成功，不能把截止后的 no-trade 误报为 systemd 故障。
 
 `0.2.25`强制 FOMC 事件和自动授权精确绑定 `SmallAccount-FOMC-RightSide@0.2`。缺少身份字段、错误 ID 或版本、
 或试图复用其他策略的授权/风险预算都会 fail closed；不得通过修改事件配置、state 或 env 绕过这一门。
