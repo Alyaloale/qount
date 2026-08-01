@@ -92,6 +92,7 @@ from qount.strategy_selection import compute_directional_pbo
 from qount.strategy_selection import build_directional_samples
 from qount.strategy_selection import build_carry_tilt_samples
 from qount.strategy_selection import _recent_return_std
+from qount.strategy_selection import _effective_sample_count
 from qount.strategy_selection import evaluate_carry_family
 from qount.strategy_selection import evaluate_cross_sectional_carry_tilt
 from qount.strategy_selection import evaluate_cross_sectional_family
@@ -1210,6 +1211,7 @@ class StrategyOptimizationTests(unittest.TestCase):
             min_cross_section_symbols=3,
             top_fraction=0.34,
             cost_per_directional_bet_pct=0.0,
+            overlap_mode="all",
         )
 
         self.assertEqual(result["family"], "xs_mom")
@@ -1664,6 +1666,7 @@ class StrategyOptimizationTests(unittest.TestCase):
             min_cross_section_symbols=2,
             top_fraction=0.5,
             cost_per_directional_bet_pct=0.0,
+            overlap_mode="all",
         )
         stride_mode = evaluate_cross_sectional_family(
             rows_by_symbol,
@@ -1684,6 +1687,14 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertEqual(stride_mode["directional_overlap_mode"], "stride")
         self.assertEqual(stride_mode["cross_section_count"], 1)
         self.assertLess(stride_mode["turnover_events"], all_mode["turnover_events"])
+        self.assertLessEqual(all_mode["effective_period_count"], all_mode["portfolio_period_count"])
+        self.assertEqual(stride_mode["effective_period_count"], stride_mode["portfolio_period_count"])
+
+    def test_effective_sample_count_penalizes_serially_correlated_periods(self) -> None:
+        values = [float(index) for index in range(20)]
+        effective = _effective_sample_count(values, 5)
+        self.assertLess(effective, len(values))
+        self.assertGreaterEqual(effective, 1.0)
 
     def test_strategy_selection_portfolio_replay_caps_overlapping_open_positions(self) -> None:
         day_ms = 86_400_000
@@ -1722,6 +1733,7 @@ class StrategyOptimizationTests(unittest.TestCase):
             min_cross_section_symbols=3,
             top_fraction=0.34,
             cost_per_directional_bet_pct=0.0,
+            overlap_mode="all",
         )
         capped = evaluate_cross_sectional_portfolio_replay(
             rows_by_symbol,
@@ -1735,6 +1747,7 @@ class StrategyOptimizationTests(unittest.TestCase):
             top_fraction=0.34,
             cost_per_directional_bet_pct=0.0,
             max_open_positions=2,
+            overlap_mode="all",
         )
 
         self.assertEqual(unlimited["directional_evaluation_mode"], "portfolio_replay")
@@ -1807,7 +1820,11 @@ class StrategyOptimizationTests(unittest.TestCase):
         self.assertEqual(xs_mom_cell["directional_purged_cv"]["fold_count"], 2)
         self.assertEqual(xs_mom_cell["directional_purged_cv"]["embargo_bars"], 1)
         self.assertEqual(len(xs_mom_cell["directional_purged_cv"]["folds"]), 2)
-        self.assertIn("train_after_start_utc", xs_mom_cell["directional_purged_cv"]["folds"][0])
+        self.assertEqual(
+            xs_mom_cell["directional_purged_cv"]["method"],
+            "purged_label_fold_stability_no_training",
+        )
+        self.assertIn("label_end_must_be_before_utc", xs_mom_cell["directional_purged_cv"]["folds"][0])
         self.assertEqual(result["fetch_summary"]["1d"]["AAA/USDT:USDT"], 5)
 
     def test_strategy_selection_carry_uses_absolute_funding_cashflow(self) -> None:

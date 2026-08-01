@@ -26,7 +26,7 @@ DEFAULT_CARRY_BASIS_SOURCE = "funding_history"
 DEFAULT_CARRY_EXECUTION_COST_MODEL = "directional_round_trip"
 DEFAULT_CARRY_CAPITAL_MODEL = "perp_notional"
 DEFAULT_DISCOVERY_END_UTC = datetime(2026, 6, 1, tzinfo=timezone.utc)
-DEFAULT_DIRECTIONAL_OVERLAP_MODE = "all"
+DEFAULT_DIRECTIONAL_OVERLAP_MODE = "stride"
 DEFAULT_DIRECTIONAL_EVALUATION_MODE = "cross_section"
 DEFAULT_DIRECTIONAL_EXIT_MODE = "close"
 DEFAULT_DIRECTIONAL_PURGED_CV_FOLDS = 0
@@ -124,6 +124,39 @@ def _t_stat(values: list[float]) -> float | None:
     return _mean(values) / (std_value / math.sqrt(len(values)))
 
 
+def _effective_sample_count(values: list[float], max_lag: int) -> float:
+    """Estimate independent observations after serial-correlation adjustment.
+
+    Directional holding-period returns overlap for ``holding_bars`` observations.
+    A Bartlett-weighted autocorrelation adjustment is conservative for that known
+    overlap. The result is diagnostic, not a replacement for a block bootstrap.
+    """
+
+    count = len(values)
+    if count < 2 or max_lag <= 0:
+        return float(count)
+    lag_limit = min(int(max_lag), count - 1)
+    denominator = 1.0
+    for lag in range(1, lag_limit + 1):
+        correlation = pearson_correlation(values[lag:], values[:-lag])
+        if correlation is None:
+            continue
+        weight = 1.0 - (lag / (lag_limit + 1.0))
+        denominator += 2.0 * weight * correlation
+    if denominator <= 1.0:
+        return float(count)
+    return max(1.0, min(float(count), count / denominator))
+
+
+def _t_stat_with_effective_count(values: list[float], effective_count: float) -> float | None:
+    if len(values) < 2 or effective_count < 2.0:
+        return None
+    std_value = _std(values)
+    if std_value <= 0.0:
+        return None
+    return _mean(values) / (std_value / math.sqrt(effective_count))
+
+
 def _annualization_periods(frequency: str) -> float:
     return (365.0 * 24.0 * 60.0 * 60.0 * 1000.0) / timeframe_to_ms(frequency)
 
@@ -171,7 +204,10 @@ def compute_directional_deflated_sharpe(cells: list[dict[str, object]]) -> dict[
     trial_count = len(sharpes)
     variance = statistics.pvariance(sharpes)
     best_cell, best_sr = max(trials, key=lambda item: item[1])
-    period_count = int(_safe_float(best_cell.get("portfolio_period_count"), 0.0))
+    period_count = _safe_float(
+        best_cell.get("effective_period_count", best_cell.get("portfolio_period_count")),
+        0.0,
+    )
 
     normal = statistics.NormalDist()
     if variance <= 0.0:
@@ -195,6 +231,7 @@ def compute_directional_deflated_sharpe(cells: list[dict[str, object]]) -> dict[
         "best_annualized_sharpe": best_cell.get("portfolio_sharpe"),
         "best_per_period_sharpe": best_sr,
         "best_period_count": period_count,
+        "best_raw_period_count": best_cell.get("portfolio_period_count"),
         "trial_per_period_sharpe_variance": variance,
         "expected_max_per_period_sharpe": expected_max,
         "deflated_sharpe_ratio": deflated,
@@ -700,8 +737,14 @@ def _attach_directional_purged_cv(
 
     timeframe_ms = timeframe_to_ms(frequency)
     embargo_ms = max(int(embargo_bars), 0) * timeframe_ms
+    holding_ms = max(int(holding_bars), 1) * timeframe_ms
     fold_results: list[dict[str, object]] = []
     for index, (fold_start_ms, fold_end_ms) in enumerate(folds, start=1):
+        # There is no fitted model in these rule-based families. This is therefore
+        # a purged fold-stability diagnostic: labels must finish before the fold
+        # boundary, with an embargo gap on both sides of the evaluated fold.
+        eval_start_ms = fold_start_ms + embargo_ms
+        eval_end_ms = fold_end_ms - holding_ms - embargo_ms
         if family in {"xs_mom", "xs_rev"}:
             evaluator = (
                 evaluate_cross_sectional_portfolio_replay
@@ -717,8 +760,8 @@ def _attach_directional_purged_cv(
                 frequency=frequency,
                 signal_lookback_bars=signal_lookback_bars,
                 holding_bars=holding_bars,
-                start_ms=fold_start_ms,
-                end_ms=fold_end_ms,
+                start_ms=eval_start_ms,
+                end_ms=eval_end_ms,
                 min_cross_section_symbols=min_cross_section_symbols,
                 top_fraction=top_fraction,
                 cost_per_directional_bet_pct=cost_per_directional_bet_pct,
@@ -736,8 +779,8 @@ def _attach_directional_purged_cv(
                 frequency=frequency,
                 signal_lookback_bars=signal_lookback_bars,
                 holding_bars=holding_bars,
-                start_ms=fold_start_ms,
-                end_ms=fold_end_ms,
+                start_ms=eval_start_ms,
+                end_ms=eval_end_ms,
                 cost_per_directional_bet_pct=cost_per_directional_bet_pct,
                 overlap_mode=overlap_mode,
                 exit_mode=exit_mode,
@@ -748,16 +791,15 @@ def _attach_directional_purged_cv(
         fold_results.append(
             {
                 "fold": index,
-                "eval_start_utc": _utc_iso_from_ms(fold_start_ms),
-                "eval_end_utc": _utc_iso_from_ms(fold_end_ms),
+                "raw_fold_start_utc": _utc_iso_from_ms(fold_start_ms),
+                "raw_fold_end_utc": _utc_iso_from_ms(fold_end_ms),
+                "eval_start_utc": _utc_iso_from_ms(eval_start_ms),
+                "eval_end_utc": _utc_iso_from_ms(eval_end_ms),
                 "embargo_bars": max(int(embargo_bars), 0),
                 "embargo_ms": embargo_ms,
-                "train_before_end_utc": None
-                if fold_start_ms - embargo_ms <= start_ms
-                else _utc_iso_from_ms(fold_start_ms - embargo_ms - 1),
-                "train_after_start_utc": None
-                if fold_end_ms + embargo_ms >= end_ms
-                else _utc_iso_from_ms(fold_end_ms + embargo_ms + 1),
+                "label_horizon_bars": max(int(holding_bars), 1),
+                "label_end_must_be_before_utc": _utc_iso_from_ms(fold_end_ms - embargo_ms),
+                "method": "purged_label_fold_stability_no_training",
                 "sample_count": fold_result.get("sample_count"),
                 "cross_section_count": fold_result.get("cross_section_count"),
                 "turnover_events": fold_result.get("turnover_events"),
@@ -776,6 +818,7 @@ def _attach_directional_purged_cv(
         if fold.get("portfolio_sum_return_pct") is not None
     ]
     result["directional_purged_cv"] = {
+        "method": "purged_label_fold_stability_no_training",
         "fold_count": len(fold_results),
         "requested_fold_count": fold_count,
         "embargo_bars": max(int(embargo_bars), 0),
@@ -860,6 +903,15 @@ def _aggregate_directional_cross_sections(
         "portfolio_sharpe": _sharpe(portfolio_returns, frequency),
         "portfolio_max_drawdown_pct": _max_drawdown(portfolio_returns),
         "portfolio_period_count": len(portfolio_returns),
+        "effective_period_count": _effective_sample_count(portfolio_returns, max(holding_bars - 1, 0)),
+        "period_count_adjustment_ratio": (
+            _effective_sample_count(portfolio_returns, max(holding_bars - 1, 0)) / len(portfolio_returns)
+            if portfolio_returns else 0.0
+        ),
+        "effective_rank_ic_count": _effective_sample_count(ic_values, max(holding_bars - 1, 0)),
+        "rank_ic_t_stat_effective": _t_stat_with_effective_count(
+            ic_values, _effective_sample_count(ic_values, max(holding_bars - 1, 0))
+        ),
         "turnover_events": turnover_events,
         "directional_exit_reason_counts": exit_reason_counts,
     }
@@ -1200,6 +1252,10 @@ def evaluate_time_series_momentum(
         returns_by_timestamp.setdefault(int(sample.timestamp_ms), []).append(net_return)
     # Aggregate same-timestamp bets to a portfolio return so PBO can align on the time axis.
     period_returns_by_timestamp = {ts: _mean(values) for ts, values in returns_by_timestamp.items()}
+    portfolio_period_returns = list(period_returns_by_timestamp.values())
+    effective_period_count = _effective_sample_count(
+        portfolio_period_returns, max(holding_bars - 1, 0)
+    )
     return {
         "frequency": frequency,
         "family": "ts_mom",
@@ -1215,11 +1271,15 @@ def evaluate_time_series_momentum(
         "evaluated_sample_count": len(filtered_samples),
         "rank_ic_mean": ic,
         "rank_ic_t_stat": None,
-        "portfolio_mean_return_pct": None if not returns else _mean(returns),
-        "portfolio_sum_return_pct": sum(returns),
-        "portfolio_sharpe": _sharpe(returns, frequency),
-        "portfolio_max_drawdown_pct": _max_drawdown(returns),
-        "portfolio_period_count": len(returns),
+        "portfolio_mean_return_pct": None if not portfolio_period_returns else _mean(portfolio_period_returns),
+        "portfolio_sum_return_pct": sum(portfolio_period_returns),
+        "portfolio_sharpe": _sharpe(portfolio_period_returns, frequency),
+        "portfolio_max_drawdown_pct": _max_drawdown(portfolio_period_returns),
+        "portfolio_period_count": len(portfolio_period_returns),
+        "effective_period_count": effective_period_count,
+        "period_count_adjustment_ratio": (
+            effective_period_count / len(portfolio_period_returns) if portfolio_period_returns else 0.0
+        ),
         "turnover_events": len(returns),
         "directional_exit_reason_counts": exit_reason_counts,
         "cost_per_directional_bet_pct": cost_per_directional_bet_pct,

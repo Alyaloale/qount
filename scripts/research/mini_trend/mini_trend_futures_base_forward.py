@@ -26,6 +26,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--live-lessons-path", required=True)
     parser.add_argument("--preregistration-path")
     parser.add_argument("--cache-dir", default="state/grid_b/klines")
+    parser.add_argument("--kline-cache-dir")
+    parser.add_argument("--funding-cache-dir")
     parser.add_argument("--start-month", default="2025-01")
     parser.add_argument("--end-month", default="2026-07")
     parser.add_argument("--output-path")
@@ -42,6 +44,8 @@ def _offline_only(url: str) -> bytes:
 
 
 def _load_cached_inputs(args: argparse.Namespace) -> tuple[dict, dict]:
+    kline_cache_dir = args.kline_cache_dir or args.cache_dir
+    funding_cache_dir = args.funding_cache_dir or args.cache_dir
     bars = {
         symbol: load_klines(
             symbol,
@@ -49,7 +53,7 @@ def _load_cached_inputs(args: argparse.Namespace) -> tuple[dict, dict]:
             start=_month(args.start_month),
             end=_month(args.end_month),
             market="um",
-            cache_dir=args.cache_dir,
+            cache_dir=kline_cache_dir,
             fetch=_offline_only,
             skip_missing=True,
         )
@@ -60,7 +64,7 @@ def _load_cached_inputs(args: argparse.Namespace) -> tuple[dict, dict]:
             symbol,
             start=_month(args.start_month),
             end=_month(args.end_month),
-            cache_dir=args.cache_dir,
+            cache_dir=funding_cache_dir,
             fetch=_offline_only,
             skip_missing=True,
         )

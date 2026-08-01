@@ -37,6 +37,7 @@ _EXPECTED_RELEASE_FILES = {
     "alerts.json",
     "reports.json",
     "intelligence.json",
+    "paper.json",
 }
 
 

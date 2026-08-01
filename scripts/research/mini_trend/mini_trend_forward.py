@@ -68,7 +68,7 @@ def _load_json(path: str | Path) -> dict:
 
 
 def _fetch_with_retries(url: str, *, retries: int) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "qount-mini-trend-forward/0.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "qount-research-forward/0.1"})
     for attempt in range(retries + 1):
         try:
             with urllib.request.urlopen(request, timeout=60) as response:

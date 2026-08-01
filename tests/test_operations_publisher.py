@@ -75,9 +75,7 @@ class OperationsHealthProbeTest(unittest.TestCase):
         def operations_runner(argv: tuple[str, ...]) -> CommandResult:
             unit = argv[2]
             states = {
-                "qount-fomc-shadow.timer": "active",
-                "qount-fomc-live.timer": "inactive",
-                "qount-mini-trend-forward.timer": "inactive",
+                "qount-research-forward-collector.timer": "active",
                 "qount-mini-trend-live.timer": "inactive",
                 "qount-mini-trend-live.service": "activating",
             }
@@ -113,24 +111,19 @@ class OperationsHealthProbeTest(unittest.TestCase):
             row["check_id"]: row for row in measurement["metrics"]["checks"]
         }
         live_service = checks["service:mini_trend_live_service"]
-        fomc_shadow = checks["service:fomc_shadow"]
-        fomc_live = checks["service:fomc_live"]
+        research_forward = checks["service:research_forward_collector"]
         self.assertEqual(measurement["status"], "healthy")
         self.assertEqual(measurement["metrics"]["scope_status"]["execution"], "pass")
         self.assertEqual(live_service["status"], "pass")
         self.assertEqual(live_service["observed_value"], "activating")
-        self.assertEqual(fomc_shadow["status"], "pass")
-        self.assertEqual(fomc_shadow["observed_value"], "active")
-        self.assertEqual(fomc_live["status"], "pass")
-        self.assertEqual(fomc_live["observed_value"], "inactive")
+        self.assertEqual(research_forward["status"], "pass")
+        self.assertEqual(research_forward["observed_value"], "active")
 
-    def test_forward_timer_activating_remains_an_execution_blocker(self) -> None:
+    def test_research_timer_failure_is_observed_without_execution_authority(self) -> None:
         def operations_runner(argv: tuple[str, ...]) -> CommandResult:
             unit = argv[2]
             states = {
-                "qount-fomc-shadow.timer": "active",
-                "qount-fomc-live.timer": "inactive",
-                "qount-mini-trend-forward.timer": "activating",
+                "qount-research-forward-collector.timer": "failed",
                 "qount-mini-trend-live.timer": "inactive",
                 "qount-mini-trend-live.service": "inactive",
             }
@@ -165,14 +158,14 @@ class OperationsHealthProbeTest(unittest.TestCase):
         checks = {
             row["check_id"]: row for row in measurement["metrics"]["checks"]
         }
-        forward_timer = checks["service:mini_trend_forward"]
-        self.assertEqual(measurement["status"], "unavailable")
+        forward_timer = checks["service:research_forward_collector"]
+        self.assertEqual(measurement["status"], "degraded")
         self.assertEqual(
             measurement["metrics"]["scope_status"]["execution"],
-            "unavailable",
+            "pass",
         )
-        self.assertEqual(forward_timer["status"], "block")
-        self.assertEqual(forward_timer["observed_value"], "activating")
+        self.assertEqual(forward_timer["status"], "unavailable")
+        self.assertEqual(forward_timer["observed_value"], "failed")
 
     def test_real_probe_adapter_binds_raw_sources_and_missing_backup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -376,7 +369,7 @@ class DashboardPublisherOperationsTest(unittest.TestCase):
         self.assertEqual(models.system.payload["health"]["values"]["status"], "healthy")
         self.assertEqual(backup.publication_id, publication.publication_id)
         self.assertTrue(drill.verified)
-        self.assertEqual(drill.file_count, 12)
+        self.assertEqual(drill.file_count, 13)
         self.assertEqual(len(release_names), 3)
         self.assertEqual(release_names, set(results[-1].retained_release_ids))
         self.assertTrue(results[-1].pruned_release_ids)

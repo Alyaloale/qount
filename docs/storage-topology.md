@@ -1,16 +1,17 @@
 # qount 存储与计算拓扑
 
-> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-07-27
+> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-07-31
 > **本文回答**：跨主机职责、权威数据位置、WSL 计算流程、外置盘/清理规则。
 > **TL;DR**：Mac 研究/git、Windows 外置盘存储真相、WSL 计算、VPS 生产；大数据只在 Win/WSL 侧落外置盘。
 
-更新时间：2026-07-27
+更新时间：2026-07-31
 
 这份文档定义跨主机职责、权威数据位置、WSL计算流程和清理规则。策略结论仍以
 [current.md](current.md)为准，生产运行仍以VPS为准。
 
-本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前VPS版本为`0.2.18/5fe2b91`；MiniTrend Base固定100 USDT并已迁入
-`standard_production`，但owner已停用live/forward timer。FOMC仅公共行情的固定事件window timer为`enabled/active`，不继承Base arm或订单权限。
+本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前VPS版本为`0.2.22`；MiniTrend Base固定100 USDT并已迁入
+`standard_production`，owner已停用live timer和旧交易 forward timer。统一 research forward collector timer为`enabled/active`，只写入
+research evidence，不继承Base arm或订单权限。FOMC仅公共行情的固定事件window timer为`enabled/active`。
 2026-07-22外置`E:`已完成保护性备份、文件系统修复和修复后逐文件校验。全新备份目录
 `D:\qount_data-recovery-20260722T120000Z`含`14,214`个文件、`34,096,177,913` bytes，源/目标SHA-256
 manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功复制新文件，`FAILED=0`、`Mismatch=0`。

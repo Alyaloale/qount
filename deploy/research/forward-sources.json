@@ -1,0 +1,89 @@
+{
+  "schema_version": "research_forward_sources_v0.1",
+  "sources": {
+    "binance_um_rest": {
+      "kind": "binance_um_rest",
+      "base_url": "https://fapi.binance.com",
+      "role": "MiniTrend, Funding Veto, Vol Crisis and FOMC public current context"
+    },
+    "binance_um_archive": {
+      "kind": "public_archive_contract",
+      "base_url": "https://data.binance.vision/data/futures/um",
+      "datasets": ["daily/klines", "monthly/fundingRate", "monthly/metrics"],
+      "role": "verified historical UM input archive"
+    },
+    "fomc_calendar": {
+      "kind": "fomc_calendar",
+      "role": "Federal Reserve scheduled release contract"
+    },
+    "liquidation_status": {
+      "kind": "liquidation_status",
+      "state_root": "/var/lib/qount/research/liquidation-cascade-v1",
+      "role": "existing public forceOrder/OI/depth collector status"
+    },
+    "cta_r_etf_archive": {
+      "kind": "local_artifact",
+      "path": "state/cta_r/etf_source/etf_data.zip",
+      "sha256": "3593d47048409c717cf64faeaa0522001518beb228a5ab74ad7cd08224077f3b",
+      "role": "CTA-R fixed eight-ETF historical input archive"
+    },
+    "l1_passive_tiingo": {
+      "kind": "tiingo_eod",
+      "symbols": ["SPY", "TLT"],
+      "start_date": "2010-01-01",
+      "api_key_env": "QOUNT_TIINGO_API_KEY",
+      "role": "L1 passive SPY/TLT adjusted-close source"
+    }
+  },
+  "research_lines": [
+    {
+      "id": "mini_trend_base",
+      "sources": ["binance_um_rest", "binance_um_archive"],
+      "mechanism_conclusion": "valid",
+      "data_conclusion": "insufficient",
+      "strategy_return_conclusion": "insufficient"
+    },
+    {
+      "id": "funding_veto",
+      "sources": ["binance_um_rest", "binance_um_archive"],
+      "mechanism_conclusion": "valid",
+      "data_conclusion": "insufficient",
+      "strategy_return_conclusion": "insufficient"
+    },
+    {
+      "id": "vol_crisis",
+      "sources": ["binance_um_rest", "binance_um_archive"],
+      "mechanism_conclusion": "valid",
+      "data_conclusion": "insufficient",
+      "strategy_return_conclusion": "insufficient"
+    },
+    {
+      "id": "fomc",
+      "sources": ["binance_um_rest", "fomc_calendar"],
+      "mechanism_conclusion": "insufficient",
+      "data_conclusion": "insufficient",
+      "strategy_return_conclusion": "insufficient"
+    },
+    {
+      "id": "cta_r",
+      "sources": ["cta_r_etf_archive", "binance_um_archive"],
+      "mechanism_conclusion": "valid",
+      "data_conclusion": "flawed",
+      "strategy_return_conclusion": "insufficient"
+    },
+    {
+      "id": "l1_passive",
+      "sources": ["l1_passive_tiingo"],
+      "mechanism_conclusion": "valid",
+      "data_conclusion": "insufficient",
+      "strategy_return_conclusion": "insufficient"
+    },
+    {
+      "id": "liquidation_cascade",
+      "sources": ["liquidation_status"],
+      "mechanism_conclusion": "valid",
+      "data_conclusion": "insufficient",
+      "strategy_return_conclusion": "insufficient"
+    }
+  ]
+}

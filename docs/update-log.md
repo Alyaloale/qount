@@ -1,17 +1,113 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-07-30
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-08-02
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-20 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-07-30
+更新时间：2026-08-02
 
 这份文档只记录**近期**关键变更、验证结果和当前读法（2026-07-21 起）。
 **2026-07-20 及更早**的历史证据链移入 [archive/update-log-archive.md](archive/update-log-archive.md)。
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
 
-## 2026-07-30 (Round 39)
+## 2026-08-02 (Round 39)
+
+### Repository governance baseline and local package version bump
+
+- Added a value-free environment contract, `qount-run config-check`, repository inventory/check tooling, preservation-first archive manifest, and a single agent/documentation handoff hierarchy. The checks do not load networks, create runtime state, or print environment values.
+- Rebuilt README/Claude/quick-handoff navigation around `docs/current.md` as the sole current-fact source; added host/configuration/CLI/local-development references. No live, arm, order, timer, cron, credential, external-account or VPS action was performed by this documentation/governance batch.
+- `repository_hygiene.py check`, config-check for the Mac template and WSL topology, compilation, diff validation, and focused configuration/governance/architecture tests passed. Full-suite optional-dependency and existing time-sensitive failures remain documented separately; they were not changed by this batch.
+- After rebasing on the current remote release, the local package version increased from `0.2.28` to `0.2.29`. This is a repository version only and does not assert or perform a VPS deployment.
+
+## 2026-08-02 (Round 38)
+
+### Dual-Engine 2026 YTD replay、四账户曲线与生产发布
+
+- owner 授权把模拟起点改为 `2026-01-01`。Dual-Engine program 升至 `1.1.0`，历史引用固定为
+  `owner_authorized_ytd_replay / tiingo_daily_open_and_binance_minute / simulated_not_realized`；该授权只覆盖无订单
+  paper 曲线，不扩大到账户、broker、testnet 或任何订单 API。
+- 新增批量 YTD collector 与可续跑公开响应缓存：15 个 Tiingo 标的一次性取 EOD，Binance 取公开日线/分钟线与
+  exchange rules；缓存只写 URL/payload hash 和公开 payload，未记录认证 header/token，目录/文件为 0700/0600。
+  G20 历史月度执行使用 Tiingo 日线 open，C60 使用下一 UTC 日有效开盘分钟；正常 forward 仍由既有 timer 延续。
+- 实际 VPS replay 覆盖 `2026-01-01` 至 7 月 30 日完整数据，共 217 个 cycle；G20/C60/GC5/D15 各 217 点，
+  首点 `2026-01-02T15:00:30Z`、末点 `2026-07-31T00:00:05Z`。输入归档 217 份、哈希审计 217 行，snapshot hash=
+  `0a0ec01bb75c9bd6913d3452c7f9b0a4ca7acb40e0c898bd4de50d1ced04a063`；Executable NAV 分别为
+  G20 `1.121269335`、C60 `0.9111224488`、GC5 `1.1152556803`、D15 `1.1053891255`。这些值是模拟，不是真实收益。
+- Dashboard `#/paper` 新增全宽四线 Executable NAV 图、日期区间/点数/图例，并保留每账户 Signal/Executable 小图；
+  移动端图高和图例已适配。publication `8edd1f33...96dc` 包含 12 个 read model，paper source 精确绑定上述快照。
+- 本地相关回归 `71 OK`；VPS 隔离包与安装后各 `67 OK`，Python compile、JS syntax、13 文件 SHA-256、overlay hash、
+  Caddy validate 均通过。发布包 SHA-256=`100a55e8...c94`，overlay content hash=`05258e5e...a8b1`，合同 hash=
+  `32c2e7eb...dd97f`。公网匿名请求仍为 Basic Auth `401`、`Cache-Control: no-store`。环境没有可用浏览器，完成了
+  静态响应式审查但未做真实浏览器像素 QA。
+- 部署前备份位于 `/var/lib/qount/deploy-backups/dual-engine-ytd-curve-v1-20260801T165022Z/`；部署清单与 acceptance
+  位于 `/var/lib/qount/deployments/dual-engine-ytd-curve-v1-20260802/`，acceptance hash=`acfb41b9...19c9`。旧空状态
+  保留在 `/var/lib/qount/paper/dual-engine-pre-ytd-20260801T170300Z`。两条 paper timer 恢复为 enabled/active，
+  `orders_authorized/private_api_used/exchange_mutation_attempted` 均为 false；既有 FOMC evidence backup failed unit 未改变。
+- 首次生产浏览器访问暴露前端解包回归：`fetchJSON()` 返回 `{value,fileSha256}`，完整性校验使用了 `value`，但 `load()`
+  仍把外层包装写进 `state.models`，因此 `overview.payload.account` 报 undefined 并全站 fail closed。热修将已验证响应与
+  渲染模型分离，只把 `response.value` 写入状态，并把 cache-bust 升至 `app.js?v=33`；未修改 publisher 或 read model。
+  本地 32 项、VPS 最终 67 项通过；Chrome 使用 VPS 当前 publication 的完整副本复核桌面 `1440x1000` 与移动
+  `390x844`，均显示 2026 YTD 曲线、G20 和 217 点，不再出现 `PRODUCTION STOPPED` 或 undefined。热修包 SHA-256=
+  `ddf48424...3d3d`，备份在 `/var/lib/qount/deploy-backups/dashboard-unwrapping-hotfix-20260801T172055Z/`，验收在
+  `/var/lib/qount/deployments/dashboard-unwrapping-hotfix-20260802/`，acceptance hash=`d5c23786...ce20`。
+- 完成全前端中文与曲线复盘：用户可见的 Signal/Executable/YTD/USD_EQ/Top1/cutoff、运行观察器、净值/损益、
+  投递队列和故障页改为中文业务语义；G20/C60/GC5/D15 分别显示为美股轮动、加密趋势、固定组合和动态组合，
+  技术 ID、标的代码、reason code 与 hash 仍保留原值。日期统一为中文年月日，`stale` 改用琥珀色“数据待更新”，
+  与红色生产不可用严格区分。
+- 年初至今总图新增纵轴净值、横轴日期、1.000 初始基准线、实线/长虚线/短虚线辨识、中文结构化图例与最新净值；
+  每账户小图增加初始净值基准。窄屏模拟指标改为单列，日期刻度收敛为首末两点。Playwright 使用 VPS 当前 publication
+  完整副本检查桌面/移动各 12 个路由，共 24 个页面状态：横向溢出 0、page error 0、错误页 0；模拟盘桌面和移动截图
+  均人工检查通过。本地 71 项、VPS 67 项通过。部署包 SHA-256=`66fa761f...a8c`，备份位于
+  `/var/lib/qount/deploy-backups/dashboard-zh-curve-review-v1-20260801T173848Z/`，验收位于
+  `/var/lib/qount/deployments/dashboard-zh-curve-review-v1-20260802/`，acceptance hash=`563abac5...51e7`。
+
+## 2026-08-01 (Round 37)
+
+### Dual-Engine 四账户无订单模拟盘与 Dashboard paper read model
+
+- 冻结并实现 G20 F2 / C60 / GC5 / D15：G20 使用 1x 代理 63 日 Top1、20% 风险且无绝对门；C60 使用
+  含 LTC、不含 MATIC 的 10 币池、正 90 日 Top2、SMA20/BTC SMA50/PAXG 例外、20 日协方差与 60% vol cap。
+- 新增四个独立 `10,000 USD_EQ` 状态账户、Signal/Executable 双层净值、20/25 bps 基础成本、C60 50 bps
+  压力成本、整数 ETF / Binance 步长与最小名义额、月内袖套现金隔离、幂等 cycle 和 append-only 哈希审计。
+- 新增 Tiingo EOD/IEX 与 Binance Spot 公共 REST collector。C60 执行参考价为日线收盘后的第一笔聚合成交；
+  G20 月末信号与显式清单中的 T+1 首个 1 分钟价格分离。collector 不读账户、订单、broker 或 testnet API。
+- Dashboard 新增独立第 12 个 `paper` read model、schema、publication/backup 集合、严格可缺省 importer 和
+  `#/paper` 响应式页面；显示四账户净值差、回撤、成本、预算、现金、持仓、策略决定和审计边界。坏 paper
+  artifact 只降级该页面，不改变既有权威根。
+- 本地扩展回归最终为 `69 OK`；以 VPS 实际 `0.2.27` / commit `66034b0...e77595` 为基线生成 28 文件 scoped
+  overlay，tree=`6ca26c620fed7081c34fc96a1a969486a438b0c6`，包 SHA-256=
+  `c219c148845e57aa5703fb9a3eafc74343d19f7e153829443bed0ac882b11238`。远端安装前后各完成 `65 OK`，
+  逐文件哈希、Python compile、JavaScript syntax 与 systemd 单元验证通过；预检同时修正了会被 systemd 忽略的
+  `ConditionPathIsFile`，改用 `ConditionPathExists`。仅剩 VPS 自带 `cloudmonitor.service` 的既有警告。
+- 部署前精确备份 17 个既有目标到
+  `/var/lib/qount/deploy-backups/dual-engine-paper-v1-20260801T154408Z/files-before.tar`；正式清单保存在
+  `/var/lib/qount/deployments/dual-engine-paper-v1-20260801/`。Dashboard 已原子发布 12 个 read model / 13 文件并切换
+  `#/paper`；无快照时固定 `paper_accounting=unavailable/order_routing=disabled`。
+- `qount-dual-engine-paper-daily.timer` 与 `qount-dual-engine-paper-g20-open.timer` 已 `enabled/active`；手工 service
+  周期返回 `paper_forward_not_started` / `Result=success`。MiniTrend live 仍为 `disabled/inactive`，没有账户、私钥、
+  broker、testnet 或订单访问。本机私有 `.env` 中实际变量名为 `QOUNT_TIINGO_API_KEY`；按运维文档安全映射到 VPS
+  `/etc/qount/dual-engine-paper.env` 的 `TIINGO_API_TOKEN` 后，远端文件为 `0600 root:root`，Tiingo EOD、Tiingo IEX
+  1 分钟价与 Binance Spot 公共接口预检全部通过。当前没有 forward 快照只因为合同起点不早于 2026-08-03，
+  不是凭据缺失，也没有历史回填。
+
+## 2026-07-31 (Round 36)
+
+### Unified research forward collector VPS deployment confirmed
+
+- 只读核验确认 `qount-research-forward-collector.timer=enabled/active`，最近一次触发为
+  `2026-07-31 00:15:19 CST`；对应 oneshot service 返回 `Result=success`、`ExecMainStatus=0`，完成后回到
+  `inactive/dead` 是正常状态。
+- 最新 collector record 的 `observed_at_utc=2026-07-30T16:00:27.262826Z`，record hash=
+  `78a77af931bb067d95cf6fd91a6d13bd68e19acda425261b6bd172d7ab16551f`，前序 hash=
+  `827e7f303516c27700cb2bc7430f727e7ca1d14ac9513607f9c8ab5c2ce9f33d`；状态根为
+  `/var/lib/qount/research/forward`。
+- `research_lines` 单次统一写入 `mini_trend_base`、`funding_veto`、`vol_crisis`、`fomc`、`cta_r`、`l1_passive` 和
+  `liquidation_cascade` 七条线。该轮固定 `orders_authorized=false`、`pnl_evaluated=false`、
+  `strategy_results_evaluated=false`；line/source 的 `insufficient` 只表示证据或输入缺口，不表示 collector 失败。
+- liquidation WebSocket 仍是独立的连续原始事件源；统一 collector 读取其状态，不重复采集或改写 liquidation event stream。
+
+## 2026-07-30 (Round 35)
 
 ### Active basis Trial 1 关闭与仓库版本 bump
 

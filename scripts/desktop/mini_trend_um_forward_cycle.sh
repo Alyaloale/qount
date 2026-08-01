@@ -99,7 +99,7 @@ cd "$REPO"
 
 "$PYTHON" scripts/desktop/mini_trend_um_runtime_proof.py \
   --cycle-path "$REPO/scripts/desktop/mini_trend_um_forward_cycle.sh" \
-  --service-unit-path /etc/systemd/system/qount-mini-trend-forward.service \
+  --service-unit-path /etc/systemd/system/qount-research-forward-collector.service \
   --output-path "$RUNTIME_PROOF_PATH"
 
 "$PYTHON" scripts/research/alpha_agents/alpha_agent_exchange_rules.py \
@@ -199,9 +199,8 @@ if [[ "$legacy_runtime_disabled" == true ]] && command -v systemctl >/dev/null 2
     qount-mini-trend.service \
     qount-mini-trend.timer \
     qount-runner.service \
-    qount-runner.timer \
-    qount-alpha-collector.service
-  do
+    qount-runner.timer
+do
     if systemctl is-active --quiet "$unit"; then
       legacy_runtime_disabled=false
       break

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Qount unified public research forward evidence collector
+
+[Timer]
+OnCalendar=*-*-* *:00/15:00
+Persistent=true
+RandomizedDelaySec=30s
+AccuracySec=1s
+Unit=qount-research-forward-collector.service
+
+[Install]
+WantedBy=timers.target

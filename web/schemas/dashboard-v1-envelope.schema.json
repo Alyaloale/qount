@@ -18,7 +18,7 @@
   ],
   "properties": {
     "schema_version": { "const": 1 },
-    "read_model_type": { "enum": ["overview", "positions", "orders", "strategies", "decisions", "risk", "readiness", "system", "alerts", "reports", "intelligence"] },
+    "read_model_type": { "enum": ["overview", "positions", "orders", "strategies", "decisions", "risk", "readiness", "system", "alerts", "reports", "intelligence", "paper"] },
     "read_model_id": { "$ref": "#/$defs/hash" },
     "generated_at": { "$ref": "#/$defs/timestamp" },
     "data_cutoff": { "$ref": "#/$defs/timestamp" },
@@ -125,6 +125,14 @@
           "required": ["daily_intelligence"],
           "properties": {
             "daily_intelligence": { "$ref": "#/$defs/hash" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["paper_program"],
+          "properties": {
+            "paper_program": { "$ref": "#/$defs/hash" }
           }
         },
         {

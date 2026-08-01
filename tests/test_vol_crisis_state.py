@@ -5,7 +5,7 @@ import datetime as dt
 import math
 import unittest
 
-from qount.research_data.market_data import Bar
+from qount.research_data.market_data import Bar, Funding
 from qount.mini_trend.forward import TOP3, frozen_top3_config
 from qount.mini_trend.vol_crisis_state import (
     CRISIS_STATE_PROTOCOL,
@@ -14,6 +14,8 @@ from qount.mini_trend.vol_crisis_state import (
     build_crisis_state_preregistration,
     build_crisis_state_report,
     compute_risk_multiplier_series,
+    _daily_avg_funding,
+    _feature_prefix_through_decision,
     research_rules,
     validate_crisis_state_preregistration,
 )
@@ -45,6 +47,27 @@ def _bars(count: int = 500) -> dict[str, list[Bar]]:
 
 
 class VolCrisisStateTests(unittest.TestCase):
+    def test_feature_prefix_ends_at_close_time_decision_bar(self) -> None:
+        features = [10.0, 20.0, 30.0, 40.0]
+        self.assertEqual(_feature_prefix_through_decision(features, 22, 20), [10.0, 20.0, 30.0])
+        self.assertEqual(_feature_prefix_through_decision(features, 19, 20), [])
+
+    def test_funding_interval_is_left_open_right_closed(self) -> None:
+        bars = [
+            Bar(0, 100.0, 100.0, 100.0, 100.0, 1.0),
+            Bar(100, 100.0, 100.0, 100.0, 100.0, 1.0),
+            Bar(200, 100.0, 100.0, 100.0, 100.0, 1.0),
+        ]
+        funding = [
+            Funding(0, 0.9),
+            Funding(25, 0.1),
+            Funding(100, 0.3),
+            Funding(125, 0.5),
+            Funding(200, 0.7),
+            Funding(225, 0.9),
+        ]
+        self.assertEqual(_daily_avg_funding(bars, funding), [0.2, 0.6])
+
     def test_preregistration_is_result_free_and_hash_bound(self) -> None:
         payload = build_crisis_state_preregistration("2026-07-25T00:00:00+00:00")
         validate_crisis_state_preregistration(payload)

@@ -2,11 +2,11 @@
 
 > **状态**：active｜**权威**：L3 MiniTrend 计划｜**最后更新**：2026-07-30
 > **本文回答**：100 USDT Base minimal-live 合同与未来多策略组合目标。
-> **TL;DR**：Base 已停止；本次 FOMC 仅有事件/账户/风控绑定的受限自动授权，多策略与 Sleeve 1 仍 research-only。
+> **TL;DR**：Base 已停止；FOMC live 路径已取消部署，多策略与 Sleeve 1 仍 research-only。
 
 更新时间：2026-07-25
 
-状态：Base 的历史生产链已停止；多策略部分仍为`research_sandbox`；本次 FOMC 是唯一单独授权的受限事件例外，
+状态：Base 的历史生产链已停止；多策略部分仍为`research_sandbox`；FOMC 不再是交易执行例外，
 不代表 Base 恢复。本文记录未来
 `1000 USDT`目标架构，不构成扩容或其它sleeve下单授权。60/10 forward、30 paper days和7 dry days仍是观察项；
 账户、订单、funding、标准authority/RuntimeLedger/对账、HALT和arm继续是每轮硬门。RiskTier与FundingVeto只做shadow。
@@ -448,7 +448,7 @@ feature store；数值由确定性解析器从原文提取，不采信LLM计算�
 
 - Base生产前置service已部署到VPS，由live cycle先刷新TOP3公开rules/bar/funding，再运行只读preflight、幂等paper journal、
   latest causal projection、当前账户/普通单/条件单快照、dry dispatcher、独立runtime proof和fail-closed readiness；
-  `qount-mini-trend-forward.timer`保持`disabled/inactive`。2026-07-21只读审计显示可用余额`486.15970914 USDT`，仅用于验证
+  旧 `qount-mini-trend-forward.timer`已删除；统一 research forward collector 只记录研究输入，不产生订单。2026-07-21只读审计显示可用余额`486.15970914 USDT`，仅用于验证
   至少覆盖本次固定`100 USDT` canary；owner接受现有VPS-only key和Spot/Margin权限，Reading/Futures/IP限制/提现关闭及
   TOP3 one-way/isolated 1x/全平/0挂单均通过。
 - MiniTrend dispatcher已实现源hash与决策hash绑定、确定性client ID、重复决策锁、append-only row/chain journal、

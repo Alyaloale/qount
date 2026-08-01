@@ -36,6 +36,12 @@ class MacroEventTriggerStudyTests(unittest.TestCase):
         self.assertEqual(events[0].released_at.isoformat(), "2024-01-11T13:30:00+00:00")
         self.assertEqual(events[2].released_at.isoformat(), "2024-03-12T12:30:00+00:00")
 
+    def test_fomc_calendar_uses_1400_new_york_release_time(self) -> None:
+        events = scheduled_events("fomc")
+        self.assertEqual(len(events), 20)
+        self.assertEqual(events[0].released_at.isoformat(), "2024-01-31T19:00:00+00:00")
+        self.assertEqual(events[0].as_dict()["scheduled_local_time"], "14:00 America/New_York")
+
     def test_uses_only_completed_pre_event_candles_for_freeze(self) -> None:
         self.candles[73] = HourlyCandle(self.candles[73].opened_at, 100.0, 200.0, 1.0, 150.0)
         result = analyze_event(self.event, self.candles, self.config)
@@ -67,6 +73,13 @@ class MacroEventTriggerStudyTests(unittest.TestCase):
             ).hexdigest(),
         )
         self.assertEqual(report["market_data"]["provenance"]["response_sha256"], ["abc"])
+
+    def test_report_excludes_incomplete_d3_events_from_denominator(self) -> None:
+        report = build_study_report((self.event,), self.candles[:85], self.config)
+        self.assertEqual(report["summary"]["scheduled_event_count"], 1)
+        self.assertEqual(report["summary"]["complete_d3_event_count"], 0)
+        self.assertEqual(report["summary"]["incomplete_d3_event_count"], 1)
+        self.assertEqual(report["summary"]["event_count"], 0)
 
 
 if __name__ == "__main__":

@@ -63,36 +63,30 @@ class FomcOperationsTest(unittest.TestCase):
             self.assertFalse(result["permissions"]["private_api_used"])
             self.assertFalse(result["permissions"]["exchange_mutation_attempted"])
 
-    def test_systemd_runtime_has_no_secret_or_order_authority_path(self) -> None:
+    def test_unified_research_collector_is_the_only_research_timer(self) -> None:
         service = (
-            ROOT / "deploy" / "systemd" / "qount-fomc-shadow.service"
+            ROOT / "deploy" / "systemd" / "qount-research-forward-collector.service"
         ).read_text(encoding="ascii")
         timer = (
-            ROOT / "deploy" / "systemd" / "qount-fomc-shadow.timer"
+            ROOT / "deploy" / "systemd" / "qount-research-forward-collector.timer"
+        ).read_text(encoding="ascii")
+        sources = (
+            ROOT / "deploy" / "research" / "forward-sources.json"
         ).read_text(encoding="ascii")
 
         self.assertIn("Type=oneshot", service)
-        self.assertIn("orders impossible", service)
-        self.assertIn("QOUNT_MODE=shadow", service)
-        self.assertIn("QOUNT_LIVE_ENABLE=false", service)
-        self.assertIn("QOUNT_MINI_TREND_LIVE_ENABLE=false", service)
-        self.assertIn("UnsetEnvironment=", service)
-        self.assertIn("QOUNT_BINANCE_API_KEY", service)
-        self.assertIn("QOUNT_BINANCE_API_SECRET", service)
-        self.assertNotIn("EnvironmentFile=", service)
-        self.assertIn("run_fomc_shadow.py", service)
+        self.assertIn("--plugins research_lines", service)
+        self.assertIn("--source-config /root/qount/deploy/research/forward-sources.json", service)
+        self.assertIn("EnvironmentFile=-/etc/qount/research-forward-collector.env", service)
+        self.assertIn("QOUNT_LIVE_CONFIRMATION", service)
+        self.assertIn("QOUNT_MINI_TREND_ARM_TOKEN", service)
         self.assertIn("ProtectSystem=strict", service)
-        self.assertIn("ReadWritePaths=/var/lib/qount/fomc", service)
-        self.assertIn(
-            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
-            service,
-        )
-        self.assertIn("2026-07-29 17..23:0/5:00 UTC", timer)
-        self.assertIn("2026-07-30 11:00:00 UTC", timer)
-        for retry_at in ("05", "10", "15", "20", "25", "30"):
-            self.assertIn(f"2026-07-30 11:{retry_at}:00 UTC", timer)
-        self.assertNotIn("OnCalendar=*-*-*", timer)
-        self.assertIn("Unit=qount-fomc-shadow.service", timer)
+        self.assertIn("ReadWritePaths=/var/lib/qount/research/forward", service)
+        self.assertIn("OnCalendar=*-*-* *:00/15:00", timer)
+        self.assertIn("Unit=qount-research-forward-collector.service", timer)
+        self.assertIn("binance_um_rest", sources)
+        self.assertIn("cta_r_etf_archive", sources)
+        self.assertIn("l1_passive_tiingo", sources)
 
     def test_dashboard_marks_event_strategy_alerts(self) -> None:
         app = (ROOT / "web" / "site" / "app.js").read_text(encoding="utf-8")

@@ -1,0 +1,12 @@
+[Unit]
+Description=Probe scheduled G20 T+1 public first-intraday paper execution
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 15:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15s
+AccuracySec=1s
+Unit=qount-dual-engine-paper-g20-open.service
+
+[Install]
+WantedBy=timers.target

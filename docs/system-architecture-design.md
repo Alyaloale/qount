@@ -19,7 +19,7 @@ ledger/reconciliation 均由标准合同绑定。
   VPS `/root/qount`＝唯一 live/paper/dashboard 生产真相。
 
 **生产 vs 研究边界**：
-- 当前没有真钱策略运行；`MiniTrend-UM-Base-v0.2` 的 live/forward timer 均已由 owner 停止，账户全平无挂单。
+- 当前没有真钱策略运行；`MiniTrend-UM-Base-v0.2` 的 live timer 和旧交易 forward timer 均已由 owner 停止，统一 research forward collector 独立运行，账户全平无挂单。
 - 本地合同已支持跨资产 identity、产品级 capability 和有符号目标；这只开放 research/shadow/virtual，不产生 paper/live 权限。
 - 任何未来订单仍必须同时具备精确产品能力、registry/promotion、当前账户事实、readiness、独立 arm 和 owner authorization。
 
@@ -40,7 +40,7 @@ ledger/reconciliation 均由标准合同绑定。
 - [current.md](current.md)：当前生产状态和研究结论；
 - [crypto-portfolio-system-plan.md](crypto-portfolio-system-plan.md)：策略组合和研究计划；
 - [storage-topology.md](storage-topology.md)：跨主机存储与计算边界；
-- [mini-trend-agent/execution.md](mini-trend-agent/execution.md)：现有 MiniTrend 试点执行细节。
+- [archive/legacy/mini-trend-agent/execution.md](archive/legacy/mini-trend-agent/execution.md)：历史 MiniTrend 试点执行细节（不可作为恢复入口）。
 
 发生冲突时，生产事实以 `current.md` 和 VPS 只读证据为准，主机路径以
 `storage-topology.md` 为准，本文负责目标模块边界和迁移原则。
@@ -116,7 +116,7 @@ runtime proof
 
 `0.2.15` standard-production 迁移曾验证 release provenance、standard batch/plan、registry、pre/post-dispatch
 账本与对账及 legacy parity；自然周期一直是全现金、0订单、0成交。当前 `qount-mini-trend-live.timer` 与
-`qount-mini-trend-forward.timer` 均为 `disabled/inactive`，不得把历史 `minimal_live` registry 或旧 arm 当成当前订单权限。
+旧 `qount-mini-trend-forward.timer` 已删除；统一 research forward collector 已部署并只负责公开输入记录，不产生订单，不得把历史 `minimal_live` registry 或旧 arm 当成当前订单权限。
 
 ### 2.3 当前代码问题
 
@@ -1382,7 +1382,7 @@ readiness与Dashboard中，用于解释样本成熟度，并纳入readiness hash
 迁移 run `/root/qount/state/mini_trend/forward/runs/20260723T120610Z`曾以新 arm 绑定标准 batch/registry/ledger，
 当时 registry 为`minimal_live`、live timer为`enabled/active`。验收因目标权重全零而没有订单，但journal、standard parity、
 post-dispatch reconciliation与独立 production status 均完成；首个自然fill observer为`awaiting_natural_fill`。Owner已于
-2026-07-26停止该路径，当前live/forward timer均为`disabled/inactive`，本节不构成恢复权限。
+2026-07-26停止该路径，当前 live timer 和旧交易 forward timer 均为`disabled/inactive`；统一 research forward collector 不属于该交易路径，本节不构成恢复权限。
 
 前置：
 

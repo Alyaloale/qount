@@ -24,7 +24,7 @@ Environment=HTTP_PROXY=
 Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 UnsetEnvironment=QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN BINANCE_API_KEY BINANCE_SECRET
-ExecStart=/root/qount/.venv/bin/python -m qount.operations.dashboard_publisher --repo-root /root/qount --authority-root /var/lib/qount/dashboard-authority --intelligence-root /var/lib/qount/intelligence --notification-store /var/lib/qount/notifications/store.sqlite3 --dashboard-root /var/www/qount/data --backup-root /var/lib/qount/dashboard-backups --lock-path /run/qount-dashboard/publisher.lock --disk-path /var/www/qount --service-name qount-dashboard-publisher.timer --retain-previous-releases 4 --retain-previous-backups 60
+ExecStart=/root/qount/.venv/bin/python -m qount.operations.dashboard_publisher --repo-root /root/qount --authority-root /var/lib/qount/dashboard-authority --intelligence-root /var/lib/qount/intelligence --paper-root /var/lib/qount/paper/dual-engine --notification-store /var/lib/qount/notifications/store.sqlite3 --dashboard-root /var/www/qount/data --backup-root /var/lib/qount/dashboard-backups --lock-path /run/qount-dashboard/publisher.lock --disk-path /var/www/qount --service-name qount-dashboard-publisher.timer --retain-previous-releases 4 --retain-previous-backups 60
 RuntimeDirectory=qount-dashboard
 RuntimeDirectoryMode=0700
 UMask=0077
@@ -42,6 +42,7 @@ PrivateNetwork=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadOnlyPaths=-/var/lib/qount/intelligence
+ReadOnlyPaths=-/var/lib/qount/paper/dual-engine
 # A SQLite WAL reader needs to create or update only its -wal/-shm sidecars.
 # The canonical database remains a file-level read-only mount and the process
 # opens it with SQLite mode=ro plus PRAGMA query_only.

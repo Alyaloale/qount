@@ -1,6 +1,6 @@
 # qount 项目规则
 
-> **状态**：active｜**权威**：L1 项目规则｜**最后更新**：2026-07-30
+> **状态**：active｜**权威**：L1 项目规则｜**最后更新**：2026-08-01
 > **本文回答**：代码放哪里、文档怎么分、研究线如何隔离、什么可以直接删。
 > **TL;DR**：生产代码、活跃研究、历史研究三层分开；脚本按线路归目录；规则以快速验证和及时删除为优先。
 
@@ -15,6 +15,7 @@ src/qount/
       生产控制面和公共合同
   small_account/                         FOMC 与 PreEvent 事件线
   mini_trend/                            加密趋势研究与公共前向采集
+  dual_engine/                           G20/C60 无订单模拟盘合同、行情与会计
   alpha_agents/                          主动 research-only 多智能体线
   research_data/                         共享市场数据、指标和研究统计
   research/sleeves/                      主动 Sleeve 研究合同
@@ -41,11 +42,12 @@ docs/
 
 | 线路 | 状态 | 实现目录 | 脚本目录 | 权限 |
 | --- | --- | --- | --- | --- |
-| FOMC / PreEvent | 当前事件线 | `src/qount/small_account/` | `scripts/operations/` | 由 `current.md` 的单次 owner 授权决定 |
+| FOMC / PreEvent | 研究/历史事件线 | `src/qount/small_account/` | `scripts/operations/` | 当前无交易执行授权；由 `current.md` 的事实状态决定 |
 | MiniTrend | 已停止的历史生产链 + research | `src/qount/mini_trend/` | `scripts/research/mini_trend/` | 不因研究结果恢复 live |
 | Alpha Agents | active research-only | `src/qount/alpha_agents/` | `scripts/research/alpha_agents/` | 不写订单、目标权重或 live 配置 |
 | Sleeve 1 被动配置 | preregistered research-only | `src/qount/research/sleeves/` | `scripts/research/sleeves/` | 不产生 StrategyIntent 或 scheduler |
 | Liquidation cascade | public-data-only forward collection | `src/qount/mini_trend/` | `scripts/research/mini_trend/` | 不读私有账户，不下单 |
+| Dual-Engine G20/C60 | deployed paper / 2026 YTD curves active | `src/qount/dual_engine/` | `scripts/operations/` | 四个独立模拟账户；YTD 曲线只代表公开行情模拟；禁止账户、订单和 broker API |
 | GRID / RV / X4 / CTA-R / L1/L3/L4/L6 / A 股 | archived / frozen | `src/qount/legacy/{grid_b,rv_c,x4,line_a,l1,l3,l4,l6,ashare_etf}/` | `scripts/archive/research-legacy/` | 不恢复，不新增实验 |
 
 ## 3. 硬规则

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qount.alyaloale.com/schemas/dashboard-v1-paper.schema.json",
+  "title": "qount Dashboard v1 Dual-Engine paper program",
+  "allOf": [
+    { "$ref": "dashboard-v1-envelope.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "read_model_type": { "const": "paper" },
+        "payload": {
+          "oneOf": [
+            { "$ref": "#/$defs/unavailable_payload" },
+            { "$ref": "#/$defs/available_payload" }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paper_accounting", "order_routing"],
+      "properties": {
+        "paper_accounting": {},
+        "order_routing": { "const": "disabled" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "program_id", "program_version", "snapshot_hash", "portfolio_count", "orders_authorized", "reporting_asset"],
+      "properties": {
+        "status": {},
+        "program_id": {},
+        "program_version": {},
+        "snapshot_hash": {},
+        "portfolio_count": { "type": "integer", "minimum": 0 },
+        "orders_authorized": { "const": false },
+        "reporting_asset": { "const": "USD_EQ" }
+      }
+    },
+    "unavailable_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "snapshot"],
+      "properties": {
+        "authority": {
+          "allOf": [
+            { "$ref": "#/$defs/authority" },
+            { "properties": { "paper_accounting": { "const": "unavailable" } } }
+          ]
+        },
+        "summary": {
+          "allOf": [
+            { "$ref": "#/$defs/summary" },
+            {
+              "properties": {
+                "status": { "const": "unavailable" },
+                "program_id": { "type": "null" },
+                "program_version": { "type": "null" },
+                "snapshot_hash": { "type": "null" },
+                "portfolio_count": { "const": 0 }
+              }
+            }
+          ]
+        },
+        "snapshot": { "type": "null" }
+      }
+    },
+    "available_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "summary", "snapshot"],
+      "properties": {
+        "authority": {
+          "allOf": [
+            { "$ref": "#/$defs/authority" },
+            { "properties": { "paper_accounting": { "const": "dual_engine_paper_snapshot" } } }
+          ]
+        },
+        "summary": {
+          "allOf": [
+            { "$ref": "#/$defs/summary" },
+            {
+              "properties": {
+                "status": { "enum": ["shadow", "paper", "blocked", "stale", "unavailable"] },
+                "program_id": { "const": "dual-engine-paper" },
+                "program_version": { "type": "string", "minLength": 1 },
+                "snapshot_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+                "portfolio_count": { "const": 4 }
+              }
+            }
+          ]
+        },
+        "snapshot": { "$ref": "#/$defs/snapshot" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "program_id", "program_version", "generated_at", "data_cutoff", "forward_start_at", "status", "contract_hash", "source_hashes", "orders_authorized", "private_api_used", "exchange_mutation_attempted", "reporting_asset", "usd_usdt_parity_assumed", "portfolios", "benchmarks", "history_reference", "latest_decision", "audit_last_hash", "audit_row_count", "snapshot_hash"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "program_id": { "const": "dual-engine-paper" },
+        "program_version": { "type": "string", "minLength": 1 },
+        "generated_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "data_cutoff": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "forward_start_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "status": { "enum": ["shadow", "paper", "blocked", "stale", "unavailable"] },
+        "contract_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "source_hashes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+        },
+        "orders_authorized": { "const": false },
+        "private_api_used": { "const": false },
+        "exchange_mutation_attempted": { "const": false },
+        "reporting_asset": { "const": "USD_EQ" },
+        "usd_usdt_parity_assumed": { "const": true },
+        "portfolios": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "object" }
+        },
+        "benchmarks": { "type": "array" },
+        "history_reference": { "type": "object" },
+        "latest_decision": { "type": "object" },
+        "audit_last_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
+        "audit_row_count": { "type": "integer", "minimum": 1 },
+        "snapshot_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    }
+  },
+  "unevaluatedProperties": false
+}

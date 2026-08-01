@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark light">
   <meta name="robots" content="noindex, nofollow">
   <title>qount | 运行控制台</title>
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=28">
   <script>
     (function () {
       var saved;
@@ -26,16 +26,17 @@
 
       <nav class="nav" aria-label="主导航">
         <a href="#/live" data-route="live"><span class="nav-key">01</span><span>实时状态</span></a>
-        <a href="#/positions" data-route="positions"><span class="nav-key">02</span><span>仓位</span></a>
-        <a href="#/orders" data-route="orders"><span class="nav-key">03</span><span>订单</span></a>
-        <a href="#/strategies" data-route="strategies"><span class="nav-key">04</span><span>策略</span></a>
-        <a href="#/decisions" data-route="decisions"><span class="nav-key">05</span><span>决策追踪</span></a>
-        <a href="#/risk" data-route="risk"><span class="nav-key">06</span><span>风险</span></a>
-        <a href="#/readiness" data-route="readiness"><span class="nav-key">07</span><span>就绪检查</span></a>
-        <a href="#/system" data-route="system"><span class="nav-key">08</span><span>系统健康</span></a>
-        <a href="#/alerts" data-route="alerts"><span class="nav-key">09</span><span>告警</span></a>
-        <a href="#/reports" data-route="reports"><span class="nav-key">10</span><span>日报</span></a>
-        <a href="#/intelligence" data-route="intelligence"><span class="nav-key">11</span><span>情报复盘</span></a>
+        <a href="#/paper" data-route="paper"><span class="nav-key">02</span><span>模拟盘</span></a>
+        <a href="#/positions" data-route="positions"><span class="nav-key">03</span><span>仓位</span></a>
+        <a href="#/orders" data-route="orders"><span class="nav-key">04</span><span>订单</span></a>
+        <a href="#/strategies" data-route="strategies"><span class="nav-key">05</span><span>策略</span></a>
+        <a href="#/decisions" data-route="decisions"><span class="nav-key">06</span><span>决策追踪</span></a>
+        <a href="#/risk" data-route="risk"><span class="nav-key">07</span><span>风险</span></a>
+        <a href="#/readiness" data-route="readiness"><span class="nav-key">08</span><span>就绪检查</span></a>
+        <a href="#/system" data-route="system"><span class="nav-key">09</span><span>系统健康</span></a>
+        <a href="#/alerts" data-route="alerts"><span class="nav-key">10</span><span>告警</span></a>
+        <a href="#/reports" data-route="reports"><span class="nav-key">11</span><span>日报</span></a>
+        <a href="#/intelligence" data-route="intelligence"><span class="nav-key">12</span><span>情报复盘</span></a>
       </nav>
 
       <div class="sidebar-foot">
@@ -64,6 +65,7 @@
       <div class="banner" id="error-banner" role="status" aria-live="polite" hidden></div>
       <section class="freshness-detail" id="freshness-detail" aria-label="当前模块来源时效" hidden></section>
       <section class="view" id="view-live" data-view="live"></section>
+      <section class="view" id="view-paper" data-view="paper" hidden></section>
       <section class="view" id="view-positions" data-view="positions" hidden></section>
       <section class="view" id="view-orders" data-view="orders" hidden></section>
       <section class="view" id="view-strategies" data-view="strategies" hidden></section>
@@ -77,6 +79,6 @@
     </main>
   </div>
   <button class="scrim" id="scrim" type="button" aria-label="关闭菜单"></button>
-  <script src="app.js?v=31"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

@@ -19,6 +19,8 @@ from qount.reporting.read_models import build_dashboard_v1
 from qount.reporting.read_models import publish_dashboard_v1
 from qount.reporting.read_models import read_dashboard_release_v1
 from qount.reporting.read_models import read_dashboard_v1
+from qount.reporting.paper_importer import PaperProgramImportError
+from qount.reporting.paper_importer import read_paper_program_snapshot
 
 __all__ = [
     "DAILY_BRIEF_SCHEMA_VERSION",
@@ -38,6 +40,8 @@ __all__ = [
     "publish_dashboard_v1",
     "read_dashboard_release_v1",
     "read_dashboard_v1",
+    "PaperProgramImportError",
+    "read_paper_program_snapshot",
     "read_vps_authority_bundle",
     "validate_daily_brief_sources",
 ]

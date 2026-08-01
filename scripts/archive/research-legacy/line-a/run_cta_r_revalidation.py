@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -263,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         Path("src/qount/cta_eval.py"),
         Path("src/qount/cta_data.py"),
         Path("src/qount/research_data/cost_model.py"),
-        Path("scripts/research/run_cta_r_revalidation.py"),
+        Path("scripts/archive/research-legacy/line-a/run_cta_r_revalidation.py"),
     )
     code_source_hashes = {str(path): _file_sha256(ROOT / path) for path in code_paths}
     source_hashes = {

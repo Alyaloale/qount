@@ -11,6 +11,7 @@ from .ai_hold_baseline import AIHoldBaselineService
 from .artifacts import write_research_json_artifact
 from .backtest import BacktestService
 from .backtest import parse_backtest_datetime
+from .config_contract import check_environment
 from .hourly_model import HourlySignalModelService
 from .idle_window_diagnostic import IdleWindowDiagnosticService
 from .l3_information_edge import DEFILLAMA_STABLECOIN_CHARTS_URL
@@ -130,6 +131,17 @@ def apply_command_settings_overrides(settings: Settings, args: argparse.Namespac
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qount")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    config_check = subparsers.add_parser(
+        "config-check",
+        help="Read-only configuration preflight; never loads network clients or creates runtime state.",
+    )
+    config_check.add_argument("--profile", choices=["mac", "wsl", "vps"], required=True)
+    config_check.add_argument(
+        "--env-file",
+        type=Path,
+        default=None,
+        help="Optional trusted dotenv file. Values are never printed.",
+    )
     subparsers.add_parser("run-once", help="Run one end-to-end trading cycle.")
     subparsers.add_parser("healthcheck", help="Verify relay and Binance public connectivity.")
     preflight = subparsers.add_parser("preflight-live", help="Run live safety checks for the configured exchange.")
@@ -620,6 +632,12 @@ def main() -> None:
 
     parser = build_parser()
     args = parser.parse_args()
+    if args.command == "config-check":
+        result = check_environment(profile=args.profile, env_file=args.env_file)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if not result["ok"]:
+            raise SystemExit(2)
+        return
     settings = Settings.from_env()
     research_profile = normalize_research_profile(getattr(args, "research_profile", None))
     if research_profile is not None:

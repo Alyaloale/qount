@@ -50,11 +50,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--prior-stop-latch-path", required=True)
     parser.add_argument("--preregistration-path")
     parser.add_argument("--cache-dir", default="state/grid_b/klines")
+    parser.add_argument("--kline-cache-dir")
+    parser.add_argument("--funding-cache-dir")
     parser.add_argument("--output-path")
     return parser.parse_args(argv)
 
 
-def _load_window(cache_dir: str, start: str, end: str) -> dict:
+def _load_window(kline_cache_dir: str, funding_cache_dir: str, start: str, end: str) -> dict:
     start_month, end_month = _month(start), _month(end)
     return {
         "bars": {
@@ -64,7 +66,7 @@ def _load_window(cache_dir: str, start: str, end: str) -> dict:
                 start=start_month,
                 end=end_month,
                 market="um",
-                cache_dir=cache_dir,
+                cache_dir=kline_cache_dir,
                 fetch=_offline_only,
             )
             for symbol in TOP3
@@ -74,7 +76,7 @@ def _load_window(cache_dir: str, start: str, end: str) -> dict:
                 symbol,
                 start=start_month,
                 end=end_month,
-                cache_dir=cache_dir,
+                cache_dir=funding_cache_dir,
                 fetch=_offline_only,
             )
             for symbol in TOP3
@@ -82,11 +84,13 @@ def _load_window(cache_dir: str, start: str, end: str) -> dict:
     }
 
 
-def _historical_inputs(cache_dir: str) -> dict:
+def _historical_inputs(kline_cache_dir: str, funding_cache_dir: str) -> dict:
     protocol = FUTURES_FUNDING_VETO_PROTOCOL
     specs = list(protocol.historical_windows) + [protocol.full_window]
     return {
-        spec["label"]: _load_window(cache_dir, spec["warmup_start"], spec["end"])
+        spec["label"]: _load_window(
+            kline_cache_dir, funding_cache_dir, spec["warmup_start"], spec["end"]
+        )
         for spec in specs
     }
 
@@ -103,7 +107,10 @@ def main(argv: list[str] | None = None) -> int:
         if not args.preregistration_path:
             raise ValueError("--run requires --preregistration-path")
         payload = build_funding_veto_historical_report(
-            _historical_inputs(args.cache_dir),
+            _historical_inputs(
+                args.kline_cache_dir or args.cache_dir,
+                args.funding_cache_dir or args.cache_dir,
+            ),
             rules,
             _load_object(args.preregistration_path),
             **evidence,

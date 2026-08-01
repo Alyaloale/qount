@@ -31,6 +31,8 @@ from qount.reporting import build_dashboard_v1
 from qount.reporting import publish_dashboard_v1
 from qount.reporting import read_dashboard_v1
 from tests.test_immutable_contract_artifacts import _objects
+from tests.test_dual_engine import _cycle as _dual_engine_cycle
+from qount.dual_engine import run_paper_cycle
 
 
 GENERATED_AT = "2026-07-20T00:06:30+00:00"
@@ -193,6 +195,31 @@ def _daily_intelligence() -> DailyIntelligenceReport:
 
 
 class DashboardReadModelTest(unittest.TestCase):
+    def test_paper_model_uses_separate_verified_order_free_snapshot(self) -> None:
+        batch, registry = _sources()
+        with tempfile.TemporaryDirectory() as temporary:
+            paper = run_paper_cycle(
+                Path(temporary) / "paper",
+                _dual_engine_cycle(3, signal=True, rebalance=True),
+            )
+        models = build_dashboard_v1(
+            batch,
+            registry,
+            generated_at="2026-08-03T22:01:00+00:00",
+            evaluated_at="2026-08-03T22:01:00+00:00",
+            paper_snapshot=paper,
+        )
+
+        self.assertEqual(models.paper.source_hashes, {"paper_program": paper.snapshot_hash})
+        self.assertEqual(
+            models.paper.payload["authority"],
+            {
+                "paper_accounting": "dual_engine_paper_snapshot",
+                "order_routing": "disabled",
+            },
+        )
+        self.assertFalse(models.paper.payload["snapshot"]["orders_authorized"])
+
     def test_builds_authoritative_overview_strategy_readiness_and_alert_models(self) -> None:
         models = _models()
 
@@ -210,6 +237,7 @@ class DashboardReadModelTest(unittest.TestCase):
                 "alerts",
                 "reports",
                 "intelligence",
+                "paper",
             ),
         )
         self.assertEqual(models.overview.payload["portfolio"]["approved_target_gross"], 0.6)
@@ -415,6 +443,7 @@ class DashboardReadModelTest(unittest.TestCase):
                     "alerts.json",
                     "reports.json",
                     "intelligence.json",
+                    "paper.json",
                     "publication.json",
                 },
             )
@@ -568,6 +597,7 @@ class DashboardReadModelTest(unittest.TestCase):
             "daily-intelligence-v1.schema.json",
             "daily-intelligence-v2.schema.json",
             "dashboard-v1-intelligence.schema.json",
+            "dashboard-v1-paper.schema.json",
             "dashboard-v1-publication.schema.json",
         )
         for name in names:
@@ -599,17 +629,19 @@ class DashboardReadModelTest(unittest.TestCase):
                 "alerts",
                 "reports",
                 "intelligence",
+                "paper",
             ],
         )
-        self.assertEqual(len(source_variants), 9)
+        self.assertEqual(len(source_variants), 10)
         self.assertIn("runtime_ledger", source_variants[1]["required"])
         self.assertIn("blocked_runtime_observation", source_variants[2]["required"])
         self.assertEqual(source_variants[3]["required"], ["notification_store"])
         self.assertEqual(source_variants[4]["required"], ["daily_brief"])
         self.assertEqual(source_variants[5]["required"], ["daily_intelligence"])
-        self.assertIn("system_health", source_variants[6]["required"])
-        self.assertIn("runtime_ledger", source_variants[7]["required"])
-        self.assertIn("blocked_runtime_observation", source_variants[8]["required"])
+        self.assertEqual(source_variants[6]["required"], ["paper_program"])
+        self.assertIn("system_health", source_variants[7]["required"])
+        self.assertIn("runtime_ledger", source_variants[8]["required"])
+        self.assertIn("blocked_runtime_observation", source_variants[9]["required"])
         self.assertEqual(
             set(
                 envelope["$defs"]["authority"]["properties"][
@@ -661,6 +693,7 @@ class DashboardReadModelTest(unittest.TestCase):
                 "alerts",
                 "reports",
                 "intelligence",
+                "paper",
             },
         )
 
@@ -720,6 +753,18 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("data/v1/alerts.json", app)
         self.assertIn("data/v1/reports.json", app)
         self.assertIn("data/v1/intelligence.json", app)
+        self.assertIn("data/v1/paper.json", app)
+        self.assertIn("2026 年初至今模拟净值曲线", app)
+        self.assertIn("美股轮动（G20）", app)
+        self.assertIn("信号净值", app)
+        self.assertIn("可执行净值", app)
+        self.assertIn('USD_EQ: "美元等值"', app)
+        self.assertNotIn("PRODUCTION STOPPED", app)
+        self.assertIn("paper-ytd-y-scale", app)
+        self.assertIn("paper-ytd-x-scale", app)
+        self.assertIn("数据待更新", app)
+        self.assertIn("等待下一次数据更新", app)
+        self.assertIn("portfolioYtdCurve(snapshot.portfolios)", app)
         self.assertNotIn("api.binance.com", app)
         self.assertNotIn("fapi.binance.com", app)
         self.assertNotIn("unrealized_pnl", app)
@@ -728,7 +773,7 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("payload.pnl", app)
         self.assertIn("交易所只读仓位事实", app)
         self.assertNotIn("手工/外部仓位", app)
-        self.assertIn("live_orders_allowed=", app)
+        self.assertIn("实盘订单权限", app)
         self.assertIn("row.registry_status", app)
         self.assertIn("row.execution_status", app)
         self.assertNotIn("row.promotion_status", app)
@@ -741,6 +786,8 @@ class DashboardReadModelTest(unittest.TestCase):
         self.assertIn("publication.source_hashes[name] === hash", app)
         self.assertIn("async function sha256Hex", app)
         self.assertIn("reference.file_sha256 !== fileSha256", app)
+        self.assertIn("[type, response.value]", app)
+        self.assertNotIn("state.models = responses", app)
         self.assertIn("data/releases/${publicationId}/", app)
         self.assertIn("releaseModelPath(path, publication.publication_id)", app)
         self.assertIn("const responses = Object.fromEntries(entries);", app)

@@ -19,7 +19,7 @@ carry、short、杠杆提升或恢复legacy交易入口。
 
 本文不改变以下当前事实：
 
-- `MiniTrend-UM-Base-v0.2`的历史生产链已停止；当前仅本次FOMC存在事件绑定的受限自动授权；
+- `MiniTrend-UM-Base-v0.2`的历史生产链已停止；FOMC live 路径也已取消部署，当前没有事件绑定的自动授权；
 - Base固定`100 USDT`、TOP3日线、long/cash、one-way、isolated 1x、effective gross `<=1`；
 - X4、C×D、RV-C和旧line A交易入口关闭；
 - RiskTier和FundingVeto只能shadow；

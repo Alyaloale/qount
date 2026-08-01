@@ -1,0 +1,1727 @@
+# The authoritative, value-free environment-variable contract.  Do not put
+# credentials, account identifiers, real endpoints, or confirmation values here.
+# Every entry intentionally declares all fields consumed by config-check.
+
+[contract]
+version = 1
+owner = "repository-governance"
+
+[[variables]]
+name = "QOUNT_MODE"
+domain = "core"
+type = "enum:paper|live"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "defaults_to_paper"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PROJECT_ROOT"
+domain = "topology"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "repository_root"
+consumers = ["src/qount/settings.py", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_STATE_DIR"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "project_state_dir"
+consumers = ["src/qount/settings.py", "deploy/wsl/qount-compute.env"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_EXTERNAL_DATA_ROOT"
+domain = "topology"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "external_disk_only"
+consumers = ["scripts/storage", "deploy/wsl/qount-compute.env"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_WSL_PROJECT_ROOT"
+domain = "topology"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "unset_outside_wsl"
+consumers = ["deploy/wsl/qount-compute.env", "scripts/storage"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_WSL_SCRATCH_ROOT"
+domain = "topology"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "unset_outside_wsl"
+consumers = ["deploy/wsl/qount-compute.env", "scripts/storage"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_WSL_SYSTEM_LIB_DIR"
+domain = "topology"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "unset_outside_wsl"
+consumers = ["deploy/wsl/qount-compute.env"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_WSL_HOST"
+domain = "orchestration"
+type = "hostname"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "repository_documented_host"
+consumers = ["scripts/sync-to-wsl.sh", "scripts/run-wsl-tests.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_WSL_DIR"
+domain = "orchestration"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "repository_documented_path"
+consumers = ["scripts/sync-to-wsl.sh", "scripts/run-wsl-tests.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_VPS_HOST"
+domain = "orchestration"
+type = "hostname"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "ssh_alias"
+consumers = ["scripts/sync-to-vps.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_VPS_DIR"
+domain = "orchestration"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "repository_documented_path"
+consumers = ["scripts/sync-to-vps.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_VPS_PYTHON"
+domain = "orchestration"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "remote_venv_python"
+consumers = ["scripts/sync-to-vps.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_SYNC_PYTHON"
+domain = "orchestration"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "local_venv_python"
+consumers = ["scripts/sync-to-vps.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PYTHON_BIN"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_EXCHANGE_ID"
+domain = "core"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "binance"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MARKET_TYPE"
+domain = "core"
+type = "enum:spot|future"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "spot"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_SYMBOLS"
+domain = "core"
+type = "csv"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "BTC/USDT,ETH/USDT"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TIMEFRAME"
+domain = "core"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "1h"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_QUOTE_CURRENCY"
+domain = "core"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "USDT"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_LOOKBACK_BARS"
+domain = "core"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_RULE_MODE"
+domain = "risk"
+type = "enum:strict|bottom_line"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "strict"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PAPER_STARTING_QUOTE"
+domain = "paper"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_OPENAI_BASE_URL"
+domain = "ai"
+type = "url"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "local_relay_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_OPENAI_API_KEY"
+domain = "ai"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_placeholder_only"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_AI_MODEL"
+domain = "ai"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_AI_TIMEOUT_SECONDS"
+domain = "ai"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_AI_TEMPERATURE"
+domain = "ai"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TIINGO_API_KEY"
+domain = "market_data"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent_unless_authorized_research"
+consumers = ["src/qount/settings.py", "src/qount/legacy/line_a"]
+legacy = false
+
+[[variables]]
+name = "TIINGO_API_TOKEN"
+domain = "market_data"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "only_in_/etc/qount/dual-engine-paper.env"
+consumers = ["deploy/dual_engine/paper-v1.json"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_BINANCE_API_KEY"
+domain = "venue"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent_while_orders_disabled"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_BINANCE_API_SECRET"
+domain = "venue"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent_while_orders_disabled"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TESTNET_ENABLE"
+domain = "venue"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "false"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TESTNET_API_KEY"
+domain = "venue"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent"
+consumers = ["src/qount/settings.py", "scripts/operations/phase_c_testnet_run.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TESTNET_API_SECRET"
+domain = "venue"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent"
+consumers = ["src/qount/settings.py", "scripts/operations/phase_c_testnet_run.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_NOTIFY_WEBHOOK_URL"
+domain = "notifications"
+type = "secret_url"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_HTTP_PROXY"
+domain = "network"
+type = "url"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/settings.py", "src/qount/legacy/line_a"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_HTTPS_PROXY"
+domain = "network"
+type = "url"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/settings.py", "src/qount/legacy/line_a"]
+legacy = false
+
+[[variables]]
+name = "HTTP_PROXY"
+domain = "network"
+type = "url"
+sensitive = false
+allowed_hosts = ["mac", "wsl"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/settings.py", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "HTTPS_PROXY"
+domain = "network"
+type = "url"
+sensitive = false
+allowed_hosts = ["mac", "wsl"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/settings.py", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "NO_PROXY"
+domain = "network"
+type = "csv"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["local_shell"]
+legacy = false
+
+[[variables]]
+name = "ALL_PROXY"
+domain = "network"
+type = "url"
+sensitive = false
+allowed_hosts = ["mac", "wsl"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "BINANCE_API_KEY"
+domain = "venue"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "forbidden_in_services"
+consumers = ["deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "BINANCE_SECRET"
+domain = "venue"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "forbidden_in_services"
+consumers = ["deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "BINANCE_SECRET_KEY"
+domain = "venue"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "forbidden_in_services"
+consumers = ["deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "OPENAI_API_KEY"
+domain = "ai"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "not_used_by_core"
+consumers = ["deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_LIVE_ENABLE"
+domain = "safety"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["src/qount/settings.py", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_LIVE_CONFIRMATION"
+domain = "safety"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "must_be_empty"
+consumers = ["src/qount/settings.py", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_FOMC_LIVE_ENABLE"
+domain = "safety"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["scripts/operations/run_fomc_live.py", "deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_FOMC_LIVE_CONFIRMATION"
+domain = "safety"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "must_be_empty"
+consumers = ["scripts/operations/run_fomc_live.py", "deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_FOMC_ARM_TOKEN"
+domain = "safety"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "must_be_empty"
+consumers = ["scripts/operations/run_fomc_live.py", "deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_MINI_TREND_LIVE_ENABLE"
+domain = "safety"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["scripts/desktop", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MINI_TREND_LIVE_CONFIRMATION"
+domain = "safety"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "must_be_empty"
+consumers = ["scripts/desktop", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MINI_TREND_ARM_TOKEN"
+domain = "safety"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "must_be_empty"
+consumers = ["scripts/desktop", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MINI_TREND_ARM_PATH"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd/qount-mini-trend-live.service"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MINI_TREND_LIVE_ENV_PATH"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd/qount-mini-trend-live.service"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MINI_TREND_STATE_ROOT"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_BASE_STANDARD_PRODUCTION_ROOT"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd/qount-mini-trend-live.service"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DASHBOARD_AUTHORITY_ROOT"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DASHBOARD_RUNTIME_ROOT"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DASHBOARD_BACKUP_ROOT"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DASHBOARD_ROOT"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DASHBOARD_LOCK_PATH"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd/qount-mini-trend-live.service"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_NOTIFICATION_STORE"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd/qount-mini-trend-live.service"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PHASE_B_STATE_DIR"
+domain = "deployment"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "service_specific"
+consumers = ["deploy/systemd/qount-phase-b-readonly.service"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_EXCHANGE_BYPASS_PROXY"
+domain = "network"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "false"
+consumers = ["src/qount/exchange_utils.py", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CCXT_TIMEOUT_MS"
+domain = "venue"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/exchange_utils.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_LLM_ENABLE"
+domain = "research"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "false"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_BASE_URL"
+domain = "research"
+type = "url"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "relay_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_API_KEY"
+domain = "research"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent_when_llm_disabled"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_MODEL"
+domain = "research"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "relay_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_TIMEOUT_SECONDS"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_TEMPERATURE"
+domain = "research"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_MAX_TOKENS"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_MAX_CONCURRENCY"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_MAX_RETRIES"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_RETRY_BASE_SECONDS"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_MAX_RETRY_DELAY_SECONDS"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_PROVIDER_PROFILE"
+domain = "research"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_MAX_INPUT_CHARS"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALPHA_AGENT_MAX_RESPONSE_CHARS"
+domain = "research"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/alpha_agents/llm.py"]
+legacy = false
+
+# The remaining core tuning variables all have safe runtime defaults in
+# Settings.from_env. They remain explicit so a new consumer cannot bypass the
+# contract merely because it is a numerical control.
+
+[[variables]]
+name = "QOUNT_MAX_OPEN_POSITIONS"
+domain = "risk"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MAX_ENTRY_SIZE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MAX_RISK_PER_TRADE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DAILY_LOSS_LIMIT_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MIN_NOTIONAL_QUOTE"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MIN_OPEN_SIZE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MIN_TAKE_PROFIT_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_COOLDOWN_BARS_AFTER_LOSSES"
+domain = "risk"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ESTIMATED_FEE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ESTIMATED_SLIPPAGE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_RISK_SIZING_ENABLE"
+domain = "risk"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_RISK_SIZING_INCLUDE_COST"
+domain = "risk"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MIN_EFFECTIVE_STOP_LOSS_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MAX_EFFECTIVE_STOP_LOSS_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CANDIDATE_TREND_TIMEFRAME"
+domain = "strategy"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_HOURLY_MODEL_ENABLE"
+domain = "models"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_HOURLY_MODEL_PATH"
+domain = "models"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_state_path"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_SETUP_MODEL_ENABLE"
+domain = "models"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_SETUP_MODEL_PATH"
+domain = "models"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_state_path"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MIN_EXPECTED_EDGE_PCT"
+domain = "strategy"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MAX_NET_DIRECTIONAL_EXPOSURE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MAX_CORRELATED_DIRECTIONAL_EXPOSURE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_THIRD_SAME_DIRECTION_EDGE_BUFFER_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALT_SHORT_EDGE_PENALTY_PCT"
+domain = "strategy"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_FLIP_COOLDOWN_BARS"
+domain = "risk"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_MIN_HOLD_BARS"
+domain = "risk"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_SAME_SYMBOL_REENTRY_COOLDOWN_BARS"
+domain = "risk"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TRAILING_PROFIT_ARM_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TRAILING_PROFIT_RETRACE_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PARTIAL_TAKE_PROFIT_ENABLE"
+domain = "risk"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PARTIAL_TAKE_PROFIT_TRIGGER_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PARTIAL_TAKE_PROFIT_STEP_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PARTIAL_TAKE_PROFIT_FRACTION"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PARTIAL_TAKE_PROFIT_MAX_TIMES"
+domain = "risk"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_BREAKEVEN_STOP_BUFFER_PCT"
+domain = "risk"
+type = "number"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DYNAMIC_PROTECTIVE_REFRESH_ENABLE"
+domain = "risk"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_RUN_DELAY_SECONDS"
+domain = "runtime_state"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PREFLIGHT_CACHE_SECONDS"
+domain = "runtime_state"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CONTRACT_LEVERAGE"
+domain = "risk"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CONTRACT_MARGIN_MODE"
+domain = "risk"
+type = "enum:isolated|cross"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "isolated"
+consumers = ["src/qount/settings.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALLOW_LEGACY_WSL"
+domain = "legacy"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "false"
+consumers = ["src/qount/mac_monitor.py"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_REQUIRE_LIGHTGBM"
+domain = "research"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac", "wsl"]
+required_when = "never"
+default_policy = "false"
+consumers = ["scripts/check-research-deps.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_L2_SOURCE_DIR"
+domain = "research_data"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "external_disk_only"
+consumers = ["deploy/wsl/qount-compute.env"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_L2_ARCHIVE"
+domain = "research_data"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "external_disk_only"
+consumers = ["deploy/wsl/qount-compute.env"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_L2_WORK_DIR"
+domain = "research_data"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "scratch_only"
+consumers = ["scripts"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_CRON_GUARDED_JOB"
+domain = "operations"
+type = "string"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "wrapper_internal"
+consumers = ["scripts/desktop/cron_guard.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CRON_LOCK_DIR"
+domain = "operations"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "wrapper_default"
+consumers = ["scripts/desktop/cron_guard.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_FLOCK_BIN"
+domain = "operations"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "system_default"
+consumers = ["scripts/desktop/cron_guard.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TIMEOUT_BIN"
+domain = "operations"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "system_default"
+consumers = ["scripts/desktop/cron_guard.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_LOG_MAX_BYTES"
+domain = "operations"
+type = "integer"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "wrapper_default"
+consumers = ["scripts/desktop/cron_guard.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_REPO"
+domain = "operations"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "script_default"
+consumers = ["scripts"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_OPENQUANT_DB"
+domain = "legacy"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "external_disk_only"
+consumers = ["src/qount/legacy/line_a"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_ETF_ZIP"
+domain = "legacy"
+type = "path"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "external_disk_only"
+consumers = ["src/qount/legacy/line_a"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_TQSDK_USER"
+domain = "legacy"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent"
+consumers = ["src/qount/legacy/line_a"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_TQSDK_PASS"
+domain = "legacy"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "absent"
+consumers = ["src/qount/legacy/line_a"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_SERVERCHAN_KEY"
+domain = "legacy"
+type = "secret"
+sensitive = true
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "absent"
+consumers = ["scripts/archive"]
+legacy = true
+
+[[variables]]
+name = "LD_LIBRARY_PATH"
+domain = "wsl_runtime"
+type = "path_list"
+sensitive = false
+allowed_hosts = ["wsl"]
+required_when = "never"
+default_policy = "source_wsl_topology_only"
+consumers = ["deploy/wsl/qount-compute.env"]
+legacy = false
+
+[[variables]]
+name = "TUSHARE_TOKEN"
+domain = "legacy"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "absent"
+consumers = ["scripts/archive/research-legacy/ashare-etf"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_X4_LIVE_ENABLE"
+domain = "legacy"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["src/qount/legacy/x4", "deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_X4_CAPITAL"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_X4_INCEPTION"
+domain = "legacy"
+type = "date"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_X4_PAPER_TIMEOUT_SECONDS"
+domain = "legacy"
+type = "integer"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/legacy/x4"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_X4_SCALE_OUT"
+domain = "legacy"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_X4_SHORT_GATE"
+domain = "legacy"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_X4_SHORT_VOL_TARGET"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_RV_LIVE_ENABLE"
+domain = "legacy"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["src/qount/legacy/rv_c", "deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_RV_CAPITAL"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_RV_AUTOFUND"
+domain = "legacy"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_RV_UM_BUFFER_USDT"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_RV_DELTA_ALERT_FRAC"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_CXD_CARRY_ENABLE"
+domain = "legacy"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "false_only"
+consumers = ["scripts/archive/desktop-legacy", "deploy/systemd"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_CXD_CAPITAL"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/archive/desktop-legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_CXD_CAPITAL_FALLBACK"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_CXD_CARRY_CAPITAL"
+domain = "legacy"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_CXD_PUBLISH_TIMEOUT_SECONDS"
+domain = "legacy"
+type = "integer"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/legacy"]
+legacy = true
+
+[[variables]]
+name = "QOUNT_CXD_RUN_TIMEOUT_SECONDS"
+domain = "legacy"
+type = "integer"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["src/qount/legacy"]
+legacy = true

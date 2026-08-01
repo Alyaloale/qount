@@ -43,6 +43,8 @@ from qount.reporting import build_dashboard_v1
 from qount.reporting import publish_dashboard_v1
 from qount.reporting import read_dashboard_release_v1
 from qount.reporting import read_dashboard_v1
+from qount.reporting import PaperProgramImportError
+from qount.reporting import read_paper_program_snapshot
 from qount.reporting import read_vps_authority_bundle
 
 
@@ -66,6 +68,7 @@ class PublisherConfig:
     lock_path: Path
     disk_path: Path
     intelligence_root: Path | None = None
+    paper_root: Path | None = None
     notification_store_path: Path | None = None
     operations_enabled: bool = True
     service_name: str = "qount-dashboard-publisher.timer"
@@ -76,6 +79,7 @@ class PublisherConfig:
     alert_stale_after_seconds: int = 300
     report_stale_after_seconds: int = 90_000
     system_stale_after_seconds: int = DEFAULT_SYSTEM_STALE_AFTER_SECONDS
+    paper_stale_after_seconds: int = 129_600
 
     def validate(self) -> None:
         paths = (
@@ -89,6 +93,8 @@ class PublisherConfig:
         if any(not isinstance(path, Path) or not path.is_absolute() for path in paths):
             raise DashboardPublisherError("publisher_absolute_paths_required")
         if self.intelligence_root is not None and not self.intelligence_root.is_absolute():
+            raise DashboardPublisherError("publisher_absolute_paths_required")
+        if self.paper_root is not None and not self.paper_root.is_absolute():
             raise DashboardPublisherError("publisher_absolute_paths_required")
         if (
             self.notification_store_path is not None
@@ -112,6 +118,7 @@ class PublisherConfig:
             self.alert_stale_after_seconds,
             self.report_stale_after_seconds,
             self.system_stale_after_seconds,
+            self.paper_stale_after_seconds,
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise DashboardPublisherError("publisher_staleness_invalid")
@@ -386,6 +393,17 @@ def _read_optional_daily_intelligence(config: PublisherConfig):
         return None
 
 
+def _read_optional_paper_snapshot(config: PublisherConfig):
+    """Treat a bad optional paper artifact as unavailable, never as authority."""
+
+    if config.paper_root is None:
+        return None
+    try:
+        return read_paper_program_snapshot(config.paper_root)
+    except (PaperProgramImportError, OSError):
+        return None
+
+
 def run_dashboard_publisher(
     config: PublisherConfig,
     *,
@@ -414,6 +432,7 @@ def run_dashboard_publisher(
             else bundle.notification_snapshot
         )
         intelligence = _read_optional_daily_intelligence(config)
+        paper_snapshot = _read_optional_paper_snapshot(config)
         health = collect_os_system_health(
             HealthProbeConfig(
                 disk_path=config.disk_path,
@@ -443,6 +462,8 @@ def run_dashboard_publisher(
             daily_intelligence=intelligence,
             system_health=health,
             system_stale_after_seconds=config.system_stale_after_seconds,
+            paper_snapshot=paper_snapshot,
+            paper_stale_after_seconds=config.paper_stale_after_seconds,
             blocked_runtime_observation=blocked_observation,
         )
         publication = publish_dashboard_v1(config.dashboard_root, models)
@@ -491,6 +512,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--lock-path", type=Path, required=True)
     parser.add_argument("--disk-path", type=Path, required=True)
     parser.add_argument("--intelligence-root", type=Path)
+    parser.add_argument("--paper-root", type=Path)
     parser.add_argument("--notification-store", type=Path)
     parser.add_argument(
         "--service-name",
@@ -507,6 +529,7 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_SYSTEM_STALE_AFTER_SECONDS,
     )
+    parser.add_argument("--paper-stale-after-seconds", type=int, default=129_600)
     return parser
 
 
@@ -520,6 +543,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         lock_path=args.lock_path,
         disk_path=args.disk_path,
         intelligence_root=args.intelligence_root,
+        paper_root=args.paper_root,
         notification_store_path=args.notification_store,
         service_name=args.service_name,
         retain_previous_releases=args.retain_previous_releases,
@@ -528,6 +552,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         alert_stale_after_seconds=args.alert_stale_after_seconds,
         report_stale_after_seconds=args.report_stale_after_seconds,
         system_stale_after_seconds=args.system_stale_after_seconds,
+        paper_stale_after_seconds=args.paper_stale_after_seconds,
     )
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     try:

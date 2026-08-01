@@ -1111,7 +1111,7 @@ replacement=20260714T135630Z-alpha-agent-live-collector-session-7d-vps
 
 ```text
 remote_path=/root/qount-alpha/state/research_runs/20260714T135630Z-alpha-agent-live-collector-session-7d-vps/
-service=qount-alpha-collector.service (active, Restart=no, boot-disabled)
+service=retired Alpha collector template (archive-only; not deployed)
 started_at=2026-07-14T13:56:47Z
 planned_duration=604800s
 segment_limit=3600s (UTC midnight clipping remains enabled)

@@ -1,0 +1,42 @@
+[Unit]
+Description=Qount Dual-Engine scheduled G20 first-intraday paper execution
+ConditionPathIsDirectory=/root/qount
+ConditionPathExists=/root/qount/deploy/dual_engine/paper-v1.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+Environment=PYTHONPATH=/root/qount/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=QOUNT_LIVE_ENABLE=false
+Environment=QOUNT_MINI_TREND_LIVE_ENABLE=false
+Environment=http_proxy=
+Environment=https_proxy=
+Environment=all_proxy=
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+EnvironmentFile=-/etc/qount/dual-engine-paper.env
+UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/collect_dual_engine_market.py --config /root/qount/deploy/dual_engine/paper-v1.json --state-root /var/lib/qount/paper/dual-engine --event g20-open
+UMask=0077
+Nice=10
+CPUQuota=50%
+MemoryHigh=256M
+MemoryMax=384M
+TasksMax=32
+TimeoutStartSec=4m
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/paper/dual-engine
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=

@@ -21,6 +21,7 @@ from qount.contracts.trace import aware_datetime
 from qount.contracts.trace import is_sha256
 from qount.governance import StrategyRegistry
 from qount.governance import validate_registered_intents
+from qount.dual_engine import PaperProgramSnapshot
 from qount.intelligence import DailyIntelligenceReport
 from qount.intelligence import IntelligenceContractError
 from qount.intelligence import daily_intelligence_from_dict
@@ -52,6 +53,7 @@ READ_MODEL_TYPES = (
     "alerts",
     "reports",
     "intelligence",
+    "paper",
 )
 _READ_MODEL_FILES = {
     "overview": "overview.json",
@@ -65,6 +67,7 @@ _READ_MODEL_FILES = {
     "alerts": "alerts.json",
     "reports": "reports.json",
     "intelligence": "intelligence.json",
+    "paper": "paper.json",
 }
 _PUBLICATION_FILE = "publication.json"
 _BASE_SOURCE_KEYS = {"decision_batch_manifest", "strategy_registry"}
@@ -73,6 +76,7 @@ _BLOCKED_RUNTIME_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"blocked_runtime_observation
 _NOTIFICATION_SOURCE_KEYS = {"notification_store"}
 _REPORT_SOURCE_KEYS = {"daily_brief"}
 _INTELLIGENCE_SOURCE_KEYS = {"daily_intelligence"}
+_PAPER_SOURCE_KEYS = {"paper_program"}
 _SYSTEM_HEALTH_SOURCE_KEYS = _BASE_SOURCE_KEYS | {"system_health"}
 _SYSTEM_RUNTIME_SOURCE_KEYS = _RUNTIME_SOURCE_KEYS | {"system_health"}
 _SYSTEM_BLOCKED_RUNTIME_SOURCE_KEYS = _BLOCKED_RUNTIME_SOURCE_KEYS | {"system_health"}
@@ -178,6 +182,10 @@ def _valid_source_hashes(
         or (
             read_model_type == "intelligence"
             and keys == _INTELLIGENCE_SOURCE_KEYS
+        )
+        or (
+            read_model_type == "paper"
+            and keys == _PAPER_SOURCE_KEYS
         )
         or (
             read_model_type in {"system", "strategies", "readiness"}
@@ -488,6 +496,14 @@ class DashboardReadModel:
                 raise DashboardReadModelError(
                     "dashboard_intelligence_authority_source_mismatch"
                 )
+        elif self.read_model_type == "paper":
+            paper_authoritative = (
+                authority["paper_accounting"] == "dual_engine_paper_snapshot"
+            )
+            if paper_authoritative is not ("paper_program" in self.source_hashes):
+                raise DashboardReadModelError(
+                    "dashboard_paper_authority_source_mismatch"
+                )
         else:
             runtime_authoritative = authority["account_and_pnl"] == "runtime_ledger"
             if runtime_authoritative is not (
@@ -588,6 +604,11 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
         "alerts": {"authority", "summary", "alerts"},
         "reports": {"authority", "summary", "brief"},
         "intelligence": {"authority", "summary", "report"},
+        "paper": {
+            "authority",
+            "summary",
+            "snapshot",
+        },
     }[read_model_type]
     _exact_keys(value, expected, name=f"dashboard_{read_model_type}_payload")
     if read_model_type == "alerts":
@@ -598,6 +619,9 @@ def _validate_payload(read_model_type: str, payload: Mapping[str, object]) -> No
         return
     if read_model_type == "intelligence":
         _validate_intelligence_payload(value)
+        return
+    if read_model_type == "paper":
+        _validate_paper_payload(value)
         return
     authority = _mapping(value["authority"], name="dashboard_authority")
     _exact_keys(
@@ -4033,6 +4057,101 @@ def _intelligence_payload(
     }
 
 
+def _validate_paper_payload(value: Mapping[str, object]) -> None:
+    authority = _mapping(value["authority"], name="dashboard_paper_authority")
+    _exact_keys(
+        authority,
+        {"paper_accounting", "order_routing"},
+        name="dashboard_paper_authority",
+    )
+    if authority["order_routing"] != "disabled":
+        raise DashboardReadModelError("dashboard_paper_order_guard_invalid")
+    summary = _mapping(value["summary"], name="dashboard_paper_summary")
+    _exact_keys(
+        summary,
+        {
+            "status",
+            "program_id",
+            "program_version",
+            "snapshot_hash",
+            "portfolio_count",
+            "orders_authorized",
+            "reporting_asset",
+        },
+        name="dashboard_paper_summary",
+    )
+    if authority["paper_accounting"] == "unavailable":
+        expected = {
+            "status": "unavailable",
+            "program_id": None,
+            "program_version": None,
+            "snapshot_hash": None,
+            "portfolio_count": 0,
+            "orders_authorized": False,
+            "reporting_asset": "USD_EQ",
+        }
+        if dict(summary) != expected or value["snapshot"] is not None:
+            raise DashboardReadModelError("dashboard_paper_unavailable_invalid")
+        return
+    if authority["paper_accounting"] != "dual_engine_paper_snapshot":
+        raise DashboardReadModelError("dashboard_paper_authority_invalid")
+    snapshot_value = _mapping(value["snapshot"], name="dashboard_paper_snapshot")
+    try:
+        snapshot = PaperProgramSnapshot.from_dict(snapshot_value)
+    except ValueError as exc:
+        raise DashboardReadModelError(
+            f"dashboard_paper_snapshot_invalid:{exc}"
+        ) from exc
+    expected = {
+        "status": snapshot.status,
+        "program_id": snapshot.program_id,
+        "program_version": snapshot.program_version,
+        "snapshot_hash": snapshot.snapshot_hash,
+        "portfolio_count": len(snapshot.portfolios),
+        "orders_authorized": False,
+        "reporting_asset": snapshot.reporting_asset,
+    }
+    if dict(summary) != expected:
+        raise DashboardReadModelError("dashboard_paper_summary_mismatch")
+
+
+def _paper_payload(snapshot: PaperProgramSnapshot | None) -> dict[str, object]:
+    if snapshot is None:
+        return {
+            "authority": {
+                "paper_accounting": "unavailable",
+                "order_routing": "disabled",
+            },
+            "summary": {
+                "status": "unavailable",
+                "program_id": None,
+                "program_version": None,
+                "snapshot_hash": None,
+                "portfolio_count": 0,
+                "orders_authorized": False,
+                "reporting_asset": "USD_EQ",
+            },
+            "snapshot": None,
+        }
+    snapshot.validate()
+    return {
+        "authority": {
+            "paper_accounting": "dual_engine_paper_snapshot",
+            "order_routing": "disabled",
+        },
+        "summary": {
+            "status": snapshot.status,
+            "program_id": snapshot.program_id,
+            "program_version": snapshot.program_version,
+            "snapshot_hash": snapshot.snapshot_hash,
+            "portfolio_count": len(snapshot.portfolios),
+            "orders_authorized": False,
+            "reporting_asset": snapshot.reporting_asset,
+        },
+        "snapshot": snapshot.as_dict(),
+    }
+
+
 @dataclass(frozen=True)
 class DashboardReadModelSet:
     overview: DashboardReadModel
@@ -4046,6 +4165,7 @@ class DashboardReadModelSet:
     alerts: DashboardReadModel
     reports: DashboardReadModel
     intelligence: DashboardReadModel
+    paper: DashboardReadModel
 
     def models(self) -> tuple[DashboardReadModel, ...]:
         return (
@@ -4060,6 +4180,7 @@ class DashboardReadModelSet:
             self.alerts,
             self.reports,
             self.intelligence,
+            self.paper,
         )
 
     def validate(self) -> None:
@@ -4107,6 +4228,8 @@ def build_dashboard_v1(
     intelligence_stale_after_seconds: int | None = None,
     system_health: SystemHealthSnapshot | None = None,
     system_stale_after_seconds: int | None = None,
+    paper_snapshot: PaperProgramSnapshot | None = None,
+    paper_stale_after_seconds: int | None = None,
     blocked_runtime_observation: Mapping[str, Any] | None = None,
 ) -> DashboardReadModelSet:
     """Build read models from verified decision, governance, and frozen ledger state."""
@@ -4204,6 +4327,15 @@ def build_dashboard_v1(
             raise DashboardReadModelError(
                 f"dashboard_daily_intelligence_invalid:{exc}"
             ) from exc
+    if paper_snapshot is not None:
+        if not isinstance(paper_snapshot, PaperProgramSnapshot):
+            raise DashboardReadModelError("dashboard_paper_snapshot_required")
+        try:
+            paper_snapshot.validate()
+        except ValueError as exc:
+            raise DashboardReadModelError(
+                f"dashboard_paper_snapshot_invalid:{exc}"
+            ) from exc
     if (
         not isinstance(stale_after_seconds, int)
         or isinstance(stale_after_seconds, bool)
@@ -4256,6 +4388,17 @@ def build_dashboard_v1(
         or system_stale_after_seconds < 1
     ):
         raise DashboardReadModelError("dashboard_system_stale_after_invalid")
+    paper_stale_after_seconds = (
+        129_600
+        if paper_stale_after_seconds is None
+        else paper_stale_after_seconds
+    )
+    if (
+        not isinstance(paper_stale_after_seconds, int)
+        or isinstance(paper_stale_after_seconds, bool)
+        or paper_stale_after_seconds < 1
+    ):
+        raise DashboardReadModelError("dashboard_paper_stale_after_invalid")
     evaluated_at = evaluated_at or generated_at
     try:
         generated = aware_datetime(generated_at)
@@ -4295,6 +4438,11 @@ def build_dashboard_v1(
             if system_health is not None
             else None
         )
+        paper_source_time = (
+            aware_datetime(paper_snapshot.generated_at)
+            if paper_snapshot is not None
+            else None
+        )
     except (AttributeError, TypeError, ValueError) as exc:
         raise DashboardReadModelError("dashboard_generation_time_invalid") from exc
     source_updated_at = max(source_times).isoformat()
@@ -4329,6 +4477,10 @@ def build_dashboard_v1(
                 generated < aware_datetime(system_health.captured_at)
                 or generated < system_source_time
             )
+        )
+        or (
+            paper_snapshot is not None
+            and generated < paper_source_time
         )
     ):
         raise DashboardReadModelError("dashboard_generation_time_order_invalid")
@@ -4445,6 +4597,23 @@ def build_dashboard_v1(
                 observed_at=generated_at,
                 content_updated_at=daily_intelligence.created_at,
                 sources={"daily_intelligence": daily_intelligence.created_at},
+            ),
+        }
+    if paper_snapshot is None:
+        paper_common = common
+    else:
+        paper_common = {
+            "generated_at": generated_at,
+            "data_cutoff": paper_snapshot.data_cutoff,
+            "source_hashes": {"paper_program": paper_snapshot.snapshot_hash},
+            "stale_after_seconds": paper_stale_after_seconds,
+            "freshness": _freshness(
+                source_updated_at=paper_snapshot.generated_at,
+                evaluated_at=evaluated_at,
+                stale_after_seconds=paper_stale_after_seconds,
+                observed_at=generated_at,
+                content_updated_at=paper_snapshot.data_cutoff,
+                sources={"dual_engine_paper": paper_snapshot.generated_at},
             ),
         }
     if system_health is None:
@@ -4573,6 +4742,11 @@ def build_dashboard_v1(
             read_model_type="intelligence",
             payload=_intelligence_payload(daily_intelligence),
             **intelligence_common,
+        ),
+        paper=DashboardReadModel.create(
+            read_model_type="paper",
+            payload=_paper_payload(paper_snapshot),
+            **paper_common,
         ),
     )
     models.validate()
@@ -4844,6 +5018,7 @@ def _read_release(directory: Path) -> tuple[DashboardReadModelSet, DashboardPubl
         alerts=loaded["alerts"],
         reports=loaded["reports"],
         intelligence=loaded["intelligence"],
+        paper=loaded["paper"],
     )
     publication.validate(models=models)
     if directory.name != publication.publication_id:

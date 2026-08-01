@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the frozen CPI or NFP anchor-trigger study on public OKX BTC-USDT candles."""
+"""Run the frozen macro-event anchor-trigger study on public OKX BTC-USDT candles."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ OKX_ENDPOINT = "https://www.okx.com/api/v5/market/history-candles"
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--event-type", choices=("cpi", "nfp", "all"), default="all")
+    parser.add_argument("--event-type", choices=("cpi", "nfp", "fomc", "all"), default="all")
     parser.add_argument("--cache-path", type=Path, default=Path("state/research_cache/okx_btcusdt_1h_2024-2026.json"))
     parser.add_argument("--refresh", action="store_true", help="discard the normalized public-candle cache")
     parser.add_argument("--output-dir", type=Path)
@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         "artifact_path": str(market_path),
         "artifact_sha256": hashlib.sha256(market_bytes).hexdigest(),
     }
-    types = ("cpi", "nfp") if args.event_type == "all" else (args.event_type,)
+    types = ("cpi", "nfp", "fomc") if args.event_type == "all" else (args.event_type,)
     for event_type in types:
         report = build_study_report(
             scheduled_events(event_type), candles, market_data_provenance=artifact_provenance

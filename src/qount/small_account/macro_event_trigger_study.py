@@ -1,8 +1,7 @@
 """Frozen, order-free macro-event anchor-trigger study utilities.
 
-The FOMC discovery note used completed hourly OKX BTC-USDT candles.  This module
-keeps the same simplified, anchor-only measurement for CPI and NFP so their
-results are comparable without altering the live FOMC contract.
+The discovery study uses completed hourly OKX BTC-USDT candles and keeps the
+measurement anchor-only; it does not alter the live FOMC execution contract.
 """
 
 from __future__ import annotations
@@ -23,10 +22,17 @@ STUDY_VERSION = "macro_event_anchor_trigger_study_v0.1"
 EVENT_SOURCES = {
     "cpi": "https://www.bls.gov/schedule/news_release/cpi.htm",
     "nfp": "https://www.bls.gov/schedule/news_release/empsit.htm",
+    "fomc": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+}
+
+_EVENT_LOCAL_TIMES = {
+    "cpi": (8, 30),
+    "nfp": (8, 30),
+    "fomc": (14, 0),
 }
 
 # These scheduled publication dates cover 2024-01 through 2026-06 inclusive.
-# Every release was scheduled for 08:30 America/New_York; ZoneInfo freezes the
+# CPI/NFP use 08:30 and FOMC uses 14:00 America/New_York; ZoneInfo freezes the
 # corresponding UTC timestamp including daylight-saving changes.
 _RELEASE_DATES = {
     "cpi": (
@@ -43,6 +49,13 @@ _RELEASE_DATES = {
         "2025-07-03", "2025-08-01", "2025-09-05", "2025-10-03", "2025-11-07", "2025-12-05",
         "2026-01-09", "2026-02-06", "2026-03-06", "2026-04-03", "2026-05-08", "2026-06-05",
     ),
+    "fomc": (
+        "2024-01-31", "2024-03-20", "2024-05-01", "2024-06-12", "2024-07-31", "2024-09-18",
+        "2024-11-07", "2024-12-18",
+        "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18", "2025-07-30", "2025-09-17",
+        "2025-10-29", "2025-12-10",
+        "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+    ),
 }
 
 
@@ -57,11 +70,12 @@ class MacroEvent:
         return f"{self.event_type}-{self.event_date}"
 
     def as_dict(self) -> dict[str, str]:
+        hour, minute = _EVENT_LOCAL_TIMES[self.event_type]
         return {
             "event_id": self.event_id,
             "event_type": self.event_type,
             "event_date": self.event_date,
-            "scheduled_local_time": "08:30 America/New_York",
+            "scheduled_local_time": f"{hour:02d}:{minute:02d} America/New_York",
             "released_at_utc": self.released_at.isoformat(),
             "source_url": EVENT_SOURCES[self.event_type],
         }
@@ -124,8 +138,11 @@ def scheduled_events(event_type: str) -> tuple[MacroEvent, ...]:
     if event_type not in _RELEASE_DATES:
         raise ValueError(f"unsupported event type: {event_type}")
     events = []
+    hour, minute = _EVENT_LOCAL_TIMES[event_type]
     for event_date in _RELEASE_DATES[event_type]:
-        local = dt.datetime.fromisoformat(f"{event_date}T08:30:00").replace(tzinfo=NEW_YORK)
+        local = dt.datetime.fromisoformat(
+            f"{event_date}T{hour:02d}:{minute:02d}:00"
+        ).replace(tzinfo=NEW_YORK)
         events.append(MacroEvent(event_type, event_date, local.astimezone(UTC)))
     return tuple(events)
 
@@ -170,6 +187,16 @@ def _atr(candles: Sequence[HourlyCandle], period: int) -> float:
 def _window(candles: Iterable[HourlyCandle], event: MacroEvent, hours: int) -> tuple[HourlyCandle, ...]:
     end = event.released_at + dt.timedelta(hours=hours)
     return tuple(row for row in candles if row.closed_at > event.released_at and row.closed_at <= end)
+
+
+def _complete_hourly_window(window: Sequence[HourlyCandle], hours: int) -> bool:
+    if len(window) < hours:
+        return False
+    recent = window[-hours:]
+    return all(
+        right.opened_at - left.opened_at == dt.timedelta(hours=1)
+        for left, right in zip(recent, recent[1:])
+    )
 
 
 def _excursions(
@@ -224,6 +251,17 @@ def analyze_event(
         "anchor_triggered": anchor is not None,
         "direction": direction,
     }
+    windows = {
+        label: _window(rows, event, hours)
+        for label, hours in (
+            ("d0", config.d0_window_hours),
+            ("d1", config.d1_window_hours),
+            ("d3", config.d3_window_hours),
+        )
+    }
+    result["d0_complete"] = _complete_hourly_window(windows["d0"], config.d0_window_hours)
+    result["d1_complete"] = _complete_hourly_window(windows["d1"], config.d1_window_hours)
+    result["d3_complete"] = _complete_hourly_window(windows["d3"], config.d3_window_hours)
     if anchor is None or direction is None:
         return result
     breakout_line = upper if direction == "long" else lower
@@ -233,11 +271,18 @@ def analyze_event(
         "breakout_line": breakout_line,
         "distance_atr": abs(anchor.close - breakout_line) / atr,
     }
-    for label, hours in (("d0", config.d0_window_hours), ("d1", config.d1_window_hours), ("d3", config.d3_window_hours)):
-        result[label] = _excursions(_window(rows, event, hours), direction=direction, breakout_line=breakout_line, atr=atr)
-    result["strong_d0"] = result["d0"]["favorable_atr"] >= config.strong_d0_atr
-    result["weak_d0"] = result["d0"]["favorable_atr"] < config.weak_d0_atr
-    result["weak_reversal_d3"] = result["weak_d0"] and result["d3"]["adverse_atr"] >= config.weak_reversal_d3_atr
+    for label in ("d0", "d1", "d3"):
+        if windows[label]:
+            result[label] = _excursions(
+                windows[label], direction=direction, breakout_line=breakout_line, atr=atr
+            )
+    result["strong_d0"] = result.get("d0_complete", False) and result["d0"]["favorable_atr"] >= config.strong_d0_atr
+    result["weak_d0"] = result.get("d0_complete", False) and result["d0"]["favorable_atr"] < config.weak_d0_atr
+    result["weak_reversal_d3"] = (
+        result["weak_d0"]
+        and result.get("d3_complete", False)
+        and result["d3"]["adverse_atr"] >= config.weak_reversal_d3_atr
+    )
     return result
 
 
@@ -250,11 +295,12 @@ def build_study_report(
     config = config or TriggerStudyConfig()
     rows = _validate_candles(candles)
     event_rows = [analyze_event(event, rows, config) for event in events]
-    triggered = [row for row in event_rows if row["anchor_triggered"]]
+    complete_event_rows = [row for row in event_rows if row["d3_complete"]]
+    triggered = [row for row in complete_event_rows if row["anchor_triggered"]]
     strong = [row for row in triggered if row["strong_d0"]]
     weak = [row for row in triggered if row["weak_d0"]]
     weak_reversals = [row for row in weak if row["weak_reversal_d3"]]
-    anchor_rate = len(triggered) / len(event_rows) if event_rows else 0.0
+    anchor_rate = len(triggered) / len(complete_event_rows) if complete_event_rows else 0.0
     strong_rate = len(strong) / len(triggered) if triggered else 0.0
     gates = {
         "anchor_trigger_rate_at_least_40pct": anchor_rate >= config.minimum_anchor_rate,
@@ -293,7 +339,10 @@ def build_study_report(
             "provenance": dict(market_data_provenance or {}),
         },
         "summary": {
-            "event_count": len(event_rows),
+            "scheduled_event_count": len(event_rows),
+            "complete_d3_event_count": len(complete_event_rows),
+            "incomplete_d3_event_count": len(event_rows) - len(complete_event_rows),
+            "event_count": len(complete_event_rows),
             "anchor_trigger_count": len(triggered),
             "anchor_trigger_rate": anchor_rate,
             "strong_d0_count": len(strong),

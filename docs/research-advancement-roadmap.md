@@ -62,7 +62,7 @@ liquidity真实盘口校准、stablecoin market-state 新预登记、carry activ
 
 当前共同基线：
 
-- Base v0.2是已停止的历史生产对照；本次 FOMC 受限自动授权只绑定单一事件，不授予其它研究线权限；
+- Base v0.2是已停止的历史生产对照；FOMC live 路径已取消部署，不授予任何研究线交易执行权限；
 - BTC、ETH、BNB是三个交易载体，不默认视为三个独立收益源；必须用共同market/momentum/size等暴露和有效广度证明分散；
 - X4、C×D、RV-C、CTA-R历史读数均为legacy/guarded/consumed evidence，不是可直接组合的已晋级edge；
 - LiquidTrend10首个G0有效广度仅`1.438`，原10币横截面trial被阻断；

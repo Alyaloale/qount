@@ -108,6 +108,15 @@ class VolCrisisStateProtocol:
             },
             "signal": {
                 "architecture": "three_signal_crisis_risk_multiplier",
+                "decision_timing": (
+                    "decision_after_aligned_bar_close; target weights apply from bar i close "
+                    "through bar i+1 close"
+                ),
+                "feature_visibility": (
+                    "price features include returns ending at decision bar i; funding features "
+                    "include only settlements in the completed interval before bar i"
+                ),
+                "funding_interval_semantics": "(bar_open_i, bar_open_i+1]",
                 "downside_semi_variance": {
                     "lookback": self.downside_semi_var_lookback,
                     "zscore_window": self.zscore_standardization_window,
@@ -273,11 +282,32 @@ def _rolling_mean(values: Sequence[float], window: int) -> list[float]:
     return series
 
 
+def _feature_prefix_through_decision(
+    series: Sequence[float], decision_index: int, lookback: int
+) -> list[float]:
+    """Return feature observations whose last one ends at the decision bar.
+
+    A lookback-derived series starts at ``lookback`` because its first value uses
+    returns ending at that bar. Therefore decision bar ``i`` maps to index
+    ``i - lookback`` and must be included in the prefix for a close-time decision.
+    """
+
+    feature_index = decision_index - lookback
+    if feature_index < 0:
+        return []
+    return list(series[: feature_index + 1])
+
+
 def compute_risk_multiplier_series(
     aligned: Mapping[str, Sequence[Bar]],
     funding_by_symbol: Mapping[str, Sequence[Funding]],
 ) -> dict[str, float]:
-    """Pre-compute RiskMultiplier for each decision date in the aligned bars."""
+    """Pre-compute RiskMultiplier for each close-time decision date.
+
+    Funding observations are built as left-open/right-closed completed intervals;
+    the decision at bar ``i`` can see the interval ending at bar ``i`` but never
+    the interval from bar ``i`` to bar ``i+1``.
+    """
     protocol = CRISIS_STATE_PROTOCOL
     btc_bars = aligned["BTCUSDT"]
     btc_closes = [bar.close for bar in btc_bars]
@@ -295,12 +325,24 @@ def compute_risk_multiplier_series(
     rm_by_date: dict[str, float] = {}
     n_bars = len(btc_bars)
     for i in range(1, n_bars):
-        dsv_idx = i - protocol.downside_semi_var_lookback
-        corr_idx = i - protocol.correlation_lookback
-        fund_idx = i - protocol.funding_lookback
-        z_dsv = _zscore_last(dsv[:max(dsv_idx, 0)], z_window) if dsv_idx > 0 else 0.0
-        z_corr = _zscore_last(corr_avg[:max(corr_idx, 0)], z_window) if corr_idx > 0 else 0.0
-        z_fund = _zscore_last(fund_rolling[:max(fund_idx, 0)], z_window) if fund_idx > 0 else 0.0
+        z_dsv = _zscore_last(
+            _feature_prefix_through_decision(
+                dsv, i, protocol.downside_semi_var_lookback
+            ),
+            z_window,
+        )
+        z_corr = _zscore_last(
+            _feature_prefix_through_decision(
+                corr_avg, i, protocol.correlation_lookback
+            ),
+            z_window,
+        )
+        z_fund = _zscore_last(
+            _feature_prefix_through_decision(
+                fund_rolling, i, protocol.funding_lookback
+            ),
+            z_window,
+        )
         crisis_z = (z_dsv + z_corr + z_fund) / 3.0
         rm = max(0.0, min(1.0, 1.0 - max(0.0, crisis_z) / protocol.crisis_threshold))
         rm_by_date[btc_bars[i].date] = rm

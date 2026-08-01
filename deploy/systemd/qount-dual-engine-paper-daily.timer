@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Qount Dual-Engine daily paper cycle after US close
+
+[Timer]
+OnCalendar=*-*-* 22:30:00 UTC
+Persistent=true
+RandomizedDelaySec=30s
+AccuracySec=1s
+Unit=qount-dual-engine-paper-daily.service
+
+[Install]
+WantedBy=timers.target
