@@ -778,7 +778,6 @@ const paperCurveState = {
   hiddenSeries: new Set(),
   zoom: 1,
   pan: 0,
-  drag: null,
 };
 let paperCurveModel = null;
 
@@ -823,6 +822,8 @@ function paperCurveSeries(snapshot) {
       time: Date.parse(point.marked_at),
       nav: Number(point.executable),
       equity: Number(point.executable_equity),
+      daily_return_fraction: point.daily_return_fraction,
+      daily_pnl: point.daily_pnl,
     })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.nav));
     return spec ? { ...spec, kind: "strategy", portfolio, points } : null;
   }).filter((row) => row && row.points.length >= 2);
@@ -833,6 +834,8 @@ function paperCurveSeries(snapshot) {
       time: Date.parse(point.marked_at),
       nav: Number(point.nav),
       equity: Number(point.equity),
+      daily_return_fraction: point.daily_return_fraction,
+      daily_pnl: point.daily_pnl,
     })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.nav));
     if (points.length >= 2) strategies.push({ ...PAPER_CURVE_SERIES.benchmark, label: benchmark.label, kind: "benchmark", benchmark, points });
   }
@@ -857,7 +860,13 @@ function paperCurveDomain(series) {
   const baseRange = Math.max(last - baseStart, 1);
   const visibleRange = Math.max(baseRange / paperCurveState.zoom, 1);
   const start = baseStart + (baseRange - visibleRange) * paperCurveState.pan;
-  return { start, end: start + visibleRange, fullStart: first, fullEnd: last };
+  return {
+    start,
+    end: start + visibleRange,
+    fullStart: first,
+    fullEnd: last,
+    canPan: visibleRange < baseRange,
+  };
 }
 
 function paperCurveNearestPoint(points, time) {
@@ -913,7 +922,9 @@ function paperPerformanceChart(snapshot) {
   paperCurveModel = { series: chartSeries, domain, left, right, top, bottom, width, height, mode: paperCurveState.mode, asset: snapshot.reporting_asset };
   const lineToggles = strategySeries.map((row) => `<button class="paper-series-toggle ${paperCurveState.hiddenSeries.has(row.id) ? "is-hidden" : ""}" type="button" data-paper-curve-action="series" data-series="${row.id}" aria-pressed="${!paperCurveState.hiddenSeries.has(row.id)}"><i></i><span>${escapeHtml(row.label)}</span><small>${escapeHtml(paperPerformanceText(row.portfolio.nav?.performance?.total_return_fraction))}</small></button>`).join("");
   const benchmarkToggle = `<button class="paper-series-toggle paper-series-benchmark ${!hasBenchmark || !paperCurveState.showBenchmark ? "is-hidden" : ""}" type="button" data-paper-curve-action="benchmark" ${hasBenchmark ? "" : "disabled"} aria-pressed="${hasBenchmark && paperCurveState.showBenchmark}"><i></i><span>${hasBenchmark ? escapeHtml(series.find((row) => row.kind === "benchmark").label) : "大盘基准待补齐"}</span><small>${hasBenchmark ? escapeHtml(paperPerformanceText(series.find((row) => row.kind === "benchmark").benchmark.nav.performance?.total_return_fraction)) : "需要完整公开回放"}</small></button>`;
-  return `<section class="panel full-panel paper-performance-panel"><header class="panel-head"><div><h2>策略收益曲线</h2><p>${escapeHtml(formatDate(new Date(domain.start).toISOString()))} 至 ${escapeHtml(formatDate(new Date(domain.end).toISOString()))} / ${modeText} / 四条策略线为独立模拟账户</p></div><span>${escapeHtml(rangeText)} · ${paperCurveState.zoom.toFixed(1)}×</span></header><div class="paper-performance-toolbar"><div class="paper-range-buttons">${[["all", "YTD"], ["180", "180D"], ["90", "90D"], ["30", "30D"]].map(([value, label]) => `<button type="button" class="${paperCurveState.range === value ? "active" : ""}" data-paper-curve-action="range" data-value="${value}">${label}</button>`).join("")}</div><div class="paper-mode-buttons"><button type="button" class="${paperCurveState.mode === "return" ? "active" : ""}" data-paper-curve-action="mode" data-value="return">收益率</button><button type="button" class="${paperCurveState.mode === "equity" ? "active" : ""}" data-paper-curve-action="mode" data-value="equity" ${hasEquity ? "" : "disabled"}>金额</button></div><button type="button" class="paper-reset-button" data-paper-curve-action="reset">复位视图</button><span class="paper-gesture-hint">滚轮缩放 · 拖动平移 · 悬停查看</span></div><div class="paper-series-toggles">${lineToggles}${benchmarkToggle}</div><div class="paper-performance-plot"><svg class="paper-performance-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="四账户模拟收益曲线与可选标普 500 对比"><title>四账户模拟收益曲线与可选标普 500 对比</title><g class="paper-ytd-grid">${grid}${verticalGrid}</g><line class="paper-curve-baseline" x1="${left}" y1="${y(baseline).toFixed(2)}" x2="${width - right}" y2="${y(baseline).toFixed(2)}"></line>${lines}<line class="paper-curve-crosshair" x1="0" y1="${top}" x2="0" y2="${height - bottom}" hidden></line><rect class="paper-curve-hit-area" x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}"></rect></svg><div class="paper-curve-y-scale" aria-hidden="true">${yLabels}</div><div class="paper-curve-x-scale" aria-hidden="true">${xLabels}</div><div class="paper-curve-tooltip" hidden></div></div><div class="paper-performance-caption"><p>四条策略线均为可执行净值；可选灰色虚线为同起点的标普 500 ETF（SPY）未复权价格收益，不含股息再投资。曲线用于模拟盘比较，不代表真实账户收益。</p><span>调仓细节请在下方 K 线与调仓表中查看。</span></div></section>`;
+  const zoomControl = `<label class="paper-curve-control paper-zoom-control"><span>缩放</span><input id="paper-curve-zoom-slider" type="range" min="1" max="12" step="0.1" value="${paperCurveState.zoom.toFixed(1)}" aria-label="曲线缩放倍数"><output>${paperCurveState.zoom.toFixed(1)}×</output></label>`;
+  const dateControl = `<label class="paper-curve-control paper-date-control"><span>日期窗口</span><input id="paper-curve-date-slider" type="range" min="0" max="1000" step="1" value="${Math.round(paperCurveState.pan * 1000)}" ${domain.canPan ? "" : "disabled"} aria-label="左右移动日期窗口"><output>${escapeHtml(formatShortDate(new Date(domain.start).toISOString()))} — ${escapeHtml(formatShortDate(new Date(domain.end).toISOString()))}</output></label>`;
+  return `<section class="panel full-panel paper-performance-panel"><header class="panel-head"><div><h2>策略收益曲线</h2><p>${escapeHtml(formatDate(new Date(domain.start).toISOString()))} 至 ${escapeHtml(formatDate(new Date(domain.end).toISOString()))} / ${modeText} / 四条策略线为独立模拟账户</p></div><span>${escapeHtml(rangeText)} · ${paperCurveState.zoom.toFixed(1)}×</span></header><div class="paper-performance-toolbar"><div class="paper-range-buttons">${[["all", "YTD"], ["180", "180D"], ["90", "90D"], ["30", "30D"]].map(([value, label]) => `<button type="button" class="${paperCurveState.range === value ? "active" : ""}" data-paper-curve-action="range" data-value="${value}">${label}</button>`).join("")}</div><div class="paper-mode-buttons"><button type="button" class="${paperCurveState.mode === "return" ? "active" : ""}" data-paper-curve-action="mode" data-value="return">收益率</button><button type="button" class="${paperCurveState.mode === "equity" ? "active" : ""}" data-paper-curve-action="mode" data-value="equity" ${hasEquity ? "" : "disabled"}>金额</button></div>${zoomControl}${dateControl}<button type="button" class="paper-reset-button" data-paper-curve-action="reset">复位视图</button><span class="paper-gesture-hint">缩放滑条与日期滑条独立 · 悬停查看逐日收益</span></div><div class="paper-series-toggles">${lineToggles}${benchmarkToggle}</div><div class="paper-performance-plot"><svg class="paper-performance-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="四账户模拟收益曲线与可选标普 500 对比"><title>四账户模拟收益曲线与可选标普 500 对比</title><g class="paper-ytd-grid">${grid}${verticalGrid}</g><line class="paper-curve-baseline" x1="${left}" y1="${y(baseline).toFixed(2)}" x2="${width - right}" y2="${y(baseline).toFixed(2)}"></line>${lines}<line class="paper-curve-crosshair" x1="0" y1="${top}" x2="0" y2="${height - bottom}" hidden></line><rect class="paper-curve-hit-area" x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}"></rect></svg><div class="paper-curve-y-scale" aria-hidden="true">${yLabels}</div><div class="paper-curve-x-scale" aria-hidden="true">${xLabels}</div><div class="paper-curve-tooltip" hidden></div></div><div class="paper-performance-caption"><p>四条策略线均为可执行净值；悬停任一日期会显示各策略当日收益率、当日金额与净值。可选灰色虚线为同起点的标普 500 ETF（SPY）未复权价格收益，不含股息再投资。曲线用于模拟盘比较，不代表真实账户收益。</p><span>调仓细节请在下方 K 线与调仓表中查看。</span></div></section>`;
 }
 
 function wirePaperPerformanceChart() {
@@ -927,7 +938,6 @@ function wirePaperPerformanceChart() {
     crosshair.hidden = true;
   };
   const showTooltip = (event) => {
-    if (paperCurveState.drag) return;
     const rect = svg.getBoundingClientRect();
     const ratio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
     const time = paperCurveModel.domain.start + ratio * (paperCurveModel.domain.end - paperCurveModel.domain.start);
@@ -937,7 +947,7 @@ function wirePaperPerformanceChart() {
     crosshair.setAttribute("x1", chartX.toFixed(2));
     crosshair.setAttribute("x2", chartX.toFixed(2));
     crosshair.hidden = false;
-    tooltip.innerHTML = `<strong>${escapeHtml(formatDate(titlePoint?.marked_at))}</strong>${rows.map(({ series, point }) => `<div class="paper-tooltip-row paper-tooltip-${series.id}"><span><i></i>${escapeHtml(series.label)}</span><b>净值 ${escapeHtml(point.nav.toFixed(4))}</b><small>${Number.isFinite(point.equity) ? escapeHtml(formatMoney(point.equity, paperCurveModel.asset)) : "金额待下一次快照"}</small></div>`).join("")}`;
+    tooltip.innerHTML = `<strong>${escapeHtml(formatDate(titlePoint?.marked_at))}</strong>${rows.map(({ series, point }) => `<div class="paper-tooltip-row paper-tooltip-${series.id}"><span><i></i>${escapeHtml(series.label)}</span><b class="${paperPerformanceTone(point.daily_return_fraction)}">当日 ${escapeHtml(paperPerformanceText(point.daily_return_fraction))}</b><small>净值 ${escapeHtml(point.nav.toFixed(4))} · ${Number.isFinite(point.equity) ? escapeHtml(formatMoney(point.equity, paperCurveModel.asset)) : "金额待下一次快照"} · 当日 ${point.daily_pnl == null ? "待下一次快照" : escapeHtml(formatSignedMoney(point.daily_pnl, paperCurveModel.asset))}</small></div>`).join("")}`;
     tooltip.style.left = `${clamp(event.clientX - rect.left + 14, 8, Math.max(rect.width - 246, 8))}px`;
     tooltip.style.top = `${clamp(event.clientY - rect.top + 14, 8, Math.max(rect.height - 176, 8))}px`;
     tooltip.hidden = false;
@@ -950,11 +960,6 @@ function wirePaperPerformanceChart() {
     if (paperCurveState.zoom === 1) paperCurveState.pan = 0;
     renderPaper();
   }, { passive: false });
-  plot.addEventListener("pointerdown", (event) => {
-    paperCurveState.drag = { startX: event.clientX, startPan: paperCurveState.pan, width: Math.max(svg.getBoundingClientRect().width, 1) };
-    plot.classList.add("is-dragging");
-    hideTooltip();
-  });
 }
 
 const paperExplorer = { portfolioId: null, symbol: null, window: "90" };
@@ -1179,6 +1184,17 @@ document.addEventListener("change", (event) => {
     renderPaper();
   }
 });
+document.addEventListener("input", (event) => {
+  if (event.target.id === "paper-curve-zoom-slider") {
+    paperCurveState.zoom = clamp(Number(event.target.value), 1, 12);
+    if (paperCurveState.zoom === 1) paperCurveState.pan = 0;
+    renderPaper();
+  }
+  if (event.target.id === "paper-curve-date-slider") {
+    paperCurveState.pan = clamp(Number(event.target.value) / 1000, 0, 1);
+    renderPaper();
+  }
+});
 document.addEventListener("click", (event) => {
   const control = event.target.closest("[data-paper-curve-action]");
   if (!control || control.disabled) return;
@@ -1203,17 +1219,6 @@ document.addEventListener("click", (event) => {
     paperCurveState.zoom = 1;
     paperCurveState.pan = 0;
   }
-  renderPaper();
-});
-document.addEventListener("pointermove", (event) => {
-  if (!paperCurveState.drag) return;
-  const drag = paperCurveState.drag;
-  const movement = (drag.startX - event.clientX) / drag.width;
-  paperCurveState.pan = clamp(drag.startPan + movement, 0, 1);
-});
-document.addEventListener("pointerup", () => {
-  if (!paperCurveState.drag) return;
-  paperCurveState.drag = null;
   renderPaper();
 });
 window.addEventListener("hashchange", showRoute);

@@ -694,8 +694,21 @@ def _portfolio_row(
                     "signal": row["signal_nav"],
                     "executable": row["executable_nav"],
                     "executable_equity": row["executable_equity"],
+                    "daily_return_fraction": (
+                        float(row["executable_nav"])
+                        / float(history[index - 1]["executable_nav"])
+                        - 1.0
+                        if index
+                        else None
+                    ),
+                    "daily_pnl": (
+                        float(row["executable_equity"])
+                        - float(history[index - 1]["executable_equity"])
+                        if index
+                        else None
+                    ),
                 }
-                for row in history
+                for index, row in enumerate(history)
             ],
             "performance": _performance_summary(
                 [
@@ -803,14 +816,29 @@ def _broad_market_benchmark(
     first_close = float(rows[0]["close"])
     if first_close <= 0.0:
         raise DualEnginePaperRuntimeError("paper_benchmark_first_close_invalid")
-    points = [
-        {
-            "marked_at": str(row["marked_at"]),
-            "nav": float(row["close"]) / first_close,
-            "equity": float(row["close"]) / first_close * initial_capital,
-        }
-        for row in rows
-    ]
+    points = []
+    previous_nav = None
+    for row in rows:
+        nav = float(row["close"]) / first_close
+        equity = nav * initial_capital
+        points.append(
+            {
+                "marked_at": str(row["marked_at"]),
+                "nav": nav,
+                "equity": equity,
+                "daily_return_fraction": (
+                    nav / previous_nav - 1.0
+                    if previous_nav is not None
+                    else None
+                ),
+                "daily_pnl": (
+                    (nav - previous_nav) * initial_capital
+                    if previous_nav is not None
+                    else None
+                ),
+            }
+        )
+        previous_nav = nav
     return (
         {
             "benchmark_id": PAPER_BENCHMARK_ID,

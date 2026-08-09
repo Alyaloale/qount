@@ -171,6 +171,18 @@ class DualEngineYtdReplayTest(unittest.TestCase):
         self.assertTrue(
             all("executable_equity" in point for portfolio in snapshot.portfolios for point in portfolio["nav"]["points"])
         )
+        self.assertTrue(
+            all(
+                point["daily_return_fraction"] is None
+                if index == 0
+                else point["daily_return_fraction"] is not None
+                and point["daily_pnl"] is not None
+                for portfolio in snapshot.portfolios
+                for index, point in enumerate(portfolio["nav"]["points"])
+            )
+        )
+        self.assertIsNone(benchmark["nav"]["points"][0]["daily_return_fraction"])
+        self.assertIsNotNone(benchmark["nav"]["points"][1]["daily_return_fraction"])
         self.assertFalse(snapshot.orders_authorized)
         self.assertFalse(snapshot.private_api_used)
 

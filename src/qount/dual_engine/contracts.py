@@ -867,13 +867,18 @@ class PaperProgramSnapshot:
             points = nav["points"]
             if not isinstance(points, list) or not points:
                 raise DualEngineContractError("paper_snapshot_nav_points_invalid")
-            for point in points:
+            for index, point in enumerate(points):
                 if (
                     not isinstance(point, Mapping)
                     or (
                         set(point) != {"marked_at", "signal", "executable"}
                         and set(point)
                         != {"marked_at", "signal", "executable", "executable_equity"}
+                        and set(point)
+                        != {
+                            "marked_at", "signal", "executable",
+                            "executable_equity", "daily_return_fraction", "daily_pnl",
+                        }
                     )
                 ):
                     raise DualEngineContractError("paper_snapshot_nav_point_invalid")
@@ -907,6 +912,60 @@ class PaperProgramSnapshot:
                     abs_tol=1e-8,
                 ):
                     raise DualEngineContractError("paper_snapshot_nav_point_equity_invalid")
+                if "daily_return_fraction" in point:
+                    daily_return = point["daily_return_fraction"]
+                    daily_pnl = point["daily_pnl"]
+                    if index == 0:
+                        if daily_return is not None or daily_pnl is not None:
+                            raise DualEngineContractError(
+                                "paper_snapshot_first_daily_return_invalid"
+                            )
+                    else:
+                        previous_executable = _paper_number(
+                            points[index - 1]["executable"],
+                            name="paper_snapshot_previous_point_executable",
+                            minimum=0.0,
+                        )
+                        expected_daily_return = (
+                            _paper_number(
+                                point["executable"],
+                                name="paper_snapshot_point_executable",
+                                minimum=0.0,
+                            )
+                            / previous_executable
+                            - 1.0
+                        )
+                        expected_daily_pnl = (
+                            _paper_number(
+                                point["executable"],
+                                name="paper_snapshot_point_executable",
+                                minimum=0.0,
+                            )
+                            - previous_executable
+                        ) * float(portfolio["initial_capital"])
+                        if not (
+                            math.isclose(
+                                _paper_number(
+                                    daily_return,
+                                    name="paper_snapshot_point_daily_return",
+                                ),
+                                expected_daily_return,
+                                rel_tol=0.0,
+                                abs_tol=1e-12,
+                            )
+                            and math.isclose(
+                                _paper_number(
+                                    daily_pnl,
+                                    name="paper_snapshot_point_daily_pnl",
+                                ),
+                                expected_daily_pnl,
+                                rel_tol=0.0,
+                                abs_tol=1e-8,
+                            )
+                        ):
+                            raise DualEngineContractError(
+                                "paper_snapshot_point_daily_return_invalid"
+                            )
             if "performance" in nav:
                 _performance_summary(
                     nav["performance"],
@@ -1089,12 +1148,17 @@ class PaperProgramSnapshot:
             if not isinstance(points, list) or not points:
                 raise DualEngineContractError("paper_snapshot_benchmark_points_invalid")
             normalized_points: list[dict[str, object]] = []
-            for point in points:
+            for index, point in enumerate(points):
                 if (
                     not isinstance(point, Mapping)
                     or (
                         set(point) != {"marked_at", "nav"}
                         and set(point) != {"marked_at", "nav", "equity"}
+                        and set(point)
+                        != {
+                            "marked_at", "nav", "equity",
+                            "daily_return_fraction", "daily_pnl",
+                        }
                     )
                 ):
                     raise DualEngineContractError("paper_snapshot_benchmark_point_invalid")
@@ -1121,6 +1185,45 @@ class PaperProgramSnapshot:
                     abs_tol=1e-8,
                 ):
                     raise DualEngineContractError("paper_snapshot_benchmark_point_equity_invalid")
+                if "daily_return_fraction" in point:
+                    daily_return = point["daily_return_fraction"]
+                    daily_pnl = point["daily_pnl"]
+                    if index == 0:
+                        if daily_return is not None or daily_pnl is not None:
+                            raise DualEngineContractError(
+                                "paper_snapshot_benchmark_first_daily_return_invalid"
+                            )
+                    else:
+                        previous_nav = float(normalized_points[index - 1]["nav"])
+                        expected_daily_return = (
+                            float(normalized_points[-1]["nav"]) / previous_nav - 1.0
+                        )
+                        expected_daily_pnl = (
+                            float(normalized_points[-1]["nav"]) - previous_nav
+                        ) * float(benchmark["initial_capital"])
+                        if not (
+                            math.isclose(
+                                _paper_number(
+                                    daily_return,
+                                    name="paper_snapshot_benchmark_daily_return",
+                                ),
+                                expected_daily_return,
+                                rel_tol=0.0,
+                                abs_tol=1e-12,
+                            )
+                            and math.isclose(
+                                _paper_number(
+                                    daily_pnl,
+                                    name="paper_snapshot_benchmark_daily_pnl",
+                                ),
+                                expected_daily_pnl,
+                                rel_tol=0.0,
+                                abs_tol=1e-8,
+                            )
+                        ):
+                            raise DualEngineContractError(
+                                "paper_snapshot_benchmark_daily_return_invalid"
+                            )
             timestamps = [str(point["marked_at"]) for point in normalized_points]
             if timestamps != sorted(timestamps) or len(timestamps) != len(set(timestamps)):
                 raise DualEngineContractError("paper_snapshot_benchmark_point_order_invalid")

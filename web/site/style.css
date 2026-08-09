@@ -356,6 +356,11 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
 .paper-range-buttons button:disabled, .paper-mode-buttons button:disabled { cursor: not-allowed; opacity: .45; }
 .paper-reset-button { border: 1px solid var(--line); border-radius: 4px; }
 .paper-gesture-hint { margin-left: auto; color: var(--text-3); font-size: 10px; }
+.paper-curve-control { display: grid; min-width: 180px; grid-template-columns: auto minmax(90px, 1fr) auto; align-items: center; gap: 7px; color: var(--text-3); font-size: 10px; }
+.paper-curve-control input { width: 100%; min-width: 0; accent-color: var(--green); cursor: pointer; }
+.paper-curve-control input:disabled { cursor: not-allowed; opacity: .42; }
+.paper-curve-control output { min-width: 54px; color: var(--text-2); font-family: var(--font-mono); font-size: 9px; text-align: right; white-space: nowrap; }
+.paper-date-control { min-width: min(340px, 100%); flex: 1 1 290px; }
 .paper-series-toggles { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 15px; border-bottom: 1px solid var(--line-soft); }
 .paper-series-toggle { display: inline-flex; min-width: 0; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--text-2); cursor: pointer; }
 .paper-series-toggle:hover { border-color: var(--text-3); }
@@ -369,7 +374,7 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
 .paper-series-toggle[data-series="d15"] i, .paper-tooltip-d15 i { background: repeating-linear-gradient(90deg, #a78bfa 0 3px, transparent 3px 6px); }
 .paper-series-benchmark i, .paper-tooltip-benchmark i { background: repeating-linear-gradient(90deg, var(--text-3) 0 3px, transparent 3px 6px); }
 .paper-performance-plot { position: relative; min-height: 390px; background: linear-gradient(180deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 58%); }
-.paper-performance-chart { display: block; width: 100%; height: 390px; touch-action: none; }
+.paper-performance-chart { display: block; width: 100%; height: 390px; touch-action: pan-y; }
 .paper-curve-line { fill: none; stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 .paper-curve-g20 { stroke: var(--cyan); }
 .paper-curve-c60 { stroke: var(--amber); }
@@ -379,7 +384,6 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
 .paper-curve-baseline { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 4 5; opacity: .85; vector-effect: non-scaling-stroke; }
 .paper-curve-crosshair { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3; opacity: .6; vector-effect: non-scaling-stroke; pointer-events: none; }
 .paper-curve-hit-area { fill: transparent; cursor: crosshair; }
-.paper-performance-plot.is-dragging .paper-curve-hit-area { cursor: grabbing; }
 .paper-curve-y-scale span { position: absolute; left: 8px; z-index: 2; max-width: 95px; overflow: hidden; color: var(--text-3); font-family: var(--font-mono); font-size: 9px; text-overflow: ellipsis; transform: translateY(-50%); white-space: nowrap; }
 .paper-curve-x-scale span { position: absolute; bottom: 7px; z-index: 2; color: var(--text-3); font-family: var(--font-mono); font-size: 9px; transform: translateX(-50%); white-space: nowrap; }
 .paper-curve-x-scale .paper-x-label-0 { transform: none; }
@@ -500,6 +504,7 @@ td small { display: block; max-width: 280px; margin-top: 5px; overflow-wrap: any
   .paper-performance-plot { min-height: 300px; }
   .paper-performance-chart { height: 300px; }
   .paper-gesture-hint { width: 100%; margin-left: 0; }
+  .paper-curve-control { width: 100%; }
   .paper-performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .paper-performance-grid > div:nth-child(2n) { border-right: 0; }
   .paper-performance-grid > div:nth-child(-n+2) { border-bottom: 1px solid var(--line-soft); }
