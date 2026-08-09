@@ -24,7 +24,7 @@
   净值/日期坐标轴、1.000 基准线、可区分线型和移动端单列布局；数据待更新使用琥珀色，不与生产不可用混淆。
 - 模拟盘总图只消费同一份`paper.json`中服务端计算的可执行净值、周期收益/金额和公开 SPY 基准：四条策略线固定为
   G20、C60、GC5、D15；SPY（标普500 ETF）是可开关的灰色虚线，明确标注为未复权价格收益。总图支持 YTD/180/90/30 日
-  区间、独立缩放/日期窗口滑条、收益率/金额轴和逐日悬停详情；浏览器只绘图，不计算权威 PnL。若 SPY 没有覆盖模拟起点的完整
+  区间、独立缩放滑条与固定窗口日期滑条、收益率/金额轴、十字准星和逐日悬停详情；浏览器只绘图，不计算权威 PnL。若 SPY 没有覆盖模拟起点的完整
   公共历史，基准保持待补齐而不拼接或伪造。
 - 模拟盘的增强行情视图消费公开日线 OHLC 和可执行层模拟调仓历史：K线面板可选择组合与标的并显示每笔模拟调仓的时间、
   数量、参考价、名义金额和模拟成本。旧快照若不含这些可视化字段，页面明确提示待完成已授权回放，绝不以收盘价伪造 K 线
@@ -63,6 +63,12 @@ symlink原子切换`v1`。半写失败删除临时目录并保留旧指针。`re
 symlink、权限异常、重复key、非canonical JSON以及source/model/publication hash错配。
 浏览器 `fetchJSON()` 返回 `{value,fileSha256}` 供逐文件校验；校验通过后 `state.models` 只能接收 `response.value`，
 不能把下载包装对象交给渲染器，否则必须全站失败关闭。
+
+## 图表依赖
+
+模拟盘总图使用本地随站点发布的 Apache ECharts `6.1.0`（`web/site/vendor/echarts.min.js`），不从 CDN 加载。它负责时间轴、
+固定窗口日期滑条、十字准星和轴触发悬停提示；上方“缩放”控件是唯一改变窗口宽度的入口。第三方许可全文保存在
+`web/site/vendor/LICENSE-echarts.txt`（Apache-2.0）。
 
 静态Draft 2020-12合同位于`web/schemas/`，当前共17份（含两个 DailyIntelligence schema 版本）：envelope、十二份read model、publication、DailyBrief和DailyIntelligence。
 当前测试会用`jsonschema` registry验证十二份model、publication及DailyIntelligence实际实例。

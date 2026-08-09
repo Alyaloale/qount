@@ -780,6 +780,8 @@ const paperCurveState = {
   pan: 0,
 };
 let paperCurveModel = null;
+let paperCurveChart = null;
+let paperCurveResizeListenerBound = false;
 
 const PAPER_CURVE_SERIES = {
   G20: { id: "g20", label: "美股轮动（G20）" },
@@ -851,28 +853,224 @@ function paperCurveAxisValue(value, mode, asset) {
 }
 
 function paperCurveDomain(series) {
-  const allTimes = series.flatMap((row) => row.points.map((point) => point.time));
+  const strategySeries = series.filter((row) => row.kind === "strategy");
+  const allTimes = (strategySeries.length ? strategySeries : series).flatMap((row) => row.points.map((point) => point.time));
   const first = Math.min(...allTimes);
   const last = Math.max(...allTimes);
   const day = 24 * 60 * 60 * 1000;
   const requested = { "30": 30 * day, "90": 90 * day, "180": 180 * day }[paperCurveState.range];
   const baseStart = requested ? Math.max(first, last - requested) : first;
-  const baseRange = Math.max(last - baseStart, 1);
-  const visibleRange = Math.max(baseRange / paperCurveState.zoom, 1);
-  const start = baseStart + (baseRange - visibleRange) * paperCurveState.pan;
   return {
-    start,
-    end: start + visibleRange,
+    start: baseStart,
+    end: last,
     fullStart: first,
     fullEnd: last,
-    canPan: visibleRange < baseRange,
   };
 }
 
-function paperCurveNearestPoint(points, time) {
-  return points.reduce((nearest, point) => (
-    Math.abs(point.time - time) < Math.abs(nearest.time - time) ? point : nearest
-  ));
+function paperCurveViewport(domain) {
+  const range = Math.max(domain.end - domain.start, 1);
+  const visibleRange = Math.max(range / paperCurveState.zoom, 1);
+  const availableRange = Math.max(range - visibleRange, 0);
+  const start = domain.start + availableRange * paperCurveState.pan;
+  const windowPercent = clamp((visibleRange / range) * 100, 0, 100);
+  return {
+    start,
+    end: start + visibleRange,
+    startPercent: (100 - windowPercent) * paperCurveState.pan,
+    endPercent: (100 - windowPercent) * paperCurveState.pan + windowPercent,
+    windowPercent,
+    canPan: availableRange > 0,
+  };
+}
+
+function paperCurveTotalReturn(row) {
+  const performance = row.kind === "benchmark" ? row.benchmark?.nav?.performance : row.portfolio?.nav?.performance;
+  const authoritative = Number(performance?.total_return_fraction);
+  if (Number.isFinite(authoritative)) return authoritative;
+  const latest = row.points.at(-1);
+  return Number.isFinite(latest?.nav) ? latest.nav - 1 : null;
+}
+
+function paperCurveWindowText(viewport, mode) {
+  return `${formatDate(new Date(viewport.start).toISOString())} 至 ${formatDate(new Date(viewport.end).toISOString())} / ${mode === "equity" ? "账户金额" : "累计收益率"}`;
+}
+
+function updatePaperCurveViewportText(model) {
+  if (!model) return;
+  const viewport = paperCurveViewport(model.domain);
+  const detail = paperCurveWindowText(viewport, model.mode);
+  const output = document.querySelector("#view-paper #paper-curve-date-window");
+  const heading = document.querySelector("#view-paper #paper-curve-window-title");
+  const zoom = document.querySelector("#view-paper #paper-curve-zoom-value");
+  if (output) output.textContent = `${formatShortDate(new Date(viewport.start).toISOString())} — ${formatShortDate(new Date(viewport.end).toISOString())}`;
+  if (heading) heading.textContent = detail;
+  if (zoom) zoom.textContent = `${paperCurveState.zoom.toFixed(1)}×`;
+}
+
+function paperCurveTheme() {
+  const style = getComputedStyle(document.documentElement);
+  const value = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+  return {
+    surface: value("--surface", "#111a28"),
+    surface2: value("--surface-2", "#162133"),
+    text: value("--text", "#edf5ff"),
+    text2: value("--text-2", "#b4c4d8"),
+    text3: value("--text-3", "#71819a"),
+    line: value("--line", "#2d3b50"),
+    cyan: value("--cyan", "#0fd8cf"),
+    amber: value("--amber", "#f8b84e"),
+    green: value("--green", "#55e0a3"),
+    violet: "#a78bfa",
+  };
+}
+
+function paperCurveStyle(id, theme) {
+  return {
+    g20: { color: theme.cyan, type: "solid" },
+    c60: { color: theme.amber, type: "solid" },
+    gc5: { color: theme.green, type: "dashed" },
+    d15: { color: theme.violet, type: "dotted" },
+    benchmark: { color: theme.text3, type: "dashed" },
+  }[id] || { color: theme.text2, type: "solid" };
+}
+
+function paperCurveTooltip(params, model, theme) {
+  const entries = (Array.isArray(params) ? params : [params]).map((entry) => ({
+    series: model.series.find((row) => row.id === entry.seriesId),
+    point: entry.data?.point,
+  })).filter((entry) => entry.series && entry.point);
+  if (!entries.length) return "";
+  const title = formatDate(entries[0].point.marked_at);
+  const rows = entries.map(({ series, point }) => {
+    const curveStyle = paperCurveStyle(series.id, theme);
+    const hasDailyReturn = point.daily_return_fraction !== null && point.daily_return_fraction !== undefined && Number.isFinite(Number(point.daily_return_fraction));
+    const hasDailyPnl = point.daily_pnl !== null && point.daily_pnl !== undefined && Number.isFinite(Number(point.daily_pnl));
+    const daily = hasDailyReturn ? Number(point.daily_return_fraction) : null;
+    const dailyPnl = hasDailyPnl ? Number(point.daily_pnl) : null;
+    const dailyText = hasDailyReturn ? paperPerformanceText(daily) : ("daily_return_fraction" in point ? "起始日" : "待快照");
+    const amountText = Number.isFinite(point.equity) ? formatMoney(point.equity, model.asset) : "金额待下一次快照";
+    const dailyPnlText = hasDailyPnl ? formatSignedMoney(dailyPnl, model.asset) : ("daily_pnl" in point ? "起始日" : "待下一次快照");
+    return `<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:6px 0;border-top:1px solid ${theme.line}"><span style="display:flex;align-items:center;gap:6px;min-width:0;color:${theme.text2};font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><i style="display:inline-block;width:12px;height:2px;flex:0 0 auto;background:${curveStyle.color}"></i>${escapeHtml(series.label)}</span><b class="${paperPerformanceTone(daily)}" style="font-family:var(--font-mono);font-size:11px">当日 ${escapeHtml(dailyText)}</b><small style="grid-column:1 / -1;color:${theme.text3};font-family:var(--font-mono);font-size:10px;line-height:1.5">累计 ${escapeHtml(paperPerformanceText(point.nav - 1))} · 净值 ${escapeHtml(point.nav.toFixed(4))} · ${escapeHtml(amountText)} · 当日金额 ${escapeHtml(dailyPnlText)}</small></div>`;
+  }).join("");
+  return `<div style="min-width:250px;max-width:330px"><strong style="display:block;margin-bottom:6px;color:${theme.text};font-size:12px">${escapeHtml(title)}</strong>${rows}</div>`;
+}
+
+function paperCurveEchartsOption(model) {
+  const theme = paperCurveTheme();
+  const viewport = paperCurveViewport(model.domain);
+  const baseline = model.mode === "equity" ? 10000 : 1;
+  const values = model.series.flatMap((row) => row.points.map((point) => paperCurveValue(point, model.mode))).filter(Number.isFinite);
+  const observedLow = Math.min(baseline, ...values);
+  const observedHigh = Math.max(baseline, ...values);
+  const padding = Math.max((observedHigh - observedLow) * 0.09, model.mode === "equity" ? 10 : 0.002);
+  return {
+    animation: false,
+    aria: {
+      enabled: true,
+      description: "四个独立模拟账户的收益曲线，可使用下方日期滑条平移可见日期窗口。",
+    },
+    textStyle: { fontFamily: "var(--font-sans)" },
+    tooltip: {
+      trigger: "axis",
+      triggerOn: "mousemove|click",
+      axisPointer: {
+        type: "cross",
+        lineStyle: { color: theme.text3, type: "dashed", width: 1 },
+        label: {
+          backgroundColor: theme.surface2,
+          borderColor: theme.line,
+          color: theme.text2,
+          formatter: (value) => formatShortDate(new Date(value.value).toISOString()),
+        },
+      },
+      confine: true,
+      enterable: false,
+      className: "paper-echarts-tooltip",
+      backgroundColor: theme.surface,
+      borderColor: theme.line,
+      borderWidth: 1,
+      padding: [9, 11],
+      extraCssText: "box-shadow:0 12px 32px rgba(0,0,0,.28);border-radius:5px;pointer-events:none;",
+      formatter: (params) => paperCurveTooltip(params, model, theme),
+    },
+    grid: { left: model.mode === "equity" ? 104 : 68, right: 24, top: 24, bottom: 80, containLabel: false },
+    xAxis: {
+      type: "time",
+      boundaryGap: false,
+      axisLine: { lineStyle: { color: theme.line } },
+      axisTick: { show: false },
+      axisLabel: {
+        color: theme.text3,
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        formatter: (value) => formatShortDate(new Date(value).toISOString()),
+        hideOverlap: true,
+      },
+      splitLine: { show: true, lineStyle: { color: theme.line, type: "dashed", opacity: 0.55 } },
+    },
+    yAxis: {
+      type: "value",
+      scale: true,
+      min: observedLow - padding,
+      max: observedHigh + padding,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: theme.text3,
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        formatter: (value) => paperCurveAxisValue(value, model.mode, model.asset),
+      },
+      splitLine: { show: true, lineStyle: { color: theme.line, type: "dashed", opacity: 0.7 } },
+    },
+    dataZoom: [{
+      type: "slider",
+      xAxisIndex: 0,
+      start: viewport.startPercent,
+      end: viewport.endPercent,
+      zoomLock: true,
+      filterMode: "filter",
+      height: 22,
+      bottom: 23,
+      borderColor: theme.line,
+      backgroundColor: theme.surface2,
+      fillerColor: "rgba(15, 216, 207, .16)",
+      handleStyle: { color: theme.cyan, borderColor: theme.cyan },
+      moveHandleStyle: { color: theme.cyan, opacity: 0.82 },
+      dataBackground: {
+        lineStyle: { color: theme.text3, opacity: 0.7 },
+        areaStyle: { color: theme.text3, opacity: 0.08 },
+      },
+      showDetail: false,
+      brushSelect: false,
+    }],
+    series: model.series.map((row, index) => {
+      const curveStyle = paperCurveStyle(row.id, theme);
+      return {
+        id: row.id,
+        name: row.label,
+        type: "line",
+        showSymbol: false,
+        symbol: "circle",
+        symbolSize: 6,
+        smooth: false,
+        connectNulls: false,
+        clip: true,
+        emphasis: { focus: "series", lineStyle: { width: 3 } },
+        lineStyle: { color: curveStyle.color, width: row.kind === "benchmark" ? 1.7 : 2.25, type: curveStyle.type, opacity: row.kind === "benchmark" ? 0.9 : 1 },
+        itemStyle: { color: curveStyle.color },
+        markLine: index === 0 ? {
+          silent: true,
+          symbol: "none",
+          label: { show: false },
+          lineStyle: { color: theme.text3, type: "dashed", width: 1, opacity: 0.75 },
+          data: [{ yAxis: baseline }],
+        } : undefined,
+        data: row.points.map((point) => ({ value: [point.time, paperCurveValue(point, model.mode)], point })),
+      };
+    }),
+  };
 }
 
 function paperPerformanceChart(snapshot) {
@@ -888,78 +1086,46 @@ function paperPerformanceChart(snapshot) {
   });
   const displayed = visible.length ? visible : strategySeries;
   const domain = paperCurveDomain(series);
+  const viewport = paperCurveViewport(domain);
   const chartSeries = displayed.map((row) => ({
     ...row,
-    visiblePoints: row.points.filter((point) => point.time >= domain.start && point.time <= domain.end),
-  })).filter((row) => row.visiblePoints.length >= 2);
+    points: row.points.filter((point) => point.time >= domain.start && point.time <= domain.end && Number.isFinite(paperCurveValue(point, paperCurveState.mode))),
+  })).filter((row) => row.points.length >= 2);
   if (!chartSeries.length) return `<section class="panel full-panel"><div class="paper-chart-empty">当前缩放区间没有足够的净值点</div></section>`;
-  const values = chartSeries.flatMap((row) => row.visiblePoints.map((point) => paperCurveValue(point, paperCurveState.mode))).filter(Number.isFinite);
-  const baseline = paperCurveState.mode === "equity" ? 10000 : 1;
-  const observedLow = Math.min(baseline, ...values);
-  const observedHigh = Math.max(baseline, ...values);
-  const padding = Math.max((observedHigh - observedLow) * 0.09, paperCurveState.mode === "equity" ? 10 : 0.002);
-  const low = observedLow - padding;
-  const high = observedHigh + padding;
-  const width = 1120;
-  const height = 390;
-  const left = paperCurveState.mode === "equity" ? 108 : 66;
-  const right = 22;
-  const top = 18;
-  const bottom = 42;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-  const x = (time) => left + ((time - domain.start) / Math.max(domain.end - domain.start, 1)) * plotWidth;
-  const y = (value) => top + ((high - value) / Math.max(high - low, 0.000001)) * plotHeight;
-  const ticks = Array.from({ length: 5 }, (_, index) => high - ((high - low) * index) / 4);
-  const grid = ticks.map((value) => `<line x1="${left}" y1="${y(value).toFixed(2)}" x2="${width - right}" y2="${y(value).toFixed(2)}"></line>`).join("");
-  const xTicks = Array.from({ length: 5 }, (_, index) => domain.start + ((domain.end - domain.start) * index) / 4);
-  const verticalGrid = xTicks.map((value) => `<line x1="${x(value).toFixed(2)}" y1="${top}" x2="${x(value).toFixed(2)}" y2="${height - bottom}"></line>`).join("");
-  const lines = chartSeries.map((row) => `<polyline class="paper-curve-line paper-curve-${row.id}" points="${row.visiblePoints.map((point) => `${x(point.time).toFixed(2)},${y(paperCurveValue(point, paperCurveState.mode)).toFixed(2)}`).join(" ")}"></polyline>`).join("");
-  const yLabels = ticks.map((value) => `<span style="top:${((y(value) / height) * 100).toFixed(2)}%">${escapeHtml(paperCurveAxisValue(value, paperCurveState.mode, snapshot.reporting_asset))}</span>`).join("");
-  const xLabels = xTicks.map((value, index) => `<span class="paper-x-label-${index}" style="left:${((x(value) / width) * 100).toFixed(2)}%">${escapeHtml(formatShortDate(new Date(value).toISOString()))}</span>`).join("");
   const rangeText = { all: "年初至今", "180": "近 180 天", "90": "近 90 天", "30": "近 30 天" }[paperCurveState.range];
-  const modeText = paperCurveState.mode === "equity" ? "账户金额" : "累计收益率";
-  paperCurveModel = { series: chartSeries, domain, left, right, top, bottom, width, height, mode: paperCurveState.mode, asset: snapshot.reporting_asset };
-  const lineToggles = strategySeries.map((row) => `<button class="paper-series-toggle ${paperCurveState.hiddenSeries.has(row.id) ? "is-hidden" : ""}" type="button" data-paper-curve-action="series" data-series="${row.id}" aria-pressed="${!paperCurveState.hiddenSeries.has(row.id)}"><i></i><span>${escapeHtml(row.label)}</span><small>${escapeHtml(paperPerformanceText(row.portfolio.nav?.performance?.total_return_fraction))}</small></button>`).join("");
-  const benchmarkToggle = `<button class="paper-series-toggle paper-series-benchmark ${!hasBenchmark || !paperCurveState.showBenchmark ? "is-hidden" : ""}" type="button" data-paper-curve-action="benchmark" ${hasBenchmark ? "" : "disabled"} aria-pressed="${hasBenchmark && paperCurveState.showBenchmark}"><i></i><span>${hasBenchmark ? escapeHtml(series.find((row) => row.kind === "benchmark").label) : "大盘基准待补齐"}</span><small>${hasBenchmark ? escapeHtml(paperPerformanceText(series.find((row) => row.kind === "benchmark").benchmark.nav.performance?.total_return_fraction)) : "需要完整公开回放"}</small></button>`;
+  paperCurveModel = { series: chartSeries, domain, mode: paperCurveState.mode, asset: snapshot.reporting_asset };
+  const lineToggles = strategySeries.map((row) => `<button class="paper-series-toggle ${paperCurveState.hiddenSeries.has(row.id) ? "is-hidden" : ""}" type="button" data-paper-curve-action="series" data-series="${row.id}" aria-pressed="${!paperCurveState.hiddenSeries.has(row.id)}"><i></i><span>${escapeHtml(row.label)}</span><small>${escapeHtml(paperPerformanceText(paperCurveTotalReturn(row)))}</small></button>`).join("");
+  const benchmark = series.find((row) => row.kind === "benchmark");
+  const benchmarkToggle = `<button class="paper-series-toggle paper-series-benchmark ${!hasBenchmark || !paperCurveState.showBenchmark ? "is-hidden" : ""}" type="button" data-paper-curve-action="benchmark" ${hasBenchmark ? "" : "disabled"} aria-pressed="${hasBenchmark && paperCurveState.showBenchmark}"><i></i><span>${hasBenchmark ? escapeHtml(benchmark.label) : "大盘基准待补齐"}</span><small>${hasBenchmark ? escapeHtml(paperPerformanceText(paperCurveTotalReturn(benchmark))) : "需要完整公开回放"}</small></button>`;
   const zoomControl = `<label class="paper-curve-control paper-zoom-control"><span>缩放</span><input id="paper-curve-zoom-slider" type="range" min="1" max="12" step="0.1" value="${paperCurveState.zoom.toFixed(1)}" aria-label="曲线缩放倍数"><output>${paperCurveState.zoom.toFixed(1)}×</output></label>`;
-  const dateControl = `<label class="paper-curve-control paper-date-control"><span>日期窗口</span><input id="paper-curve-date-slider" type="range" min="0" max="1000" step="1" value="${Math.round(paperCurveState.pan * 1000)}" ${domain.canPan ? "" : "disabled"} aria-label="左右移动日期窗口"><output>${escapeHtml(formatShortDate(new Date(domain.start).toISOString()))} — ${escapeHtml(formatShortDate(new Date(domain.end).toISOString()))}</output></label>`;
-  return `<section class="panel full-panel paper-performance-panel"><header class="panel-head"><div><h2>策略收益曲线</h2><p>${escapeHtml(formatDate(new Date(domain.start).toISOString()))} 至 ${escapeHtml(formatDate(new Date(domain.end).toISOString()))} / ${modeText} / 四条策略线为独立模拟账户</p></div><span>${escapeHtml(rangeText)} · ${paperCurveState.zoom.toFixed(1)}×</span></header><div class="paper-performance-toolbar"><div class="paper-range-buttons">${[["all", "YTD"], ["180", "180D"], ["90", "90D"], ["30", "30D"]].map(([value, label]) => `<button type="button" class="${paperCurveState.range === value ? "active" : ""}" data-paper-curve-action="range" data-value="${value}">${label}</button>`).join("")}</div><div class="paper-mode-buttons"><button type="button" class="${paperCurveState.mode === "return" ? "active" : ""}" data-paper-curve-action="mode" data-value="return">收益率</button><button type="button" class="${paperCurveState.mode === "equity" ? "active" : ""}" data-paper-curve-action="mode" data-value="equity" ${hasEquity ? "" : "disabled"}>金额</button></div>${zoomControl}${dateControl}<button type="button" class="paper-reset-button" data-paper-curve-action="reset">复位视图</button><span class="paper-gesture-hint">缩放滑条与日期滑条独立 · 悬停查看逐日收益</span></div><div class="paper-series-toggles">${lineToggles}${benchmarkToggle}</div><div class="paper-performance-plot"><svg class="paper-performance-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="四账户模拟收益曲线与可选标普 500 对比"><title>四账户模拟收益曲线与可选标普 500 对比</title><g class="paper-ytd-grid">${grid}${verticalGrid}</g><line class="paper-curve-baseline" x1="${left}" y1="${y(baseline).toFixed(2)}" x2="${width - right}" y2="${y(baseline).toFixed(2)}"></line>${lines}<line class="paper-curve-crosshair" x1="0" y1="${top}" x2="0" y2="${height - bottom}" hidden></line><rect class="paper-curve-hit-area" x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}"></rect></svg><div class="paper-curve-y-scale" aria-hidden="true">${yLabels}</div><div class="paper-curve-x-scale" aria-hidden="true">${xLabels}</div><div class="paper-curve-tooltip" hidden></div></div><div class="paper-performance-caption"><p>四条策略线均为可执行净值；悬停任一日期会显示各策略当日收益率、当日金额与净值。可选灰色虚线为同起点的标普 500 ETF（SPY）未复权价格收益，不含股息再投资。曲线用于模拟盘比较，不代表真实账户收益。</p><span>调仓细节请在下方 K 线与调仓表中查看。</span></div></section>`;
+  const dateWindow = `<span class="paper-date-window"><b>日期滑条</b><output id="paper-curve-date-window">${escapeHtml(formatShortDate(new Date(viewport.start).toISOString()))} — ${escapeHtml(formatShortDate(new Date(viewport.end).toISOString()))}</output></span>`;
+  return `<section class="panel full-panel paper-performance-panel"><header class="panel-head"><div><h2>策略收益曲线</h2><p id="paper-curve-window-title">${escapeHtml(paperCurveWindowText(viewport, paperCurveState.mode))}</p></div><span>${escapeHtml(rangeText)} · <output id="paper-curve-zoom-value">${paperCurveState.zoom.toFixed(1)}×</output></span></header><div class="paper-performance-toolbar"><div class="paper-range-buttons">${[["all", "YTD"], ["180", "180D"], ["90", "90D"], ["30", "30D"]].map(([value, label]) => `<button type="button" class="${paperCurveState.range === value ? "active" : ""}" data-paper-curve-action="range" data-value="${value}">${label}</button>`).join("")}</div><div class="paper-mode-buttons"><button type="button" class="${paperCurveState.mode === "return" ? "active" : ""}" data-paper-curve-action="mode" data-value="return">收益率</button><button type="button" class="${paperCurveState.mode === "equity" ? "active" : ""}" data-paper-curve-action="mode" data-value="equity" ${hasEquity ? "" : "disabled"}>金额</button></div>${zoomControl}${dateWindow}<button type="button" class="paper-reset-button" data-paper-curve-action="reset">复位视图</button><span class="paper-gesture-hint">缩放只用上方滑条；图下日期滑条只左右移动窗口 · 悬停查看逐日收益</span></div><div class="paper-series-toggles">${lineToggles}${benchmarkToggle}</div><div class="paper-performance-plot"><div id="paper-performance-echarts" class="paper-performance-echarts" role="img" aria-label="四账户模拟收益曲线与可选标普 500 对比"></div></div><div class="paper-performance-caption"><p>四条策略线均为可执行净值；悬停任一日期会显示各策略当日收益率、当日金额与净值。图下日期滑条锁定窗口宽度，只负责左右移动；缩放只由上方缩放滑条控制。可选灰色虚线为同起点的标普 500 ETF（SPY）未复权价格收益，不含股息再投资。曲线用于模拟盘比较，不代表真实账户收益。</p><span>调仓细节请在下方 K 线与调仓表中查看。</span></div></section>`;
 }
 
 function wirePaperPerformanceChart() {
-  const plot = document.querySelector("#view-paper .paper-performance-plot");
-  if (!plot || !paperCurveModel) return;
-  const svg = plot.querySelector("svg");
-  const tooltip = plot.querySelector(".paper-curve-tooltip");
-  const crosshair = plot.querySelector(".paper-curve-crosshair");
-  const hideTooltip = () => {
-    tooltip.hidden = true;
-    crosshair.hidden = true;
-  };
-  const showTooltip = (event) => {
-    const rect = svg.getBoundingClientRect();
-    const ratio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
-    const time = paperCurveModel.domain.start + ratio * (paperCurveModel.domain.end - paperCurveModel.domain.start);
-    const chartX = paperCurveModel.left + ratio * (paperCurveModel.width - paperCurveModel.left - paperCurveModel.right);
-    const rows = paperCurveModel.series.map((series) => ({ series, point: paperCurveNearestPoint(series.visiblePoints, time) }));
-    const titlePoint = rows[0]?.point;
-    crosshair.setAttribute("x1", chartX.toFixed(2));
-    crosshair.setAttribute("x2", chartX.toFixed(2));
-    crosshair.hidden = false;
-    tooltip.innerHTML = `<strong>${escapeHtml(formatDate(titlePoint?.marked_at))}</strong>${rows.map(({ series, point }) => `<div class="paper-tooltip-row paper-tooltip-${series.id}"><span><i></i>${escapeHtml(series.label)}</span><b class="${paperPerformanceTone(point.daily_return_fraction)}">当日 ${escapeHtml(paperPerformanceText(point.daily_return_fraction))}</b><small>净值 ${escapeHtml(point.nav.toFixed(4))} · ${Number.isFinite(point.equity) ? escapeHtml(formatMoney(point.equity, paperCurveModel.asset)) : "金额待下一次快照"} · 当日 ${point.daily_pnl == null ? "待下一次快照" : escapeHtml(formatSignedMoney(point.daily_pnl, paperCurveModel.asset))}</small></div>`).join("")}`;
-    tooltip.style.left = `${clamp(event.clientX - rect.left + 14, 8, Math.max(rect.width - 246, 8))}px`;
-    tooltip.style.top = `${clamp(event.clientY - rect.top + 14, 8, Math.max(rect.height - 176, 8))}px`;
-    tooltip.hidden = false;
-  };
-  plot.addEventListener("pointermove", showTooltip);
-  plot.addEventListener("pointerleave", hideTooltip);
-  plot.addEventListener("wheel", (event) => {
-    event.preventDefault();
-    paperCurveState.zoom = clamp(paperCurveState.zoom * (event.deltaY < 0 ? 1.35 : 1 / 1.35), 1, 12);
-    if (paperCurveState.zoom === 1) paperCurveState.pan = 0;
-    renderPaper();
-  }, { passive: false });
+  const container = document.querySelector("#view-paper #paper-performance-echarts");
+  if (!container || !paperCurveModel) return;
+  if (!window.echarts || typeof window.echarts.init !== "function") {
+    container.innerHTML = '<div class="paper-chart-empty">图表组件未加载；请刷新页面后重试。</div>';
+    return;
+  }
+  if (paperCurveChart) paperCurveChart.dispose();
+  const model = paperCurveModel;
+  paperCurveChart = window.echarts.init(container, null, { renderer: "canvas" });
+  paperCurveChart.setOption(paperCurveEchartsOption(model), { notMerge: true, lazyUpdate: false });
+  paperCurveChart.on("datazoom", () => {
+    const zoom = paperCurveChart?.getOption().dataZoom?.[0];
+    const start = Number(zoom?.start);
+    const viewport = paperCurveViewport(model.domain);
+    const movablePercent = Math.max(100 - viewport.windowPercent, 0);
+    paperCurveState.pan = movablePercent > 0 && Number.isFinite(start) ? clamp(start / movablePercent, 0, 1) : 0;
+    updatePaperCurveViewportText(model);
+  });
+  updatePaperCurveViewportText(model);
+  if (!paperCurveResizeListenerBound) {
+    window.addEventListener("resize", () => paperCurveChart?.resize());
+    paperCurveResizeListenerBound = true;
+  }
 }
 
 const paperExplorer = { portfolioId: null, symbol: null, window: "90" };
@@ -1039,6 +1205,11 @@ function paperMarketExplorer(snapshot) {
 }
 
 function renderPaper() {
+  if (paperCurveChart) {
+    paperCurveChart.dispose();
+    paperCurveChart = null;
+  }
+  paperCurveModel = null;
   const payload = state.models.paper.payload;
   if (!payload.snapshot) {
     $("view-paper").innerHTML = unavailableBlock("模拟盘曲线正在准备", "控制台已保留独立入口；2026 年初至最近完整交易日的公开行情模拟完成后显示四账户曲线。");
@@ -1188,10 +1359,6 @@ document.addEventListener("input", (event) => {
   if (event.target.id === "paper-curve-zoom-slider") {
     paperCurveState.zoom = clamp(Number(event.target.value), 1, 12);
     if (paperCurveState.zoom === 1) paperCurveState.pan = 0;
-    renderPaper();
-  }
-  if (event.target.id === "paper-curve-date-slider") {
-    paperCurveState.pan = clamp(Number(event.target.value) / 1000, 0, 1);
     renderPaper();
   }
 });
