@@ -1,29 +1,48 @@
 # qount 当前状态
 
-> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-08-02
+> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-08-10
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：所有 live timer、授权、arm 和订单权限仍关闭。Dual-Engine 已按 owner 授权从 2026 年初生成四账户公共行情模拟曲线并部署 Dashboard；四账户各有 217 个点，两个 paper timer 继续从历史回放末端向前推进。
+> **TL;DR**：所有 live timer、授权、arm 和订单权限仍关闭。Dual-Engine 已按 owner 授权从 2026 年初生成四账户公共行情模拟曲线并部署 Dashboard；四条策略曲线可按收益或金额对比、缩放、平移和悬停查阅，Dashboard 同时展示实际模拟调仓与公开日线 K 线，两个 paper timer 继续从历史回放末端向前推进。
 
-更新时间：2026-08-02
+更新时间：2026-08-10
 
 VPS基础生产版本：`0.2.27`，基础 commit=`66034b0da5e25a2a08feb901e42355e6d3e77595`；Dual-Engine 当前
-program=`1.1.0`、overlay content hash=`05258e5e...a8b1`，逐文件清单与验收记录保存在
-`/var/lib/qount/deployments/dual-engine-ytd-curve-v1-20260802/`。基础 release 的 commit、provenance 和 verification 仍保存在
+program=`1.1.0`、YTD curve overlay content hash=`05258e5e...a8b1`、可视化 overlay package hash=`42b56a1c...82cc`；逐文件清单与验收记录保存在
+`/var/lib/qount/deployments/dual-engine-ytd-curve-v1-20260802/` 和
+`/var/lib/qount/deployments/dual-engine-paper-visual-v1-20260803/`。基础 release 的 commit、provenance 和 verification 仍保存在
 `/root/qount/.qount-release-provenance.json`及`.qount-release-verification.json`；FOMC watcher、有限事件timer、
 Dashboard只读账户视图、有界微信retry timer和公开数据研究timer按既有状态运行；所有交易执行权限均关闭。
 
-- **2026-08-02 Dual-Engine 2026 YTD 无订单模拟曲线已部署。** 当前冻结 G20/C60/GC5/D15 四个
+- **2026-08-10 Dual-Engine 模拟收益与大盘对比视图已部署。** Dashboard 的四条策略线固定对应
+  G20/C60/GC5/D15，可切换 YTD/180D/90D/30D、收益率/美元金额、单条显隐，并支持滚轮缩放、拖动平移和逐日期悬停明细。
+  各账户的当前模拟权益、日收益、月收益、YTD 收益率与对应美元损益均由服务端 `Executable NAV` 历史计算并在快照合同中
+  校验，页面不自行重算或伪造收益。大盘只采用 Tiingo 公开的 SPY 未复权日收盘价，只有其历史完整覆盖模拟曲线起点时才发布；
+  覆盖不足会明确显示等待状态，不用替代数据补线。该次发布只更新无订单模拟快照合同、Dashboard 资源及只读发布器，未触发
+  paper 回放、未改变 timer、账户、授权、私有接口或订单权限；所有合同仍固定
+  `orders_authorized=false/private_api_used=false/exchange_mutation_attempted=false`。
+
+- **2026-08-03 Dual-Engine Dashboard 调仓与 K 线可视化已部署。** 在原有四账户 YTD 纸面曲线基础上，
+  Dashboard 现在按真实时间比例绘制 NAV 横轴，显示执行层模拟调仓标记、组合/标的可选择的公开日线 K 线，以及完整
+  模拟调仓表（时间、买卖方向、数量、参考价、名义金额和模拟成本）。K 线默认选择有调仓的非现金标的、展示近 90 个
+  交易日，并可切换 45 日或 YTD 全程；证券价格轴为两位小数。行情展示固定使用原始未复权 OHLC，以保持与模拟成交
+  参考价一致；BIL 的月初除息跳空会在页面明确说明，不应误读为数据断裂。新发布快照为 `219` 个输入周期和审计行，
+  截至 `2026-08-02T00:00:00Z`；G20/C60/GC5/D15 各 219 点，含 18 个标的、3,290 根日线和总计 191 个模拟调仓事件，
+  snapshot hash=`de633323...fe716`。展示数据仅来自 Tiingo/Binance 公开行情；调仓为 no-order 模拟执行记录，不是订单、成交
+  或实盘收益。发布使用 Dashboard 的原子 `data/v1` 指针，线上静态文件已与发布源逐字比对，`qount-dashboard-publisher`、
+  paper daily 和 G20-open timer 均为 `enabled/active`。部署前状态保存在
+  `/var/lib/qount/paper/dual-engine-previsual-20260802T160700Z`；远端相关测试 38 项、Python compile、前端语法、
+  JSON schema、Caddy 配置和发布快照哈希比对均通过。所有合同仍固定
+  `orders_authorized=false/private_api_used=false/exchange_mutation_attempted=false`。
+
+- **Dual-Engine 2026 YTD 无订单模拟曲线（初始部署 2026-08-02）。** 当前冻结 G20/C60/GC5/D15 四个
   `10,000 USD_EQ` 独立账户，使用 Tiingo/Binance 公共行情、Signal/Executable 双层净值、25 bps 基础与
-  50 bps 压力成本、月内袖套隔离和 append-only 哈希审计；Dashboard 增加独立 `paper.json` / `#/paper`。
-  owner 明确授权的 YTD replay 从 `2026-01-01` 起取完整公开历史；第一个模拟点为 `2026-01-02T15:00:30Z`，
-  当前最后点为 `2026-07-31T00:00:05Z`，对应截至 7 月 30 日的完整数据。217 个输入周期与 217 行审计一一对应，
-  G20/C60/GC5/D15 各 217 点；快照 hash=`0a0ec01b...a063`。Dashboard 已发布四线 Executable NAV 总图和每账户
-  Signal/Executable 小图；当前页面以中文显示策略含义、信号/可执行净值、日期和美元等值，并提供纵轴净值、
-  横轴日期、1.000 基准线、可区分线型及移动端单列布局。该曲线固定标记 `simulated_not_realized`，不是账户实盘收益。
-  所有合同固定 `orders_authorized=false/private_api_used=false/exchange_mutation_attempted=false`。VPS 上 daily 与
-  G20-open timer 均为 `enabled/active`；日常探针在北京时间 `06:30`，G20 显式日期探针在工作日北京时间 `23:00`。
-  本机私有 `.env` 的 `QOUNT_TIINGO_API_KEY` 已不回显地映射到 VPS `/etc/qount/dual-engine-paper.env` 的
-  `TIINGO_API_TOKEN`；文件为 `0600 root:root`。Tiingo EOD/IEX 与 Binance Spot 公共接口均已验证。权威口径见
+  50 bps 压力成本、月内袖套隔离和 append-only 哈希审计；Dashboard 提供独立 `paper.json` / `#/paper`。
+  owner 明确授权的 YTD replay 从 `2026-01-01` 起取完整公开历史，第一个模拟点为 `2026-01-02T15:00:30Z`；
+  当前点数、数据截至时间和快照 hash 以本页 2026-08-03 发布事实为准。该曲线固定标记
+  `simulated_not_realized`，不是账户实盘收益。VPS 上 daily 与 G20-open timer 均为 `enabled/active`；日常探针在
+  北京时间 `06:30`，G20 显式日期探针在工作日北京时间 `23:00`。本机私有 `.env` 的 `QOUNT_TIINGO_API_KEY`
+  已不回显地映射到 VPS `/etc/qount/dual-engine-paper.env` 的 `TIINGO_API_TOKEN`；文件为 `0600 root:root`。
+  Tiingo EOD/IEX 与 Binance Spot 公共接口均已验证。权威口径见
   [qount_strategy_master_index.md](qount_strategy_master_index.md)。
 
 - **2026-07-30 owner 已取消 `SmallAccount-FOMC-RightSide-v0.2` 的部署。** VPS 上不存在

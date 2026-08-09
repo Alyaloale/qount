@@ -126,12 +126,63 @@
           "maxItems": 4,
           "items": { "type": "object" }
         },
-        "benchmarks": { "type": "array" },
+        "benchmarks": {
+          "type": "array",
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/benchmark" }
+        },
         "history_reference": { "type": "object" },
         "latest_decision": { "type": "object" },
         "audit_last_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" },
         "audit_row_count": { "type": "integer", "minimum": 1 },
+        "market_charts": { "$ref": "#/$defs/market_charts" },
         "snapshot_hash": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/hash" }
+      }
+    },
+    "benchmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["benchmark_id", "label", "symbol", "status", "role", "source", "price_basis", "initial_capital", "reporting_asset", "nav"],
+      "properties": {
+        "benchmark_id": { "const": "spy-broad-market" },
+        "label": { "const": "\u6807\u666e 500\uff08SPY\uff09" },
+        "symbol": { "const": "SPY" },
+        "status": { "const": "available" },
+        "role": { "const": "broad_market_price_return" },
+        "source": { "const": "tiingo_public" },
+        "price_basis": { "const": "unadjusted_daily_close" },
+        "initial_capital": { "const": 10000.0 },
+        "reporting_asset": { "const": "USD_EQ" },
+        "nav": { "type": "object" }
+      }
+    },
+    "market_bar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["marked_at", "open", "high", "low", "close"],
+      "properties": {
+        "marked_at": { "$ref": "dashboard-v1-envelope.schema.json#/$defs/timestamp" },
+        "open": { "type": "number", "exclusiveMinimum": 0 },
+        "high": { "type": "number", "exclusiveMinimum": 0 },
+        "low": { "type": "number", "exclusiveMinimum": 0 },
+        "close": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "market_charts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interval", "bars_by_symbol"],
+      "properties": {
+        "interval": { "const": "1d" },
+        "bars_by_symbol": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/market_bar" }
+          }
+        }
       }
     }
   },

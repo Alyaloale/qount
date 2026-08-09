@@ -39,7 +39,7 @@ class DualEngineYtdReplayTest(unittest.TestCase):
             symbol = parsed.path.split("/")[3]
             start = dt.date(2025, 8, 1)
             payload = []
-            for index in range(157):
+            for index in range(160):
                 session = start + dt.timedelta(days=index)
                 if session.weekday() >= 5:
                     continue
@@ -47,6 +47,8 @@ class DualEngineYtdReplayTest(unittest.TestCase):
                     {
                         "date": f"{session.isoformat()}T00:00:00.000Z",
                         "open": 99.5 + index / 10,
+                        "high": 101.0 + index / 10,
+                        "low": 99.0 + index / 10,
                         "close": 100.0 + index / 10,
                         "adjClose": 100.0
                         + index / 10
@@ -60,7 +62,7 @@ class DualEngineYtdReplayTest(unittest.TestCase):
         elif parsed.path == "/api/v3/klines" and query["interval"] == ["1d"]:
             start = dt.date(2025, 8, 1)
             payload = []
-            for index in range(158):
+            for index in range(161):
                 session = start + dt.timedelta(days=index)
                 open_at = dt.datetime.combine(
                     session, dt.time(), tzinfo=dt.timezone.utc
@@ -71,7 +73,7 @@ class DualEngineYtdReplayTest(unittest.TestCase):
                     [
                         open_ms,
                         str(100.0 + index / 20),
-                        "110",
+                        str(111.0 + index / 15),
                         "90",
                         str(100.0 + index / 15),
                         "10",
@@ -104,15 +106,15 @@ class DualEngineYtdReplayTest(unittest.TestCase):
         replay = collect_ytd_replay(
             self._config(),
             start_date=dt.date(2026, 1, 1),
-            end_date=dt.date(2026, 1, 4),
+            end_date=dt.date(2026, 1, 5),
             getter=self._getter,
             environment={"TIINGO_API_TOKEN": "fixture"},
         )
 
-        self.assertEqual(len(replay.cycles), 4)
+        self.assertEqual(len(replay.cycles), 5)
         self.assertTrue(replay.cycles[0].g20_rebalance_day)
         self.assertEqual(replay.first_observed_at, "2026-01-02T15:00:30+00:00")
-        self.assertEqual(replay.last_observed_at, "2026-01-05T00:00:05+00:00")
+        self.assertEqual(replay.last_observed_at, "2026-01-06T00:00:05+00:00")
         self.assertEqual(
             set(replay.archive_hashes),
             {
@@ -132,7 +134,18 @@ class DualEngineYtdReplayTest(unittest.TestCase):
         assert snapshot is not None
         self.assertEqual(snapshot.program_version, DUAL_ENGINE_PROGRAM_VERSION)
         self.assertEqual(snapshot.forward_start_at, "2026-01-02T15:00:30+00:00")
-        self.assertEqual(snapshot.audit_row_count, 4)
+        self.assertEqual(snapshot.audit_row_count, 5)
+        self.assertEqual(snapshot.market_charts["interval"], "1d")
+        self.assertIn("TQQQ", snapshot.market_charts["bars_by_symbol"])
+        self.assertIn("BTCUSDT", snapshot.market_charts["bars_by_symbol"])
+        self.assertIn("SPY", snapshot.market_charts["bars_by_symbol"])
+        self.assertGreaterEqual(
+            len(snapshot.market_charts["bars_by_symbol"]["BTCUSDT"]),
+            3,
+        )
+        self.assertTrue(
+            all("rebalances" in portfolio for portfolio in snapshot.portfolios)
+        )
         self.assertEqual(
             snapshot.history_reference,
             {
@@ -144,7 +157,19 @@ class DualEngineYtdReplayTest(unittest.TestCase):
         )
         self.assertEqual(
             {len(portfolio["nav"]["points"]) for portfolio in snapshot.portfolios},
-            {4},
+            {5},
+        )
+        self.assertEqual(len(snapshot.benchmarks), 1)
+        benchmark = snapshot.benchmarks[0]
+        self.assertEqual(benchmark["benchmark_id"], "spy-broad-market")
+        self.assertEqual(benchmark["symbol"], "SPY")
+        self.assertEqual(benchmark["price_basis"], "unadjusted_daily_close")
+        self.assertEqual(
+            benchmark["nav"]["performance"]["current_equity"],
+            benchmark["nav"]["value"] * 10_000.0,
+        )
+        self.assertTrue(
+            all("executable_equity" in point for portfolio in snapshot.portfolios for point in portfolio["nav"]["points"])
         )
         self.assertFalse(snapshot.orders_authorized)
         self.assertFalse(snapshot.private_api_used)

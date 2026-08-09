@@ -21,6 +21,8 @@ from qount.dual_engine.contracts import DUAL_ENGINE_PROGRAM_VERSION
 from qount.dual_engine.contracts import DualEngineContractError
 from qount.dual_engine.contracts import DualEnginePaperContract
 from qount.dual_engine.contracts import G20_EXECUTION_SYMBOLS
+from qount.dual_engine.contracts import PAPER_BENCHMARK_ID
+from qount.dual_engine.contracts import PAPER_BENCHMARK_SYMBOL
 from qount.dual_engine.contracts import PAPER_PORTFOLIO_IDS
 from qount.dual_engine.contracts import PaperCycleInput
 from qount.dual_engine.contracts import PaperProgramSnapshot
@@ -437,6 +439,7 @@ def _new_portfolio(portfolio_id: str, capital: float) -> dict[str, Any]:
         "max_drawdown_fraction": 0.0,
         "history": [],
         "latest_executions": [],
+        "rebalance_events": [],
     }
 
 
@@ -510,6 +513,7 @@ def _initial_state(
         "current_g20_target": None,
         "current_g20_selected": None,
         "current_d15_budget": None,
+        "market_bars": {},
         "portfolios": {
             portfolio_id: _new_portfolio(
                 portfolio_id,
@@ -529,7 +533,8 @@ def _validate_state(state: Mapping[str, Any], contract: DualEnginePaperContract)
         "current_g20_target", "current_g20_selected", "current_d15_budget",
         "portfolios", "state_hash",
     }
-    if set(state) != required:
+    allowed = required | {"market_bars"}
+    if set(state) != required and set(state) != allowed:
         raise DualEnginePaperRuntimeError("paper_state_fields_invalid")
     if state["schema_version"] != PAPER_STATE_SCHEMA_VERSION or state["program_id"] != DUAL_ENGINE_PROGRAM_ID or state["program_version"] != DUAL_ENGINE_PROGRAM_VERSION:
         raise DualEnginePaperRuntimeError("paper_state_identity_invalid")
@@ -537,9 +542,37 @@ def _validate_state(state: Mapping[str, Any], contract: DualEnginePaperContract)
         raise DualEnginePaperRuntimeError("paper_state_contract_mismatch")
     if set(state["portfolios"]) != set(PAPER_PORTFOLIO_IDS):
         raise DualEnginePaperRuntimeError("paper_state_portfolios_invalid")
+    if "market_bars" in state and not isinstance(state["market_bars"], Mapping):
+        raise DualEnginePaperRuntimeError("paper_state_market_bars_invalid")
     core = {key: value for key, value in state.items() if key != "state_hash"}
     if state["state_hash"] != canonical_hash(core):
         raise DualEnginePaperRuntimeError("paper_state_hash_invalid")
+
+
+def _record_market_bars(
+    state: dict[str, Any],
+    cycle: PaperCycleInput,
+) -> None:
+    """Keep a bounded, public OHLC history for the read-only paper chart."""
+
+    if not cycle.market_bars:
+        return
+    history = state.setdefault("market_bars", {})
+    if not isinstance(history, dict):
+        raise DualEnginePaperRuntimeError("paper_state_market_bars_invalid")
+    for symbol, bar in cycle.market_bars.items():
+        rows = history.setdefault(symbol, [])
+        if not isinstance(rows, list):
+            raise DualEnginePaperRuntimeError("paper_state_market_bar_rows_invalid")
+        marked_at = str(bar["marked_at"])
+        replacement = dict(bar)
+        for index, existing in enumerate(rows):
+            if str(existing.get("marked_at")) == marked_at:
+                rows[index] = replacement
+                break
+        else:
+            rows.append(replacement)
+        rows.sort(key=lambda row: str(row["marked_at"]))
 
 
 def _advance_portfolio(
@@ -550,6 +583,7 @@ def _advance_portfolio(
     cycle: PaperCycleInput,
     contract: DualEnginePaperContract,
     cross_rebalance: bool,
+    rebalance_scope: str,
 ) -> None:
     all_executions: list[dict[str, Any]] = []
     for layer_name in ("signal", "executable"):
@@ -586,6 +620,16 @@ def _advance_portfolio(
     portfolio["peak_executable_nav"] = peak
     portfolio["max_drawdown_fraction"] = maximum_drawdown
     portfolio["latest_executions"] = all_executions
+    rebalance_events = portfolio.setdefault("rebalance_events", [])
+    if not isinstance(rebalance_events, list):
+        raise DualEnginePaperRuntimeError("paper_rebalance_history_invalid")
+    if all_executions:
+        rebalance_events.append({
+            "observed_at": cycle.observed_at,
+            "cycle_hash": cycle.cycle_hash,
+            "scope": rebalance_scope,
+            "fills": all_executions,
+        })
     portfolio["history"].append({
         "marked_at": cycle.observed_at,
         "data_cutoff": cycle.data_cutoff,
@@ -649,9 +693,20 @@ def _portfolio_row(
                     "marked_at": row["marked_at"],
                     "signal": row["signal_nav"],
                     "executable": row["executable_nav"],
+                    "executable_equity": row["executable_equity"],
                 }
                 for row in history
             ],
+            "performance": _performance_summary(
+                [
+                    {
+                        "marked_at": row["marked_at"],
+                        "nav": row["executable_nav"],
+                    }
+                    for row in history
+                ],
+                initial_capital=float(portfolio["initial_capital"]),
+            ),
         },
         "allocation": {
             "g20_budget": float(budgets.get("g20", 0.0)),
@@ -665,6 +720,10 @@ def _portfolio_row(
             "orders_routed": False,
             "fills": list(portfolio["latest_executions"]),
         },
+        "rebalances": {
+            "count": len(portfolio.get("rebalance_events", [])),
+            "events": list(portfolio.get("rebalance_events", [])),
+        },
         "latest_decision": {
             "g20_selected": g20.selected_symbol,
             "c60_candidates": list(c60.candidates),
@@ -674,6 +733,105 @@ def _portfolio_row(
             "d15_c60_budget": d15_budget,
         },
     }
+
+
+def _performance_summary(
+    points: Sequence[Mapping[str, object]],
+    *,
+    initial_capital: float,
+) -> dict[str, object]:
+    """Build display metrics in the authoritative paper snapshot, not the UI."""
+
+    if not points:
+        raise DualEnginePaperRuntimeError("paper_performance_points_empty")
+    latest = points[-1]
+    latest_time = aware_datetime(str(latest["marked_at"]))
+    latest_nav = float(latest["nav"])
+    previous = points[-2] if len(points) > 1 else None
+    month_start = latest_time.replace(
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    month_base = next(
+        (
+            point
+            for point in reversed(points)
+            if aware_datetime(str(point["marked_at"])) < month_start
+        ),
+        None,
+    )
+
+    def change(base: Mapping[str, object] | None) -> tuple[float | None, float | None]:
+        if base is None:
+            return None, None
+        base_nav = float(base["nav"])
+        return (
+            latest_nav / base_nav - 1.0,
+            (latest_nav - base_nav) * initial_capital,
+        )
+
+    day_return, day_pnl = change(previous)
+    month_return, month_pnl = change(month_base)
+    return {
+        "current_equity": latest_nav * initial_capital,
+        "total_return_fraction": latest_nav - 1.0,
+        "total_pnl": (latest_nav - 1.0) * initial_capital,
+        "day_return_fraction": day_return,
+        "day_pnl": day_pnl,
+        "month_return_fraction": month_return,
+        "month_pnl": month_pnl,
+        "month_base_at": str(month_base["marked_at"]) if month_base else None,
+    }
+
+
+def _broad_market_benchmark(
+    market_bars: Mapping[str, object],
+    *,
+    initial_capital: float,
+    forward_start_at: str,
+) -> tuple[Mapping[str, object], ...]:
+    """Return SPY only when its public history covers the paper curve start."""
+
+    rows = market_bars.get(PAPER_BENCHMARK_SYMBOL)
+    if not isinstance(rows, list) or len(rows) < 2:
+        return ()
+    if aware_datetime(str(rows[0]["marked_at"])) > aware_datetime(forward_start_at):
+        return ()
+    first_close = float(rows[0]["close"])
+    if first_close <= 0.0:
+        raise DualEnginePaperRuntimeError("paper_benchmark_first_close_invalid")
+    points = [
+        {
+            "marked_at": str(row["marked_at"]),
+            "nav": float(row["close"]) / first_close,
+            "equity": float(row["close"]) / first_close * initial_capital,
+        }
+        for row in rows
+    ]
+    return (
+        {
+            "benchmark_id": PAPER_BENCHMARK_ID,
+            "label": "标普 500（SPY）",
+            "symbol": PAPER_BENCHMARK_SYMBOL,
+            "status": "available",
+            "role": "broad_market_price_return",
+            "source": "tiingo_public",
+            "price_basis": "unadjusted_daily_close",
+            "initial_capital": initial_capital,
+            "reporting_asset": "USD_EQ",
+            "nav": {
+                "value": points[-1]["nav"],
+                "points": points,
+                "performance": _performance_summary(
+                    points,
+                    initial_capital=initial_capital,
+                ),
+            },
+        },
+    )
 
 
 def _build_snapshot(
@@ -723,7 +881,11 @@ def _build_snapshot(
             "paper_state": str(state["state_hash"]),
         },
         portfolios=rows,
-        benchmarks=(),
+        benchmarks=_broad_market_benchmark(
+            dict(state.get("market_bars", {})),
+            initial_capital=contract.initial_capital_usd_eq,
+            forward_start_at=str(state["forward_start_at"]),
+        ),
         history_reference={
             "status": "owner_authorized_ytd_replay",
             "start_at": "2026-01-01T00:00:00+00:00",
@@ -733,6 +895,20 @@ def _build_snapshot(
         latest_decision=latest_decision,
         audit_last_hash=str(state["audit_last_hash"]),
         audit_row_count=int(state["sequence"]),
+        market_charts=(
+            {
+                "interval": "1d",
+                "bars_by_symbol": {
+                    symbol: list(rows)
+                    for symbol, rows in sorted(
+                        dict(state.get("market_bars", {})).items()
+                    )
+                    if rows
+                },
+            }
+            if state.get("market_bars")
+            else None
+        ),
     )
 
 
@@ -877,6 +1053,8 @@ def run_paper_cycle(
         elif state["current_d15_budget"] is None:
             state["current_d15_budget"] = d15_c60_budget(c60, contract=contract)
 
+        _record_market_bars(state, cycle)
+
         snapshot = _snapshot_market(cycle)
         current_g20 = G20Decision(
             selected_symbol=str(state["current_g20_selected"]),
@@ -910,6 +1088,13 @@ def run_paper_cycle(
                 cycle=cycle,
                 contract=contract,
                 cross_rebalance=bool(cycle.g20_rebalance_day or initializing),
+                rebalance_scope=(
+                    "initial"
+                    if initializing
+                    else "g20_cross_sleeve"
+                    if cycle.g20_rebalance_day
+                    else "c60_sleeve"
+                ),
             )
 
         next_sequence = int(state["sequence"]) + 1

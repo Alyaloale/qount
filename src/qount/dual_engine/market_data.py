@@ -150,6 +150,36 @@ def _number(value: object, *, name: str) -> float:
     return number
 
 
+def _tiingo_daily_bar(row: Mapping[str, object], *, symbol: str) -> dict[str, object]:
+    try:
+        session = dt.date.fromisoformat(str(row["date"])[:10])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DualEngineMarketDataError(f"paper_tiingo_bar_date_invalid:{symbol}") from exc
+    return {
+        "marked_at": dt.datetime.combine(session, dt.time(), tzinfo=dt.timezone.utc).isoformat(),
+        "open": _number(row.get("open"), name=f"paper_tiingo_bar_open:{symbol}"),
+        "high": _number(row.get("high"), name=f"paper_tiingo_bar_high:{symbol}"),
+        "low": _number(row.get("low"), name=f"paper_tiingo_bar_low:{symbol}"),
+        "close": _number(row.get("close"), name=f"paper_tiingo_bar_close:{symbol}"),
+    }
+
+
+def _binance_daily_bar(row: list[object], *, symbol: str) -> dict[str, object]:
+    if len(row) < 7:
+        raise DualEngineMarketDataError(f"paper_binance_bar_invalid:{symbol}")
+    try:
+        session = dt.datetime.fromtimestamp(int(row[0]) / 1000, tz=dt.timezone.utc).date()
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise DualEngineMarketDataError(f"paper_binance_bar_date_invalid:{symbol}") from exc
+    return {
+        "marked_at": dt.datetime.combine(session, dt.time(), tzinfo=dt.timezone.utc).isoformat(),
+        "open": _number(row[1], name=f"paper_binance_bar_open:{symbol}"),
+        "high": _number(row[2], name=f"paper_binance_bar_high:{symbol}"),
+        "low": _number(row[3], name=f"paper_binance_bar_low:{symbol}"),
+        "close": _number(row[4], name=f"paper_binance_bar_close:{symbol}"),
+    }
+
+
 def _tiingo_daily(
     symbol: str,
     *,
@@ -227,7 +257,7 @@ def _binance_history_and_fill(
     observed: dt.datetime,
     config: DualEngineMarketConfig,
     getter: JsonGetter,
-) -> tuple[tuple[float, ...], float, int, tuple[str, str]]:
+) -> tuple[tuple[float, ...], float, int, tuple[str, str], dict[str, object]]:
     observed_ms = int(observed.timestamp() * 1000)
     payload, history_hash = getter(
         _url(
@@ -265,7 +295,13 @@ def _binance_history_and_fill(
     fill = _number(trades[0].get("p"), name=f"paper_binance_fill:{symbol}")
     if int(trades[0].get("T", 0)) <= cutoff_ms:
         raise DualEngineMarketDataError(f"paper_binance_later_quote_invalid:{symbol}")
-    return closes, fill, cutoff_ms, (history_hash, fill_hash)
+    return (
+        closes,
+        fill,
+        cutoff_ms,
+        (history_hash, fill_hash),
+        _binance_daily_bar(closed[-1], symbol=symbol),
+    )
 
 
 def _binance_rules(
@@ -330,6 +366,7 @@ def collect_market_cycle(
     proxy_closes: dict[str, tuple[float, ...]] = {}
     mark_prices: dict[str, float] = {}
     fill_prices: dict[str, float] = {}
+    market_bars: dict[str, dict[str, object]] = {}
     tiingo_hashes: dict[str, str] = {}
     tiingo_cutoffs: list[dt.datetime] = []
     tiingo_sessions: list[dt.date] = []
@@ -373,6 +410,12 @@ def collect_market_cycle(
             close = _number(latest.get("close"), name=f"paper_tiingo_mark:{symbol}")
             mark_prices[symbol] = close
             fill_prices[symbol] = close
+            try:
+                market_bars[symbol] = _tiingo_daily_bar(latest, symbol=symbol)
+            except DualEngineMarketDataError:
+                # Visualization is optional; incomplete OHLC must not block the
+                # verified price path used by the order-free paper program.
+                pass
     if any(len(values) < 64 for values in proxy_closes.values()):
         raise DualEngineMarketDataError("paper_tiingo_history_short")
     if g20_signal_day and (
@@ -402,7 +445,7 @@ def collect_market_cycle(
     binance_hashes: dict[str, tuple[str, str]] = {}
     crypto_cutoffs: list[dt.datetime] = []
     for symbol in C60_SYMBOLS:
-        closes, fill, cutoff_ms, hashes = _binance_history_and_fill(
+        closes, fill, cutoff_ms, hashes, bar = _binance_history_and_fill(
             symbol,
             observed=observed,
             config=config,
@@ -413,6 +456,7 @@ def collect_market_cycle(
         fill_prices[symbol] = fill
         crypto_cutoffs.append(dt.datetime.fromtimestamp(cutoff_ms / 1000, tz=dt.timezone.utc))
         binance_hashes[symbol] = hashes
+        market_bars[symbol] = bar
     rules, rules_hash = _binance_rules(config=config, getter=getter)
     for symbol in (*G20_EXECUTION_SYMBOLS, "BIL"):
         rules[symbol] = {"step_size": 1.0, "minimum_notional": 0.0}
@@ -433,6 +477,7 @@ def collect_market_cycle(
         },
         g20_signal_day=g20_signal_day,
         g20_rebalance_day=g20_rebalance_day,
+        market_bars=market_bars,
     )
 
 

@@ -750,45 +750,287 @@ function navSparkline(points) {
   return `<svg class="paper-chart" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="信号净值与可执行净值走势"><title>信号净值与可执行净值走势</title>${baseline}<polyline class="paper-signal-line" points="${coordinates("signal")}"></polyline><polyline class="paper-executable-line" points="${coordinates("executable")}"></polyline></svg><div class="paper-chart-legend"><span class="signal-key">信号净值</span><span class="executable-key">可执行净值</span><small>${rows.length} 个观测点</small></div>`;
 }
 
-function portfolioYtdCurve(portfolios) {
-  const series = (Array.isArray(portfolios) ? portfolios : []).map((portfolio) => ({
-    label: portfolio.label,
-    points: (portfolio.nav?.points || []).filter((row) => Number.isFinite(Number(row.executable))),
-  })).filter((row) => row.points.length >= 2);
-  if (!series.length) return `<section class="panel full-panel"><div class="paper-chart-empty">等待年度净值曲线数据</div></section>`;
-  const values = series.flatMap((row) => row.points.map((point) => Number(point.executable)));
-  const observedLow = Math.min(1, ...values);
-  const observedHigh = Math.max(1, ...values);
-  const padding = Math.max((observedHigh - observedLow) * 0.08, 0.002);
+function paperRebalanceEvents(portfolio) {
+  const events = portfolio?.rebalances?.events;
+  return Array.isArray(events) ? events.filter((event) => Array.isArray(event?.fills) && event.fills.length) : [];
+}
+
+function paperRebalanceScopeText(value) {
+  return {
+    initial: "初始建仓",
+    g20_cross_sleeve: "G20 月度调仓",
+    c60_sleeve: "C60 日度调仓",
+  }[value] || "模拟调仓";
+}
+
+function marketPrice(value, symbol = "") {
+  const price = Number(value);
+  if (!Number.isFinite(price)) return "-";
+  const isCrypto = String(symbol).endsWith("USDT");
+  const digits = isCrypto ? (price >= 1000 ? 2 : price >= 1 ? 4 : 6) : (price >= 1 ? 2 : 4);
+  return price.toLocaleString("zh-CN", { maximumFractionDigits: digits });
+}
+
+const paperCurveState = {
+  range: "all",
+  mode: "return",
+  showBenchmark: true,
+  hiddenSeries: new Set(),
+  zoom: 1,
+  pan: 0,
+  drag: null,
+};
+let paperCurveModel = null;
+
+const PAPER_CURVE_SERIES = {
+  G20: { id: "g20", label: "美股轮动（G20）" },
+  C60: { id: "c60", label: "加密趋势（C60）" },
+  GC5: { id: "gc5", label: "固定组合（GC5）" },
+  D15: { id: "d15", label: "动态组合（D15）" },
+  benchmark: { id: "benchmark", label: "标普 500（SPY）" },
+};
+
+function clamp(value, minimum, maximum) {
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
+function formatSignedMoney(value, asset) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return `${number > 0 ? "+" : number < 0 ? "−" : ""}${formatMoney(Math.abs(number), asset)}`;
+}
+
+function paperPerformanceText(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? formatPercent(number) : "—";
+}
+
+function paperPerformanceTone(value) {
+  const number = Number(value);
+  return number > 0 ? "good-text" : number < 0 ? "bad-text" : "";
+}
+
+function paperPeriodDetail(performance, returnKey, pnlKey, asset) {
+  return `${paperPerformanceText(performance?.[returnKey])} · ${formatSignedMoney(performance?.[pnlKey], asset)}`;
+}
+
+function paperCurveSeries(snapshot) {
+  const portfolios = Array.isArray(snapshot.portfolios) ? snapshot.portfolios : [];
+  const strategies = portfolios.map((portfolio) => {
+    const spec = PAPER_CURVE_SERIES[portfolio.label];
+    const points = (portfolio.nav?.points || []).map((point) => ({
+      marked_at: point.marked_at,
+      time: Date.parse(point.marked_at),
+      nav: Number(point.executable),
+      equity: Number(point.executable_equity),
+    })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.nav));
+    return spec ? { ...spec, kind: "strategy", portfolio, points } : null;
+  }).filter((row) => row && row.points.length >= 2);
+  const benchmark = (snapshot.benchmarks || []).find((row) => row.status === "available" && Array.isArray(row.nav?.points));
+  if (benchmark) {
+    const points = benchmark.nav.points.map((point) => ({
+      marked_at: point.marked_at,
+      time: Date.parse(point.marked_at),
+      nav: Number(point.nav),
+      equity: Number(point.equity),
+    })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.nav));
+    if (points.length >= 2) strategies.push({ ...PAPER_CURVE_SERIES.benchmark, label: benchmark.label, kind: "benchmark", benchmark, points });
+  }
+  return strategies;
+}
+
+function paperCurveValue(point, mode) {
+  return mode === "equity" ? Number(point.equity) : Number(point.nav);
+}
+
+function paperCurveAxisValue(value, mode, asset) {
+  return mode === "equity" ? formatMoney(value, asset) : formatPercent(value - 1);
+}
+
+function paperCurveDomain(series) {
+  const allTimes = series.flatMap((row) => row.points.map((point) => point.time));
+  const first = Math.min(...allTimes);
+  const last = Math.max(...allTimes);
+  const day = 24 * 60 * 60 * 1000;
+  const requested = { "30": 30 * day, "90": 90 * day, "180": 180 * day }[paperCurveState.range];
+  const baseStart = requested ? Math.max(first, last - requested) : first;
+  const baseRange = Math.max(last - baseStart, 1);
+  const visibleRange = Math.max(baseRange / paperCurveState.zoom, 1);
+  const start = baseStart + (baseRange - visibleRange) * paperCurveState.pan;
+  return { start, end: start + visibleRange, fullStart: first, fullEnd: last };
+}
+
+function paperCurveNearestPoint(points, time) {
+  return points.reduce((nearest, point) => (
+    Math.abs(point.time - time) < Math.abs(nearest.time - time) ? point : nearest
+  ));
+}
+
+function paperPerformanceChart(snapshot) {
+  const series = paperCurveSeries(snapshot);
+  const strategySeries = series.filter((row) => row.kind === "strategy");
+  if (strategySeries.length < 2) return `<section class="panel full-panel"><div class="paper-chart-empty">等待四账户的第二个净值点</div></section>`;
+  const hasBenchmark = series.some((row) => row.kind === "benchmark");
+  const hasEquity = strategySeries.every((row) => row.points.every((point) => Number.isFinite(point.equity)));
+  if (paperCurveState.mode === "equity" && !hasEquity) paperCurveState.mode = "return";
+  const visible = series.filter((row) => {
+    if (row.kind === "benchmark") return hasBenchmark && paperCurveState.showBenchmark;
+    return !paperCurveState.hiddenSeries.has(row.id);
+  });
+  const displayed = visible.length ? visible : strategySeries;
+  const domain = paperCurveDomain(series);
+  const chartSeries = displayed.map((row) => ({
+    ...row,
+    visiblePoints: row.points.filter((point) => point.time >= domain.start && point.time <= domain.end),
+  })).filter((row) => row.visiblePoints.length >= 2);
+  if (!chartSeries.length) return `<section class="panel full-panel"><div class="paper-chart-empty">当前缩放区间没有足够的净值点</div></section>`;
+  const values = chartSeries.flatMap((row) => row.visiblePoints.map((point) => paperCurveValue(point, paperCurveState.mode))).filter(Number.isFinite);
+  const baseline = paperCurveState.mode === "equity" ? 10000 : 1;
+  const observedLow = Math.min(baseline, ...values);
+  const observedHigh = Math.max(baseline, ...values);
+  const padding = Math.max((observedHigh - observedLow) * 0.09, paperCurveState.mode === "equity" ? 10 : 0.002);
   const low = observedLow - padding;
   const high = observedHigh + padding;
-  const range = high - low;
-  const width = 1000;
-  const height = 260;
-  const left = 58;
-  const right = 18;
+  const width = 1120;
+  const height = 390;
+  const left = paperCurveState.mode === "equity" ? 108 : 66;
+  const right = 22;
   const top = 18;
-  const bottom = 34;
+  const bottom = 42;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const y = (value) => top + ((high - Number(value)) / range) * plotHeight;
-  const coordinates = (points) => points.map((point, index) => {
-    const x = left + (index / (points.length - 1)) * plotWidth;
-    return `${x.toFixed(2)},${y(point.executable).toFixed(2)}`;
-  }).join(" ");
-  const ticks = Array.from({ length: 5 }, (_, index) => high - (range * index) / 4);
+  const x = (time) => left + ((time - domain.start) / Math.max(domain.end - domain.start, 1)) * plotWidth;
+  const y = (value) => top + ((high - value) / Math.max(high - low, 0.000001)) * plotHeight;
+  const ticks = Array.from({ length: 5 }, (_, index) => high - ((high - low) * index) / 4);
   const grid = ticks.map((value) => `<line x1="${left}" y1="${y(value).toFixed(2)}" x2="${width - right}" y2="${y(value).toFixed(2)}"></line>`).join("");
-  const pointCount = series[0].points.length;
-  const tickIndices = [...new Set([0, Math.round((pointCount - 1) / 3), Math.round(((pointCount - 1) * 2) / 3), pointCount - 1])];
-  const x = (index) => left + (index / (pointCount - 1)) * plotWidth;
-  const verticalGrid = tickIndices.map((index) => `<line x1="${x(index).toFixed(2)}" y1="${top}" x2="${x(index).toFixed(2)}" y2="${height - bottom}"></line>`).join("");
-  const yLabels = ticks.map((value) => `<span style="top:${((y(value) / height) * 100).toFixed(2)}%">${escapeHtml(value.toFixed(2))}</span>`).join("");
-  const xLabels = tickIndices.map((index, labelIndex) => `<span class="paper-x-label-${labelIndex}" style="left:${((x(index) / width) * 100).toFixed(2)}%">${escapeHtml(formatShortDate(series[0].points[index].marked_at))}</span>`).join("");
-  const baseline = low <= 1 && high >= 1 ? `<line class="paper-ytd-baseline" x1="${left}" y1="${y(1).toFixed(2)}" x2="${width - right}" y2="${y(1).toFixed(2)}"></line>` : "";
-  const lines = series.map((row, index) => `<polyline class="paper-portfolio-line paper-line-${index}" points="${coordinates(row.points)}"></polyline>`).join("");
-  const first = formatDate(series[0].points[0].marked_at);
-  const last = formatDate(series[0].points.at(-1).marked_at);
-  return `<section class="panel full-panel paper-ytd-panel"><header class="panel-head"><div><h2>2026 年初至今模拟净值曲线</h2><p>${escapeHtml(first)} 至 ${escapeHtml(last)} / 可执行净值范围 ${escapeHtml(observedLow.toFixed(3))}–${escapeHtml(observedHigh.toFixed(3))} / 初始净值 1.000</p></div><span>${series[0].points.length} 个观测点</span></header><div class="paper-ytd-plot"><svg class="paper-ytd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="四种策略年初至今模拟净值曲线"><title>四种策略年初至今模拟净值曲线</title><g class="paper-ytd-grid">${grid}${verticalGrid}</g>${baseline}${lines}</svg><div class="paper-ytd-y-scale" aria-hidden="true">${yLabels}</div><div class="paper-ytd-x-scale" aria-hidden="true">${xLabels}</div></div><div class="paper-ytd-legend"><div class="paper-ytd-legend-items">${series.map((row, index) => `<span class="paper-line-key-${index}"><strong>${escapeHtml(portfolioText(row.label))}</strong><small>最新净值 ${escapeHtml(Number(row.points.at(-1).executable).toFixed(4))}</small></span>`).join("")}</div><p>虚线横轴为初始净值 1.000；曲线来自公开历史行情模拟，不代表真实账户收益。</p></div></section>`;
+  const xTicks = Array.from({ length: 5 }, (_, index) => domain.start + ((domain.end - domain.start) * index) / 4);
+  const verticalGrid = xTicks.map((value) => `<line x1="${x(value).toFixed(2)}" y1="${top}" x2="${x(value).toFixed(2)}" y2="${height - bottom}"></line>`).join("");
+  const lines = chartSeries.map((row) => `<polyline class="paper-curve-line paper-curve-${row.id}" points="${row.visiblePoints.map((point) => `${x(point.time).toFixed(2)},${y(paperCurveValue(point, paperCurveState.mode)).toFixed(2)}`).join(" ")}"></polyline>`).join("");
+  const yLabels = ticks.map((value) => `<span style="top:${((y(value) / height) * 100).toFixed(2)}%">${escapeHtml(paperCurveAxisValue(value, paperCurveState.mode, snapshot.reporting_asset))}</span>`).join("");
+  const xLabels = xTicks.map((value, index) => `<span class="paper-x-label-${index}" style="left:${((x(value) / width) * 100).toFixed(2)}%">${escapeHtml(formatShortDate(new Date(value).toISOString()))}</span>`).join("");
+  const rangeText = { all: "年初至今", "180": "近 180 天", "90": "近 90 天", "30": "近 30 天" }[paperCurveState.range];
+  const modeText = paperCurveState.mode === "equity" ? "账户金额" : "累计收益率";
+  paperCurveModel = { series: chartSeries, domain, left, right, top, bottom, width, height, mode: paperCurveState.mode, asset: snapshot.reporting_asset };
+  const lineToggles = strategySeries.map((row) => `<button class="paper-series-toggle ${paperCurveState.hiddenSeries.has(row.id) ? "is-hidden" : ""}" type="button" data-paper-curve-action="series" data-series="${row.id}" aria-pressed="${!paperCurveState.hiddenSeries.has(row.id)}"><i></i><span>${escapeHtml(row.label)}</span><small>${escapeHtml(paperPerformanceText(row.portfolio.nav?.performance?.total_return_fraction))}</small></button>`).join("");
+  const benchmarkToggle = `<button class="paper-series-toggle paper-series-benchmark ${!hasBenchmark || !paperCurveState.showBenchmark ? "is-hidden" : ""}" type="button" data-paper-curve-action="benchmark" ${hasBenchmark ? "" : "disabled"} aria-pressed="${hasBenchmark && paperCurveState.showBenchmark}"><i></i><span>${hasBenchmark ? escapeHtml(series.find((row) => row.kind === "benchmark").label) : "大盘基准待补齐"}</span><small>${hasBenchmark ? escapeHtml(paperPerformanceText(series.find((row) => row.kind === "benchmark").benchmark.nav.performance?.total_return_fraction)) : "需要完整公开回放"}</small></button>`;
+  return `<section class="panel full-panel paper-performance-panel"><header class="panel-head"><div><h2>策略收益曲线</h2><p>${escapeHtml(formatDate(new Date(domain.start).toISOString()))} 至 ${escapeHtml(formatDate(new Date(domain.end).toISOString()))} / ${modeText} / 四条策略线为独立模拟账户</p></div><span>${escapeHtml(rangeText)} · ${paperCurveState.zoom.toFixed(1)}×</span></header><div class="paper-performance-toolbar"><div class="paper-range-buttons">${[["all", "YTD"], ["180", "180D"], ["90", "90D"], ["30", "30D"]].map(([value, label]) => `<button type="button" class="${paperCurveState.range === value ? "active" : ""}" data-paper-curve-action="range" data-value="${value}">${label}</button>`).join("")}</div><div class="paper-mode-buttons"><button type="button" class="${paperCurveState.mode === "return" ? "active" : ""}" data-paper-curve-action="mode" data-value="return">收益率</button><button type="button" class="${paperCurveState.mode === "equity" ? "active" : ""}" data-paper-curve-action="mode" data-value="equity" ${hasEquity ? "" : "disabled"}>金额</button></div><button type="button" class="paper-reset-button" data-paper-curve-action="reset">复位视图</button><span class="paper-gesture-hint">滚轮缩放 · 拖动平移 · 悬停查看</span></div><div class="paper-series-toggles">${lineToggles}${benchmarkToggle}</div><div class="paper-performance-plot"><svg class="paper-performance-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="四账户模拟收益曲线与可选标普 500 对比"><title>四账户模拟收益曲线与可选标普 500 对比</title><g class="paper-ytd-grid">${grid}${verticalGrid}</g><line class="paper-curve-baseline" x1="${left}" y1="${y(baseline).toFixed(2)}" x2="${width - right}" y2="${y(baseline).toFixed(2)}"></line>${lines}<line class="paper-curve-crosshair" x1="0" y1="${top}" x2="0" y2="${height - bottom}" hidden></line><rect class="paper-curve-hit-area" x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}"></rect></svg><div class="paper-curve-y-scale" aria-hidden="true">${yLabels}</div><div class="paper-curve-x-scale" aria-hidden="true">${xLabels}</div><div class="paper-curve-tooltip" hidden></div></div><div class="paper-performance-caption"><p>四条策略线均为可执行净值；可选灰色虚线为同起点的标普 500 ETF（SPY）未复权价格收益，不含股息再投资。曲线用于模拟盘比较，不代表真实账户收益。</p><span>调仓细节请在下方 K 线与调仓表中查看。</span></div></section>`;
+}
+
+function wirePaperPerformanceChart() {
+  const plot = document.querySelector("#view-paper .paper-performance-plot");
+  if (!plot || !paperCurveModel) return;
+  const svg = plot.querySelector("svg");
+  const tooltip = plot.querySelector(".paper-curve-tooltip");
+  const crosshair = plot.querySelector(".paper-curve-crosshair");
+  const hideTooltip = () => {
+    tooltip.hidden = true;
+    crosshair.hidden = true;
+  };
+  const showTooltip = (event) => {
+    if (paperCurveState.drag) return;
+    const rect = svg.getBoundingClientRect();
+    const ratio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
+    const time = paperCurveModel.domain.start + ratio * (paperCurveModel.domain.end - paperCurveModel.domain.start);
+    const chartX = paperCurveModel.left + ratio * (paperCurveModel.width - paperCurveModel.left - paperCurveModel.right);
+    const rows = paperCurveModel.series.map((series) => ({ series, point: paperCurveNearestPoint(series.visiblePoints, time) }));
+    const titlePoint = rows[0]?.point;
+    crosshair.setAttribute("x1", chartX.toFixed(2));
+    crosshair.setAttribute("x2", chartX.toFixed(2));
+    crosshair.hidden = false;
+    tooltip.innerHTML = `<strong>${escapeHtml(formatDate(titlePoint?.marked_at))}</strong>${rows.map(({ series, point }) => `<div class="paper-tooltip-row paper-tooltip-${series.id}"><span><i></i>${escapeHtml(series.label)}</span><b>净值 ${escapeHtml(point.nav.toFixed(4))}</b><small>${Number.isFinite(point.equity) ? escapeHtml(formatMoney(point.equity, paperCurveModel.asset)) : "金额待下一次快照"}</small></div>`).join("")}`;
+    tooltip.style.left = `${clamp(event.clientX - rect.left + 14, 8, Math.max(rect.width - 246, 8))}px`;
+    tooltip.style.top = `${clamp(event.clientY - rect.top + 14, 8, Math.max(rect.height - 176, 8))}px`;
+    tooltip.hidden = false;
+  };
+  plot.addEventListener("pointermove", showTooltip);
+  plot.addEventListener("pointerleave", hideTooltip);
+  plot.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    paperCurveState.zoom = clamp(paperCurveState.zoom * (event.deltaY < 0 ? 1.35 : 1 / 1.35), 1, 12);
+    if (paperCurveState.zoom === 1) paperCurveState.pan = 0;
+    renderPaper();
+  }, { passive: false });
+  plot.addEventListener("pointerdown", (event) => {
+    paperCurveState.drag = { startX: event.clientX, startPan: paperCurveState.pan, width: Math.max(svg.getBoundingClientRect().width, 1) };
+    plot.classList.add("is-dragging");
+    hideTooltip();
+  });
+}
+
+const paperExplorer = { portfolioId: null, symbol: null, window: "90" };
+
+function paperTradeRows(portfolio) {
+  return paperRebalanceEvents(portfolio).flatMap((event) => event.fills.map((fill) => ({ ...fill, observed_at: event.observed_at, scope: event.scope }))).reverse();
+}
+
+function paperMarketExplorer(snapshot) {
+  const portfolios = Array.isArray(snapshot.portfolios) ? snapshot.portfolios : [];
+  const portfolio = portfolios.find((row) => row.portfolio_id === paperExplorer.portfolioId) || portfolios[0];
+  const barsBySymbol = snapshot.market_charts?.bars_by_symbol;
+  if (!portfolio || !barsBySymbol || typeof barsBySymbol !== "object") {
+    return `<section class="panel full-panel"><header class="panel-head"><div><h2>调仓与 K 线</h2><p>仅显示已验证的公开 OHLC；旧快照不补造历史蜡烛。</p></div></header><div class="paper-chart-empty">当前发布尚未包含可视化市场历史。完成已授权的 YTD 回放后将显示 K 线与全部模拟调仓。</div></section>`;
+  }
+  paperExplorer.portfolioId = portfolio.portfolio_id;
+  const symbols = Object.keys(barsBySymbol).filter((symbol) => Array.isArray(barsBySymbol[symbol]) && barsBySymbol[symbol].length);
+  const eventSymbols = new Set(paperTradeRows(portfolio).map((row) => row.symbol));
+  const firstSymbol = symbols.find((symbol) => eventSymbols.has(symbol) && symbol !== "BIL") || symbols.find((symbol) => symbol !== "BIL") || symbols[0];
+  const symbol = symbols.includes(paperExplorer.symbol) ? paperExplorer.symbol : firstSymbol;
+  paperExplorer.symbol = symbol;
+  const bars = barsBySymbol[symbol]
+    .filter((row) => ["open", "high", "low", "close"].every((key) => Number.isFinite(Number(row[key]))))
+    .sort((left, right) => Date.parse(left.marked_at) - Date.parse(right.marked_at));
+  const trades = paperTradeRows(portfolio).filter((row) => row.symbol === symbol);
+  if (!bars.length) return `<section class="panel full-panel"><div class="paper-chart-empty">${escapeHtml(symbol || "当前标的")} 暂无完整 OHLC。</div></section>`;
+  const windowSize = Number.parseInt(paperExplorer.window, 10);
+  const visibleBars = Number.isInteger(windowSize) && windowSize > 0 ? bars.slice(-windowSize) : bars;
+  const visibleStart = Date.parse(visibleBars[0].marked_at);
+  const visibleTrades = trades.filter((row) => Date.parse(row.observed_at) >= visibleStart);
+  const values = visibleBars.flatMap((row) => [Number(row.high), Number(row.low)]).concat(visibleTrades.map((row) => Number(row.reference_price))).filter(Number.isFinite);
+  const observedLow = Math.min(...values);
+  const observedHigh = Math.max(...values);
+  const padding = Math.max((observedHigh - observedLow) * 0.08, observedHigh * 0.003, 0.000001);
+  const low = observedLow - padding;
+  const high = observedHigh + padding;
+  const width = 1000;
+  const height = 360;
+  const left = 62;
+  const right = 18;
+  const top = 18;
+  const bottom = 42;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const step = plotWidth / Math.max(visibleBars.length, 1);
+  const candleWidth = Math.max(1.1, Math.min(7, step * 0.62));
+  const x = (index) => left + step * index + step / 2;
+  const y = (value) => top + ((high - Number(value)) / (high - low)) * plotHeight;
+  const candles = visibleBars.map((bar, index) => {
+    const open = Number(bar.open);
+    const close = Number(bar.close);
+    const up = close >= open;
+    const topY = Math.min(y(open), y(close));
+    const bodyHeight = Math.max(Math.abs(y(open) - y(close)), 1.2);
+    const summary = `${formatDate(bar.marked_at)} 开 ${marketPrice(open, symbol)} 高 ${marketPrice(bar.high, symbol)} 低 ${marketPrice(bar.low, symbol)} 收 ${marketPrice(close, symbol)}`;
+    return `<g class="paper-candle ${up ? "paper-candle-up" : "paper-candle-down"}"><title>${escapeHtml(summary)}</title><line x1="${x(index).toFixed(2)}" y1="${y(bar.high).toFixed(2)}" x2="${x(index).toFixed(2)}" y2="${y(bar.low).toFixed(2)}"></line><rect x="${(x(index) - candleWidth / 2).toFixed(2)}" y="${topY.toFixed(2)}" width="${candleWidth.toFixed(2)}" height="${bodyHeight.toFixed(2)}"></rect></g>`;
+  }).join("");
+  const tradeMarkers = visibleTrades.map((trade) => {
+    const tradeTime = Date.parse(trade.observed_at);
+    const barIndex = visibleBars.reduce((closest, bar, candidate) => Math.abs(Date.parse(bar.marked_at) - tradeTime) < Math.abs(Date.parse(visibleBars[closest].marked_at) - tradeTime) ? candidate : closest, 0);
+    const markerX = x(barIndex);
+    const markerY = y(trade.reference_price);
+    const buy = trade.side === "buy";
+    const path = buy ? `M ${markerX.toFixed(2)} ${(markerY - 7).toFixed(2)} l -5 8 h 10 z` : `M ${markerX.toFixed(2)} ${(markerY + 7).toFixed(2)} l -5 -8 h 10 z`;
+    const detail = `${formatTime(trade.observed_at)} ${buy ? "买入" : "卖出"} ${trade.symbol} / ${formatQuantity(trade.quantity)} / ${marketPrice(trade.reference_price, symbol)}`;
+    return `<path class="paper-trade-marker ${buy ? "paper-trade-buy" : "paper-trade-sell"}" d="${path}"><title>${escapeHtml(detail)}</title></path>`;
+  }).join("");
+  const ticks = Array.from({ length: 5 }, (_, index) => high - ((high - low) * index) / 4);
+  const grid = ticks.map((value) => `<line x1="${left}" y1="${y(value).toFixed(2)}" x2="${width - right}" y2="${y(value).toFixed(2)}"></line>`).join("");
+  const yLabels = ticks.map((value) => `<span style="top:${((y(value) / height) * 100).toFixed(2)}%">${escapeHtml(marketPrice(value, symbol))}</span>`).join("");
+  const tickIndices = [...new Set([0, Math.round((visibleBars.length - 1) / 3), Math.round(((visibleBars.length - 1) * 2) / 3), visibleBars.length - 1])];
+  const xLabels = tickIndices.map((index, labelIndex) => `<span class="paper-x-label-${labelIndex}" style="left:${((x(index) / width) * 100).toFixed(2)}%">${escapeHtml(formatShortDate(visibleBars[index].marked_at))}</span>`).join("");
+  const allTrades = paperTradeRows(portfolio);
+  const windowLabel = windowSize > 0 ? `近 ${windowSize} 个交易日` : "YTD 全程";
+  const priceBasisNote = symbol === "BIL" ? "BIL 为派息型短债 ETF；此处显示未复权价格，月初除息跳空正常，调仓标记采用同一价格口径。" : "显示原始未复权 OHLC；调仓三角为无订单模拟成交，采用同一价格口径。";
+  return `<section class="panel full-panel paper-market-panel"><header class="panel-head"><div><h2>调仓与 K 线</h2><p>公开日线 OHLC / ${escapeHtml(portfolioText(portfolio.label))} 可执行层模拟成交标记</p></div><span>${visibleBars.length}/${bars.length} 根 K 线</span></header><div class="paper-chart-controls"><label>组合<select id="paper-portfolio-select">${portfolios.map((row) => `<option value="${escapeHtml(row.portfolio_id)}"${row.portfolio_id === portfolio.portfolio_id ? " selected" : ""}>${escapeHtml(portfolioText(row.label))}</option>`).join("")}</select></label><label>行情标的<select id="paper-symbol-select">${symbols.map((item) => `<option value="${escapeHtml(item)}"${item === symbol ? " selected" : ""}>${escapeHtml(item)}${eventSymbols.has(item) ? " · 有调仓" : ""}</option>`).join("")}</select></label><label>展示区间<select id="paper-window-select"><option value="45"${paperExplorer.window === "45" ? " selected" : ""}>近 45 个交易日</option><option value="90"${paperExplorer.window === "90" ? " selected" : ""}>近 90 个交易日</option><option value="all"${paperExplorer.window === "all" ? " selected" : ""}>YTD 全程</option></select></label><div><span>当前标记</span><strong>${visibleTrades.length} 笔 / 标的总计 ${trades.length} 笔</strong></div></div><div class="paper-candle-plot"><svg class="paper-candle-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(`${symbol} ${windowLabel}日 K 线及模拟调仓标记`)}"><title>${escapeHtml(`${symbol} ${windowLabel}日 K 线及模拟调仓标记`)}</title><g class="paper-ytd-grid">${grid}</g>${candles}${tradeMarkers}</svg><div class="paper-candle-y-scale" aria-hidden="true">${yLabels}</div><div class="paper-candle-x-scale" aria-hidden="true">${xLabels}</div></div><div class="paper-candle-legend"><span class="paper-candle-up-key">收涨</span><span class="paper-candle-down-key">收跌</span><span class="paper-buy-key">模拟买入</span><span class="paper-sell-key">模拟卖出</span><small>${escapeHtml(priceBasisNote)}</small></div><div class="table-wrap"><table><thead><tr><th>调仓时间</th><th>类型</th><th>方向 / 标的</th><th>数量</th><th>参考价</th><th>名义金额</th><th>模拟成本</th></tr></thead><tbody>${allTrades.map((trade) => `<tr><td>${escapeHtml(formatTime(trade.observed_at))}<small>${escapeHtml(paperRebalanceScopeText(trade.scope))}</small></td><td>${pill(trade.scope === "c60_sleeve" ? "paper" : "pass")}</td><td><strong>${escapeHtml(trade.side === "buy" ? "买入" : "卖出")} ${escapeHtml(trade.symbol)}</strong><small>${escapeHtml(trade.sleeve_id.toUpperCase())} 袖套</small></td><td>${escapeHtml(formatQuantity(trade.quantity))}</td><td>${escapeHtml(marketPrice(trade.reference_price, trade.symbol))}</td><td>${escapeHtml(formatMoney(trade.notional, snapshot.reporting_asset))}</td><td>${escapeHtml(formatMoney(trade.cost, snapshot.reporting_asset))}</td></tr>`).join("") || `<tr><td colspan="7" class="empty-cell">该组合尚无实际模拟调仓</td></tr>`}</tbody></table></div></section>`;
 }
 
 function renderPaper() {
@@ -803,23 +1045,26 @@ function renderPaper() {
   const c60 = decision.c60 || {};
   const portfolioCards = snapshot.portfolios.map((portfolio) => {
     const nav = portfolio.nav;
+    const performance = nav.performance || {};
     const allocation = portfolio.allocation;
     const holdings = portfolio.holdings || [];
     const divergence = Number(nav.executable) - Number(nav.signal);
     return `<article class="paper-card">
       <header class="paper-card-head"><div><span>${escapeHtml(portfolio.portfolio_id)}</span><h2>${escapeHtml(portfolioText(portfolio.label))}</h2></div>${pill(portfolio.status)}</header>
-      <div class="paper-nav-grid"><div><span>信号净值</span><strong>${escapeHtml(Number(nav.signal).toFixed(6))}</strong><small>年初以来 ${escapeHtml(formatPercent(Number(nav.signal) - 1))}</small></div><div><span>可执行净值</span><strong>${escapeHtml(Number(nav.executable).toFixed(6))}</strong><small>年初以来 ${escapeHtml(formatPercent(Number(nav.executable) - 1))}</small></div><div><span>执行偏差</span><strong class="${divergence < -0.0001 ? "bad-text" : ""}">${escapeHtml(formatPercent(divergence))}</strong><small>模拟成本与数量取整</small></div></div>
+      <div class="paper-nav-grid paper-performance-grid"><div><span>当前模拟资产</span><strong>${escapeHtml(formatMoney(performance.current_equity, snapshot.reporting_asset))}</strong><small>可执行净值 ${escapeHtml(Number(nav.executable).toFixed(6))}</small></div><div><span>日收益</span><strong class="${paperPerformanceTone(performance.day_return_fraction)}">${escapeHtml(paperPerformanceText(performance.day_return_fraction))}</strong><small>${escapeHtml(formatSignedMoney(performance.day_pnl, snapshot.reporting_asset))}</small></div><div><span>本月收益</span><strong class="${paperPerformanceTone(performance.month_return_fraction)}">${escapeHtml(paperPerformanceText(performance.month_return_fraction))}</strong><small>${escapeHtml(formatSignedMoney(performance.month_pnl, snapshot.reporting_asset))}</small></div><div><span>年初至今</span><strong class="${paperPerformanceTone(performance.total_return_fraction)}">${escapeHtml(paperPerformanceText(performance.total_return_fraction ?? nav.since_start_return_fraction))}</strong><small>${escapeHtml(formatSignedMoney(performance.total_pnl, snapshot.reporting_asset))}</small></div></div>
       ${navSparkline(nav.points)}
-      <dl class="fact-list paper-facts"><div><dt>当前 / 最大回撤</dt><dd>${escapeHtml(formatPercent(nav.current_drawdown_fraction))} / ${escapeHtml(formatPercent(nav.max_drawdown_fraction))}</dd></div><div><dt>累计基础成本</dt><dd>${escapeHtml(formatMoney(nav.cumulative_cost, snapshot.reporting_asset))}</dd></div><div><dt>累计压力成本</dt><dd>${escapeHtml(formatMoney(nav.cumulative_stress_cost, snapshot.reporting_asset))}</dd></div><div><dt>G20 / C60 预算</dt><dd>${escapeHtml(formatPercent(allocation.g20_budget))} / ${escapeHtml(formatPercent(allocation.c60_budget))}</dd></div><div><dt>现金权重</dt><dd>${escapeHtml(formatPercent(allocation.cash_weight))}</dd></div><div><dt>本轮模拟成交</dt><dd>${portfolio.latest_execution.count} / 订单路由关闭</dd></div></dl>
+      <dl class="fact-list paper-facts"><div><dt>信号 / 可执行净值</dt><dd>${escapeHtml(Number(nav.signal).toFixed(6))} / ${escapeHtml(Number(nav.executable).toFixed(6))}</dd></div><div><dt>执行偏差</dt><dd class="${divergence < -0.0001 ? "bad-text" : ""}">${escapeHtml(formatPercent(divergence))}</dd></div><div><dt>日收益（最近观测）</dt><dd class="${paperPerformanceTone(performance.day_return_fraction)}">${escapeHtml(paperPeriodDetail(performance, "day_return_fraction", "day_pnl", snapshot.reporting_asset))}</dd></div><div><dt>本月收益</dt><dd class="${paperPerformanceTone(performance.month_return_fraction)}">${escapeHtml(paperPeriodDetail(performance, "month_return_fraction", "month_pnl", snapshot.reporting_asset))}</dd></div><div><dt>当前 / 最大回撤</dt><dd>${escapeHtml(formatPercent(nav.current_drawdown_fraction))} / ${escapeHtml(formatPercent(nav.max_drawdown_fraction))}</dd></div><div><dt>累计基础 / 压力成本</dt><dd>${escapeHtml(formatMoney(nav.cumulative_cost, snapshot.reporting_asset))} / ${escapeHtml(formatMoney(nav.cumulative_stress_cost, snapshot.reporting_asset))}</dd></div><div><dt>G20 / C60 预算</dt><dd>${escapeHtml(formatPercent(allocation.g20_budget))} / ${escapeHtml(formatPercent(allocation.c60_budget))}</dd></div><div><dt>现金权重 / 本轮模拟成交</dt><dd>${escapeHtml(formatPercent(allocation.cash_weight))} / ${portfolio.latest_execution.count}</dd></div></dl>
       <div class="table-wrap"><table><thead><tr><th>持仓</th><th>数量</th><th>权重</th><th>市值</th></tr></thead><tbody>${holdings.map((row) => `<tr><td><strong>${escapeHtml(row.symbol)}</strong></td><td>${escapeHtml(formatQuantity(row.quantity))}</td><td>${escapeHtml(formatPercent(row.actual_weight))}</td><td>${escapeHtml(formatMoney(row.market_value, snapshot.reporting_asset))}</td></tr>`).join("") || `<tr><td colspan="4" class="empty-cell">全现金</td></tr>`}</tbody></table></div>
     </article>`;
   }).join("");
   $("view-paper").innerHTML = `<div class="paper-guard"><div><strong>模拟盘 / 不具备订单权限</strong><p>四个账户各以 10,000 美元等值起始。“信号净值”按理想分数份额且不计成本；“可执行净值”应用数量步长、最小名义金额和模拟成本。2026 年初至今曲线来自经所有者授权的公开历史行情模拟，不代表真实账户收益；美元与 USDT 仅按 1:1 等值假设展示。</p></div><div>${pill(snapshot.status)}<span class="mono">${escapeHtml(shortHash(snapshot.snapshot_hash))}</span></div></div>
     <div class="metrics metrics-four">${metric("策略组合", String(snapshot.portfolios.length), "美股轮动 / 加密趋势 / 固定组合 / 动态组合", "accent")}${metric("年初模拟起点", formatTime(snapshot.forward_start_at), "2026 年初至今公开行情模拟", "")}${metric("美股轮动当前标的", g20.selected_symbol || "-", "63 日代理资产动量第一名 / 风险预算 20%", "good")}${metric("动态组合加密预算", formatPercent(decision.d15_c60_budget), `合格加密资产 ${c60.eligible_count ?? "-"} 个`, "")}</div>
-    ${portfolioYtdCurve(snapshot.portfolios)}
+    ${paperPerformanceChart(snapshot)}
+    ${paperMarketExplorer(snapshot)}
     <section class="panel full-panel"><header class="panel-head"><div><h2>最新策略决定</h2><p>决定时间 ${escapeHtml(formatTime(decision.decision_time))} / 数据截止 ${escapeHtml(formatTime(decision.data_cutoff))}</p></div>${pill(c60.btc_system_gate ? "pass" : "block")}</header><div class="paper-decision-band"><div><span>美股轮动配置目标</span><strong>${escapeHtml(Object.entries(g20.target_weights || {}).map(([symbol, weight]) => `${symbol} ${formatPercent(weight)}`).join(" · ") || "-")}</strong></div><div><span>加密动量前两名</span><strong>${escapeHtml((c60.candidates || []).join(" / ") || "无正动量候选")}</strong></div><div><span>比特币系统风控</span><strong>${escapeHtml(c60.btc_system_gate ? "通过" : "未通过")}</strong></div><div><span>波动率缩放比例</span><strong>${escapeHtml(formatPercent(c60.volatility_scalar))}</strong></div></div></section>
     <div class="paper-grid">${portfolioCards}</div>
-    <section class="panel full-panel"><header class="panel-head"><div><h2>证据边界</h2><p>年初至今模拟与真实成交严格分离</p></div><span>${snapshot.audit_row_count} 行审计记录</span></header><dl class="fact-list"><div><dt>历史曲线</dt><dd>${escapeHtml(statusText(snapshot.history_reference.status || "unavailable"))}</dd></div><div><dt>真实组合净值</dt><dd>不可用：没有真实成交</dd></div><div><dt>订单与私有接口</dt><dd>全部禁用</dd></div><div><dt>审计链</dt><dd class="mono">${escapeHtml(shortHash(snapshot.audit_last_hash))}</dd></div></dl></section>`;
+    <section class="panel full-panel"><header class="panel-head"><div><h2>证据边界</h2><p>年初至今模拟与真实成交严格分离</p></div><span>${snapshot.audit_row_count} 行审计记录</span></header><dl class="fact-list"><div><dt>历史曲线</dt><dd>${escapeHtml(statusText(snapshot.history_reference.status || "unavailable"))}</dd></div><div><dt>大盘基准</dt><dd>${snapshot.benchmarks?.length ? "SPY 公开价格基准（未复权）" : "待完整公开回放补齐；未使用替代数据"}</dd></div><div><dt>真实组合净值</dt><dd>不可用：没有真实成交</dd></div><div><dt>订单与私有接口</dt><dd>全部禁用</dd></div><div><dt>审计链</dt><dd class="mono">${escapeHtml(shortHash(snapshot.audit_last_hash))}</dd></div></dl></section>`;
+  wirePaperPerformanceChart();
 }
 
 function renderAll() {
@@ -887,9 +1132,7 @@ async function load() {
     ]));
     const responses = Object.fromEntries(entries);
     Object.entries(responses).forEach(([type, response]) => validateModel(response, type, publication));
-    const models = Object.fromEntries(
-      Object.entries(responses).map(([type, response]) => [type, response.value]),
-    );
+    const models = Object.fromEntries(Object.entries(responses).map(([type, response]) => [type, response.value]));
     state.status = "ready";
     state.publication = publication;
     state.models = models;
@@ -921,6 +1164,58 @@ $("theme-button").addEventListener("click", () => {
 $("refresh-button").addEventListener("click", load);
 $("menu-button").addEventListener("click", () => document.body.classList.toggle("nav-open"));
 $("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
+document.addEventListener("change", (event) => {
+  if (event.target.id === "paper-portfolio-select") {
+    paperExplorer.portfolioId = event.target.value;
+    paperExplorer.symbol = null;
+    renderPaper();
+  }
+  if (event.target.id === "paper-symbol-select") {
+    paperExplorer.symbol = event.target.value;
+    renderPaper();
+  }
+  if (event.target.id === "paper-window-select") {
+    paperExplorer.window = event.target.value;
+    renderPaper();
+  }
+});
+document.addEventListener("click", (event) => {
+  const control = event.target.closest("[data-paper-curve-action]");
+  if (!control || control.disabled) return;
+  const action = control.dataset.paperCurveAction;
+  if (action === "range") {
+    paperCurveState.range = control.dataset.value;
+    paperCurveState.zoom = 1;
+    paperCurveState.pan = 0;
+  }
+  if (action === "mode") paperCurveState.mode = control.dataset.value;
+  if (action === "series") {
+    const id = control.dataset.series;
+    if (paperCurveState.hiddenSeries.has(id)) paperCurveState.hiddenSeries.delete(id);
+    else if (paperCurveState.hiddenSeries.size < 3) paperCurveState.hiddenSeries.add(id);
+  }
+  if (action === "benchmark") paperCurveState.showBenchmark = !paperCurveState.showBenchmark;
+  if (action === "reset") {
+    paperCurveState.range = "all";
+    paperCurveState.mode = "return";
+    paperCurveState.showBenchmark = true;
+    paperCurveState.hiddenSeries.clear();
+    paperCurveState.zoom = 1;
+    paperCurveState.pan = 0;
+  }
+  renderPaper();
+});
+document.addEventListener("pointermove", (event) => {
+  if (!paperCurveState.drag) return;
+  const drag = paperCurveState.drag;
+  const movement = (drag.startX - event.clientX) / drag.width;
+  paperCurveState.pan = clamp(drag.startPan + movement, 0, 1);
+});
+document.addEventListener("pointerup", () => {
+  if (!paperCurveState.drag) return;
+  paperCurveState.drag = null;
+  renderPaper();
+});
 window.addEventListener("hashchange", showRoute);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 

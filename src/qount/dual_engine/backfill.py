@@ -13,6 +13,7 @@ from qount.contracts.trace import aware_datetime
 from qount.dual_engine.contracts import C60_SYMBOLS
 from qount.dual_engine.contracts import G20_EXECUTION_SYMBOLS
 from qount.dual_engine.contracts import G20_PROXY_SYMBOLS
+from qount.dual_engine.contracts import PAPER_BENCHMARK_SYMBOL
 from qount.dual_engine.contracts import PaperCycleInput
 from qount.dual_engine.market_data import BINANCE_BASE_URL
 from qount.dual_engine.market_data import DualEngineMarketConfig
@@ -76,6 +77,30 @@ def _utc_ms(value: dt.datetime) -> int:
     return int(value.timestamp() * 1000)
 
 
+def _tiingo_bar(row: Mapping[str, Any], *, symbol: str) -> dict[str, object]:
+    session = _date(row.get("date"), name=f"paper_ytd_tiingo_bar_date:{symbol}")
+    return {
+        "marked_at": dt.datetime.combine(session, dt.time(), tzinfo=_UTC).isoformat(),
+        "open": _number(row.get("open"), name=f"paper_ytd_tiingo_bar_open:{symbol}"),
+        "high": _number(row.get("high"), name=f"paper_ytd_tiingo_bar_high:{symbol}"),
+        "low": _number(row.get("low"), name=f"paper_ytd_tiingo_bar_low:{symbol}"),
+        "close": _number(row.get("close"), name=f"paper_ytd_tiingo_bar_close:{symbol}"),
+    }
+
+
+def _binance_bar(row: list[Any], *, symbol: str) -> dict[str, object]:
+    if len(row) < 7:
+        raise DualEngineMarketDataError(f"paper_ytd_binance_bar_invalid:{symbol}")
+    session = dt.datetime.fromtimestamp(int(row[0]) / 1000, tz=_UTC).date()
+    return {
+        "marked_at": dt.datetime.combine(session, dt.time(), tzinfo=_UTC).isoformat(),
+        "open": _number(row[1], name=f"paper_ytd_binance_bar_open:{symbol}"),
+        "high": _number(row[2], name=f"paper_ytd_binance_bar_high:{symbol}"),
+        "low": _number(row[3], name=f"paper_ytd_binance_bar_low:{symbol}"),
+        "close": _number(row[4], name=f"paper_ytd_binance_bar_close:{symbol}"),
+    }
+
+
 def _load_tiingo_archive(
     config: DualEngineMarketConfig,
     *,
@@ -86,7 +111,12 @@ def _load_tiingo_archive(
 ) -> tuple[dict[str, list[Mapping[str, Any]]], str]:
     archive: dict[str, list[Mapping[str, Any]]] = {}
     hashes: dict[str, str] = {}
-    for symbol in (*G20_PROXY_SYMBOLS, *G20_EXECUTION_SYMBOLS, "BIL"):
+    for symbol in (
+        *G20_PROXY_SYMBOLS,
+        *G20_EXECUTION_SYMBOLS,
+        "BIL",
+        PAPER_BENCHMARK_SYMBOL,
+    ):
         rows, payload_hash = _tiingo_daily(
             symbol,
             start=start,
@@ -241,6 +271,7 @@ def _daily_cycle(
     signal_day = session.isoformat() in config.g20_signal_dates
     marks: dict[str, float] = {}
     fills: dict[str, float] = {}
+    market_bars: dict[str, dict[str, object]] = {}
     for symbol in (*G20_EXECUTION_SYMBOLS, "BIL"):
         rows = _tiingo_rows(tiingo, symbol, before=session, inclusive=True)
         if signal_day and _date(
@@ -254,6 +285,20 @@ def _daily_cycle(
         )
         marks[symbol] = close
         fills[symbol] = close
+        try:
+            market_bars[symbol] = _tiingo_bar(rows[-1], symbol=symbol)
+        except DualEngineMarketDataError:
+            # OHLC is a display enhancement.  A sparse historical response may
+            # still support the frozen no-order NAV replay, but not a K-line.
+            pass
+    benchmark_rows = _tiingo_rows(tiingo, PAPER_BENCHMARK_SYMBOL, before=session, inclusive=True)
+    try:
+        market_bars[PAPER_BENCHMARK_SYMBOL] = _tiingo_bar(
+            benchmark_rows[-1],
+            symbol=PAPER_BENCHMARK_SYMBOL,
+        )
+    except DualEngineMarketDataError:
+        pass
     for symbol in C60_SYMBOLS:
         try:
             next_row = binance[symbol][next_session]
@@ -264,6 +309,7 @@ def _daily_cycle(
         fill = _number(next_row[1], name=f"paper_ytd_binance_open:{symbol}")
         marks[symbol] = fill
         fills[symbol] = fill
+        market_bars[symbol] = _binance_bar(next_row, symbol=symbol)
     source_hashes = {
         "tiingo_public": canonical_hash(
             {"archive": archive_hashes["tiingo_public_archive"], "session": session.isoformat()}
@@ -285,6 +331,7 @@ def _daily_cycle(
         source_hashes=source_hashes,
         g20_signal_day=signal_day,
         g20_rebalance_day=False,
+        market_bars=market_bars,
     )
 
 
@@ -340,6 +387,7 @@ def _g20_cycle(
     previous_crypto = (observed - dt.timedelta(days=1)).date()
     marks: dict[str, float] = {}
     fills: dict[str, float] = {}
+    market_bars: dict[str, dict[str, object]] = {}
     tiingo_open_hashes: dict[str, str] = {}
     binance_intraday_hashes: dict[str, str] = {}
     for symbol in (*G20_EXECUTION_SYMBOLS, "BIL"):
@@ -359,9 +407,26 @@ def _g20_cycle(
         fill = _number(row.get("open"), name=f"paper_ytd_g20_open:{symbol}")
         marks[symbol] = fill
         fills[symbol] = fill
+        try:
+            market_bars[symbol] = _tiingo_bar(row, symbol=symbol)
+        except DualEngineMarketDataError:
+            pass
         tiingo_open_hashes[symbol] = canonical_hash(
             {"session": session.isoformat(), "symbol": symbol, "row": row}
         )
+    benchmark_rows = _tiingo_rows(
+        tiingo,
+        PAPER_BENCHMARK_SYMBOL,
+        before=session,
+        inclusive=True,
+    )
+    try:
+        market_bars[PAPER_BENCHMARK_SYMBOL] = _tiingo_bar(
+            benchmark_rows[-1],
+            symbol=PAPER_BENCHMARK_SYMBOL,
+        )
+    except DualEngineMarketDataError:
+        pass
     for symbol in C60_SYMBOLS:
         fill, payload_hash = _binance_minute_open(
             symbol,
@@ -372,6 +437,15 @@ def _g20_cycle(
         marks[symbol] = fill
         fills[symbol] = fill
         binance_intraday_hashes[symbol] = payload_hash
+        try:
+            market_bars[symbol] = _binance_bar(
+                binance[symbol][previous_crypto],
+                symbol=symbol,
+            )
+        except KeyError as exc:
+            raise DualEngineMarketDataError(
+                f"paper_ytd_binance_bar_missing:{symbol}:{previous_crypto}"
+            ) from exc
     source_hashes = {
         "tiingo_public": canonical_hash({
             "archive": archive_hashes["tiingo_public_archive"],
@@ -397,6 +471,7 @@ def _g20_cycle(
         source_hashes=source_hashes,
         g20_signal_day=False,
         g20_rebalance_day=True,
+        market_bars=market_bars,
     )
 
 

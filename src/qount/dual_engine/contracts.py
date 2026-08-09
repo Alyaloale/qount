@@ -44,6 +44,8 @@ C60_SYMBOLS = (
     "DOTUSDT",
     "PAXGUSDT",
 )
+PAPER_BENCHMARK_ID = "spy-broad-market"
+PAPER_BENCHMARK_SYMBOL = "SPY"
 PAPER_PORTFOLIO_IDS = (
     "dual-engine-paper-g20",
     "dual-engine-paper-c60",
@@ -97,6 +99,226 @@ def _paper_number(
     if isinstance(value, bool):
         raise DualEngineContractError(f"{name}_invalid")
     return _finite(value, name=name, minimum=minimum)
+
+
+def _market_bar(value: Mapping[str, object], *, name: str) -> dict[str, object]:
+    expected = {"marked_at", "open", "high", "low", "close"}
+    if not isinstance(value, Mapping) or set(value) != expected:
+        raise DualEngineContractError(f"{name}_fields_invalid")
+    marked_at = _time(str(value["marked_at"]), name=f"{name}_time")
+    open_price = _paper_number(value["open"], name=f"{name}_open", minimum=0.0)
+    high_price = _paper_number(value["high"], name=f"{name}_high", minimum=0.0)
+    low_price = _paper_number(value["low"], name=f"{name}_low", minimum=0.0)
+    close_price = _paper_number(value["close"], name=f"{name}_close", minimum=0.0)
+    if (
+        min(open_price, high_price, low_price, close_price) <= 0.0
+        or high_price < max(open_price, low_price, close_price)
+        or low_price > min(open_price, high_price, close_price)
+    ):
+        raise DualEngineContractError(f"{name}_range_invalid")
+    return {
+        "marked_at": marked_at,
+        "open": open_price,
+        "high": high_price,
+        "low": low_price,
+        "close": close_price,
+    }
+
+
+def _market_bars(
+    value: Mapping[str, Mapping[str, object]],
+    *,
+    name: str,
+) -> dict[str, dict[str, object]]:
+    if not isinstance(value, Mapping):
+        raise DualEngineContractError(f"{name}_invalid")
+    allowed_symbols = {
+        *G20_EXECUTION_SYMBOLS,
+        "BIL",
+        *C60_SYMBOLS,
+        PAPER_BENCHMARK_SYMBOL,
+    }
+    result: dict[str, dict[str, object]] = {}
+    for symbol, bar in value.items():
+        symbol_text = str(symbol)
+        if symbol_text not in allowed_symbols:
+            raise DualEngineContractError(f"{name}_symbol_invalid")
+        result[symbol_text] = _market_bar(bar, name=f"{name}:{symbol_text}")
+    return dict(sorted(result.items()))
+
+
+def _market_charts(value: Mapping[str, object], *, name: str) -> dict[str, object]:
+    if not value:
+        return {}
+    if not isinstance(value, Mapping) or set(value) != {"interval", "bars_by_symbol"}:
+        raise DualEngineContractError(f"{name}_fields_invalid")
+    if value["interval"] != "1d" or not isinstance(value["bars_by_symbol"], Mapping):
+        raise DualEngineContractError(f"{name}_invalid")
+    allowed_symbols = {
+        *G20_EXECUTION_SYMBOLS,
+        "BIL",
+        *C60_SYMBOLS,
+        PAPER_BENCHMARK_SYMBOL,
+    }
+    result: dict[str, list[dict[str, object]]] = {}
+    for symbol, rows in value["bars_by_symbol"].items():
+        symbol_text = str(symbol)
+        if symbol_text not in allowed_symbols or not isinstance(rows, list) or not rows:
+            raise DualEngineContractError(f"{name}_symbol_invalid")
+        normalized = [
+            _market_bar(row, name=f"{name}:{symbol_text}")
+            for row in rows
+        ]
+        timestamps = [str(row["marked_at"]) for row in normalized]
+        if timestamps != sorted(timestamps) or len(timestamps) != len(set(timestamps)):
+            raise DualEngineContractError(f"{name}_time_order_invalid")
+        result[symbol_text] = normalized
+    if not result:
+        raise DualEngineContractError(f"{name}_empty")
+    return {"interval": "1d", "bars_by_symbol": dict(sorted(result.items()))}
+
+
+def _performance_summary(
+    value: object,
+    *,
+    points: Sequence[Mapping[str, object]],
+    initial_capital: float,
+    name: str,
+) -> None:
+    """Validate precomputed period returns used by the read-only dashboard."""
+
+    if not isinstance(value, Mapping) or set(value) != {
+        "current_equity",
+        "total_return_fraction",
+        "total_pnl",
+        "day_return_fraction",
+        "day_pnl",
+        "month_return_fraction",
+        "month_pnl",
+        "month_base_at",
+    }:
+        raise DualEngineContractError(f"{name}_fields_invalid")
+    latest = points[-1]
+    latest_nav = _paper_number(latest["nav"], name=f"{name}_latest_nav", minimum=0.0)
+    if latest_nav <= 0.0:
+        raise DualEngineContractError(f"{name}_latest_nav_invalid")
+    current_equity = _paper_number(
+        value["current_equity"], name=f"{name}_current_equity", minimum=0.0
+    )
+    total_return = _paper_number(
+        value["total_return_fraction"], name=f"{name}_total_return"
+    )
+    total_pnl = _paper_number(value["total_pnl"], name=f"{name}_total_pnl")
+    if not (
+        math.isclose(current_equity, latest_nav * initial_capital, rel_tol=0.0, abs_tol=1e-8)
+        and math.isclose(total_return, latest_nav - 1.0, rel_tol=0.0, abs_tol=1e-12)
+        and math.isclose(total_pnl, (latest_nav - 1.0) * initial_capital, rel_tol=0.0, abs_tol=1e-8)
+    ):
+        raise DualEngineContractError(f"{name}_total_invalid")
+
+    latest_time = aware_datetime(str(latest["marked_at"]))
+    month_start = latest_time.replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    bases = {
+        "day": points[-2] if len(points) > 1 else None,
+        "month": next(
+            (
+                point
+                for point in reversed(points)
+                if aware_datetime(str(point["marked_at"])) < month_start
+            ),
+            None,
+        ),
+    }
+    for period, base in bases.items():
+        return_value = value[f"{period}_return_fraction"]
+        pnl_value = value[f"{period}_pnl"]
+        if base is None:
+            if return_value is not None or pnl_value is not None:
+                raise DualEngineContractError(f"{name}_{period}_unavailable_invalid")
+            continue
+        base_nav = _paper_number(base["nav"], name=f"{name}_{period}_base_nav", minimum=0.0)
+        expected_return = latest_nav / base_nav - 1.0
+        expected_pnl = (latest_nav - base_nav) * initial_capital
+        if not (
+            math.isclose(
+                _paper_number(return_value, name=f"{name}_{period}_return"),
+                expected_return,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+            and math.isclose(
+                _paper_number(pnl_value, name=f"{name}_{period}_pnl"),
+                expected_pnl,
+                rel_tol=0.0,
+                abs_tol=1e-8,
+            )
+        ):
+            raise DualEngineContractError(f"{name}_{period}_invalid")
+    month_base = bases["month"]
+    expected_month_base_at = str(month_base["marked_at"]) if month_base else None
+    if value["month_base_at"] != expected_month_base_at:
+        raise DualEngineContractError(f"{name}_month_base_invalid")
+
+
+def _rebalance_history(
+    value: object,
+    *,
+    allowed_symbols: set[str],
+    generated_at: object,
+    name: str,
+) -> None:
+    if not isinstance(value, Mapping) or set(value) != {"count", "events"}:
+        raise DualEngineContractError(f"{name}_fields_invalid")
+    events = value["events"]
+    if (
+        not isinstance(value["count"], int)
+        or isinstance(value["count"], bool)
+        or not isinstance(events, list)
+        or value["count"] != len(events)
+    ):
+        raise DualEngineContractError(f"{name}_invalid")
+    previous: str | None = None
+    for event in events:
+        if not isinstance(event, Mapping) or set(event) != {
+            "observed_at", "cycle_hash", "scope", "fills"
+        }:
+            raise DualEngineContractError(f"{name}_event_fields_invalid")
+        observed_at = _time(str(event["observed_at"]), name=f"{name}_event_time")
+        if aware_datetime(observed_at) > generated_at or (
+            previous is not None and observed_at <= previous
+        ):
+            raise DualEngineContractError(f"{name}_event_time_invalid")
+        previous = observed_at
+        if (
+            not is_sha256(str(event["cycle_hash"]))
+            or event["scope"] not in {"initial", "g20_cross_sleeve", "c60_sleeve"}
+            or not isinstance(event["fills"], list)
+            or not event["fills"]
+        ):
+            raise DualEngineContractError(f"{name}_event_invalid")
+        for fill in event["fills"]:
+            if not isinstance(fill, Mapping) or set(fill) != {
+                "sleeve_id", "symbol", "side", "quantity", "reference_price",
+                "notional", "cost", "stress_cost",
+            }:
+                raise DualEngineContractError(f"{name}_fill_fields_invalid")
+            if (
+                fill["sleeve_id"] not in {"g20", "c60"}
+                or fill["symbol"] not in allowed_symbols
+                or fill["side"] not in {"buy", "sell"}
+            ):
+                raise DualEngineContractError(f"{name}_fill_identity_invalid")
+            for field in ("quantity", "reference_price", "notional"):
+                if _paper_number(fill[field], name=f"{name}_fill_{field}", minimum=0.0) <= 0.0:
+                    raise DualEngineContractError(f"{name}_fill_invalid")
+            cost = _paper_number(fill["cost"], name=f"{name}_fill_cost", minimum=0.0)
+            stress_cost = _paper_number(
+                fill["stress_cost"], name=f"{name}_fill_stress_cost", minimum=0.0
+            )
+            if stress_cost < cost - 1e-9:
+                raise DualEngineContractError(f"{name}_fill_stress_invalid")
 
 
 @dataclass(frozen=True)
@@ -226,6 +448,7 @@ class PaperCycleInput:
     market_data_complete: bool
     blockers: tuple[str, ...]
     cycle_hash: str
+    market_bars: Mapping[str, Mapping[str, object]]
 
     @classmethod
     def create(
@@ -244,6 +467,7 @@ class PaperCycleInput:
         g20_rebalance_day: bool,
         market_data_complete: bool = True,
         blockers: Sequence[str] = (),
+        market_bars: Mapping[str, Mapping[str, object]] | None = None,
     ) -> "PaperCycleInput":
         core = {
             "schema_version": DUAL_ENGINE_SCHEMA_VERSION,
@@ -276,12 +500,22 @@ class PaperCycleInput:
             "market_data_complete": bool(market_data_complete),
             "blockers": tuple(str(value) for value in blockers),
         }
-        cycle = cls(**core, cycle_hash=canonical_hash(core))
+        normalized_bars = _market_bars(
+            market_bars or {},
+            name="paper_cycle_market_bars",
+        )
+        if normalized_bars:
+            core["market_bars"] = normalized_bars
+        cycle = cls(
+            **{key: value for key, value in core.items() if key != "market_bars"},
+            cycle_hash=canonical_hash(core),
+            market_bars=normalized_bars,
+        )
         cycle.validate()
         return cycle
 
     def _core(self) -> dict[str, Any]:
-        return {
+        core = {
             "schema_version": self.schema_version,
             "observed_at": self.observed_at,
             "decision_time": self.decision_time,
@@ -297,6 +531,13 @@ class PaperCycleInput:
             "market_data_complete": self.market_data_complete,
             "blockers": self.blockers,
         }
+        normalized_bars = _market_bars(
+            self.market_bars,
+            name="paper_cycle_market_bars",
+        )
+        if normalized_bars:
+            core["market_bars"] = normalized_bars
+        return core
 
     def validate(self) -> None:
         if self.schema_version != DUAL_ENGINE_SCHEMA_VERSION:
@@ -353,6 +594,7 @@ class PaperCycleInput:
             raise DualEngineContractError("paper_cycle_flags_invalid")
         if self.market_data_complete is not (not self.blockers):
             raise DualEngineContractError("paper_cycle_quality_invalid")
+        _market_bars(self.market_bars, name="paper_cycle_market_bars")
         if self.cycle_hash != canonical_hash(self._core()):
             raise DualEngineContractError("paper_cycle_hash_invalid")
 
@@ -368,7 +610,8 @@ class PaperCycleInput:
             "g20_rebalance_day", "market_data_complete", "blockers",
             "cycle_hash",
         }
-        if set(value) != expected:
+        allowed = expected | {"market_bars"}
+        if set(value) != expected and set(value) != allowed:
             raise DualEngineContractError("paper_cycle_fields_invalid")
         cycle = cls(
             schema_version=int(value["schema_version"]),
@@ -407,6 +650,10 @@ class PaperCycleInput:
             market_data_complete=value["market_data_complete"],
             blockers=tuple(str(item) for item in value["blockers"]),
             cycle_hash=str(value["cycle_hash"]),
+            market_bars=_market_bars(
+                value.get("market_bars", {}),
+                name="paper_cycle_market_bars",
+            ),
         )
         cycle.validate()
         return cycle
@@ -437,6 +684,7 @@ class PaperProgramSnapshot:
     audit_last_hash: str
     audit_row_count: int
     snapshot_hash: str
+    market_charts: Mapping[str, object]
 
     @classmethod
     def create(
@@ -454,6 +702,7 @@ class PaperProgramSnapshot:
         latest_decision: Mapping[str, Any],
         audit_last_hash: str,
         audit_row_count: int,
+        market_charts: Mapping[str, object] | None = None,
     ) -> "PaperProgramSnapshot":
         core = {
             "schema_version": DUAL_ENGINE_SCHEMA_VERSION,
@@ -477,12 +726,22 @@ class PaperProgramSnapshot:
             "audit_last_hash": str(audit_last_hash),
             "audit_row_count": int(audit_row_count),
         }
-        snapshot = cls(**core, snapshot_hash=canonical_hash(core))
+        normalized_charts = _market_charts(
+            market_charts or {},
+            name="paper_snapshot_market_charts",
+        )
+        if normalized_charts:
+            core["market_charts"] = normalized_charts
+        snapshot = cls(
+            **{key: value for key, value in core.items() if key != "market_charts"},
+            snapshot_hash=canonical_hash(core),
+            market_charts=normalized_charts,
+        )
         snapshot.validate()
         return snapshot
 
     def _core(self) -> dict[str, Any]:
-        return {
+        core = {
             "schema_version": self.schema_version,
             "program_id": self.program_id,
             "program_version": self.program_version,
@@ -504,6 +763,13 @@ class PaperProgramSnapshot:
             "audit_last_hash": self.audit_last_hash,
             "audit_row_count": self.audit_row_count,
         }
+        normalized_charts = _market_charts(
+            self.market_charts,
+            name="paper_snapshot_market_charts",
+        )
+        if normalized_charts:
+            core["market_charts"] = normalized_charts
+        return core
 
     def validate(self) -> None:
         if self.schema_version != DUAL_ENGINE_SCHEMA_VERSION or self.program_id != DUAL_ENGINE_PROGRAM_ID or self.program_version != DUAL_ENGINE_PROGRAM_VERSION:
@@ -538,7 +804,11 @@ class PaperProgramSnapshot:
                 "reporting_asset", "nav", "allocation", "holdings",
                 "latest_execution", "latest_decision",
             }
-            if set(portfolio) != expected_portfolio_fields:
+            expected_with_rebalances = expected_portfolio_fields | {"rebalances"}
+            if (
+                set(portfolio) != expected_portfolio_fields
+                and set(portfolio) != expected_with_rebalances
+            ):
                 raise DualEngineContractError("paper_snapshot_portfolio_fields_invalid")
             portfolio_id = str(portfolio["portfolio_id"])
             if (
@@ -553,12 +823,19 @@ class PaperProgramSnapshot:
             ):
                 raise DualEngineContractError("paper_snapshot_portfolio_identity_invalid")
             nav = portfolio["nav"]
-            if not isinstance(nav, Mapping) or set(nav) != {
+            expected_nav_fields = {
                 "signal", "executable", "portfolio_realized",
                 "portfolio_realized_status", "since_start_return_fraction",
                 "current_drawdown_fraction", "max_drawdown_fraction",
                 "cumulative_cost", "cumulative_stress_cost", "points",
-            }:
+            }
+            if (
+                not isinstance(nav, Mapping)
+                or (
+                    set(nav) != expected_nav_fields
+                    and set(nav) != expected_nav_fields | {"performance"}
+                )
+            ):
                 raise DualEngineContractError("paper_snapshot_nav_fields_invalid")
             signal_nav = _paper_number(
                 nav["signal"], name="paper_snapshot_signal_nav", minimum=0.0
@@ -591,9 +868,14 @@ class PaperProgramSnapshot:
             if not isinstance(points, list) or not points:
                 raise DualEngineContractError("paper_snapshot_nav_points_invalid")
             for point in points:
-                if not isinstance(point, Mapping) or set(point) != {
-                    "marked_at", "signal", "executable"
-                }:
+                if (
+                    not isinstance(point, Mapping)
+                    or (
+                        set(point) != {"marked_at", "signal", "executable"}
+                        and set(point)
+                        != {"marked_at", "signal", "executable", "executable_equity"}
+                    )
+                ):
                     raise DualEngineContractError("paper_snapshot_nav_point_invalid")
                 if aware_datetime(str(point["marked_at"])) > generated:
                     raise DualEngineContractError("paper_snapshot_nav_point_time_invalid")
@@ -610,6 +892,34 @@ class PaperProgramSnapshot:
                     ) <= 0.0
                 ):
                     raise DualEngineContractError("paper_snapshot_nav_point_invalid")
+                if "executable_equity" in point and not math.isclose(
+                    _paper_number(
+                        point["executable_equity"],
+                        name="paper_snapshot_point_executable_equity",
+                        minimum=0.0,
+                    ),
+                    _paper_number(
+                        point["executable"],
+                        name="paper_snapshot_point_executable",
+                        minimum=0.0,
+                    ) * float(portfolio["initial_capital"]),
+                    rel_tol=0.0,
+                    abs_tol=1e-8,
+                ):
+                    raise DualEngineContractError("paper_snapshot_nav_point_equity_invalid")
+            if "performance" in nav:
+                _performance_summary(
+                    nav["performance"],
+                    points=[
+                        {
+                            "marked_at": point["marked_at"],
+                            "nav": point["executable"],
+                        }
+                        for point in points
+                    ],
+                    initial_capital=float(portfolio["initial_capital"]),
+                    name="paper_snapshot_portfolio_performance",
+                )
             allocation = portfolio["allocation"]
             if not isinstance(allocation, Mapping) or set(allocation) != {
                 "g20_budget", "c60_budget", "cash", "cash_weight"
@@ -713,6 +1023,13 @@ class PaperProgramSnapshot:
                 )
                 if stress_cost < cost - 1e-9:
                     raise DualEngineContractError("paper_snapshot_fill_stress_invalid")
+            if "rebalances" in portfolio:
+                _rebalance_history(
+                    portfolio["rebalances"],
+                    allowed_symbols=allowed_symbols,
+                    generated_at=generated,
+                    name="paper_snapshot_rebalances",
+                )
             decision = portfolio["latest_decision"]
             if not isinstance(decision, Mapping) or set(decision) != {
                 "g20_selected", "c60_candidates", "btc_system_gate",
@@ -735,8 +1052,108 @@ class PaperProgramSnapshot:
                 or decision["d15_c60_budget"] not in {0.025, 0.075, 0.10, 0.15}
             ):
                 raise DualEngineContractError("paper_snapshot_portfolio_decision_invalid")
+        market_charts = _market_charts(
+            self.market_charts,
+            name="paper_snapshot_market_charts",
+        )
         if self.benchmarks:
-            raise DualEngineContractError("paper_snapshot_benchmarks_not_ready")
+            if len(self.benchmarks) != 1:
+                raise DualEngineContractError("paper_snapshot_benchmarks_invalid")
+            benchmark = self.benchmarks[0]
+            expected_benchmark_fields = {
+                "benchmark_id", "label", "symbol", "status", "role", "source",
+                "price_basis", "initial_capital", "reporting_asset", "nav",
+            }
+            if not isinstance(benchmark, Mapping) or set(benchmark) != expected_benchmark_fields:
+                raise DualEngineContractError("paper_snapshot_benchmark_fields_invalid")
+            if (
+                benchmark["benchmark_id"] != PAPER_BENCHMARK_ID
+                or benchmark["label"] != "标普 500（SPY）"
+                or benchmark["symbol"] != PAPER_BENCHMARK_SYMBOL
+                or benchmark["status"] != "available"
+                or benchmark["role"] != "broad_market_price_return"
+                or benchmark["source"] != "tiingo_public"
+                or benchmark["price_basis"] != "unadjusted_daily_close"
+                or benchmark["reporting_asset"] != "USD_EQ"
+                or _paper_number(
+                    benchmark["initial_capital"],
+                    name="paper_snapshot_benchmark_initial_capital",
+                    minimum=0.0,
+                ) != 10_000.0
+            ):
+                raise DualEngineContractError("paper_snapshot_benchmark_identity_invalid")
+            nav = benchmark["nav"]
+            if not isinstance(nav, Mapping) or set(nav) != {"value", "points", "performance"}:
+                raise DualEngineContractError("paper_snapshot_benchmark_nav_fields_invalid")
+            points = nav["points"]
+            if not isinstance(points, list) or not points:
+                raise DualEngineContractError("paper_snapshot_benchmark_points_invalid")
+            normalized_points: list[dict[str, object]] = []
+            for point in points:
+                if (
+                    not isinstance(point, Mapping)
+                    or (
+                        set(point) != {"marked_at", "nav"}
+                        and set(point) != {"marked_at", "nav", "equity"}
+                    )
+                ):
+                    raise DualEngineContractError("paper_snapshot_benchmark_point_invalid")
+                normalized_points.append({
+                    "marked_at": _time(
+                        str(point["marked_at"]),
+                        name="paper_snapshot_benchmark_point_time",
+                    ),
+                    "nav": _paper_number(
+                        point["nav"],
+                        name="paper_snapshot_benchmark_point_nav",
+                        minimum=0.0,
+                    ),
+                })
+                if "equity" in point and not math.isclose(
+                    _paper_number(
+                        point["equity"],
+                        name="paper_snapshot_benchmark_point_equity",
+                        minimum=0.0,
+                    ),
+                    float(normalized_points[-1]["nav"])
+                    * float(benchmark["initial_capital"]),
+                    rel_tol=0.0,
+                    abs_tol=1e-8,
+                ):
+                    raise DualEngineContractError("paper_snapshot_benchmark_point_equity_invalid")
+            timestamps = [str(point["marked_at"]) for point in normalized_points]
+            if timestamps != sorted(timestamps) or len(timestamps) != len(set(timestamps)):
+                raise DualEngineContractError("paper_snapshot_benchmark_point_order_invalid")
+            if any(float(point["nav"]) <= 0.0 for point in normalized_points):
+                raise DualEngineContractError("paper_snapshot_benchmark_point_invalid")
+            if not math.isclose(
+                _paper_number(nav["value"], name="paper_snapshot_benchmark_value", minimum=0.0),
+                float(normalized_points[-1]["nav"]),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                raise DualEngineContractError("paper_snapshot_benchmark_value_invalid")
+            _performance_summary(
+                nav["performance"],
+                points=normalized_points,
+                initial_capital=float(benchmark["initial_capital"]),
+                name="paper_snapshot_benchmark_performance",
+            )
+            bars = market_charts.get("bars_by_symbol", {}).get(PAPER_BENCHMARK_SYMBOL)
+            if not isinstance(bars, list) or len(bars) != len(normalized_points):
+                raise DualEngineContractError("paper_snapshot_benchmark_source_invalid")
+            first_close = float(bars[0]["close"])
+            for point, bar in zip(normalized_points, bars):
+                if (
+                    point["marked_at"] != bar["marked_at"]
+                    or not math.isclose(
+                        float(point["nav"]),
+                        float(bar["close"]) / first_close,
+                        rel_tol=0.0,
+                        abs_tol=1e-12,
+                    )
+                ):
+                    raise DualEngineContractError("paper_snapshot_benchmark_source_invalid")
         if dict(self.history_reference) != {
             "status": "owner_authorized_ytd_replay",
             "start_at": "2026-01-01T00:00:00+00:00",
@@ -791,7 +1208,8 @@ class PaperProgramSnapshot:
             "history_reference", "latest_decision", "audit_last_hash",
             "audit_row_count", "snapshot_hash",
         }
-        if set(value) != expected:
+        allowed = expected | {"market_charts"}
+        if set(value) != expected and set(value) != allowed:
             raise DualEngineContractError("paper_snapshot_fields_invalid")
         for name in (
             "orders_authorized",
@@ -823,6 +1241,10 @@ class PaperProgramSnapshot:
             audit_last_hash=str(value["audit_last_hash"]),
             audit_row_count=int(value["audit_row_count"]),
             snapshot_hash=str(value["snapshot_hash"]),
+            market_charts=_market_charts(
+                value.get("market_charts", {}),
+                name="paper_snapshot_market_charts",
+            ),
         )
         snapshot.validate()
         return snapshot

@@ -255,6 +255,9 @@ class DualEngineMarketDataTest(unittest.TestCase):
                 payload = [
                     {
                         "date": f"{(start + dt.timedelta(days=index)).isoformat()}T00:00:00.000Z",
+                        "open": 99.5 + index,
+                        "high": 101.0 + index,
+                        "low": 99.0 + index,
                         "close": 100.0 + index,
                         "adjClose": 100.0 + index + (1.0 if symbol == "QQQ" else 0.0),
                     }
@@ -267,7 +270,7 @@ class DualEngineMarketDataTest(unittest.TestCase):
                 payload = []
                 for index in range(100):
                     close_ms = last_close - (99 - index) * 86_400_000
-                    payload.append([close_ms - 86_399_999, "100", "101", "99", str(100 + index / 10), "10", close_ms])
+                    payload.append([close_ms - 86_399_999, "100", "111", "99", str(100 + index / 10), "10", close_ms])
             elif path == "/api/v3/aggTrades":
                 payload = [{"p": "110.5", "T": observed_ms - 1_800_000}]
             elif path == "/api/v3/exchangeInfo":

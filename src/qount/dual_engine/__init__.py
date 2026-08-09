@@ -10,6 +10,8 @@ from qount.dual_engine.contracts import DualEnginePaperContract
 from qount.dual_engine.contracts import G20_EXECUTION_TO_PROXY
 from qount.dual_engine.contracts import G20_STRATEGY_ID
 from qount.dual_engine.contracts import G20_STRATEGY_VERSION
+from qount.dual_engine.contracts import PAPER_BENCHMARK_ID
+from qount.dual_engine.contracts import PAPER_BENCHMARK_SYMBOL
 from qount.dual_engine.contracts import PAPER_PORTFOLIO_IDS
 from qount.dual_engine.contracts import PaperCycleInput
 from qount.dual_engine.contracts import PaperProgramSnapshot
@@ -46,6 +48,8 @@ __all__ = [
     "G20_EXECUTION_TO_PROXY",
     "G20_STRATEGY_ID",
     "G20_STRATEGY_VERSION",
+    "PAPER_BENCHMARK_ID",
+    "PAPER_BENCHMARK_SYMBOL",
     "PAPER_PORTFOLIO_IDS",
     "PaperCycleInput",
     "PaperProgramSnapshot",
