@@ -1,6 +1,6 @@
 # Unified Research Forward Collector
 
-> **Status**: active research-only infrastructure | **Authority**: research governance | **Updated**: 2026-07-31
+> **Status**: active research-only infrastructure | **Authority**: research governance | **Updated**: 2026-09-23
 
 The unified collector records one public-data evidence cycle for all forward
 research lines. It is deliberately separate from live, paper, and broker paths.
@@ -12,10 +12,14 @@ plugin-set contract.
 - Core: `src/qount/research/forward_collector.py`
 - CLI: `scripts/research/governance/run_forward_collector.py`
 - Source graph: `deploy/research/forward-sources.json`
-- State root: `/var/lib/qount/research/forward`
+- State root: `/var/lib/qount/research/forward/ops-health-v2` for the next contract; `stream-health-v1` remains read-only.
 - Timer template: `deploy/systemd/qount-research-forward-collector.timer`
 - Service template: `deploy/systemd/qount-research-forward-collector.service`
 - Cadence: every 15 minutes, with a small randomized delay
+
+The service logs only the record hash, observation time and plugin status summary.
+Full records remain in the declared JSONL artifacts; the deployed unit omits
+`--print-json` to avoid duplicating large source/status payloads in journald.
 
 Each cycle writes:
 
@@ -38,11 +42,13 @@ The source graph is configured in JSON and is consumed by the single
 Funding Veto, Vol Crisis, and FOMC context; the Binance Public Data archive
 contract for verified historical klines/funding/metrics; the frozen Federal
 Reserve FOMC calendar; the existing liquidation cascade status; the SHA-pinned
-CTA-R `etf_data.zip` archive; and Tiingo adjusted-close EOD for L1 passive
+Tiingo adjusted-close EOD for L1 passive
 `SPY`/`TLT` when `QOUNT_TIINGO_API_KEY` is injected.
 
-The same cycle writes seven line records: `mini_trend_base`, `funding_veto`,
-`vol_crisis`, `fomc`, `cta_r`, `l1_passive`, and `liquidation_cascade`. Every
+The unified contract writes six active line records: `mini_trend_base`, `funding_veto`,
+`vol_crisis`, `fomc`, `l1_passive`, and `liquidation_cascade`. CTA-R is collected separately by
+the isolated `qount-research-cta-r-collector.timer` under the `cta-r-akshare-v1` state root;
+this is public input evidence only and does not restore the CTA-R strategy. Every
 line includes separate `mechanism_conclusion`, `data_conclusion`, and
 `strategy_return_conclusion` fields. Source availability is not a strategy
 result; all line records keep `strategy_results_evaluated=false`.
@@ -50,6 +56,14 @@ result; all line records keep `strategy_results_evaluated=false`.
 The four allowed conclusions are `valid`, `insufficient`, `flawed`, and
 `rejected`. Missing Tiingo credentials or a missing VPS liquidation status are
 `insufficient`; an archive checksum mismatch is `flawed`.
+
+The liquidation source additionally requires the continuous collector to be
+`running`, its status metadata and public-stream heartbeat to be no more than
+180 seconds old, and all no-order guards to remain false. A missing or stale
+heartbeat is `insufficient` even when the systemd process and five-minute REST
+snapshot loop are still active. The heartbeat is a public `markPrice@1s`
+message used only for transport health; it is not stored as liquidation
+evidence or treated as a strategy input.
 
 On a VPS, the optional private environment file is
 `/etc/qount/research-forward-collector.env` (`0600 root:root`) and may contain
@@ -85,15 +99,25 @@ It can be loaded without changing the timer:
 Changing the plugin set or adapter source creates a new state-root contract. It
 must not mutate an existing collection history in place.
 
+The CTA-R adapter uses `deploy/research/cta-r-akshare-sources.json` and a
+manifested qfq seed at `/var/lib/qount/research/cta-r/etf_source/etf_data.zip`.
+It accepts only the eight fixed ETF series, checks bounded ZIP contents and
+freshness, and reports `insufficient` for missing or stale data. It does not
+read a credential or write paper/NAV/strategy artifacts. Its daily service and
+timer are separate from the unified collector so source-graph changes cannot
+alter the `ops-health-v2` chain.
+
 ## VPS Boundary
 
 The collector is deployed on `qount-vps` as
 `qount-research-forward-collector.timer=enabled/active`, with a 15-minute
 cadence. The oneshot service is expected to return to `inactive/dead` after a
 successful cycle; inspect its last result with `systemctl show` or the
-collector `--status` command. The state root is
-`/var/lib/qount/research/forward`, and the current record is an append-only
-JSONL entry linked to its predecessor hash.
+collector `--status` command. The active state root is
+`/var/lib/qount/research/forward/stream-health-v1`, and the current record is an
+append-only JSONL entry linked to its predecessor hash. The previous
+`/var/lib/qount/research/forward` contract chain is retained read-only because
+the plugin-source identity changed when stream freshness validation was added.
 
 The collector is research-only: `orders_authorized=false` and
 `pnl_evaluated=false` are written into every cycle. A line or source status of

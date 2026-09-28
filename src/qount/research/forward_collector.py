@@ -13,6 +13,7 @@ import fcntl
 import hashlib
 import inspect
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -22,6 +23,8 @@ from urllib.parse import urlencode
 import urllib.request
 
 from qount.contracts import canonical_hash
+from qount.dual_engine.reference_data import read_public_reference
+from qount.research.cta_r_inputs import inspect_seed_zip
 from qount.small_account.macro_event_trigger_study import scheduled_events
 
 
@@ -30,6 +33,7 @@ SOURCE_CONFIG_VERSION = "research_forward_sources_v0.1"
 VALID_STATUSES = frozenset({"valid", "insufficient", "flawed", "rejected"})
 DEFAULT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT")
 DEFAULT_BINANCE_BASE_URL = "https://fapi.binance.com"
+LIQUIDATION_STATUS_STALE_AFTER_SECONDS = 180
 
 
 class ForwardCollectorConfigurationError(ValueError):
@@ -378,14 +382,73 @@ class LiquidationStatusPlugin:
             status = json.loads(path.read_text(encoding="ascii"))
         except (OSError, json.JSONDecodeError):
             return PluginResult("insufficient", {"reason": "liquidation_collector_status_unreadable"})
+        if not isinstance(status, dict):
+            return PluginResult("insufficient", {"reason": "liquidation_collector_status_invalid"})
+        health = _assess_liquidation_stream_health(status, observed_at=context.observed_at)
+        # Dedupe IDs belong only to the source's restart checkpoint. Repeating
+        # them every 15 minutes inflated the evidence chain by ~25 MiB/day.
+        summary = {key: status[key] for key in (
+            "schema_version", "artifact_type", "status", "session_id",
+            "started_at_ms", "stopped_at_ms", "updated_at_ms", "last_recorded_at_ms",
+            "last_stream_message_at_ms", "last_force_order_at_ms",
+            "last_connection_opened_at_ms", "collection_contract_hash",
+            "counters", "research_guards",
+        ) if key in status}
         return PluginResult(
-            "valid",
+            health["status"],
             {
                 "source": "existing_liquidation_cascade_collector_status",
-                "status": status,
+                "status": summary,
+                "stream_health": health,
                 "strategy_results_evaluated": False,
             },
         )
+
+
+def _assess_liquidation_stream_health(
+    status: Mapping[str, Any],
+    *,
+    observed_at: dt.datetime,
+) -> dict[str, Any]:
+    if observed_at.tzinfo is None:
+        raise ForwardCollectorConfigurationError(
+            "liquidation_health_observed_at_must_be_timezone_aware"
+        )
+    observed_at_ms = int(observed_at.timestamp() * 1000)
+    reasons: list[str] = []
+
+    if status.get("status") != "running" or status.get("stopped_at_ms") is not None:
+        reasons.append("collector_not_running")
+
+    def age_seconds(field: str) -> float | None:
+        raw = status.get(field)
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+            reasons.append(f"{field}_missing")
+            return None
+        age = (observed_at_ms - int(raw)) / 1000
+        if age < -5:
+            reasons.append(f"{field}_from_future")
+            return age
+        if age > LIQUIDATION_STATUS_STALE_AFTER_SECONDS:
+            reasons.append(f"{field}_stale")
+        return age
+
+    status_age_seconds = age_seconds("updated_at_ms")
+    stream_age_seconds = age_seconds("last_stream_message_at_ms")
+    guards = status.get("research_guards")
+    if not isinstance(guards, Mapping) or any(
+        guards.get(name) is not False
+        for name in ("orders_authorized", "private_api_used", "pnl_evaluated")
+    ):
+        reasons.append("research_guards_invalid")
+
+    return {
+        "status": "valid" if not reasons else "insufficient",
+        "reason_codes": reasons,
+        "stale_after_seconds": LIQUIDATION_STATUS_STALE_AFTER_SECONDS,
+        "status_age_seconds": status_age_seconds,
+        "stream_age_seconds": stream_age_seconds,
+    }
 
 
 def _resolve_source_path(raw_path: str, repo_root: Path) -> Path:
@@ -539,6 +602,40 @@ class ResearchLinesPlugin:
             return ConfiguredArchiveSource(definition).collect(context)
         if kind == "tiingo_eod":
             return TiingoEodSource(definition).collect(context)
+        if kind == "public_etf_reference":
+            try:
+                value = read_public_reference(
+                    Path(str(definition["state_root"])), observed_at=_utc_iso(context.observed_at)
+                )
+            except (OSError, ValueError, TypeError, KeyError):
+                return PluginResult("insufficient", {"reason": "public_reference_unavailable"})
+            return PluginResult("valid", {
+                "source": "tiingo_daily_adjusted_close",
+                "reference_hash": value["reference_hash"],
+                "observations": {symbol: {
+                    "latest_date": value["bars"][symbol][-1]["marked_at"][:10],
+                    "latest_adj_close": value["adjusted_closes"][symbol][-1],
+                    "row_count": len(value["bars"][symbol]),
+                } for symbol in ("SPY", "TLT")},
+                "credential_read_by_collector": False,
+                "strategy_results_evaluated": False,
+            })
+        if kind == "cta_r_akshare":
+            try:
+                seed_path = _resolve_source_path(str(definition["seed_path"]), self.repo_root)
+                result = inspect_seed_zip(seed_path, observed_at=context.observed_at)
+            except (OSError, ValueError, TypeError, KeyError):
+                return PluginResult("insufficient", {
+                    "source": "akshare_etf_seed",
+                    "reason": "cta_r_seed_unavailable_or_invalid",
+                    "api_key_used": False,
+                    "strategy_results_evaluated": False,
+                })
+            return PluginResult(str(result.pop("status")), {
+                "source": "akshare_etf_seed",
+                **result,
+                "api_key_used": False,
+            })
         return PluginResult("flawed", {"reason": "source_kind_unknown", "kind": kind})
 
     @staticmethod

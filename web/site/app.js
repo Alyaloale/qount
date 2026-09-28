@@ -45,7 +45,7 @@ const ROUTE_MODELS = {
   paper: "paper",
 };
 
-const state = { status: "loading", publication: null, models: {}, error: null };
+const state = { status: "loading", publication: null, models: {}, ctaR: null, error: null };
 const $ = (id) => document.getElementById(id);
 
 function escapeHtml(value) {
@@ -1237,10 +1237,29 @@ function renderPaper() {
     <div class="metrics metrics-four">${metric("策略组合", String(snapshot.portfolios.length), "美股轮动 / 加密趋势 / 固定组合 / 动态组合", "accent")}${metric("年初模拟起点", formatTime(snapshot.forward_start_at), "2026 年初至今公开行情模拟", "")}${metric("美股轮动当前标的", g20.selected_symbol || "-", "63 日代理资产动量第一名 / 风险预算 20%", "good")}${metric("动态组合加密预算", formatPercent(decision.d15_c60_budget), `合格加密资产 ${c60.eligible_count ?? "-"} 个`, "")}</div>
     ${paperPerformanceChart(snapshot)}
     ${paperMarketExplorer(snapshot)}
+    ${renderCtaRPaper()}
     <section class="panel full-panel"><header class="panel-head"><div><h2>最新策略决定</h2><p>决定时间 ${escapeHtml(formatTime(decision.decision_time))} / 数据截止 ${escapeHtml(formatTime(decision.data_cutoff))}</p></div>${pill(c60.btc_system_gate ? "pass" : "block")}</header><div class="paper-decision-band"><div><span>美股轮动配置目标</span><strong>${escapeHtml(Object.entries(g20.target_weights || {}).map(([symbol, weight]) => `${symbol} ${formatPercent(weight)}`).join(" · ") || "-")}</strong></div><div><span>加密动量前两名</span><strong>${escapeHtml((c60.candidates || []).join(" / ") || "无正动量候选")}</strong></div><div><span>比特币系统风控</span><strong>${escapeHtml(c60.btc_system_gate ? "通过" : "未通过")}</strong></div><div><span>波动率缩放比例</span><strong>${escapeHtml(formatPercent(c60.volatility_scalar))}</strong></div></div></section>
     <div class="paper-grid">${portfolioCards}</div>
     <section class="panel full-panel"><header class="panel-head"><div><h2>证据边界</h2><p>年初至今模拟与真实成交严格分离</p></div><span>${snapshot.audit_row_count} 行审计记录</span></header><dl class="fact-list"><div><dt>历史曲线</dt><dd>${escapeHtml(statusText(snapshot.history_reference.status || "unavailable"))}</dd></div><div><dt>大盘基准</dt><dd>${snapshot.benchmarks?.length ? "SPY 公开价格基准（未复权）" : "待完整公开回放补齐；未使用替代数据"}</dd></div><div><dt>真实组合净值</dt><dd>不可用：没有真实成交</dd></div><div><dt>订单与私有接口</dt><dd>全部禁用</dd></div><div><dt>审计链</dt><dd class="mono">${escapeHtml(shortHash(snapshot.audit_last_hash))}</dd></div></dl></section>`;
   wirePaperPerformanceChart();
+}
+
+function renderCtaRPaper() {
+  const snapshot = state.ctaR;
+  if (!snapshot) return `<section class="panel full-panel cta-r-paper"><header class="panel-head"><div><h2>CTA-R 研究模拟</h2><p>独立侧车尚未发布</p></div>${pill("unavailable")}</header></section>`;
+  const points = Array.isArray(snapshot.points) ? snapshot.points : [];
+  const latest = points.length ? points[points.length - 1] : null;
+  const weights = Object.entries(snapshot.current_weights || {}).sort((a, b) => b[1] - a[1]);
+  const status = snapshot.status === "valid" ? "pass" : "warn";
+  const reason = (snapshot.reason_codes || []).join(" / ") || "-";
+  const equityValues = points.map((point) => Number(point.equity)).filter(Number.isFinite);
+  const low = equityValues.length ? Math.min(...equityValues) : 0;
+  const high = equityValues.length ? Math.max(...equityValues) : 1;
+  const span = high - low || 1;
+  const chart = points.length > 1
+    ? `<svg class="cta-r-curve" viewBox="0 0 720 150" preserveAspectRatio="none" role="img" aria-label="CTA-R 研究模拟净值曲线"><polyline points="${points.map((point, index) => `${(index / (points.length - 1) * 710 + 5).toFixed(2)},${(145 - ((Number(point.equity) - low) / span * 135)).toFixed(2)}`).join(" ")}"></polyline></svg>`
+    : `<div class="paper-chart-empty">没有足够的共同交易日用于曲线</div>`;
+  return `<section class="panel full-panel cta-r-paper"><header class="panel-head"><div><h2>CTA-R 研究模拟</h2><p>独立 research-only 侧车 / 不并入四账户会计</p></div><div class="cta-r-head-status">${pill(status)}<span class="mono">${escapeHtml(reason)}</span></div></header><div class="cta-r-warning">数据状态：${escapeHtml(snapshot.status)}。数据截止 ${escapeHtml(formatDate(snapshot.data_cutoff))}；源数据超过新鲜度阈值时，回放仅作为历史证据，不代表当前策略结果。</div><div class="metrics metrics-four cta-r-metrics">${metric("当前模拟资产", formatMoney(snapshot.final_equity, "USD_EQ"), latest ? formatDate(latest.date) : "-", "accent")}${metric("累计收益", formatPercent(snapshot.total_return), "含模拟成本", "")}${metric("最大回撤", formatPercent(snapshot.max_drawdown), "历史回放", "")}${metric("调仓 / 成本", `${snapshot.rebalance_count ?? 0} / ${formatMoney(snapshot.cumulative_cost, "USD_EQ")}`, "基础成本", "")}</div>${chart}<div class="cta-r-details"><div><h3>当前目标权重</h3><div class="cta-r-weight-list">${weights.map(([symbol, weight]) => `<span><b>${escapeHtml(symbol)}</b><em>${formatPercent(weight)}</em></span>`).join("") || `<span class="empty-cell">全现金</span>`}</div></div><dl class="fact-list"><div><dt>信号参数</dt><dd>${escapeHtml((snapshot.parameters?.lookbacks || []).join(" / "))} 日 / ${escapeHtml(String(snapshot.parameters?.rebalance_days || "-"))} 日调仓</dd></div><div><dt>源 SHA-256</dt><dd class="mono">${escapeHtml(shortHash(snapshot.source_sha256))}</dd></div><div><dt>研究守卫</dt><dd>research_only=true / orders_authorized=false / pnl_evaluated=false</dd></div></dl></div></section>`;
 }
 
 function renderAll() {
@@ -1306,18 +1325,22 @@ async function load() {
       type,
       await fetchJSON(releaseModelPath(path, publication.publication_id)),
     ]));
+    let ctaR = null;
+    try { ctaR = (await fetchJSON("data/cta_r_paper.json")).value; } catch (error) { ctaR = null; }
     const responses = Object.fromEntries(entries);
     Object.entries(responses).forEach(([type, response]) => validateModel(response, type, publication));
     const models = Object.fromEntries(Object.entries(responses).map(([type, response]) => [type, response.value]));
     state.status = "ready";
     state.publication = publication;
     state.models = models;
+    state.ctaR = ctaR;
     state.error = null;
     renderAll();
   } catch (error) {
     state.status = "offline";
     state.publication = null;
     state.models = {};
+    state.ctaR = null;
     state.error = error && error.name === "AbortError" ? "请求超时" : String(error && error.message ? error.message : error);
     renderOffline();
     const banner = $("error-banner");

@@ -1,0 +1,20 @@
+{
+  "schema_version": "research_forward_sources_v0.1",
+  "sources": {
+    "cta_r_akshare": {
+      "kind": "cta_r_akshare",
+      "seed_path": "/var/lib/qount/research/cta-r/etf_source/etf_data.zip",
+      "symbols": ["510300", "510500", "159915", "510050", "518880", "511010", "513100", "513500"],
+      "role": "CTA-R public A-share ETF adjusted daily close seed"
+    }
+  },
+  "research_lines": [
+    {
+      "id": "cta_r_akshare",
+      "sources": ["cta_r_akshare"],
+      "mechanism_conclusion": "valid",
+      "data_conclusion": "insufficient",
+      "strategy_return_conclusion": "insufficient"
+    }
+  ]
+}

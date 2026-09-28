@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Qount CTA-R public ETF research input collector
+
+[Timer]
+OnCalendar=*-*-* 18:30:00
+Persistent=true
+RandomizedDelaySec=5m
+AccuracySec=1m
+Unit=qount-research-cta-r-collector.service
+
+[Install]
+WantedBy=timers.target
