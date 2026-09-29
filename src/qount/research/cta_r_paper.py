@@ -99,6 +99,7 @@ def build_cta_r_paper_snapshot(
     observed_at: dt.datetime | None = None,
     initial_equity: float = 10_000.0,
     max_age_days: int = MAX_AGE_DAYS,
+    simulation_start_date: str | None = None,
 ) -> dict[str, Any]:
     """Replay the eight-ETF CTA-R basket and return a canonical sidecar payload."""
     path = Path(seed_path).expanduser()
@@ -120,6 +121,14 @@ def build_cta_r_paper_snapshot(
     prices = {symbol: [series_by_symbol[symbol][date] for date in common_dates] for symbol in CTA_R_ETF_SYMBOLS}
     returns = {symbol: [0.0] + [prices[symbol][i] / prices[symbol][i - 1] - 1.0 for i in range(1, len(common_dates))] for symbol in CTA_R_ETF_SYMBOLS}
     latest_date = dt.date.fromisoformat(common_dates[-1])
+    try:
+        simulation_start = dt.date.fromisoformat(simulation_start_date) if simulation_start_date else dt.date(latest_date.year, 1, 1)
+    except ValueError as exc:
+        raise CtaRPaperError("cta_r_simulation_start_invalid") from exc
+    if simulation_start < dt.date.fromisoformat(common_dates[0]):
+        raise CtaRPaperError("cta_r_simulation_start_before_seed")
+    if simulation_start > latest_date:
+        raise CtaRPaperError("cta_r_simulation_start_after_cutoff")
     age_days = (observed.astimezone(dt.timezone.utc).date() - latest_date).days
     status = "valid" if not missing and age_days <= max_age_days else "insufficient"
     reason_codes = ([f"series_missing:{symbol}" for symbol in missing] + (["series_stale"] if age_days > max_age_days else []))
@@ -128,10 +137,23 @@ def build_cta_r_paper_snapshot(
     peak = equity
     weights: dict[str, float] = {}
     total_cost = 0.0
-    points: list[dict[str, Any]] = [{"date": common_dates[0], "equity": round(equity, 6), "drawdown": 0.0}]
+    points: list[dict[str, Any]] = []
     rebalances: list[dict[str, Any]] = []
     start = max(LOOKBACKS) + 1
+    started = False
     for index in range(1, len(common_dates)):
+        if not started and dt.date.fromisoformat(common_dates[index]) >= simulation_start:
+            # Keep pre-start rows only as signal/volatility warmup; reset the account at YTD start.
+            equity = float(initial_equity)
+            peak = equity
+            total_cost = 0.0
+            points.append({"date": common_dates[index], "equity": round(equity, 6), "drawdown": 0.0})
+            started = True
+            continue
+        if not started:
+            if index >= start and index % REBALANCE_DAYS == 0:
+                weights = _weights(prices, returns, index)
+            continue
         equity *= 1.0 + sum(weights.get(symbol, 0.0) * returns[symbol][index] for symbol in CTA_R_ETF_SYMBOLS)
         if index >= start and index % REBALANCE_DAYS == 0:
             new_weights = _weights(prices, returns, index)
@@ -162,7 +184,7 @@ def build_cta_r_paper_snapshot(
         "observed_at": observed.astimezone(dt.timezone.utc).isoformat(),
         "freshness": {"age_calendar_days": age_days, "max_age_calendar_days": max_age_days},
         "universe": list(CTA_R_ETF_SYMBOLS),
-        "parameters": {"lookbacks": list(LOOKBACKS), "vol_lookback": VOL_LOOKBACK, "rebalance_days": REBALANCE_DAYS, "cost_per_side": COST_PER_SIDE, "long_only": True},
+        "parameters": {"lookbacks": list(LOOKBACKS), "vol_lookback": VOL_LOOKBACK, "rebalance_days": REBALANCE_DAYS, "cost_per_side": COST_PER_SIDE, "long_only": True, "simulation_start_date": simulation_start.isoformat()},
         "initial_equity": initial_equity,
         "final_equity": round(equity, 6),
         "total_return": round(equity / initial_equity - 1.0, 8),

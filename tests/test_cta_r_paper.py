@@ -39,6 +39,18 @@ class CtaRPaperTests(unittest.TestCase):
             self.assertEqual(result["status"], "insufficient")
             self.assertIn("series_stale", result["reason_codes"])
 
+    def test_simulation_start_resets_equity_after_warmup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            seed = self._seed(Path(directory))
+            result = build_cta_r_paper_snapshot(
+                seed,
+                observed_at=dt.datetime(2020, 11, 25, tzinfo=dt.timezone.utc),
+                simulation_start_date="2020-06-01",
+            )
+            self.assertEqual(result["points"][0]["date"], "2020-06-01")
+            self.assertEqual(result["points"][0]["equity"], 10000.0)
+            self.assertEqual(result["parameters"]["simulation_start_date"], "2020-06-01")
+
 
 if __name__ == "__main__":
     unittest.main()

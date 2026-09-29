@@ -20,9 +20,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--observed-at", default=None)
+    parser.add_argument("--simulation-start-date", default=None)
     args = parser.parse_args(argv)
     observed = dt.datetime.fromisoformat(args.observed_at) if args.observed_at else None
-    snapshot = build_cta_r_paper_snapshot(args.seed, observed_at=observed)
+    snapshot = build_cta_r_paper_snapshot(
+        args.seed,
+        observed_at=observed,
+        simulation_start_date=args.simulation_start_date,
+    )
     # The static Dashboard sidecar contains public research data and must be readable by its web server.
     write_cta_r_paper_snapshot(snapshot, args.out, mode=0o644)
     print(f"output={args.out.resolve()}")
