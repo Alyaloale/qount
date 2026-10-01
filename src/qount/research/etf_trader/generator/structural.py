@@ -95,8 +95,15 @@ def _regime_step(state: int, P_cum: np.ndarray, u: float) -> int:
     return int(np.searchsorted(P_cum[state], u, side="right"))
 
 
-def simulate_world(spec: AccountSpec, params: WorldParams, years: float, warmup_years: float = 10.0) -> World:
-    """Simulate ``warmup_years + years`` of daily data; ``World.start`` marks the first trading row."""
+def simulate_world(
+    spec: AccountSpec, params: WorldParams, years: float, warmup_years: float = 10.0, *, backend: str = "auto",
+) -> World:
+    """Simulate ``warmup_years + years`` of daily data; ``World.start`` marks the first trading row.
+
+    ``backend``: ``"numpy"`` (reference loop), ``"native"`` (C++ kernel, error if it cannot
+    build) or ``"auto"`` (native when a compiler is available).  Both consume the same numpy
+    draws, so a seed gives the same world up to floating-point rounding.
+    """
     T = int(round((warmup_years + years) * YEAR)) + 1
     start = int(round(warmup_years * YEAR))
     rng = np.random.default_rng(params.seed)
@@ -181,7 +188,47 @@ def simulate_world(spec: AccountSpec, params: WorldParams, years: float, warmup_
     z_fx *= news_mult
     z_au *= news_mult
 
-    # --- state
+    jump_comp = ap.crisis_jump_rate / YEAR * (np.exp(ap.crisis_jump_mean + 0.5 * ap.crisis_jump_sd**2) - 1.0)
+    a_pr = ar_coef(mp.premium_hl)
+    if _use_native(backend):
+        from . import native
+
+        econ_c = dict(
+            R_STAR=r_star, PI_STAR=pi_star, I_FLOOR=i_floor, PHI_PI=phi_pi, PHI_X=phi_x, A_RATE=a_rate, A_GAP=a_gap,
+            A_PI=a_pi, A_TP=a_tp, A_ERP=a_erp, GAP_SD=gap_sd, PI_SD=pi_sd, S_GAP=s_gap, S_PI=s_pi, S_TP=s_tp,
+            TP_MEAN=tp_mean, ERP_BAR=erp_bar, ERP_GAP=erp_gap, ERP_PI=erp_pi, ERP_CRISIS=erp_crisis, DUR_EQ=dur_eq,
+            DY_BAR=dy_bar, LOG_INV_DY=np.log(1 / dy_bar), DIV_LOAD=div_load, W10=w10, EQ_VAR_D=eq_var_d,
+            G_A=g_a, G_G=g_g, G_B=g_b, PERSIST=g_a + g_g / 2 + g_b, H_CAP=GARCH_VOL_CAP**2 * eq_var_d, THETA=theta,
+        )
+        stale_i = np.array([a.stale for a in spec.assets])
+        asset_c = dict(BETA=beta, IDIO_D=idio_d, DUR=dur, CVX=cvx, WM=wm, MAT_SCALE=mat_scale, LEV=lev, STALE=stale_i)
+        kind_code = np.select([is_eq, is_bd, is_au, is_cm], [0, 1, 2, 3])
+        aint = np.stack([ec, kind_code, fx.astype(int), qdii.astype(int)])
+        scal = dict(
+            F_NOW=f_now, A_MOM=a_mom, KAPPA=kappa, PSI=psi, Q_CF=q_cf, A_OBS=a_obs, S_OBS=s_obs,
+            JUMP_RATE_D=ap.crisis_jump_rate / YEAR, JUMP_MEAN=ap.crisis_jump_mean, JUMP_SD=ap.crisis_jump_sd,
+            REBOUND_SHARE=ap.rebound_share, FTQ=ap.flight_to_quality, JUMP_COMP=jump_comp,
+            AU_VAR=ap.gold_vol**2 / YEAR, GOLD_RR=ap.gold_real_return, GOLD_RB=ap.gold_real_beta,
+            GOLD_JS=ap.gold_jump_share, CM_VAR=ap.cmdty_vol**2 / YEAR, CM_ROLL=ap.cmdty_roll,
+            CM_IB=ap.cmdty_infl_beta, CM_GB=ap.cmdty_gap_beta, A_PR=a_pr, QUOTA_PREM=mp.quota_premium,
+            PREM_SIGMA=mp.premium_sigma, QUOTA_DAYS=mp.quota_days, QUOTA_RATE=mp.quota_rate,
+            DROUGHT_DAYS=mp.drought_days, DROUGHT_RATE=mp.drought_rate, CONTAGION=params.contagion,
+            PAYOUT=params.payout_ratio, FX_SCALE=econ[1].fx_vol / np.sqrt(YEAR), FX_VAR=econ[1].fx_vol ** 2 / YEAR,
+            REBOUND_DAYS=REBOUND_DAYS, STALE_SHARE=params.stale_share, STALE_DECAY=params.stale_decay,
+        )
+        rtab = np.stack([REGIME_GAP_TARGET, REGIME_PI_SHIFT, REGIME_GROWTH_VOL, REGIME_INFL_VOL, REGIME_EQ_VOL,
+                         REGIME_JUMP])
+        init = np.stack([np.zeros(E), pi_star, np.maximum(i_floor, r_star + pi_star), tp_mean, np.zeros(E), eq_var_d])
+        draws = dict(u_reg=u_reg, u_cont=u_cont, zg=zg, zi=zi, z_tp=z_tp, z_eq=z_eq, z_id=z_id, z_fx=z_fx, z_au=z_au,
+                     z_cm=z_cm, z_pr=z_pr, z_obs=z_obs, u_jump=u_jump, z_jump=z_jump, u_quota=u_quota,
+                     u_drought=u_drought)
+        o = native.structural_loop(T, n, econ_c, asset_c, aint, scal, rtab, P_cum, init, draws)
+        econ_out = dict(zip(("gap", "pi", "rate", "y10", "erp"), o["econ"]))
+        return _finish(spec, params, start, is_eq, qdii, reopen, z_on, z_tv, o["logret"], o["dist"], o["var"],
+                       o["quota"].astype(bool), o["drought"].astype(bool), o["pe"], o["pe_obs"], o["bond_y"],
+                       o["mu"], o["fx_ret"], o["reg"].astype(int), econ_out, native=True)
+
+    # --- state (numpy reference loop; the native kernel above is a line-by-line port)
     reg = np.zeros(E, dtype=int)
     gap = np.zeros(E)
     pi = pi_star.copy()
@@ -196,9 +243,11 @@ def simulate_world(spec: AccountSpec, params: WorldParams, years: float, warmup_
     pd_gap = np.zeros(n)
     obs_noise = np.zeros(n)
     prem = np.zeros(n)
+    stale_i = np.array([a.stale for a in spec.assets])
+    stale_pending = np.zeros(n)  # delayed absorption buffer per asset
+    a_stale = params.stale_decay
     quota = False
     drought = np.zeros(n, dtype=bool)
-    jump_comp = ap.crisis_jump_rate / YEAR * (np.exp(ap.crisis_jump_mean + 0.5 * ap.crisis_jump_sd**2) - 1.0)
 
     def macro(gap, pi, tp, crisis_erp):
         target = np.maximum(i_floor, r_star + pi + phi_pi * (pi - pi_star) + phi_x * gap)
@@ -305,11 +354,16 @@ def simulate_world(spec: AccountSpec, params: WorldParams, years: float, warmup_
                 quota = u_quota[t] >= 1.0 / mp.quota_days
             else:
                 quota = u_quota[t] < mp.quota_rate / YEAR
-        a_pr = ar_coef(mp.premium_hl)
         prem_target = mp.quota_premium if quota else 0.0
         new_prem = np.where(qdii, a_pr * prem + (1 - a_pr) * prem_target + mp.premium_sigma * z_pr[t], 0.0)
         r = r + np.where(qdii, np.log1p(new_prem) - np.log1p(prem), 0.0)
         prem = new_prem
+
+        # CN partial-adjustment/stale mechanism: delayed absorption with geometric decay
+        theta_i = stale_i * params.stale_share  # asset-level delay share
+        drip_stale = (1 - a_stale) * stale_pending
+        stale_pending = a_stale * stale_pending + theta_i * r - drip_stale
+        r = (1 - theta_i) * r + drip_stale
 
         drought = np.where(drought, u_drought[t] >= 1.0 / mp.drought_days, u_drought[t] < mp.drought_rate / YEAR)
 
@@ -344,13 +398,34 @@ def simulate_world(spec: AccountSpec, params: WorldParams, years: float, warmup_
         quota_path[t] = quota
         drought_path[t] = drought
 
-    close, close_adj = _price_paths(spec, logret, dist, start)
+    return _finish(spec, params, start, is_eq, qdii, reopen, z_on, z_tv, logret, dist, var, quota_path,
+                   drought_path, pe, pe_obs, bond_y, mu, fx_ret, out_reg, out, native=False)
+
+
+def _use_native(backend: str) -> bool:
+    if backend == "numpy":
+        return False
+    if backend not in ("auto", "native"):
+        raise ValueError(f"unknown backend {backend!r}")
+    from . import native
+
+    if backend == "native":
+        native.load()  # raises NativeUnavailable
+        return True
+    return native.available()
+
+
+def _finish(spec, params, start, is_eq, qdii, reopen, z_on, z_tv, logret, dist, var, quota_path, drought_path,
+            pe, pe_obs, bond_y, mu, fx_ret, out_reg, out, *, native: bool) -> "World":
+    """Prices, liquidity and packaging shared by the numpy and native loops."""
+    mp = params.micro
+    close, close_adj = _price_paths(spec, logret, dist, start, native=native)
     realized = np.diff(np.log(close_adj), axis=0, prepend=np.log(close_adj[:1]))
     sigma0 = np.sqrt(np.maximum(var[0], 1e-8))
-    sigma = None  # set below; floor avoids 0 ** negative in the spread model
-    sigma = np.maximum(_ewma_sigma(realized, sigma0), 1e-5)
+    # floor avoids 0 ** negative in the spread model
+    sigma = np.maximum(_ewma_sigma(realized, sigma0, native=native), 1e-5)
     opn = _open_prices(spec, close, sigma, reopen, mp, z_on)
-    tv, adv, spread = _liquidity(spec, mp, sigma, sigma0, realized, close, drought_path, z_tv)
+    tv, adv, spread = _liquidity(spec, mp, sigma, sigma0, realized, close, drought_path, z_tv, native=native)
     blocked = np.where(qdii[None, :], quota_path[:, None], False)
 
     data = MarketData(
@@ -371,7 +446,7 @@ def simulate_world(spec: AccountSpec, params: WorldParams, years: float, warmup_
     return World(spec=spec, params=params, data=data, valuation=valuation, traded_value=tv, truth=truth, start=start)
 
 
-def _price_paths(spec: AccountSpec, logret, dist, start: int):
+def _price_paths(spec: AccountSpec, logret, dist, start: int, *, native: bool = False):
     """Unadjusted close on the tick grid with CN limits (excess carried to later days).
 
     The level is chosen so the unrounded path is at ``price0`` on the first trading row,
@@ -379,11 +454,16 @@ def _price_paths(spec: AccountSpec, logret, dist, start: int):
     """
     T, n = logret.shape
     tick, lim = spec.tick, spec.price_limit
-    close = np.empty((T, n))
-    close_adj = np.empty((T, n))
     drift = np.cumsum(logret - np.log1p(dist), axis=0)[start]
     p0 = np.array([a.price0 for a in spec.assets]) * np.exp(-drift)
-    close[0] = np.maximum(np.round(p0 / tick) * tick, 100 * tick)
+    close0 = np.maximum(np.round(p0 / tick) * tick, 100 * tick)
+    if native:
+        from . import native as _nat
+
+        return _nat.price_paths(logret, dist, close0, tick, lim)
+    close = np.empty((T, n))
+    close_adj = np.empty((T, n))
+    close[0] = close0
     close_adj[0] = close[0]
     carry = np.zeros(n)
     for t in range(1, T):
@@ -415,8 +495,12 @@ def _open_prices(spec: AccountSpec, close, sigma, reopen, mp, z_on):
     return np.maximum(np.round(opn / tick) * tick, tick)
 
 
-def _ewma_sigma(r: np.ndarray, sigma0: np.ndarray) -> np.ndarray:
+def _ewma_sigma(r: np.ndarray, sigma0: np.ndarray, *, native: bool = False) -> np.ndarray:
     """PIT EWMA daily vol known at each close (includes that day's return)."""
+    if native:
+        from . import native as _nat
+
+        return _nat.ewma_sigma(r, sigma0, EWMA_LAMBDA)
     out = np.empty_like(r)
     v = sigma0**2
     for t in range(r.shape[0]):
@@ -426,15 +510,20 @@ def _ewma_sigma(r: np.ndarray, sigma0: np.ndarray) -> np.ndarray:
     return out
 
 
-def _liquidity(spec: AccountSpec, mp, sigma, sigma0, realized, close, drought, z_tv):
+def _liquidity(spec: AccountSpec, mp, sigma, sigma0, realized, close, drought, z_tv, *, native: bool = False):
     """Traded value, 20-day ADV and half spread; scales are the starting σ and adv0 (PIT)."""
     T, n = sigma.shape
     adv0 = np.array([a_.adv0 for a_ in spec.assets])
     a = ar_coef(mp.tv_hl)
     s = mp.tv_sigma * np.sqrt(1 - a**2)
-    ar = np.zeros((T, n))
-    for t in range(1, T):
-        ar[t] = a * ar[t - 1] + s * z_tv[t]
+    if native:
+        from . import native as _nat
+
+        ar = _nat.ar1(z_tv, a, s)
+    else:
+        ar = np.zeros((T, n))
+        for t in range(1, T):
+            ar[t] = a * ar[t - 1] + s * z_tv[t]
     ar = np.clip(ar, -50, 50)
     sig_bar = sigma0
     shock = np.abs(realized) / np.maximum(np.vstack([sigma[:1], sigma[:-1]]), 1e-8)

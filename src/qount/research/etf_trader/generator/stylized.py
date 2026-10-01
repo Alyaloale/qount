@@ -74,7 +74,10 @@ def tsmom_sharpe(log_r: np.ndarray, lookback: int = TRADING_DAYS) -> float:
     cs = np.vstack([np.zeros((1, r.shape[1])), np.cumsum(r, axis=0)])
     past = cs[lookback:-1] - cs[: -lookback - 1]  # return over t-lookback+1..t
     sign = np.sign(past)
-    vol = np.array([np.std(r[max(0, t - 63) : t + 1], axis=0, ddof=1) for t in range(lookback - 1, len(r) - 1)])
+    # 64-day vol ending at t (t = lookback-1 .. T-2), vectorized; same two-pass np.std as the
+    # former per-row loop (lookback ≥ 64 so every window is full).
+    win = np.lib.stride_tricks.sliding_window_view(r[lookback - 64 : len(r) - 1], 64, axis=0)
+    vol = np.std(win, axis=-1, ddof=1)
     pos = np.divide(sign, vol, out=np.zeros_like(sign), where=vol > 0)
     pos /= np.maximum(np.abs(pos).sum(axis=1, keepdims=True), 1e-12)
     pnl = (pos * (np.exp(r[lookback:]) - 1.0)).sum(axis=1)
@@ -95,16 +98,33 @@ class WorldSample:
     log_dividend_yield: np.ndarray | None = None  # (T, n_equity) for equity columns
 
 
-def world_checks(w: WorldSample) -> dict[str, tuple[float, bool]]:
-    """``fact -> (statistic, in_range)`` for one world. Equity stats average the equity columns."""
+PENDING = "pending"  # statistic recorded, target not yet calibrated (gate is undecided)
+CALIBRATED_PREFIX = "autocorr:"  # per-cell calibrated autocorrelation facts (targets.py)
+
+
+def world_checks(w: WorldSample, targets=None) -> dict[str, tuple[float, bool | str]]:
+    """``fact -> (statistic, in_range)`` for one world. Equity stats average the equity columns.
+
+    With ``targets`` (:class:`targets.CalibrationTargets`) the columns it covers are scored
+    against their calibrated autocorrelation bands and drop out of the fixed ``|ρ| < 0.05``
+    check; ``dy_r2_5y`` is decided only when ``targets.dy_r2_5y`` is set, else ``PENDING``.
+    """
     r = np.asarray(w.log_returns, dtype=float)
     eq = np.flatnonzero(np.asarray(w.equity_mask, dtype=bool))
     if eq.size == 0:
         raise ValueError("need at least one equity column")
-    out: dict[str, tuple[float, bool]] = {}
+    out: dict[str, tuple[float, bool | str]] = {}
 
-    ac = max(abs(autocorr(r[:, j], lag)) for j in range(r.shape[1]) for lag in range(1, 6))
-    out["return_autocorr_max"] = (ac, ac < 0.05)
+    covered: set[int] = set()
+    if targets is not None:
+        from .targets import autocorr_cells  # local import: targets imports this module
+
+        out.update(autocorr_cells(r, targets))
+        covered = {a.column for a in targets.autocorr}
+    rest = [j for j in range(r.shape[1]) if j not in covered]
+    if rest:
+        ac = max(abs(autocorr(r[:, j], lag)) for j in rest for lag in range(1, 6))
+        out["return_autocorr_max"] = (ac, ac < 0.05)
 
     kd = float(np.mean([kurtosis(r[:, j]) for j in eq]))
     km = float(np.mean([kurtosis(monthly(r[:, j])) for j in eq]))
@@ -129,7 +149,10 @@ def world_checks(w: WorldSample) -> dict[str, tuple[float, bool]]:
         dy = np.asarray(w.log_dividend_yield, dtype=float)
         r5 = float(np.mean([dividend_yield_r2(r[:, j], dy[:, k], 5 * TRADING_DAYS) for k, j in enumerate(eq)]))
         r1 = float(np.mean([dividend_yield_r2(r[:, j], dy[:, k], 21) for k, j in enumerate(eq)]))
-        out["dy_r2_5y"] = (r5, 0.1 <= r5 <= 0.5)
+        # Owner 2026-09-30: the 0.1–0.5 range is retired; the target comes from Shiller data
+        # with the same estimator and sample length (P0). Until then the fact is undecided.
+        band = getattr(targets, "dy_r2_5y", None)
+        out["dy_r2_5y"] = (r5, PENDING if band is None else bool(band[0] <= r5 <= band[1]))
         out["dy_r2_1m"] = (r1, r1 < 0.02)
 
     ts = tsmom_sharpe(r)
@@ -144,14 +167,24 @@ def gate_pass_rate(results: list[dict[str, tuple[float, bool]]]) -> dict[str, di
     for f in facts:
         vals = [r[f] for r in results if f in r]
         stats = np.array([v[0] for v in vals], dtype=float)
-        share = float(np.mean([v[1] for v in vals]))
-        entry: dict[str, float | bool] = {"median": float(np.nanmedian(stats)), "share_in_range": share}
+        entry: dict[str, float | bool] = {"median": float(np.nanmedian(stats))}
+        pending = any(isinstance(v[1], str) for v in vals)
         if f == "tsmom_12m_sharpe":
             entry["passed"] = bool(0.3 <= entry["median"] <= 0.8)
-        elif f == "equity_drawdown_ge_30_share":
-            entry["passed"] = False  # undecidable until calibration frequency is supplied
+        elif f == "equity_drawdown_ge_30_share" or pending:
+            entry["passed"] = False  # undecidable until a calibration target is supplied
             entry["needs_calibration"] = True
         else:
-            entry["passed"] = share >= PASS_SHARE
+            entry["share_in_range"] = float(np.mean([v[1] for v in vals]))
+            entry["passed"] = entry["share_in_range"] >= PASS_SHARE
         out[f] = entry
+    cells = {k: v for k, v in out.items() if k.startswith(CALIBRATED_PREFIX)}
+    if cells:
+        out["autocorr_calibrated"] = {
+            "median": float(np.median([v["share_in_range"] for v in cells.values()])),
+            "share_in_range": float(min(v["share_in_range"] for v in cells.values())),  # worst cell
+            "passed": all(v["passed"] for v in cells.values()),
+            "cells": len(cells),
+            "failed_cells": sorted(k for k, v in cells.items() if not v["passed"]),
+        }
     return out

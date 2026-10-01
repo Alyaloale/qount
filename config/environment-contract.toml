@@ -1736,3 +1736,14 @@ required_when = "never"
 default_policy = "unset"
 consumers = ["src/qount/legacy"]
 legacy = true
+
+[[variables]]
+name = "QOUNT_NATIVE_CACHE"
+domain = "research"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/research/etf_trader/generator/native/__init__.py"]
+legacy = false

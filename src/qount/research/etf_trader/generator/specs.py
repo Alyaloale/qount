@@ -53,6 +53,7 @@ class AssetSpec:
     price0: float = 100.0  # starting unadjusted price
     adv0: float = 1e9  # starting daily traded value, account currency
     half_spread_bp: float = 1.0  # base half spread before vol/volume scaling and tick floor
+    stale: float = 0.0  # CN partial-adjustment/nonsync trading: 1 = most stale, 0 = instant
 
 
 @dataclass(frozen=True)
@@ -99,14 +100,14 @@ CN_SPEC = AccountSpec(
     price_limit=0.10,
     cn_calendar=True,
     assets=(
-        AssetSpec(EQUITY, "home", beta=1.00, idio_vol=0.00, price0=3.5, adv0=4e9, half_spread_bp=0.0),  # 510300
-        AssetSpec(EQUITY, "home", beta=1.15, idio_vol=0.10, price0=5.5, adv0=1.5e9, half_spread_bp=0.0),  # 510500
-        AssetSpec(EQUITY, "home", beta=1.35, idio_vol=0.14, price0=2.0, adv0=1.2e9, half_spread_bp=0.0),  # 159915
-        AssetSpec(EQUITY, "home", beta=0.90, idio_vol=0.06, price0=2.6, adv0=1.5e9, half_spread_bp=0.0),  # 510050
-        AssetSpec(GOLD, "foreign", fx=True, price0=4.0, adv0=6e8, half_spread_bp=0.0),  # 518880
-        AssetSpec(BOND, "home", maturity=5.0, duration=4.5, convexity=25.0, price0=120.0, adv0=1e8, half_spread_bp=0.0),  # 511010
-        AssetSpec(EQUITY, "foreign", fx=True, beta=1.15, idio_vol=0.08, qdii=True, price0=4.5, adv0=8e8, half_spread_bp=0.0),  # 513100
-        AssetSpec(EQUITY, "foreign", fx=True, beta=1.00, idio_vol=0.00, qdii=True, price0=1.5, adv0=4e8, half_spread_bp=0.0),  # 513500
+        AssetSpec(EQUITY, "home", beta=1.00, idio_vol=0.00, price0=3.5, adv0=4e9, half_spread_bp=0.0, stale=0.2),  # 510300 CSI300
+        AssetSpec(EQUITY, "home", beta=1.15, idio_vol=0.10, price0=5.5, adv0=1.5e9, half_spread_bp=0.0, stale=0.8),  # 510500 CSI500
+        AssetSpec(EQUITY, "home", beta=1.35, idio_vol=0.14, price0=2.0, adv0=1.2e9, half_spread_bp=0.0, stale=1.0),  # 159915 ChiNext
+        AssetSpec(EQUITY, "home", beta=0.90, idio_vol=0.06, price0=2.6, adv0=1.5e9, half_spread_bp=0.0, stale=0.0),  # 510050 SSE50
+        AssetSpec(GOLD, "foreign", fx=True, price0=4.0, adv0=6e8, half_spread_bp=0.0, stale=0.0),  # 518880
+        AssetSpec(BOND, "home", maturity=5.0, duration=4.5, convexity=25.0, price0=120.0, adv0=1e8, half_spread_bp=0.0, stale=0.0),  # 511010
+        AssetSpec(EQUITY, "foreign", fx=True, beta=1.15, idio_vol=0.08, qdii=True, price0=4.5, adv0=8e8, half_spread_bp=0.0, stale=0.0),  # 513100
+        AssetSpec(EQUITY, "foreign", fx=True, beta=1.00, idio_vol=0.00, qdii=True, price0=1.5, adv0=4e8, half_spread_bp=0.0, stale=0.0),  # 513500
     ),
 )
 

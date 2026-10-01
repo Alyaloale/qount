@@ -128,6 +128,8 @@ class WorldParams:
     regime_duration_scale: float
     payout_ratio: float  # PE = PD / payout, for the valuation feed
     idio_scale: float  # multiplies each asset's idio vol
+    stale_share: float  # θ: share of asset news absorbed with delay (CN nonsync trading)
+    stale_decay: float  # a: geometric decay of the delayed absorption
     seed: int
 
     def with_factors(self, factors: FactorParams) -> "WorldParams":
@@ -144,7 +146,11 @@ def sample_economy(profile: str, rng: np.random.Generator) -> EconomyParams:
     row = profile == "row"
     garch_alpha = _u(rng, 0.02, 0.06)
     garch_gamma = _u(rng, 0.04, 0.12)
-    garch_beta = min(_u(rng, 0.88, 0.95), 0.995 - garch_alpha - garch_gamma / 2)
+    garch_beta_lo, garch_beta_hi = (0.83, 0.91) if cn else (0.88, 0.95)
+    garch_beta = min(_u(rng, garch_beta_lo, garch_beta_hi), 0.995 - garch_alpha - garch_gamma / 2)
+    eq_vol_lo, eq_vol_hi = (0.15, 0.20) if cn else (0.08, 0.12)
+    pi_sigma_lo, pi_sigma_hi = (0.004, 0.008) if cn else (0.004, 0.012)
+    tp_mean_lo, tp_mean_hi = (0.0, 0.010) if cn else (0.0, 0.02)
     return EconomyParams(
         r_star=_u(rng, 0.005, 0.02) if cn else _u(rng, -0.01, 0.02),
         pi_star=_u(rng, 0.01, 0.03) if cn else _u(rng, 0.015, 0.035),
@@ -154,12 +160,12 @@ def sample_economy(profile: str, rng: np.random.Generator) -> EconomyParams:
         rate_smooth_hl=_u(rng, 40, 120),
         gap_sigma=_u(rng, 0.01, 0.025) if cn else _u(rng, 0.015, 0.035),
         gap_hl=_u(rng, 250, 750),
-        pi_sigma=_u(rng, 0.004, 0.010) if cn else _u(rng, 0.004, 0.012),
+        pi_sigma=_u(rng, pi_sigma_lo, pi_sigma_hi),
         pi_hl=_u(rng, 400, 1000),
         rho_growth_infl=_u(rng, -0.1, 0.3),
         infl_passthrough=_u(rng, 0.1, 0.4),
         curve_hl_years=_u(rng, 2.0, 6.0),
-        tp_mean=_u(rng, 0.0, 0.015) if cn else _u(rng, 0.0, 0.02),
+        tp_mean=_u(rng, tp_mean_lo, tp_mean_hi),
         tp_sigma=_u(rng, 0.001, 0.003) if cn else _u(rng, 0.002, 0.006),
         tp_hl=_u(rng, 250, 1000),
         erp=_u(rng, 0.03, 0.065),
@@ -170,7 +176,7 @@ def sample_economy(profile: str, rng: np.random.Generator) -> EconomyParams:
         equity_duration=_u(rng, 4.0, 10.0),
         div_gap_load=_u(rng, 1.5, 3.5),
         dy_bar=_u(rng, 0.02, 0.035) if cn else _u(rng, 0.015, 0.035),
-        eq_vol=_u(rng, 0.14, 0.22) if cn else _u(rng, 0.08, 0.12),
+        eq_vol=_u(rng, eq_vol_lo, eq_vol_hi),
         garch_alpha=garch_alpha,
         garch_gamma=garch_gamma,
         garch_beta=garch_beta,
@@ -244,6 +250,7 @@ def sample_world(account: str, rng: np.random.Generator, seed: int | None = None
     from .specs import ACCOUNT_SPECS
 
     spec = ACCOUNT_SPECS[account]
+    cn = spec.home == "cn"
     return WorldParams(
         home=sample_economy(spec.home, rng),
         foreign=sample_economy(spec.foreign, rng),
@@ -255,5 +262,7 @@ def sample_world(account: str, rng: np.random.Generator, seed: int | None = None
         regime_duration_scale=_u(rng, 0.6, 1.5),
         payout_ratio=_u(rng, 0.35, 0.6),
         idio_scale=_u(rng, 0.7, 1.3),
+        stale_share=_u(rng, 0.07, 0.10) if cn else 0.0,
+        stale_decay=_u(rng, 0.25, 0.35) if cn else 0.0,
         seed=int(rng.integers(2**31)) if seed is None else seed,
     )

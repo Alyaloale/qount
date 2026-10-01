@@ -4,6 +4,12 @@ The P1 acceptance run is 1,000 validation worlds per account (§7.3).  One draw 
 100-year plausibility simulation (~3 s single-core numpy) plus, if accepted, a
 ``stylized_years`` simulation, so the acceptance run belongs on the WSL compute node with
 ``workers`` > 1.  Small ``n_worlds`` runs are diagnostics and are labelled as such.
+With the native kernel (``backend="auto"``) a 100-year draw costs ~0.05 s, so the run is
+bounded by worker count, not by the day loop.
+
+CN autocorrelation is scored against the calibrated 2005–2014 index targets
+(``targets.py``, :data:`DEFAULT_TARGETS`); the 5-year dividend-yield R² stays undecided until
+the P0 Shiller target exists.
 
 Draws are independent: worker ``k`` uses ``SeedSequence(seed).spawn()`` entry ``k``, so a
 run is reproducible from ``(seed, n_draws)`` regardless of how many workers execute it.
@@ -11,9 +17,11 @@ run is reproducible from ``(seed, n_draws)`` regardless of how many workers exec
 
 from __future__ import annotations
 
+import hashlib
 import os
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -22,32 +30,13 @@ from .params import sample_world
 from .plausibility import DEFAULT_YEARS, SamplingReport, check
 from .specs import ACCOUNT_SPECS
 from .structural import simulate_world
+from .targets import CalibrationTargets
+
+DEFAULT_TARGETS = {"cn": Path(__file__).with_name("data") / "cn_targets.json"}
 
 ACCEPTANCE_WORLDS = 1000
 STYLIZED_YEARS = 40.0
 DRAW_BUDGET = 2.5  # draws attempted per requested world (≈45% rejection leaves headroom)
-
-
-class _StylizedBudget:
-    """Yield jobs, dropping the stylized simulation once ``limit`` worlds have been checked.
-
-    With several workers the count is approximate (jobs are dispatched before their results
-    return), so a few extra stylized simulations may run; the gate statistics use the first
-    ``limit`` accepted worlds either way.
-    """
-
-    def __init__(self, limit: int, jobs: list["_Job"]):
-        self.limit = limit
-        self.jobs = jobs
-        self.issued = 0
-
-    def __len__(self) -> int:
-        return len(self.jobs)
-
-    def __iter__(self):
-        for job in self.jobs:
-            self.issued += 1
-            yield job if self.issued <= self.limit * 2 else replace(job, stylized_years=0.0)
 
 
 @dataclass(frozen=True)
@@ -56,22 +45,47 @@ class _Job:
     entropy: tuple[int, ...]
     plausibility_years: float
     stylized_years: float
+    backend: str = "auto"
+    targets_json: str | None = None
 
 
 def _evaluate(job: _Job):
     """One draw: plausibility check, and the stylized checks only if it is accepted.
 
-    Stylized checks are skipped once ``stylized_years`` is 0, which the caller uses to stop
-    paying for them after the first ``n_worlds`` acceptances.
+    With the native kernel a stylized world costs ~0.03 s, so every accepted draw is scored
+    and the gates use the first ``n_worlds`` in draw order (deterministic for any worker count).
     """
     rng = np.random.default_rng(np.random.SeedSequence(job.entropy))
     spec = ACCOUNT_SPECS[job.account]
     params = sample_world(job.account, rng)
-    _, fails = check(simulate_world(spec, params, years=job.plausibility_years))
+    _, fails = check(simulate_world(spec, params, years=job.plausibility_years, backend=job.backend))
     if fails or job.stylized_years <= 0:
         return params, fails, None
-    checks = SF.world_checks(simulate_world(spec, params, years=job.stylized_years).sample())
-    return params, [], checks
+    targets = _targets(job.targets_json)
+    world = simulate_world(spec, params, years=job.stylized_years, backend=job.backend)
+    return params, [], SF.world_checks(world.sample(), targets)
+
+
+_TARGET_CACHE: dict[str, CalibrationTargets] = {}
+
+
+def _targets(text: str | None) -> CalibrationTargets | None:
+    if text is None:
+        return None
+    if text not in _TARGET_CACHE:
+        _TARGET_CACHE[text] = CalibrationTargets.from_json(text)
+    return _TARGET_CACHE[text]
+
+
+def load_targets(account: str, path: Path | None = None) -> str | None:
+    """Targets JSON for ``account`` (explicit path, else the committed default, else None)."""
+    path = path or DEFAULT_TARGETS.get(account)
+    if path is None:
+        return None
+    text = Path(path).read_text()
+    if CalibrationTargets.from_json(text).account != account:
+        raise ValueError(f"targets in {path} are not for account {account!r}")
+    return text
 
 
 def calibration_report(
@@ -82,21 +96,30 @@ def calibration_report(
     stylized_years: float = STYLIZED_YEARS,
     workers: int = 1,
     draw_budget: float = DRAW_BUDGET,
+    backend: str = "auto",
+    targets_path: Path | None = None,
 ) -> dict[str, object]:
     if account not in ACCOUNT_SPECS:
         raise ValueError(f"unknown account {account!r}")
+    targets_json = load_targets(account, targets_path)
+    if backend != "numpy":
+        from . import native
+
+        backend = "native" if native.available() else ("numpy" if backend == "auto" else backend)
+        if backend == "native":
+            native.load()  # build once in the parent so workers find the cached library
     n_draws = max(1, int(n_worlds * draw_budget))
-    jobs = [_Job(account, (seed, i), plausibility_years, stylized_years) for i in range(n_draws)]
+    jobs = [_Job(account, (seed, i), plausibility_years, stylized_years, backend, targets_json)
+            for i in range(n_draws)]
 
     report = SamplingReport(account)
     checks: list[dict[str, tuple[float, bool]]] = []
     workers = max(1, min(workers, len(jobs)))
-    stop_stylized = _StylizedBudget(n_worlds, jobs)
     if workers == 1:
-        results = map(_evaluate, stop_stylized)
+        results = map(_evaluate, jobs)
     else:
         with ProcessPoolExecutor(max_workers=workers) as pool:
-            results = list(pool.map(_evaluate, stop_stylized, chunksize=1))
+            results = list(pool.map(_evaluate, jobs, chunksize=4))
     for params, fails, world_checks in results:
         report.draws += 1
         if fails:
@@ -117,6 +140,8 @@ def calibration_report(
         "n_worlds_stylized": len(checks[:n_worlds]),
         "draw_budget": n_draws,
         "workers": workers,
+        "backend": backend,
+        "targets_sha256": hashlib.sha256(targets_json.encode()).hexdigest() if targets_json else None,
         "plausibility_years": plausibility_years,
         "stylized_years": stylized_years,
         "acceptance_run": len(report.accepted) >= ACCEPTANCE_WORLDS,
