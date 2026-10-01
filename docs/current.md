@@ -1,10 +1,21 @@
 # qount 当前状态
 
-> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-09-29
+> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-10-02
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
 > **TL;DR**：9 月 23 日再次重启后 SSH 恢复，已修复发布来源证明并缓解 SSH 未认证连接限流；Dashboard operations 恢复 healthy，paper/公共采集正常。交易 timer 仍关闭，旧 arm 已过期；研究来源缺口和已记录的采集中断仍保留。
 
-更新时间：2026-09-30
+更新时间：2026-10-02
+
+- **2026-10-02 P2 训练监控与中间保存改进已实施。** ETF trader parallel search 脚本存在 GPU 间断执行问题（每 15-20 分钟归零），
+  根因为批次化训练（`mp.Pool` 批次间销毁重建进程池）和无进度显示（`subprocess.run` 缓存输出）。改进：(1) 使用 `ProcessPoolExecutor` +
+  `as_completed` 实现持久化进程池，消除批次间空闲；(2) 使用 `Popen` 流式写入 `train.log`，每个 episode 输出一行 JSON
+  （包含 return、drawdown、KL、time breakdown）；(3) 训练脚本新增 `checkpoint_every=10` 参数，每 10 episodes 自动保存
+  `checkpoint_ep{N}.pt` 和 `history_ep{N}.json`，防止中断丢失进度；(4) 新增 `monitor_training_progress.py` 汇总所有训练的实时进度。
+  GPU 利用率 5-20% 为正常（RL 训练 CPU-bound，67% 时间在 world generation）。预估 Stage A（32 训练 × 30 episodes）需 ~2 小时，
+  Stage A+B 总计 ~5 小时。文件结构：每个训练输出 `meta.json`（配置）、`train.log`（实时日志）、`checkpoint_ep{10,20}.pt`、
+  `history_ep{10,20}.json`、`model.pt`（最终）和 `history.json`（完整）。详见
+  [p2-monitoring-improvements.md](p2-monitoring-improvements.md)。修改文件：`scripts/research/etf_trader_parallel_search.py`、
+  `src/qount/research/etf_trader/train.py`，新增 `scripts/research/monitor_training_progress.py`。
 
 - **2026-09-30 CTA-R 研究前瞻账本（D1，owner 授权，已部署）。** 新增 `qount-research-cta-r-forward.{service,timer}`，
   每日 18:45 CST 从公共腾讯前复权日线刷新自有 seed（VPS 上 Eastmoney 不通），追加哈希链前瞻账本

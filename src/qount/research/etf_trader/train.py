@@ -60,6 +60,7 @@ class TrainConfig:
     workers: int = 8
     device: str = "cuda"
     plausibility_years: float = 100.0
+    compile_mode: str = "reduce-overhead"  # torch.compile mode: reduce-overhead, max-autotune, default
 
 
 # ---------------------------------------------------------------------------
@@ -201,19 +202,39 @@ def tail_mean(x: torch.Tensor, q: float, largest: bool) -> torch.Tensor:
 # Training
 
 
-def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: float | None = None) -> dict:
+def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: float | None = None,
+          use_compile: bool = True, checkpoint_every: int = 10) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(cfg.device if torch.cuda.is_available() or cfg.device == "cpu" else "cpu")
     torch.manual_seed(cfg.seed)
     acct = ACCOUNTS[cfg.account]
     model = Trader(cfg.policy).to(device)
+
+    # torch.compile for 3-5x speedup by reducing kernel launch overhead
+    compile_mode = getattr(cfg, 'compile_mode', 'reduce-overhead')
+    if use_compile and device.type == "cuda":
+        try:
+            if compile_mode == 'max-autotune':
+                model = torch.compile(model, mode='max-autotune', fullgraph=False)
+            elif compile_mode == 'default':
+                model = torch.compile(model, mode='default', fullgraph=False)
+            else:
+                model = torch.compile(model, mode='reduce-overhead', fullgraph=False)
+            compiled = True
+            print(f"torch.compile enabled with mode={compile_mode}", flush=True)
+        except Exception as e:
+            print(f"Warning: torch.compile failed ({e}), falling back to eager mode", flush=True)
+            compiled = False
+    else:
+        compiled = False
+
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
     costs = cost_params_for(acct)
     lam = {"dd": 0.0, "cvar": 0.0}
     hist: list[dict] = []
     t_start = time.time()
     meta = {"config": asdict(cfg), "n_params": n_params(model), "device": str(device),
-            "research_only": True, "orders_authorized": False, "trial": False}
+            "compiled": compiled, "research_only": True, "orders_authorized": False, "trial": False}
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
 
     def jobs(ep):
@@ -225,17 +246,23 @@ def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: f
         pending = [pool.submit(_gen, j) for j in jobs(0)]
         update = 0
         for ep in range(cfg.episodes):
+            t_ep_start = time.time()
             worlds = [f.result() for f in pending]
+            t_gen = time.time() - t_ep_start
             if ep + 1 < cfg.episodes:
                 pending = [pool.submit(_gen, j) for j in jobs(ep + 1)]  # prefetch while training
-            t_ep = time.time()
+            t_tensor_start = time.time()
             et = to_tensors(worlds, device)
+            t_tensor = time.time() - t_tensor_start
+            t_env_start = time.time()
             env = TorchEnv(et.batch, acct, costs, exact=False, spread_mult=et.spread_mult, impact_mult=et.impact_mult)
+            t_env = time.time() - t_env_start
             h = model.initial_state(env.B, device=device)
             peak = torch.ones(env.B, device=device)  # running peak relative to initial equity
             ep_dd = torch.zeros(env.B, device=device)
             e0 = env.equity.detach().clone()
             seg_stats = []
+            t_rollout_start = time.time()
             while env.t < env.T - 1:
                 out, h = run_segment(env, model, et, h, cfg.segment, acct)
                 if out is None:
@@ -263,9 +290,13 @@ def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: f
                 env.detach_()
                 seg_stats.append({"logr": float(logr.mean()), "kl": float(kl), "g_dd": float(g_dd),
                                   "g_cvar": float(g_cv), "grad_norm": float(gn), "turnover_pen": float(to_pen)})
+            t_rollout = time.time() - t_rollout_start
             years = (env.t) / 252.0
+            t_ep_total = time.time() - t_ep_start
             rec = {
-                "episode": ep, "updates": update, "seconds": round(time.time() - t_ep, 2),
+                "episode": ep, "updates": update, "seconds": round(t_ep_total, 2),
+                "time_gen": round(t_gen, 2), "time_tensor": round(t_tensor, 2),
+                "time_env": round(t_env, 2), "time_rollout": round(t_rollout, 2),
                 "ann_log_return": float(np.mean([s["logr"] for s in seg_stats])),
                 "p95_max_dd": float(torch.quantile(ep_dd, 0.95)), "lambda_dd": lam["dd"], "lambda_cvar": lam["cvar"],
                 "kl": float(np.mean([s["kl"] for s in seg_stats])), "years": years,
@@ -274,6 +305,14 @@ def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: f
             hist.append(rec)
             if ep % log_every == 0:
                 print(json.dumps(rec), flush=True)
+
+            # Checkpoint every N episodes
+            if ep > 0 and ep % checkpoint_every == 0:
+                checkpoint_path = out_dir / f"checkpoint_ep{ep}.pt"
+                torch.save({"model": model.state_dict(), "config": asdict(cfg), "lambda": lam, "episode": ep},
+                          checkpoint_path)
+                (out_dir / f"history_ep{ep}.json").write_text(json.dumps(hist, indent=2))
+
             if max_minutes is not None and (time.time() - t_start) / 60 > max_minutes:
                 break
     torch.save({"model": model.state_dict(), "config": asdict(cfg), "lambda": lam}, out_dir / "model.pt")
