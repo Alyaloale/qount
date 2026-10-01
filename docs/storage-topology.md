@@ -1,6 +1,6 @@
 # qount 存储与计算拓扑
 
-> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-07-31
+> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-09-30
 > **本文回答**：跨主机职责、权威数据位置、WSL 计算流程、外置盘/清理规则。
 > **TL;DR**：Mac 研究/git、Windows 外置盘存储真相、WSL 计算、VPS 生产；大数据只在 Win/WSL 侧落外置盘。
 
@@ -27,7 +27,7 @@ manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功�
 | --- | --- | --- | --- |
 | Mac | `/Users/alyaloale/Code/qount` | 研究设计、代码主仓、git、文档、轻量测试和任务编排 | 全量行情、训练集、模型批次、历史artifact |
 | Windows外置盘 | `E:\qount_data`；WSL见`/mnt/e/qount_data` | 大数据、不可变输入、最终artifact、环境锁和节点备份的存储真相 | `.env`、API密钥、活跃SQLite、venv |
-| WSL | `/home/alyaloale/Code/qount`；7945HX 32线程、RTX 4060 8GB | 大型CPU特征工程、表格模型、HMM、GPU训练和权威复跑 | 完成后的大数据副本、长期artifact、生产状态 |
+| WSL | `/home/alyaloale/Code/qount`；7945HX 32线程、RTX 4060 Laptop 8GB、16 GB 内存；SSH 别名 `qount-wsl` | 大型CPU特征工程、表格模型、HMM、GPU训练和权威复跑 | 完成后的大数据副本、长期artifact、生产状态 |
 | VPS | `/root/qount` | `0.2.18`、停用的Base生产状态、FOMC order-free watcher、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
 | 临时云GPU | disposable | 仅在4060显存或吞吐实测不足时临时训练 | 唯一数据副本、生产密钥、live state |
 
@@ -203,8 +203,12 @@ PYTHONPATH=src ./.venv/bin/python scripts/storage/state_manifest.py \
 
 ### 长任务
 
-从Mac经Windows SSH直接启动WSL的`tmux/nohup/systemd --user`会在`wsl.exe`退出后被回收。当前可靠方式是让
-Mac的detached `screen`持有前台SSH，SSH再持有`wsl.exe`：
+**2026-09-30 起默认方式**：`ssh qount-wsl` 直连 WSL 内 sshd，在 WSL 内 `tmux` 运行；Windows 计划任务
+`qount-wsl-keepalive` 保持 WSL 常驻，SSH 断开后 tmux 会话仍在。连接与恢复见
+[host runbooks · WSL compute](operations/host-runbooks.md#wsl-compute-connection-entry-canonical)。
+
+以下旧方式仅在 keepalive 任务被移除时使用。从Mac经Windows SSH直接启动WSL的`tmux/nohup/systemd --user`会在`wsl.exe`退出后被回收；
+可靠方式是让Mac的detached `screen`持有前台SSH，SSH再持有`wsl.exe`：
 
 ```bash
 screen -S qount-wsl-job -dm \

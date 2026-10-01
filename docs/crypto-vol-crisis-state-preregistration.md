@@ -1,8 +1,10 @@
 # 预登记草稿：crypto_vol_crisis_state_v1
 
-> **状态**：DRAFT（无结果预登记）｜**权威**：L3 研究草稿｜**最后更新**：2026-07-25
+> **状态**：closed（family 关闭，owner 2026-09-29 确认）｜**权威**：L3 历史研究记录｜**最后更新**：2026-09-29
 > **本文回答**：`crypto_vol_crisis_state_v1` 的冻结合同、门与 kill test（吸收 CRA 两条规则）。
-> **TL;DR**：Trial 148 已按此跑并 REJECT（尾残差恶化）；Trial 2/3 须引入不同信息否则关闭家族。
+> **TL;DR**：Trial 148 REJECT；family 以 1/3 trial 关闭，剩余 2 个 trial 作废不再使用。本文草稿 §3/§4 与实际执行的
+> 预登记（`protocol_hash=bda9dd4c...`）不一致，且结果里的效率比单位有误；按任一口径 Trial 148 均失败，见
+> [update-log 2026-09-29](update-log.md)。不恢复、不救援、不改名重开。
 
 状态：**DRAFT / 无结果预登记**。`orders_authorized=false`、`paper_or_live_allowed=false`、`research_only=true`、
 `existing_cache_only=true`。本文冻结合同**在读取任何候选结果之前**；正式 `protocol_hash` / `contract_hash` 由 build

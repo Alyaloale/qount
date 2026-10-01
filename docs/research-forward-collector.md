@@ -12,7 +12,8 @@ plugin-set contract.
 - Core: `src/qount/research/forward_collector.py`
 - CLI: `scripts/research/governance/run_forward_collector.py`
 - Source graph: `deploy/research/forward-sources.json`
-- State root: `/var/lib/qount/research/forward/ops-health-v2` for the next contract; `stream-health-v1` remains read-only.
+- State root: `/var/lib/qount/research/forward/ops-health-v3` (since 2026-09-29); `ops-health-v2` (stopped 2026-09-27) and `stream-health-v1` remain read-only.
+- The contract pins the sha256 of the plugin source file (`forward_collector.py`). Any edit to that shared file, even an unused branch, breaks the active contract and requires a new state root plus matching `--forward-root` in the dashboard publisher.
 - Timer template: `deploy/systemd/qount-research-forward-collector.timer`
 - Service template: `deploy/systemd/qount-research-forward-collector.service`
 - Cadence: every 15 minutes, with a small randomized delay
@@ -105,7 +106,8 @@ It accepts only the eight fixed ETF series, checks bounded ZIP contents and
 freshness, and reports `insufficient` for missing or stale data. It does not
 read a credential or write paper/NAV/strategy artifacts. Its daily service and
 timer are separate from the unified collector so source-graph changes cannot
-alter the `ops-health-v2` chain.
+alter its chain. Note: its 2026-09-27 deploy still edited the shared
+`forward_collector.py`, which stopped `ops-health-v2` (see above).
 
 ## VPS Boundary
 

@@ -577,7 +577,7 @@ overlap with local negative evidence / promotion blockers
 | `multi_speed_trend_v1` | 趋势在不同形成/衰减速度上持续；标准化20/60/120日收益、breakout距离、快慢背离 | TOP3完成日线；连续forecast，然后`slow regime + medium position + fast de-risk` | Base v0.2；相对Base Standalone CAGR受maxDD约束；不超过Base、回撤恶化>2pp、2/3分段失败或成本/延迟失败即拒绝 | 3/3已用；**CLOSED**；P0 |
 | `market_breadth_dispersion_v1` | 趋势扩散、横截面分散和相关性压缩可区分健康行情与单币beta推动 | PIT流动池日线；上涨占比、距中期趋势分布、残差dispersion、第一主成分解释率、相关簇同步度；先只输出state | TOP3 breadth和BTC趋势；主指标为对下一持有期残差收益/尾部的增量；若等价于BTC收益、breadth<2或只在单一年份有效则拒绝 | **CLOSED**（10币广度1.660<2.0）；P0 |
 | `cross_sectional_residual_momentum_v1` | 个币相对强弱在扣除共同market/TOP3/相关簇暴露后仍可能持续 | PIT月/周revision；1/2/4/12周past-only残差动量，long/cash流动性约束排名 | 原始相对动量、BTC/TOP3和LiquidTrend10；主指标为净TOP3-beta residual CAGR及有效广度；PIT/rules不全、breadth<2、残差非正或单币/单阶段集中即拒绝 | **CLOSED**（随breadth传递关闭）；P1 |
-| `crypto_vol_crisis_state_v1` | 高波动、下行半方差、range扩张和相关性跃升会降低趋势的单位风险回报 | TOP3日线/可验证衍生品状态；只输出`RiskMultiplier [0,1]`，先比较固定vol scaling和非对称de-risk | Base、multi-speed、简单vol target；主指标为`drawdown saved / return sacrificed`和尾部残差；少赚超过预算、尾部无改善或只拟合单次崩盘即拒绝 | 1/3已用；Trial 148 REJECT（尾残差恶化）；P1 |
+| `crypto_vol_crisis_state_v1` | 高波动、下行半方差、range扩张和相关性跃升会降低趋势的单位风险回报 | TOP3日线/可验证衍生品状态；只输出`RiskMultiplier [0,1]`，先比较固定vol scaling和非对称de-risk | Base、multi-speed、简单vol target；主指标为`drawdown saved / return sacrificed`和尾部残差；少赚超过预算、尾部无改善或只拟合单次崩盘即拒绝 | **CLOSED 2026-09-29**（owner确认）；1/3已用，余2作废；Trial 148 REJECT |
 
 #### B. 衍生品、拥挤和强平状态
 
