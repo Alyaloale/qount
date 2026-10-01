@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Qount CTA-R research forward ledger daily after A-share close
+
+[Timer]
+OnCalendar=*-*-* 18:45:00
+Persistent=true
+RandomizedDelaySec=5m
+AccuracySec=1m
+Unit=qount-research-cta-r-forward.service
+
+[Install]
+WantedBy=timers.target

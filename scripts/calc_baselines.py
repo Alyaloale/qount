@@ -4,7 +4,8 @@ import numpy as np
 from datetime import datetime
 
 DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "processed", "ai_training_dataset.parquet")
-REPORT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "diagnostic_report_baselines.md")
+REPORT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "archive", "research-reports", "diagnostic_report_baselines.md")
+os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
 
 def calc_cagr_dd(returns, days_per_year=252):
     if len(returns) < 100:

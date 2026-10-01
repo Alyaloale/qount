@@ -11,7 +11,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "processed", "ai_training_dataset.parquet")
-REPORT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "v4_round4_report.md")
+REPORT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "archive", "research-reports", "v4_round4_report.md")
+os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
 
 # ==========================================
 # G2 Network (Frozen)

@@ -77,6 +77,10 @@ class FomcOperationsTest(unittest.TestCase):
         self.assertIn("Type=oneshot", service)
         self.assertIn("--plugins research_lines", service)
         self.assertIn("--source-config /root/qount/deploy/research/forward-sources.json", service)
+        self.assertIn(
+            "--state-root /var/lib/qount/research/forward/ops-health-v3",
+            service,
+        )
         self.assertIn("EnvironmentFile=-/etc/qount/research-forward-collector.env", service)
         self.assertIn("QOUNT_LIVE_CONFIRMATION", service)
         self.assertIn("QOUNT_MINI_TREND_ARM_TOKEN", service)
@@ -85,7 +89,7 @@ class FomcOperationsTest(unittest.TestCase):
         self.assertIn("OnCalendar=*-*-* *:00/15:00", timer)
         self.assertIn("Unit=qount-research-forward-collector.service", timer)
         self.assertIn("binance_um_rest", sources)
-        self.assertIn("cta_r_etf_archive", sources)
+        self.assertNotIn("cta_r_etf_archive", sources)
         self.assertIn("l1_passive_tiingo", sources)
 
     def test_dashboard_marks_event_strategy_alerts(self) -> None:

@@ -9,7 +9,6 @@ import json
 import math
 import os
 from dataclasses import asdict
-from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -33,6 +32,30 @@ from qount.mini_trend.forward import TOP3
 from qount.mini_trend.futures_recovery import canonical_hash, selected_um_rules
 from qount.mini_trend.live_pilot import LIVE_PILOT_CONTRACT
 from qount.mini_trend.live_pilot import manual_arm_owner_authorization_hash
+from qount.mini_trend.pilot_dispatch_views import (
+    float_or_zero as _float,
+)
+from qount.mini_trend.pilot_dispatch_views import (
+    managed_protective_client_id as _managed_protective_client_id,
+)
+from qount.mini_trend.pilot_dispatch_views import order_view as _order_view
+from qount.mini_trend.pilot_dispatch_views import (
+    position_average_cost as _position_average_cost,
+)
+from qount.mini_trend.pilot_dispatch_views import (
+    position_contracts as _position_contracts,
+)
+from qount.mini_trend.pilot_dispatch_views import (
+    position_side as _position_side,
+)
+from qount.mini_trend.pilot_dispatch_views import (
+    position_symbol as _position_symbol,
+)
+from qount.mini_trend.pilot_dispatch_views import round_down as _round_down
+from qount.mini_trend.pilot_dispatch_views import (
+    source_age_seconds as _source_age_seconds,
+)
+from qount.mini_trend.pilot_dispatch_views import utc_timestamp as _utc_timestamp
 from qount.models import utc_now
 from qount.persistence import VerifiedDecisionBatch
 from qount.settings import Settings
@@ -48,49 +71,6 @@ _STANDARD_PROTECTIVE_PREFIX = "q-p-"
 _CONFIGURED_SYMBOLS = tuple(f"{symbol[:-4]}/USDT" for symbol in TOP3)
 
 
-def _managed_protective_client_id(value: object) -> bool:
-    client_order_id = str(value or "")
-    return client_order_id.startswith(("qmt-s-", _STANDARD_PROTECTIVE_PREFIX))
-
-
-def _float(value: Any) -> float:
-    try:
-        return float(value or 0.0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _utc_timestamp(value: object) -> dt.datetime | None:
-    try:
-        parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        return None
-    return parsed.astimezone(dt.timezone.utc)
-
-
-def _source_age_seconds(
-    payload: Mapping[str, Any], *, observed_at: dt.datetime
-) -> float | None:
-    created_at = _utc_timestamp(payload.get("created_at"))
-    if created_at is None:
-        return None
-    age = (observed_at - created_at).total_seconds()
-    if age < -60.0:
-        return None
-    return max(age, 0.0)
-
-
-def _round_down(value: float, step: float) -> float:
-    if step <= 0.0:
-        return value
-    value_dec = Decimal(str(value))
-    step_dec = Decimal(str(step))
-    units = (value_dec / step_dec).to_integral_value(rounding=ROUND_DOWN)
-    return float(units * step_dec)
-
-
 def _safe_error(exc: Exception, settings: Settings) -> str:
     value = f"{type(exc).__name__}: {exc}"
     for secret in (settings.binance_api_key, settings.binance_api_secret):
@@ -104,69 +84,6 @@ def _client_order_id(kind: str, decision_id: str, symbol: str) -> str:
         {"kind": kind, "decision_id": decision_id, "symbol": symbol}
     )[:12]
     return f"qmt-{kind}-{symbol[:-4].lower()}-{digest}"[:36]
-
-
-def _position_symbol(position: Mapping[str, Any]) -> str:
-    info = position.get("info") or {}
-    return str(position.get("symbol") or info.get("symbol") or "")
-
-
-def _position_contracts(position: Mapping[str, Any]) -> float:
-    info = position.get("info") or {}
-    value = position.get("contracts")
-    if value is None:
-        value = info.get("positionAmt")
-    return abs(_float(value))
-
-
-def _position_side(position: Mapping[str, Any]) -> str:
-    side = str(position.get("side") or "").lower()
-    if side in {"long", "short"}:
-        return side
-    signed = _float((position.get("info") or {}).get("positionAmt"))
-    return "short" if signed < 0.0 else "long"
-
-
-def _position_average_cost(position: Mapping[str, Any]) -> float:
-    info = position.get("info") or {}
-    return _float(
-        position.get("entryPrice")
-        or position.get("average")
-        or info.get("entryPrice")
-        or info.get("breakEvenPrice")
-    )
-
-
-def _order_view(order: Mapping[str, Any], *, ccxt_symbol: str) -> dict[str, Any]:
-    info = order.get("info") or {}
-    trigger = (
-        order.get("stopPrice")
-        or order.get("triggerPrice")
-        or info.get("stopPrice")
-    )
-    client_id = (
-        order.get("clientOrderId")
-        or info.get("clientOrderId")
-        or info.get("clientAlgoId")
-        or ""
-    )
-    return {
-        "id": str(order.get("id") or info.get("orderId") or info.get("algoId") or ""),
-        "client_order_id": str(client_id),
-        "symbol": ccxt_symbol,
-        "type": str(order.get("type") or info.get("origType") or info.get("type") or ""),
-        "side": str(order.get("side") or info.get("side") or "").lower(),
-        "trigger_price": _float(trigger) if trigger not in (None, "") else None,
-        "reduce_only": bool(
-            order.get("reduceOnly")
-            or str(info.get("reduceOnly")).lower() == "true"
-        ),
-        "close_position": bool(
-            order.get("closePosition")
-            or str(info.get("closePosition")).lower() == "true"
-        ),
-        "status": str(order.get("status") or info.get("status") or ""),
-    }
 
 
 def _fetch_all_open_orders(exchange: Any) -> list[dict[str, Any]]:

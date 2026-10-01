@@ -38,6 +38,16 @@ from qount.reporting.daily_brief import DailyBrief
 from qount.reporting.daily_brief import DailyBriefError
 from qount.reporting.daily_brief import daily_brief_from_dict
 from qount.reporting.daily_brief import validate_daily_brief_sources
+from qount.reporting.read_model_validation import DashboardReadModelError
+from qount.reporting.read_model_validation import count as _count
+from qount.reporting.read_model_validation import exact_keys as _exact_keys
+from qount.reporting.read_model_validation import finite as _finite
+from qount.reporting.read_model_validation import finite_nonnegative as _finite_nonnegative
+from qount.reporting.read_model_validation import freshness as _freshness
+from qount.reporting.read_model_validation import gross as _gross
+from qount.reporting.read_model_validation import mapping as _mapping
+from qount.reporting.read_model_validation import string_list as _string_list
+from qount.reporting.read_model_validation import trace_href as _trace_href
 
 
 DASHBOARD_SCHEMA_VERSION = 1
@@ -94,10 +104,6 @@ _REGISTRY_STATUSES = {
 _EXECUTION_STATUSES = {"disarmed", "blocked", "armed"}
 
 
-class DashboardReadModelError(ValueError):
-    """Raised when a read model source, payload, or publication is invalid."""
-
-
 def _canonical_bytes(value: Mapping[str, Any]) -> bytes:
     return (
         json.dumps(
@@ -107,57 +113,6 @@ def _canonical_bytes(value: Mapping[str, Any]) -> bytes:
             separators=(",", ":"),
         ).encode("ascii")
         + b"\n"
-    )
-
-
-def _mapping(value: object, *, name: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise DashboardReadModelError(f"{name}_must_be_object")
-    return value
-
-
-def _exact_keys(
-    value: Mapping[str, Any],
-    expected: set[str],
-    *,
-    name: str,
-) -> None:
-    actual = set(value)
-    if actual != expected:
-        missing = ",".join(sorted(expected - actual)) or "none"
-        unexpected = ",".join(sorted(actual - expected)) or "none"
-        raise DashboardReadModelError(
-            f"{name}_fields_mismatch:missing={missing}:unexpected={unexpected}"
-        )
-
-
-def _finite_nonnegative(value: object, *, name: str) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError) as exc:
-        raise DashboardReadModelError(f"{name}_invalid") from exc
-    if not math.isfinite(number) or number < 0.0:
-        raise DashboardReadModelError(f"{name}_invalid")
-    return number
-
-
-def _finite(value: object, *, name: str) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError) as exc:
-        raise DashboardReadModelError(f"{name}_invalid") from exc
-    if not math.isfinite(number):
-        raise DashboardReadModelError(f"{name}_invalid")
-    return number
-
-
-def _gross(weights: Mapping[str, float]) -> float:
-    return round(
-        sum(
-            _finite_nonnegative(value, name=f"weight:{symbol}")
-            for symbol, value in weights.items()
-        ),
-        12,
     )
 
 
@@ -196,54 +151,6 @@ def _valid_source_hashes(
             )
         )
     ) and all(is_sha256(value) for value in source_hashes.values())
-
-
-def _iso_after(value: str, seconds: int) -> str:
-    return (aware_datetime(value) + timedelta(seconds=seconds)).isoformat()
-
-
-def _freshness(
-    *,
-    source_updated_at: str,
-    evaluated_at: str,
-    stale_after_seconds: int,
-    observed_at: str | None = None,
-    content_updated_at: str | None = None,
-    sources: Mapping[str, str] | None = None,
-) -> dict[str, object]:
-    observed_at = observed_at or source_updated_at
-    content_updated_at = content_updated_at or source_updated_at
-    source_times = dict(sources or {"primary": source_updated_at})
-    source_states = {
-        name: {
-            "updated_at": updated_at,
-            "stale_at": _iso_after(updated_at, stale_after_seconds),
-            "status": (
-                "stale"
-                if aware_datetime(evaluated_at)
-                >= aware_datetime(_iso_after(updated_at, stale_after_seconds))
-                else "fresh"
-            ),
-        }
-        for name, updated_at in sorted(source_times.items())
-    }
-    stale_at = min(
-        str(value["stale_at"]) for value in source_states.values()
-    )
-    status = (
-        "stale"
-        if any(value["status"] == "stale" for value in source_states.values())
-        else "fresh"
-    )
-    return {
-        "status": status,
-        "source_updated_at": source_updated_at,
-        "observed_at": observed_at,
-        "content_updated_at": content_updated_at,
-        "evaluated_at": evaluated_at,
-        "stale_at": stale_at,
-        "sources": source_states,
-    }
 
 
 def _source_errors(
@@ -1087,30 +994,6 @@ def _validate_runtime_wrapper(value: object, *, name: str) -> Mapping[str, Any]:
     if row["status"] != "available" or not isinstance(row["values"], Mapping):
         raise DashboardReadModelError(f"{name}_invalid")
     return row
-
-
-def _count(value: object, *, name: str) -> int:
-    if (
-        not isinstance(value, int)
-        or isinstance(value, bool)
-        or value < 0
-    ):
-        raise DashboardReadModelError(f"{name}_invalid")
-    return value
-
-
-def _string_list(value: object, *, name: str) -> list[str]:
-    if (
-        not isinstance(value, list)
-        or any(not isinstance(item, str) or not item for item in value)
-        or len(value) != len(set(value))
-    ):
-        raise DashboardReadModelError(f"{name}_invalid")
-    return value
-
-
-def _trace_href(identifier: str) -> str:
-    return f"#/decisions?trace={identifier}"
 
 
 def _validate_positions_payload(value: Mapping[str, object]) -> None:

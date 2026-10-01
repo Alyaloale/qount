@@ -20,7 +20,7 @@ Environment=HTTP_PROXY=
 Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET BINANCE_SECRET_KEY QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN
-ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/research/governance/run_forward_collector.py --repo-root /root/qount --source-config /root/qount/deploy/research/forward-sources.json --state-root /var/lib/qount/research/forward --liquidation-state-root /var/lib/qount/research/liquidation-cascade-v1 --plugins research_lines --min-free-disk-gb 8 --timeout-seconds 20 --print-json
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/research/governance/run_forward_collector.py --repo-root /root/qount --source-config /root/qount/deploy/research/forward-sources.json --state-root /var/lib/qount/research/forward/ops-health-v3 --liquidation-state-root /var/lib/qount/research/liquidation-cascade-v1 --plugins research_lines --min-free-disk-gb 8 --timeout-seconds 20
 UMask=0077
 Nice=10
 IOSchedulingClass=idle
@@ -37,7 +37,6 @@ ProtectHome=read-only
 ReadWritePaths=/var/lib/qount/research/forward
 ReadOnlyPaths=/var/lib/qount/research/liquidation-cascade-v1
 ReadOnlyPaths=/root/qount/deploy/research/forward-sources.json
-ReadOnlyPaths=-/root/qount/state/cta_r/etf_source/etf_data.zip
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

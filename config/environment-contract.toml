@@ -91,7 +91,18 @@ sensitive = false
 allowed_hosts = ["mac"]
 required_when = "never"
 default_policy = "repository_documented_host"
-consumers = ["scripts/sync-to-wsl.sh", "scripts/run-wsl-tests.sh"]
+consumers = ["scripts/sync-to-wsl.sh", "scripts/run-wsl-tests.sh", "scripts/hosts/qount-wsl.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_WIN_HOST"
+domain = "orchestration"
+type = "hostname"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "repository_documented_host"
+consumers = ["scripts/hosts/qount-wsl.sh"]
 legacy = false
 
 [[variables]]

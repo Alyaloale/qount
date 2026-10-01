@@ -6,6 +6,16 @@ from .entry_quality import build_traditional_signal_context
 from .exchange_utils import minimum_executable_notional
 from .journal import Journal
 from .models import AIDecision, MarketSnapshotBundle, RiskVerdict, ValidatedDecision, utc_now
+from .risk_state_keys import (
+    breakeven_stop_armed_key as build_breakeven_stop_armed_key,
+)
+from .risk_state_keys import day_start_equity_key as build_day_start_equity_key
+from .risk_state_keys import (
+    partial_take_profit_done_key as build_partial_take_profit_done_key,
+)
+from .risk_state_keys import (
+    trailing_profit_peak_key as build_trailing_profit_peak_key,
+)
 from .settings import Settings
 from .trade_policy import action_direction
 from .trade_policy import estimated_action_cost_pct
@@ -150,10 +160,6 @@ CORRELATED_DIRECTIONAL_GROUPS: dict[str, frozenset[str]] = {
 ALT_SHORT_TIGHTEN_BASES = frozenset({"SOL", "XRP"})
 
 
-def build_day_start_equity_key(mode: str, exchange_id: str, market_type: str, quote_currency: str, date_key: str) -> str:
-    return f"day_start_equity:{mode}:{exchange_id}:{market_type}:{quote_currency}:{date_key}"
-
-
 class RiskEngine:
     def __init__(self, settings: Settings, journal: Journal) -> None:
         self.settings = settings
@@ -251,13 +257,31 @@ class RiskEngine:
         return next((item for item in history if predicate(item)), None)
 
     def _trailing_profit_peak_key(self, symbol: str, open_run_id: int) -> str:
-        return f"trailing_profit_peak:{self.settings.mode}:{self.settings.exchange_id}:{self.settings.market_type}:{symbol}:{open_run_id}"
+        return build_trailing_profit_peak_key(
+            mode=self.settings.mode,
+            exchange_id=self.settings.exchange_id,
+            market_type=self.settings.market_type,
+            symbol=symbol,
+            open_run_id=open_run_id,
+        )
 
     def _partial_take_profit_done_key(self, symbol: str, open_run_id: int) -> str:
-        return f"partial_tp_done:{self.settings.mode}:{self.settings.exchange_id}:{self.settings.market_type}:{symbol}:{open_run_id}"
+        return build_partial_take_profit_done_key(
+            mode=self.settings.mode,
+            exchange_id=self.settings.exchange_id,
+            market_type=self.settings.market_type,
+            symbol=symbol,
+            open_run_id=open_run_id,
+        )
 
     def _breakeven_stop_armed_key(self, symbol: str, open_run_id: int) -> str:
-        return f"breakeven_stop_armed:{self.settings.mode}:{self.settings.exchange_id}:{self.settings.market_type}:{symbol}:{open_run_id}"
+        return build_breakeven_stop_armed_key(
+            mode=self.settings.mode,
+            exchange_id=self.settings.exchange_id,
+            market_type=self.settings.market_type,
+            symbol=symbol,
+            open_run_id=open_run_id,
+        )
 
     def _partial_take_profit_count(self, symbol: str, open_run_id: int) -> int:
         state = self.journal.get_runtime_state(self._partial_take_profit_done_key(symbol, open_run_id), 0)

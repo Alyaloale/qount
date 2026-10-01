@@ -69,6 +69,8 @@ class PublisherConfig:
     disk_path: Path
     intelligence_root: Path | None = None
     paper_root: Path | None = None
+    forward_root: Path | None = None
+    liquidation_root: Path | None = None
     notification_store_path: Path | None = None
     operations_enabled: bool = True
     service_name: str = "qount-dashboard-publisher.timer"
@@ -95,6 +97,9 @@ class PublisherConfig:
         if self.intelligence_root is not None and not self.intelligence_root.is_absolute():
             raise DashboardPublisherError("publisher_absolute_paths_required")
         if self.paper_root is not None and not self.paper_root.is_absolute():
+            raise DashboardPublisherError("publisher_absolute_paths_required")
+        if any(path is not None and not path.is_absolute()
+               for path in (self.forward_root, self.liquidation_root)):
             raise DashboardPublisherError("publisher_absolute_paths_required")
         if (
             self.notification_store_path is not None
@@ -399,7 +404,7 @@ def _read_optional_paper_snapshot(config: PublisherConfig):
     if config.paper_root is None:
         return None
     try:
-        return read_paper_program_snapshot(config.paper_root)
+        return read_paper_program_snapshot(config.paper_root, observed_at=dt.datetime.now(dt.timezone.utc).isoformat())
     except (PaperProgramImportError, OSError):
         return None
 
@@ -442,6 +447,11 @@ def run_dashboard_publisher(
                 repo_root=config.repo_root,
                 state_root=config.repo_root / "state" / "mini_trend",
                 operations_enabled=config.operations_enabled,
+                forward_root=config.forward_root,
+                liquidation_root=config.liquidation_root,
+                # Warn before the existing public collectors' 8 GiB stop guard.
+                disk_warning_free_bytes=10 * 1024**3 if config.forward_root else 1_073_741_824,
+                disk_unavailable_free_bytes=8 * 1024**3 if config.forward_root else 268_435_456,
             ),
             observed_at=completed_at,
             captured_at=completed_at,
@@ -513,6 +523,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--disk-path", type=Path, required=True)
     parser.add_argument("--intelligence-root", type=Path)
     parser.add_argument("--paper-root", type=Path)
+    parser.add_argument("--forward-root", type=Path)
+    parser.add_argument("--liquidation-root", type=Path)
     parser.add_argument("--notification-store", type=Path)
     parser.add_argument(
         "--service-name",
@@ -544,6 +556,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         disk_path=args.disk_path,
         intelligence_root=args.intelligence_root,
         paper_root=args.paper_root,
+        forward_root=args.forward_root,
+        liquidation_root=args.liquidation_root,
         notification_store_path=args.notification_store,
         service_name=args.service_name,
         retain_previous_releases=args.retain_previous_releases,

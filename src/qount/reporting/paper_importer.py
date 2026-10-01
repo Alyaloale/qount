@@ -9,6 +9,7 @@ import stat
 from typing import Any
 
 from qount.dual_engine import PaperProgramSnapshot
+from qount.dual_engine.reference_data import read_public_reference, with_public_benchmark
 
 
 class PaperProgramImportError(ValueError):
@@ -28,7 +29,7 @@ def _canonical_bytes(value: dict[str, Any]) -> bytes:
     )
 
 
-def read_paper_program_snapshot(root: str | Path) -> PaperProgramSnapshot:
+def read_paper_program_snapshot(root: str | Path, *, observed_at: str | None = None) -> PaperProgramSnapshot:
     """Read only ``current/paper_program_snapshot.json`` with fail-closed checks."""
 
     source_root = Path(root).expanduser()
@@ -67,9 +68,18 @@ def read_paper_program_snapshot(root: str | Path) -> PaperProgramSnapshot:
     if not isinstance(value, dict) or _canonical_bytes(value) != raw:
         raise PaperProgramImportError("paper_import_not_canonical")
     try:
-        return PaperProgramSnapshot.from_dict(value)
+        snapshot = PaperProgramSnapshot.from_dict(value)
     except ValueError as exc:
         raise PaperProgramImportError(f"paper_import_contract_invalid:{exc}") from exc
+    if observed_at is not None:
+        try:
+            reference = read_public_reference(source_root, observed_at=observed_at)
+            return with_public_benchmark(snapshot, reference)
+        except (OSError, ValueError, TypeError, KeyError):
+            # Keep the valid accounting view; absence is visible as no benchmark.
+            # Research source health independently reports missing/stale references.
+            pass
+    return snapshot
 
 
 __all__ = ["PaperProgramImportError", "read_paper_program_snapshot"]

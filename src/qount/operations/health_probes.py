@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 import re
 import shutil
@@ -18,6 +19,8 @@ from qount.notifications import collect_system_health
 from qount.operations.backups import BackupError
 from qount.operations.backups import read_latest_dashboard_backup
 from qount.operations.release_provenance import verify_release_provenance
+from qount.operations.release_provenance import ReleaseProvenanceError
+from qount.operations.runtime_evidence import probe_forward, probe_liquidation
 
 
 _SERVICE_STATES = {
@@ -122,6 +125,8 @@ class HealthProbeConfig:
     repo_root: Path | None = None
     state_root: Path | None = None
     operations_enabled: bool = False
+    forward_root: Path | None = None
+    liquidation_root: Path | None = None
     clock_warning_seconds: float = 0.5
     clock_unavailable_seconds: float = 5.0
     disk_warning_fraction: float = 0.10
@@ -132,6 +137,9 @@ class HealthProbeConfig:
     backup_unavailable_seconds: int = 180_000
 
     def validate(self) -> None:
+        if any(path is not None and (not isinstance(path, Path) or not path.is_absolute())
+               for path in (self.forward_root, self.liquidation_root)):
+            raise HealthProbeError("health_probe_runtime_paths_invalid")
         if (
             not isinstance(self.disk_path, Path)
             or not isinstance(self.backup_root, Path)
@@ -507,9 +515,39 @@ def _ops_check(
     }
 
 
+def _release_failure_detail(error: Exception) -> str:
+    """Expose fixed diagnostic codes, never exception text or file contents."""
+    if isinstance(error, FileNotFoundError):
+        return "release_file_missing"
+    if isinstance(error, OSError):
+        return "release_file_unreadable"
+    if isinstance(error, (json.JSONDecodeError, UnicodeError)):
+        return "release_provenance_json_invalid"
+    if isinstance(error, ReleaseProvenanceError):
+        code = str(error).partition(":")[0]
+        if code in {
+            "release_provenance_schema_invalid",
+            "release_provenance_version_invalid",
+            "release_provenance_type_invalid",
+            "release_provenance_commit_invalid",
+            "release_provenance_hash_invalid",
+            "release_provenance_file_hashes_invalid",
+            "release_source_tree_mismatch",
+            "release_source_tree_hash_invalid",
+            "release_version_mismatch",
+            "release_version_missing",
+            "release_path_missing",
+            "release_file_set_empty",
+        }:
+            return code
+    return "release_provenance_unavailable"
+
+
 def probe_operations(
     config: HealthProbeConfig,
     runner: CommandRunner,
+    *,
+    observed_at: str | None = None,
 ) -> dict[str, object]:
     """Observe production services and guards without mutating runtime state."""
 
@@ -519,6 +557,8 @@ def probe_operations(
             "repo_root": str(config.repo_root),
             "state_root": str(config.state_root),
             "enabled": config.operations_enabled,
+            "forward_root": str(config.forward_root),
+            "liquidation_root": str(config.liquidation_root),
         },
     )
     if not config.operations_enabled:
@@ -604,17 +644,17 @@ def probe_operations(
         )
         provenance_path = config.repo_root / ".qount-release-provenance.json"
         try:
-            import json
-
             provenance = json.loads(provenance_path.read_text(encoding="ascii"))
+            if not isinstance(provenance, dict):
+                raise ReleaseProvenanceError("release_provenance_schema_invalid")
             verified = verify_release_provenance(config.repo_root, provenance)
             provenance_value = str(verified["provenance_hash"])
             provenance_status = "pass"
             provenance_detail = "release_provenance_verified"
-        except (OSError, TypeError, ValueError):
+        except (OSError, TypeError, ValueError) as error:
             provenance_value = None
             provenance_status = "block"
-            provenance_detail = "release_provenance_unavailable"
+            provenance_detail = _release_failure_detail(error)
         checks.append(
             _ops_check(
                 check_id="release:provenance",
@@ -625,6 +665,14 @@ def probe_operations(
                 observed_value=provenance_value,
             )
         )
+
+    if config.operations_enabled:
+        for root, probe in ((config.forward_root, probe_forward),
+                            (config.liquidation_root, probe_liquidation)):
+            if root is not None:
+                if observed_at is None:
+                    raise HealthProbeError("health_probe_runtime_time_required")
+                checks.extend(probe(root, observed_at=observed_at))
 
     checks.sort(key=lambda row: str(row["check_id"]))
     scope_status: dict[str, str] = {}
@@ -685,7 +733,7 @@ def collect_os_system_health(
         "disk": probe_disk(config, actual.disk_usage),
         "service": probe_service(config, actual.command_runner),
         "backup": probe_backup(config, observed_at=observed_at),
-        "operations": probe_operations(config, actual.command_runner),
+        "operations": probe_operations(config, actual.command_runner, observed_at=observed_at),
     }
     return collect_system_health(
         measurements,

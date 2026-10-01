@@ -15,6 +15,7 @@ from qount.dual_engine import DualEngineMarketConfig
 from qount.dual_engine import NoScheduledPaperEvent
 from qount.dual_engine import collect_market_cycle
 from qount.dual_engine import run_paper_cycle
+from qount.dual_engine.reference_data import refresh_public_reference
 
 
 def _read_object(path: Path) -> Mapping[str, Any]:
@@ -83,6 +84,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--state-root", type=Path, required=True)
     parser.add_argument("--event", choices=("daily-close", "g20-open"), required=True)
     parser.add_argument("--observed-at")
+    parser.add_argument("--refresh-reference", action="store_true")
+    parser.add_argument("--reference-only", action="store_true")
     return parser
 
 
@@ -90,6 +93,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     observed_at = args.observed_at or dt.datetime.now(dt.timezone.utc).isoformat()
     config = DualEngineMarketConfig.from_dict(_read_object(args.config.resolve()))
+    state_root = args.state_root.resolve()
+    if args.reference_only:
+        reference = refresh_public_reference(state_root, config, observed_at=observed_at)
+        print(json.dumps({"status": "public_reference_refreshed", "reference_hash": reference["reference_hash"],
+                          "orders_authorized": False}, sort_keys=True))
+        return 0
     try:
         cycle = collect_market_cycle(
             config,
@@ -99,9 +108,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     except NoScheduledPaperEvent as exc:
         print(json.dumps({"status": "skipped", "reason": str(exc)}, sort_keys=True))
         return 0
-    state_root = args.state_root.resolve()
     input_path = _archive_cycle(state_root, cycle.as_dict())
     snapshot = run_paper_cycle(state_root, cycle)
+    reference_status = "not_requested"
+    if args.refresh_reference:
+        try:
+            refresh_public_reference(state_root, config, observed_at=observed_at)
+            reference_status = "refreshed"
+        except (OSError, ValueError, TypeError, KeyError):
+            # Optional reference failure must not undo a completed accounting cycle.
+            # Its previous timestamp is retained; the source probe will show it stale.
+            reference_status = "unavailable"
     print(
         json.dumps(
             {
@@ -111,6 +128,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "snapshot_hash": snapshot.snapshot_hash,
                 "input_path": str(input_path),
                 "orders_authorized": False,
+                "reference_status": reference_status,
             },
             sort_keys=True,
         )

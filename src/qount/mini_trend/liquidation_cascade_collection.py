@@ -40,6 +40,7 @@ LIQUIDATION_CASCADE_COLLECTION_VERSION = "liquidation_cascade_forward_collection
 DEFAULT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT")
 DEFAULT_WS_BASE_URL = "wss://fstream.binance.com"
 DEFAULT_REST_BASE_URL = "https://fapi.binance.com"
+STREAM_HEALTH_STALE_AFTER_SECONDS = 180
 CONFIGURATION_EXIT_STATUS = 64
 DISK_GUARD_EXIT_STATUS = 75
 
@@ -169,11 +170,34 @@ def _relative_to_root(path: Path, state_root: Path) -> str:
 
 
 def build_force_order_stream_url(config: LiquidationCascadeCollectorConfig) -> str:
-    """Return Binance's public combined-stream URL for directional liquidations."""
+    """Return Binance's public combined-stream URL plus a transport heartbeat.
+
+    The mark-price stream is consumed only as a transport-liveness heartbeat. It
+    is never persisted as research evidence or interpreted as a liquidation.
+    """
 
     config.validate()
-    streams = "/".join(f"{symbol.lower()}@forceOrder" for symbol in config.symbols)
-    return f"{config.ws_base_url.rstrip('/')}/stream?streams={streams}"
+    streams = [f"{symbol.lower()}@forceOrder" for symbol in config.symbols]
+    streams.append(_stream_health_name(config))
+    return f"{config.ws_base_url.rstrip('/')}/market/stream?streams={'/'.join(streams)}"
+
+
+def _stream_health_name(config: LiquidationCascadeCollectorConfig) -> str:
+    return f"{config.symbols[0].lower()}@markPrice@1s"
+
+
+def _is_stream_health_message(
+    message: str | bytes | Mapping[str, Any],
+    *,
+    expected_stream: str,
+) -> bool:
+    if isinstance(message, bytes):
+        message = message.decode("utf-8")
+    envelope = json.loads(message) if isinstance(message, str) else message
+    if not isinstance(envelope, Mapping) or envelope.get("stream") != expected_stream:
+        return False
+    data = envelope.get("data")
+    return isinstance(data, Mapping) and data.get("e") == "markPriceUpdate"
 
 
 def build_segment_paths(
@@ -839,6 +863,7 @@ class LiquidationCascadeCollector:
         self._started_at_ms: int | None = None
         self._last_recorded_at_ms: int | None = None
         self._last_stream_message_at_ms: int | None = None
+        self._last_force_order_at_ms: int | None = None
         self._last_connection_opened_at_ms: int | None = None
         self._last_error: str | None = None
         self._terminal_error: Exception | None = None
@@ -851,6 +876,7 @@ class LiquidationCascadeCollector:
             "connection_opens": 0,
             "connection_errors": 0,
             "gap_records": 0,
+            "stream_health_messages": 0,
         }
         self._event_snapshots = _EventSnapshotCoordinator(
             min_interval_seconds=config.event_snapshot_min_interval_seconds,
@@ -896,6 +922,7 @@ class LiquidationCascadeCollector:
             self._counters["gap_records"] += 1
 
     def _current_status(self, status: str, *, stopped_at_ms: int | None = None) -> dict[str, Any]:
+        updated_at_ms = _now_ms()
         active_segment = None
         if self._segment is not None:
             active_segment = _relative_to_root(self._segment.paths.partial_path, self.state_root)
@@ -903,19 +930,34 @@ class LiquidationCascadeCollector:
         return {
             "schema_version": LIQUIDATION_CASCADE_COLLECTION_VERSION,
             "artifact_type": "liquidation_cascade_collector_status",
-            "updated_at_ms": _now_ms(),
+            "updated_at_ms": updated_at_ms,
             "status": status,
             "session_id": self._session_id,
             "started_at_ms": self._started_at_ms,
             "stopped_at_ms": stopped_at_ms,
             "last_recorded_at_ms": self._last_recorded_at_ms,
             "last_stream_message_at_ms": self._last_stream_message_at_ms,
+            "last_force_order_at_ms": self._last_force_order_at_ms,
             "last_connection_opened_at_ms": self._last_connection_opened_at_ms,
             "last_error": self._last_error,
             "collection_contract_hash": contract_hash,
             "active_partial_segment": active_segment,
             "counters": dict(self._counters),
             "recent_event_ids": self._deduper.snapshot(),
+            "stream_health": {
+                "status": (
+                    "missing"
+                    if self._last_stream_message_at_ms is None
+                    else (
+                        "fresh"
+                        if updated_at_ms - self._last_stream_message_at_ms
+                        <= STREAM_HEALTH_STALE_AFTER_SECONDS * 1000
+                        else "stale"
+                    )
+                ),
+                "heartbeat_stream": _stream_health_name(self.config),
+                "stale_after_seconds": STREAM_HEALTH_STALE_AFTER_SECONDS,
+            },
             "research_guards": {
                 "independent_window_days": LIQUIDATION_CASCADE_FORWARD.independent_window_days,
                 "read_results_before_window": False,
@@ -1071,8 +1113,21 @@ class LiquidationCascadeCollector:
                 except TimeoutError:
                     continue
                 received_at_ms = _now_ms()
-                self._last_stream_message_at_ms = received_at_ms
                 try:
+                    if _is_stream_health_message(
+                        message,
+                        expected_stream=_stream_health_name(self.config),
+                    ):
+                        publish_recovery = (
+                            self._last_stream_message_at_ms is None
+                            or received_at_ms - self._last_stream_message_at_ms
+                            > STREAM_HEALTH_STALE_AFTER_SECONDS * 1000
+                        )
+                        self._last_stream_message_at_ms = received_at_ms
+                        self._counters["stream_health_messages"] += 1
+                        if publish_recovery:
+                            self._publish_status("running")
+                        continue
                     record = normalize_force_order_message(message, received_at_ms=received_at_ms)
                 except Exception as exc:
                     self._record(
@@ -1084,6 +1139,8 @@ class LiquidationCascadeCollector:
                         }
                     )
                     continue
+                self._last_stream_message_at_ms = received_at_ms
+                self._last_force_order_at_ms = received_at_ms
                 if not self._deduper.add_if_new(record["event_id"]):
                     self._counters["deduplicated_events"] += 1
                     continue

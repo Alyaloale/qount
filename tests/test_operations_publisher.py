@@ -27,8 +27,11 @@ from qount.operations.health_probes import HealthProbeDependencies
 from qount.operations.health_probes import collect_os_system_health
 from qount.operations.health_probes import probe_clock
 from qount.operations.health_probes import probe_operations
+from qount.operations.release_provenance import build_release_provenance
+from qount.operations.release_provenance import write_release_provenance
 from qount.reporting import read_dashboard_v1
 from tests.test_authority_importer import _publish_authority_bundle
+from tests.test_release_provenance import _release_root
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +74,58 @@ def _config(root: Path) -> PublisherConfig:
 
 
 class OperationsHealthProbeTest(unittest.TestCase):
+    def test_release_failures_remain_blocked_with_distinct_safe_diagnostics(self) -> None:
+        cases = {
+            "missing": "release_file_missing",
+            "invalid_json": "release_provenance_json_invalid",
+            "non_object": "release_provenance_schema_invalid",
+            "changed_source": "release_source_tree_mismatch",
+            "missing_directory": "release_path_missing",
+            "tampered_manifest": "release_provenance_hash_invalid",
+        }
+        for case, expected in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = _release_root(Path(temporary))
+                path = root / ".qount-release-provenance.json"
+                manifest = build_release_provenance(root, git_commit="b" * 40)
+                write_release_provenance(path, manifest)
+                if case == "missing":
+                    path.unlink()
+                elif case == "invalid_json":
+                    path.write_text('{"private_value":"must-not-appear"', encoding="ascii")
+                elif case == "non_object":
+                    path.write_text("[]", encoding="ascii")
+                elif case == "changed_source":
+                    (root / "src/qount/release.txt").write_text("changed", encoding="ascii")
+                elif case == "missing_directory":
+                    (root / "prompts/release.txt").unlink()
+                    (root / "prompts").rmdir()
+                else:
+                    manifest["version"] = "0.0.0"
+                    write_release_provenance(path, manifest)
+                measurement = probe_operations(
+                    HealthProbeConfig(
+                        disk_path=root,
+                        service_name="qount-dashboard-publisher.timer",
+                        allowed_service_names=("qount-dashboard-publisher.timer",),
+                        backup_root=root,
+                        repo_root=root,
+                        state_root=root / "state",
+                        operations_enabled=True,
+                    ),
+                    _runner,
+                )
+                check = next(row for row in measurement["metrics"]["checks"]
+                             if row["check_id"] == "release:provenance")
+                self.assertEqual(check["detail"], expected)
+                self.assertEqual(check["status"], "block")
+                self.assertTrue(check["blocks_execution"])
+                self.assertIsNone(check["observed_value"])
+                self.assertEqual(measurement["status"], "unavailable")
+                self.assertEqual(measurement["metrics"]["scope_status"]["execution"], "unavailable")
+                self.assertEqual(measurement["metrics"]["scope_status"]["observation"], "unavailable")
+                self.assertNotIn("must-not-appear", json.dumps(measurement))
+
     def test_live_oneshot_activating_is_a_valid_execution_state(self) -> None:
         def operations_runner(argv: tuple[str, ...]) -> CommandResult:
             unit = argv[2]

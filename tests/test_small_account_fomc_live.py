@@ -2183,6 +2183,10 @@ class FomcLiveManagementTest(unittest.TestCase):
             exchange = _MutationTrackingExchange()
             with (
                 patch(
+                    "qount.small_account.fomc_live.utc_now",
+                    return_value=dt.datetime(2026, 7, 29, 23, 20, tzinfo=UTC),
+                ),
+                patch(
                     "qount.small_account.fomc_live.build_fomc_live_account_preflight",
                     return_value=preflight,
                 ),
@@ -2351,6 +2355,10 @@ class FomcLiveManagementTest(unittest.TestCase):
                         _protected_execution(batch, scope, exact_stop)
                     )
                     with (
+                        patch(
+                            "qount.small_account.fomc_live.utc_now",
+                            return_value=dt.datetime(2026, 7, 29, 23, 20, tzinfo=UTC),
+                        ),
                         patch(
                             "qount.small_account.fomc_live.build_fomc_live_account_preflight",
                             return_value=current,

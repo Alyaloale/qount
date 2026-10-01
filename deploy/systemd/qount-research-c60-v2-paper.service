@@ -1,0 +1,43 @@
+[Unit]
+Description=Qount C60 v2 research-paper sidecar (public Binance closes, no orders)
+After=network-online.target
+Wants=network-online.target
+ConditionPathIsDirectory=/root/qount
+ConditionPathIsDirectory=/var/www/qount/data
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+Environment=PYTHONPATH=/root/qount/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONNOUSERSITE=1
+Environment=HTTP_PROXY=
+Environment=HTTPS_PROXY=
+Environment=ALL_PROXY=
+UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET BINANCE_SECRET_KEY QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN QOUNT_TIINGO_API_KEY TIINGO_API_TOKEN
+StateDirectory=qount/research/c60-v2-paper
+StateDirectoryMode=0700
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/research/c60_v2_paper_builder.py --out /var/www/qount/data/c60_v2_paper.json --ledger /var/lib/qount/research/c60-v2-paper/forward-ledger.jsonl --mode 644
+SuccessExitStatus=2
+UMask=0022
+Nice=10
+CPUQuota=25%
+MemoryHigh=192M
+MemoryMax=320M
+TasksMax=16
+TimeoutStartSec=4m
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/research/c60-v2-paper
+ReadWritePaths=/var/www/qount/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

@@ -27,6 +27,10 @@ class RepositoryHygieneTests(unittest.TestCase):
         )
         self.assertEqual(missing, set())
 
+    def test_cli_registry_is_a_production_control_plane_domain(self) -> None:
+        registry = REPOSITORY_ROOT / "src" / "qount" / "cli" / "registry.py"
+        self.assertEqual(repository_hygiene._classify_path(registry), "production_control_plane")
+
     def test_current_governance_checks_pass(self) -> None:
         result = repository_hygiene.check()
         self.assertTrue(result["ok"], result)

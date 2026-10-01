@@ -18,7 +18,7 @@ Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 EnvironmentFile=-/etc/qount/dual-engine-paper.env
 UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN
-ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/collect_dual_engine_market.py --config /root/qount/deploy/dual_engine/paper-v1.json --state-root /var/lib/qount/paper/dual-engine --event g20-open
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/collect_dual_engine_market.py --config /root/qount/deploy/dual_engine/paper-v1.json --state-root /var/lib/qount/paper/dual-engine --event g20-open --refresh-reference
 UMask=0077
 Nice=10
 CPUQuota=50%

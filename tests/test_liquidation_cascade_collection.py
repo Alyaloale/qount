@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from qount.mini_trend.liquidation_cascade_collection import AppendOnlyGzipSegment
 from qount.mini_trend.liquidation_cascade_collection import _CollectionRootLock
+from qount.mini_trend.liquidation_cascade_collection import _is_stream_health_message
 from qount.mini_trend.liquidation_cascade_collection import DEFAULT_SYMBOLS
 from qount.mini_trend.liquidation_cascade_collection import DiskGuard
 from qount.mini_trend.liquidation_cascade_collection import DiskSpaceExhausted
@@ -142,11 +143,34 @@ class LiquidationCascadeCollectionTest(unittest.TestCase):
             self.assertEqual(contract["research_guards"]["independent_window_days"], 180)
             self.assertFalse(contract["research_guards"]["orders_authorized"])
             self.assertFalse(contract["research_guards"]["read_results_before_window"])
-            self.assertIn("btcusdt@forceOrder", build_force_order_stream_url(config))
+            stream_url = build_force_order_stream_url(config)
+            self.assertTrue(stream_url.startswith("wss://fstream.binance.com/market/stream?streams="))
+            self.assertIn("btcusdt@forceOrder", stream_url)
+            self.assertIn("btcusdt@markPrice@1s", stream_url)
             self.assertEqual(write_or_verify_collection_contract(root, config), contract)
             changed = self._config(root, depth_limit=50)
             with self.assertRaisesRegex(ValueError, "collection_contract_mismatch"):
                 write_or_verify_collection_contract(root, changed)
+
+    def test_mark_price_heartbeat_is_transport_health_only(self) -> None:
+        message = {
+            "stream": "btcusdt@markPrice@1s",
+            "data": {"e": "markPriceUpdate", "s": "BTCUSDT", "p": "60000"},
+        }
+        self.assertTrue(
+            _is_stream_health_message(
+                json.dumps(message), expected_stream="btcusdt@markPrice@1s"
+            )
+        )
+        self.assertFalse(
+            _is_stream_health_message(
+                {
+                    "stream": "btcusdt@forceOrder",
+                    "data": {"e": "forceOrder"},
+                },
+                expected_stream="btcusdt@markPrice@1s",
+            )
+        )
 
     def test_collection_root_lock_rejects_a_second_writer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

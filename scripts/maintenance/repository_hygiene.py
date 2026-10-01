@@ -30,6 +30,7 @@ CONTRACT_PATH = REPOSITORY_ROOT / "config" / "environment-contract.toml"
 PRODUCTION_DOMAINS = frozenset(
     {
         "contracts",
+        "cli",
         "execution",
         "governance",
         "ledger",
@@ -265,7 +266,7 @@ def render_repository_map(data: dict[str, object]) -> str:
 
 | Domain | Responsibility | Host / entry |
 | --- | --- | --- |
-| `src/qount/contracts`, `execution`, `governance`, `ledger`, `risk`, `operations`, `notifications`, `persistence`, `portfolio`, `reporting`, `venue` | Production control plane and shared contracts | VPS is runtime truth; Mac performs lightweight checks. |
+| `src/qount/cli`, `contracts`, `execution`, `governance`, `ledger`, `risk`, `operations`, `notifications`, `persistence`, `portfolio`, `reporting`, `venue` | Public CLI composition, production control plane and shared contracts | VPS is runtime truth; Mac performs lightweight checks. |
 | `src/qount/mini_trend`, `dual_engine`, `small_account`, `alpha_agents`, `research_data`, `research/sleeves` | Active research or no-order simulations | Mac/WSL research; external disk holds large artifacts. |
 | `src/qount/legacy` and `scripts/archive` | Frozen compatibility and historical evidence | No new business logic or timer restoration. |
 | `deploy/systemd`, `deploy/wsl`, `deploy/dual_engine`, `deploy/research` | Deployment templates and host topology | Static validation only without explicit VPS authorization. |
@@ -304,6 +305,7 @@ def check() -> dict[str, object]:
         DOCS_ROOT / "quick-handoff.md",
         DOCS_ROOT / "reference" / "configuration.md",
         DOCS_ROOT / "reference" / "cli-and-scripts.md",
+        DOCS_ROOT / "reference" / "code-organization.md",
         DOCS_ROOT / "reference" / "repository-map.md",
         DOCS_ROOT / "operations" / "local-development.md",
         DOCS_ROOT / "operations" / "host-runbooks.md",

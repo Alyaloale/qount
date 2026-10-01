@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REMOTE_HOST="${QOUNT_WSL_HOST:-home}"
+# Direct SSH into WSL (see scripts/hosts/qount-wsl.sh); no wsl.exe/PowerShell quoting.
+REMOTE_HOST="${QOUNT_WSL_HOST:-qount-wsl}"
 REMOTE_DIR="${QOUNT_WSL_DIR:-/home/alyaloale/Code/qount}"
 
 usage() {
@@ -33,9 +34,10 @@ while (($#)); do
 done
 
 cd "$(dirname "$0")/.."
+scripts/hosts/qount-wsl.sh ensure
 
 if [[ "$clean_code" == true ]]; then
-  ssh -o ClearAllForwardings=yes "$REMOTE_HOST" 'wsl.exe bash -s' -- "$REMOTE_DIR" <<'EOF'
+  ssh -o ClearAllForwardings=yes "$REMOTE_HOST" bash -s -- "$REMOTE_DIR" <<'EOF'
 set -euo pipefail
 REMOTE_DIR="$1"
 cd "$REMOTE_DIR"
@@ -57,10 +59,10 @@ COPYFILE_DISABLE=1 tar \
   scripts \
   src/qount \
   tests \
-  | ssh -o ClearAllForwardings=yes "$REMOTE_HOST" "wsl.exe bash -lc 'cd \"$REMOTE_DIR\" && tar -xf -'"
+  | ssh -o ClearAllForwardings=yes "$REMOTE_HOST" "cd '$REMOTE_DIR' && tar -xf -"
 
 if [[ "$install" == true ]]; then
-  ssh -o ClearAllForwardings=yes "$REMOTE_HOST" "wsl.exe bash -lc 'cd \"$REMOTE_DIR\" && ./.venv/bin/python -m pip install -e .'"
+  ssh -o ClearAllForwardings=yes "$REMOTE_HOST" "cd '$REMOTE_DIR' && ./.venv/bin/python -m pip install -e ."
 fi
 
 printf '%s\n' "synced to ${REMOTE_HOST}:${REMOTE_DIR}"
