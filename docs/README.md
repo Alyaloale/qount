@@ -1,6 +1,6 @@
 # 文档入口
 
-> **状态**：active｜**权威**：L2 documentation navigation｜**最后更新**：2026-08-02
+> **状态**：active｜**权威**：L2 documentation navigation｜**最后更新**：2026-09-29
 > **适用范围**：当前事实、规则、运行手册、参考资料、活跃研究和历史归档的稳定入口。
 > **TL;DR**：当前事实只在 [current.md](current.md)。本页组织导航，不复制生产状态或研究结论。
 
@@ -13,7 +13,9 @@
 - [主机运行手册](operations/host-runbooks.md) — Mac、外置盘、WSL、VPS 的职责。
 - [配置参考](reference/configuration.md) — 环境合同、密钥原则和只读预检。
 - [CLI 与脚本](reference/cli-and-scripts.md) — 公共入口和脚本域。
+- [代码组织](reference/code-organization.md) — 包边界、兼容层和可读性重构规则。
 - [仓库地图](reference/repository-map.md) — 生成的责任/入口地图。
+- [研究线总览](research-lines.md) — 当前研究线状态、代码入口和权限边界。
 
 ## Architecture, research and records
 

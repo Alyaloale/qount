@@ -1,6 +1,6 @@
 # Archive manifest
 
-> **状态**：active inventory｜**权威**：L3 archive-control record｜**最后更新**：2026-08-02
+> **状态**：active inventory｜**权威**：L3 archive-control record｜**最后更新**：2026-09-29
 > **适用范围**：候选归档、外置盘迁移与未追踪运行产物的审计；不授予删除或移动权限。
 > **TL;DR**：下列条目均为保留优先的候选或已分类资产。`pending_review` 不是批准；不得因本表恢复 legacy、移动数据、删除日志或启用调度。
 
@@ -17,8 +17,8 @@
 | `data/` | runtime_data | pending_review | 未追踪；被研究脚本和本地输出使用的可能性未知 | `E:\qount_data\qount\datasets\…`（待 owner 提供 manifest） | 保留原处；不自动添加、移动或删除。 |
 | `models/` | runtime_data | pending_review | 未追踪模型 artifact | `E:\qount_data\qount\models\…`（待 hash） | 保留原处；不自动添加、移动或删除。 |
 | `mac_nohup_experiments.log`, `mac_nohup_v4.log` | runtime_data | pending_review | 根目录本机日志 | 外置盘 `logs/`（待保留期与 hash） | 保留为证据；禁止按名称清理。 |
-| `v4_round3_report.md` … `v4_round7_alpha_attribution.md` | documentation | pending_review | 根目录研究报告，可能被后续研究引用 | `docs/archive/research-reports/`（须先做引用审计） | 仅列候选；不移动。 |
-| `diagnostic_report_baselines.md` | documentation | pending_review | 根目录诊断报告 | `docs/archive/research-reports/`（须先确认替代入口） | 保留，不移动。 |
+| `v4_round3_report.md` … `v4_round7_alpha_attribution.md` | documentation | archived | 已审计：仅由对应历史回放/归因脚本生成或引用 | `docs/archive/research-reports/` | 已迁移；保留原文件名和内容，仅作历史证据。 |
+| `diagnostic_report_baselines.md` | documentation | archived | 已审计：仅由 `scripts/calc_baselines.py` 生成 | `docs/archive/research-reports/` | 已迁移；脚本输出路径已同步。 |
 | `docs/crypto-trend-v1-*.md`, `docs/traditional-v1-*.md` | active_research | active | 当前未追踪研究文档 | `docs/`，待形成主索引后再判断 | 不是归档候选；保持原位。 |
 | 根 `scripts/train_*.py`, `scripts/replay_*.py`, `scripts/backtest_*.py`, `scripts/predict_*.py` | legacy_compatibility | pending_reference_audit | 存在新 `scripts/research/` 和 `scripts/operations/` 域；尚未确认 test/deploy/doc 引用 | `scripts/archive/` 或带 warning 的兼容 wrapper（待批准） | 本轮不改名、不移动。 |
 | `deploy/systemd/qount-*-*.service` 与 `*.timer` 的删除/新增 | deployment | user_worktree_change | 当前脏工作区资产 | VPS 部署清单（仅静态校验） | 不恢复、不安装、不修改远端。 |

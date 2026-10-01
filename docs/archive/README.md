@@ -18,6 +18,7 @@
 
 - [update-log-archive.md](update-log-archive.md)：`update-log.md` 中 2026-07-20 及更早的历史证据链（含 line A / GRID-B /
   加密重启前）。当前近期记录仍在 [../update-log.md](../update-log.md)。
+- [research-reports/](research-reports/)：根目录 v4 回放、归因和基线诊断报告的历史副本；不可作为当前研究或运行依据。
 - [current-archive-line-a-readings.md](current-archive-line-a-readings.md)：`current.md` 移出的 line A `最新策略读数 /
   WS-1..WS-4 / T-B / T-G / T-C` 历史 discovery 读数。当前事实仍在 [../current.md](../current.md)。
 - [current-archive-pre-fomc-2026-07-29.md](current-archive-pre-fomc-2026-07-29.md)：从 `current.md` 迁出的

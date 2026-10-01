@@ -1,6 +1,6 @@
 # qount 快速接手手册
 
-> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-08-02
+> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-09-30
 > **本文回答**：首次接手的最短阅读路径、值隐藏预检和跨主机安全边界。
 > **TL;DR**：生产事实只看 [current.md](current.md)。本项目当前不因接手工作启用 live、arm、订单、交易 timer 或生产 cron；不要把已有部署模板或历史命令当作授权。
 
@@ -9,6 +9,8 @@
 1. 阅读 [current.md](current.md) 确认 owner 决策与当前服务事实。
 2. 阅读 [project-rules.md](project-rules.md) 确认代码、研究和 legacy 的边界。
 3. 在当前主机按 [host runbooks](operations/host-runbooks.md) 确认职责；VPS 是 runtime truth，Mac 是代码主仓，WSL 是计算节点，外置盘是大数据/artifact 真相。
+   连 WSL 计算节点：`scripts/hosts/qount-wsl.sh status` / `scripts/hosts/qount-wsl.sh`（自动拉起 Tailscale 与 WSL），
+   细节只维护在 [host runbooks · WSL compute](operations/host-runbooks.md#wsl-compute-connection-entry-canonical)。
 4. 仅在已人工确认可信的本机环境中执行值隐藏预检：
 
 ```bash

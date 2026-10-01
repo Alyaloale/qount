@@ -14,7 +14,7 @@
 
 | Domain | Responsibility | Host / entry |
 | --- | --- | --- |
-| `src/qount/contracts`, `execution`, `governance`, `ledger`, `risk`, `operations`, `notifications`, `persistence`, `portfolio`, `reporting`, `venue` | Production control plane and shared contracts | VPS is runtime truth; Mac performs lightweight checks. |
+| `src/qount/cli`, `contracts`, `execution`, `governance`, `ledger`, `risk`, `operations`, `notifications`, `persistence`, `portfolio`, `reporting`, `venue` | Public CLI composition, production control plane and shared contracts | VPS is runtime truth; Mac performs lightweight checks. |
 | `src/qount/mini_trend`, `dual_engine`, `small_account`, `alpha_agents`, `research_data`, `research/sleeves` | Active research or no-order simulations | Mac/WSL research; external disk holds large artifacts. |
 | `src/qount/legacy` and `scripts/archive` | Frozen compatibility and historical evidence | No new business logic or timer restoration. |
 | `deploy/systemd`, `deploy/wsl`, `deploy/dual_engine`, `deploy/research` | Deployment templates and host topology | Static validation only without explicit VPS authorization. |
@@ -22,16 +22,16 @@
 
 ## Inventory snapshot
 
-Git status at generation time: `deleted=8, ignored=60, modified=44, untracked=126`.
+Git status at generation time: `ignored=61, modified=11, untracked=21`.
 
 | Category | Files scanned |
 | --- | ---: |
-| `active_research` | 361 |
-| `deployment` | 28 |
-| `documentation` | 104 |
+| `active_research` | 365 |
+| `deployment` | 30 |
+| `documentation` | 105 |
 | `legacy_compatibility` | 118 |
-| `production_control_plane` | 414 |
-| `runtime_data` | 3058 |
+| `production_control_plane` | 424 |
+| `runtime_data` | 3064 |
 | `unclassified` | 13 |
 
 Root-level review candidates are recorded in [`../archive/manifest.md`](../archive/manifest.md); candidates are not approved for movement or deletion merely by appearing there.

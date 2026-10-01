@@ -1,15 +1,283 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-08-02
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-09-29
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-20 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-08-02
+更新时间：2026-09-30
+
+## 2026-09-30（ETF 专家交易员 P1：结构族生成器，research_only）
+
+在 `src/qount/research/etf_trader/generator/` 新增 `specs.py`、`params.py`、`structural.py`、`plausibility.py`、`calibration.py`，
+另加 `scripts/research/etf_trader_generator_report.py`。`env`、`constraints` 和 `costs` 支持 QDII 限购（只挡买入）和逐日价差序列；
+`baselines` 增加先知权重。新增 `tests/test_etf_trader_structural.py` 20 项。只用合成数据，未占 trial。
+初步诊断（30 抽 / 20 个世界，不是验收结果）：§7.2 拒绝率美股 43%、A 股 47%；§7.3 美股可判定项全部通过，
+A 股的日收益自相关和 5 年股息率 R² 未过。详见设计文档 §11.1。
+验证：本地全量 2594 项通过，`compileall` 与 `repository_hygiene.py check` 通过。
+
+## 2026-09-30（ETF 专家交易员 P1 代码，research_only）
+
+按 [etf-imitation-policy-design-2026-09.md](etf-imitation-policy-design-2026-09.md) §11.1 推进 P1：`src/qount/research/etf_trader/` 新增
+`env.py`（t 收盘决策、t+1 开盘成交的 numpy 会计）、`baselines.py`（固定评分器、CTA-R、等权、60/40、买入持有）、
+`generator/bootstrap.py`、`generator/stylized.py`；修正 `scorer.construct_weights` 同类组上限未生效的索引错误。
+新增 `tests/test_etf_trader_{core,env,generator}.py` 共 53 项。只用合成数据，未占 trial，未读真实行情、账户或 VPS。
+验证：本地全量 2574 项通过，`compileall` 与 `repository_hygiene.py check` 通过。结构族生成器与合理性约束尚未实现。
+
+## 2026-09-30（WSL 计算节点连接加固，仅计算主机）
+
+- 故障：Mac Tailscale 处于停止状态，`100.x` 流量落入代理 TUN 后被重置；WSL VM 被 Windows 停机（Tailscale 显示 offline 2 天）；
+  现有 `wsl.exe` 转发路径受 PowerShell 7 的引号规则影响。
+- 变更：Mac `~/.ssh/config` 增加 `qount-wsl`（直连 WSL 内 sshd、ControlMaster）与 `qount-win`，原文件备份为 `config.bak-20260930`；
+  Windows 增加登录计划任务 `qount-wsl-keepalive`，保持 WSL 常驻；新增 `scripts/hosts/qount-wsl.sh [status|ensure|shell]` 做自愈；
+  `sync-to-wsl.sh` 与 `run-wsl-tests.sh` 默认改为直连传输；环境合同新增 `QOUNT_WIN_HOST`。
+  唯一入口为 [host runbooks · WSL compute](operations/host-runbooks.md#wsl-compute-connection-entry-canonical)。
+- 验证：WSL 被完全停机后，`ensure` 约 20 s 恢复连接；热连接 0.03 s；SSH 断开后 tmux 会话仍存活；`sync-to-wsl.sh` 用时 1.2 s，
+  WSL 端可以导入 `qount.research.cta_r_paper`（WSL 代码此前停在 7-30）。
+- 在 4060 上用合成张量做了策略网络单步耗时基准，结果写入 [etf-imitation-policy-design-2026-09.md](etf-imitation-policy-design-2026-09.md) §3.5。基准临时文件已删除。
+- 未解决：Windows 未接入外置盘 `E:`，`/mnt/e/qount_data` 不存在，数据类任务按规则 fail closed。未触碰 VPS、交易 timer、凭据或生产状态。
+
+## 2026-09-30（CTA-R 前瞻账本 D1）
+
+owner 授权部署。新增 `src/qount/research/cta_r_forward.py`、`scripts/research/cta_r_forward_builder.py`、`tests/test_cta_r_forward.py`、
+`qount-research-cta-r-forward.{service,timer}`，前端 CTA-R 面板增加前瞻摘要，合同见 [cta-r-forward-ledger-2026-09.md](cta-r-forward-ledger-2026-09.md)。
+账本按交易日固化持仓、收益和净值，不要求前复权历史逐位重放，因为供应商每次分红都会重写历史。调仓节奏按账本自身 bar 计数。
+seed 刷新来源改为腾讯公共前复权，与现有 seed 的相对差 ≤0.43%。本地全量 2521 测试通过，远端 10 项通过。
+首跑 `valid`，创世 2026-09-29，权重与原侧车一致。CTA-R collector、ops-health-v3 与 Dual-Engine 均未改动。
+方向评审里写的"10 bps 合同"与侧车实际的 2 bps 不符：这里按侧车冻结 2 bps，10 bps 作为压力线并行记账。
+
+## 2026-09-29（C60 研究与 Tiingo）
+
+### C60 成本期望预登记研究（Trial 149/150，加密优先）
+
+`research_only=true / orders_authorized=false / data_role=consumed_historical_discovery_pool`；未触碰 VPS、paper 状态或冻结合同。
+预登记与结果见 [c60-cost-expectancy-preregistration-2026-09.md](c60-cost-expectancy-preregistration-2026-09.md)。
+新增 `src/qount/research/c60_cost_study.py`、`scripts/research/c60_cost_expectancy.py`、`tests/test_c60_cost_study.py`；
+逐日目标与冻结 `build_c60_decision` 逐位一致由单测保证。Binance Spot 公共日线 10 标的，评估期 2020-12-06..2026-09-28。
+两个 trial 均通过 G1–G6、DSR 未过（149：0.789，150：0.827）→ `retain_for_forward_evidence`，非 promotion。
+冻结“每日重排候选”（25 bps：CAGR +53.7%、MDD -43.2%、换手 51.7x/年）劣于研究原版“每月选候选”
+（+49.6%、-27.6%、31.7x/年）；2025–2026 冻结版净值为负。owner 已决定开 C60 合同 v2（见下节）。
+
+### C60 合同 v2 research-paper 侧车（已部署）
+
+`dual-engine-c60-v2-research` v2.0.0（source_trial=150，月末选候选 + 冻结每日闸门，25/50 bps，T+0），与冻结 v1 并行，
+`replaces_frozen_v1=false`，不改 Dual-Engine 合同、账户、timer。新增 `src/qount/research/c60_v2_paper.py`、
+`scripts/research/c60_v2_paper_builder.py`、`tests/test_c60_v2_paper.py`、`qount-research-c60-v2-paper.{service,timer}`
+（每日 08:20 CST，结果写 `/var/www/qount/data/c60_v2_paper.json`，前瞻账本 `/var/lib/qount/research/c60-v2-paper/forward-ledger.jsonl`
+哈希链，仅记录 ≥2026-09-30 的新鲜 bar）。前端 paper 页新增 C60 v2 曲线与面板。远端单测 14 项、首跑 `status=valid`。
+样本内 2026 YTD：v2 -8.15%/MDD -21.7%/78 次调仓，同引擎 v1 -6.02%/-18.9%/108 次，BTC -6.01%；即今年 v2 并不占优，
+真正证据只来自 9-30 之后的前瞻段。部署目录 `/var/lib/qount/deployments/c60-v2-paper-v1-20260929T085632Z/`（含 ROLLBACK.md、predeploy/app.js）。
+
+### C60 v2 幸存者偏差：时点宇宙重放（描述性，非 trial）
+
+预登记与结果见 [c60-pit-universe-survivorship-2026-09.md](c60-pit-universe-survivorship-2026-09.md)。新增 `src/qount/research/c60_pit_universe.py`、
+`scripts/research/c60_pit_universe.py`、`tests/test_c60_pit_universe.py`。数据只来自 Binance 公共归档（包括已退市交易对），
+共 25,270 个月度文件，逐个记录 SHA-256，没有使用凭证。每个月末按成交额取前 8 名再加 BTC 和 PAXG；
+同一交易对出现缺失日就拆成不同资产（例如 LUNA 与 LUNA 2.0）。幸存者宇宙的结果与冻结面板上的 Trial 150 逐位一致。
+时点宇宙下 CAGR 从 51.1% 降到 14.3%，Sharpe 从 1.48 降到 0.56；剔除 2021 年后 Sharpe 为 0.47，低于仅 BTC 闸门的 0.69。
+按预写规则，"选币有贡献"的结论撤回，C60 应视为 BTC beta。未改动任何合同、paper 状态或服务。
+
+### Trial 151 CTA-R 美股复现 + C60 同波动率对照
+
+预登记与结果：[cta-r-us-replication-and-c60-vol-matched-2026-09.md](cta-r-us-replication-and-c60-vol-matched-2026-09.md)。
+新增 `src/qount/research/{cta_r_us_replication,c60_vol_matched}.py`、对应 `scripts/research/` 适配器与测试；全局 trial 计数 151。
+Trial 151 冻结 CTA-R 规则在 8 只类别对应美股 ETF（2005-12..2026-09）上 5/5 门通过（Sharpe 0.75、MDD -17%，2014 前 0.85），
+但不超过 60/40（0.78）；价值是回撤控制。C60 v2 剔除 2021 年后 Sharpe 1.01，仍高于同波动率 BTC（0.55–0.69）与仅 BTC 闸门。
+Tiingo key 仅在进程内作为 header 使用，未打印、未写入 bundle。
+
+### 跨研究线综合判断（proposal）
+
+[research-direction-review-2026-09.md](research-direction-review-2026-09.md)：三个结构根因是加密广度不足（1.4–1.66）、历史池已消耗（150 trial）、
+日频策略前瞻功效低（Sharpe 0.8 需约 6 年）。建议优先 CTA-R 前瞻账本与认证、stablecoin market-state Trial 151 草案；
+停止 10 币宇宙价格规则迭代。未改动任何合同、服务或授权，待 owner 决策。
+
+### 加密趋势前提诊断（描述性，非 trial）
+
+预登记 [crypto-trend-premise-diagnostic-2026-09.md](crypto-trend-premise-diagnostic-2026-09.md)；新增 `src/qount/research/crypto_trend_premise.py`、
+`scripts/research/crypto_trend_premise.py`、`tests/test_crypto_trend_premise.py`，离线复用成本研究数据。趋势前提没有整体消失
+（效率比稳定，IC 在 2022–2025 为正，择时 5/6 年为正），但 C60 的历史高收益集中在 2021 山寨季和 SOL，宇宙存在事后幸存偏差；
+2022 起非 BTC 币种连续跑输 BTC、离散度收缩，而成本每年固定 5–13%。根因是"间歇性收益 vs 固定成本"，不是参数。
+
+### C60 换手归因诊断（描述性，非 trial）
+
+预登记 [c60-turnover-attribution-diagnostic-2026-09.md](c60-turnover-attribution-diagnostic-2026-09.md)，复用成本研究数据 bundle，
+不联网、不增加 trial 计数。新增 `src/qount/research/c60_turnover_attribution.py`、`scripts/research/c60_turnover_attribution.py`、
+`tests/test_c60_turnover_attribution.py`。月度候选模式的换手 82%（2026 年 91%）来自 SMA 闸门进出，候选切换仅 12%，
+漂移/vol scalar/小额交易合计 < 10%；下一步可检验的只有闸门迟滞，需新 trial 预登记。
+
+### Tiingo 基准缺口诊断
+
+本机 `.env` 的 `QOUNT_TIINGO_API_KEY` 以一次最小 SPY 请求验证 `HTTP 200`（未打印值），key 有效。L1 源 insufficient 的原因是
+VPS `research-forward-collector.env` 未配置该键，与 paper 服务的 `dual-engine-paper.env` 是不同文件；是否写入由 owner 按凭据边界执行。
+owner 授权后，key 经 SSH stdin 写入新建的 `/etc/qount/research-forward-collector.env`（`0600 root:root`，只核对键名，
+未回显值、未手动触发服务），由既有 15 分钟 timer 的自然周期读取。
+只读核实：VPS paper daily 已带 `--refresh-reference`，`reference/public-etf.json` 生成于 `2026-09-28T22:30Z`、
+SPY 185 根 bar 截至 9-28，9-23 复盘中的 `benchmarks=[]` 已过时；本地 `reference_data.py` 仍未提交到 git。
+
+### crypto_vol_crisis_state_v1 复核：family 已关闭（owner 确认）
+
+Trial 148 实际执行的预登记（`protocol_hash=bda9dd4c...`）与 DRAFT 文档 §3/§4 不一致：执行版为 funding/下行半方差/相关性
+三信号等权 z-score、`RM=clip(1-max(0,z)/2)`，失败门只有 5 项；草稿中的 `derisk_efficiency_ratio≥1.0`、Sharpe 不低于 Base−0.05、
+turnover≤1.3×、成本×2 与延迟门未被执行。另结果中 `drawdown_saved_per_return_sacrificed=23.79` 把百分点回撤除以小数收益，
+同单位应为 0.81pp/3.38pp≈0.24。按草稿判据 Trial 148 同样失败（效率 0.24<1.0，Sharpe 1.304<1.366），因此 reject 结论不变。
+Base 平均 gross 仅 0.18，再加降险 overlay 的空间有限；owner 已确认关闭 family，剩余 2 个 trial 作废。
+
+### 统一 forward collector 自 9-27 19:30 起停摆（未修复，待 owner）
+
+只读核查：`qount-research-forward-collector` 每 15 分钟退出 `64/collector_error=forward_contract_mismatch`，首次失败
+`2026-09-27T19:30:27+08:00`。原因是 9-27 CTA-R AkShare 部署向共享 `src/qount/research/forward_collector.py` 添加
+`cta_r_akshare` 分支；`ops-health-v2` 合同冻结 research_lines 插件源文件 sha256（存储 `62887bdd…` = 部署前版本，现为 `825f794b…`），
+因此“旧 ops-health-v2 未修改”的判断不成立。`ops-health-v2` 最后记录日为 9-27，Tiingo key 写入后 L1 也无法产生新记录。
+owner 随后授权新建合同根：`ops-health-v3`（contract `a6981a01…`）已上线，collector 与 publisher 路径同步，
+`ops-health-v2` 保持只读。systemd 周期 Tiingo `valid`，publisher `runtime:forward` pass；首条手动记录未加载 env，Tiingo 为
+insufficient（已记入部署结果）。`tests/test_small_account_fomc_operations.py` 与 `docs/research-forward-collector.md` 同步到 v3。
+
+## 2026-09-24
+
+### 运维缺口修复与边界
+
+日报因 API 额度耗尽按 owner 决定暂不处理，也不通过重试或更换凭据掩盖状态。新增修复集中在可验证的运维面：
+Dashboard 读取 forward/liquidation 产物的 head、时间新鲜度、来源状态和 no-order 守卫；采集磁盘预警提前到
+10 GiB，并在 8 GiB 停止线前给出 degraded；liquidation 摘要移除重复 recent event IDs，旧链只读保留。
+CTA-R 冻结线从下一份 active source graph 移除，L1 凭据缺失继续报告 insufficient。SPY/TLT reference 独立于
+paper accounting，失败时不阻断 NAV，也不伪造基准。
+
+本地 `unittest` 53 项、`compileall`、repository hygiene 和 systemd 静态检查通过。VPS 只读复核显示 uptime
+约 29 小时、failed units 0、磁盘 47%/21 GiB 可用、available RAM 694 MiB、swap 0；SSH 恢复，现有服务 active。
+代码先传至隔离暂存目录并通过 Python 编译，随后完成远端原子安装、reload 和 unit 校验。17:15 collector
+自然周期 `Result=success`，`ops-health-v2` head 新鲜、hash 和研究守卫通过；17:18 publisher 自然周期
+`Result=success`，publication 与 restore drill 通过。部署证据、校验 hash 和回滚说明在
+`/var/lib/qount/deployments/ops-health-v2-20260924/`。这证明新合同已在线并通过当前窗口验收，仍不代表长期连续性、
+研究输入完整或日报恢复；日报 API quota 继续按 owner 决定暂不处理。
 
 这份文档只记录**近期**关键变更、验证结果和当前读法（2026-07-21 起）。
 **2026-07-20 及更早**的历史证据链移入 [archive/update-log-archive.md](archive/update-log-archive.md)。
 当前策略结论以 [current.md](current.md) 为准；复跑命令和跨主机操作细节放在
 [quick-handoff.md](quick-handoff.md)。
+
+## 2026-09-23
+
+### 长期运行经验复盘（只读）
+
+结论：现有系统已经证明可以持续产出有审计的公共采集和模拟工件，并在错误时保持订单权限阻断；
+尚未证明研究输入完整、日报持续有用或策略具备可交易的超额收益。结果限定
+`research_only=true / orders_authorized=false`，不改变生产权限。
+
+**核查范围与方法**：12:39–12:44 CST 只读访问 VPS；完整验证当前 Dashboard 12 个模型、
+paper 272 行会计审计与 state/head；对 active forward 链逐 UTC 日期只读取末条记录，
+共 37 份样本（8 月 18 日至 9 月 23 日）。读取保留日报的状态和错误类别，不访问凭据或新增模型请求。
+未扫描近 1 GB 的全部 forward 链、未评估 liquidation PnL、未重跑 paper。
+
+**模拟结果**：详细数字与计算锚点集中在 [策略总集](qount_strategy_master_index.md#2026-09-23-长期运行结果复盘)。
+YTD 含回放；8 月初以来 G20/C60/GC5/D15 分别 +1.18/+8.73/+1.60/+1.27%，C60 阶段回撤 -9.70%。
+C60 年内零成本信号 +5.96%、可执行模拟 -0.94%，累计成本 656.42 USD_EQ；动态 D15 尚未显示
+比 GC5 更好的结果。当前 SPY 基准没有数据，不作市场超额收益结论。未做新的参数搜索、DSR/PBO 或显著性检验。
+
+**公共采集**：37 个日末样本中 Binance REST/archive、FOMC calendar、liquidation status 均 valid；
+CTA-R 缺失文件与 L1 passive 凭据不可用均为 37/37。valid 仅代表各 source 合同检查通过，
+尤其 archive/calendar 不等于全部历史数据或实时事件已下载。采样不能证明日内零中断。
+9 月 21 日末，8 月 18 日开始的旧 liquidation session 已记录 89,711 条事件、29,997 组周期快照，
+累计连接错误 14、打开连接 15、快照错误 2；表明断线恢复机制实际被使用，不能只报告重启后计数 0。
+修复后窗口目前经过约 35.9 天，远未达到 180 天，且存在已记录的重启 gap。
+
+**存储与可观测性**：active forward 链 37 个日文件合计约 911.50 MiB，近期完整日期约 25–26 MiB/日；
+liquidation raw 全目录约 45.04 MiB、1,366 个文件，其中 3 个 partial（包含当前活动段，不能一概认定损坏）。
+状态载荷包含较大的事件去重列表，统一证据重复记录状态造成明显体积放大；移除 journald 全 JSON
+已减少额外日志复制，但未减少既有 append-only 工件。未来需要设计新合同的精简健康摘要及保留策略，
+不原地改写旧链。当前 21 GiB 可用仅证明眼下无磁盘压力，不构成无限期存储预算。
+
+**日报质量**：总计保留 64 份报告、覆盖 61 个日期（7 月 21 日至 9 月 23 日），60 份 incomplete、
+4 份 attention_required；不能把文件数当成功天数。聚焦 8 月 18 日以来 35 份报告，全部 incomplete，
+32 份 pipeline partial、3 份 pipeline complete 但 evidence limited；17 份六角色全部 blocked。
+21 份含 LLM 请求错误及熔断，其中 BadRequestError 15 份、APITimeoutError 6 份。9 月 8 日起所有
+留存日报均出现 BadRequestError；9 月 4/12 日没有对应工件，缺失原因待查。最新报告虽有 8 个实质来源、
+3 个域名，但六角色 blocked、研究建议 0，执行证据为 no_order_expected，当前 ledger 对账证据不可用。
+这说明服务退出 0、页面 available/fresh 和分析完整性是不同指标；禁止靠启用交易来补执行证据。
+
+**稳定性证据的限制**：最近 30 日的保留 journal 中可见 paper daily 成功结束 6 次、G20-open 3 次、
+日报 10 次、统一 collector 14 次、publisher 124 次，未匹配到失败生命周期条目；数量明显不足以
+覆盖完整调度历史，不能计算或宣称 100% 可用性。paper 曲线日期连续同样不证明每次准时执行。
+本轮确认重启后 uptime 约 87 分钟、load 约 0.17/0.18/0.11、available RAM 771 MiB、swap 0、
+磁盘使用率 46%。SSH 限流缓解和 provenance 修复刚完成，长期稳定性仍需继续积累证据。
+
+**经验与优先级**：
+
+1. 优先排查日报持续 BadRequestError 的模型/provider/请求契约，并对“完整分析产出”设独立验收；
+   同时把 no-order 模式下预期缺失的交易证据与真实 LLM 故障区分展示。本轮仅定位类别，未修复或新发请求。
+2. 对每条活跃研究线显示输入覆盖率和持续缺口；L1 凭据需 owner 按凭据边界另行配置，冻结 CTA-R
+   不因缺文件恢复。总体 insufficient 不应掩盖已经健康的来源，也不能被服务成功覆盖。
+3. 优先补齐 paper 基准和成本/换手解释；保持冻结参数，继续观察 GC5 与 D15，避免从短样本再选最优参数。
+4. 部署验收必须绑定基础 release 加 overlay 的文件证明、下一自然周期和日志摘要；主机监测应分别覆盖
+   SSH 可达性、服务、数据心跳、证据完整性、研究窗口与订单授权。保留独立故障/成功摘要以支持长期可用性统计。
+
+本轮只更新事实、研究解读和记录文档，没有改变策略、服务、凭据、账户或 timer，也没有发送通知。
+验证：上述远端只读合同/审计检查已执行；本地本批文档 `git diff --check` 与
+`repository_hygiene.py check` 通过。没有代码变更，未重复运行无关单元测试。
+
+### 再次重启后的修复部署与验收
+
+- owner 再次重启后，SSH 于 11:13 CST 验证恢复。上次启动的有界 ssh 日志记录 MaxStartups
+  连接饱和；添加仅限制未认证连接的 sshd drop-in，`LoginGraceTime=30/PerSourceMaxStartups=3`，
+  配置校验、reload 与新连接验证通过。未修改口令、公钥、认证方式、账户或交易授权。
+- 逐项比对 VPS 旧 manifest 与 Git、8 月 18 日 acceptance 和历史 Git，验证全部 1,227 个源文件。
+  基础版本实际为 0.2.29，旧文档 0.2.27 已更正；8 个 overlay 修改和 217 个额外历史文件均可溯源，
+  没有通过忽略未知文件或删除兼容入口来绕过校验。
+- 部署固定错误码诊断、测试及 collector 摘要日志 unit，保存变更前代码、unit、manifest、
+  verification 和 SSH 配置摘要。修复证据根为 `/var/lib/qount/deployments/post-reboot-repair-20260923/`；
+  新 release manifest/verification 校验通过。未修改 collector 插件源码或已有研究合同链。
+- 本地和远端 `tests.test_operations_publisher tests.test_release_provenance tests.test_system_health`
+  各 29 项通过；远端 `systemd-analyze verify` 返回 0。Dashboard 自然周期 11:36 CST 确认
+  operations healthy、provenance pass，12 个读模型发布回读通过。交易 timer 保持关闭、cron 0。
+- 已核实旧 arm 的结束日为 2026-08-18、两个 collector restart gap 为 3,022,360/2,021,236 ms；
+  来源不足继续显式保留，未恢复 CTA-R 或复制 L1 凭据。上一节未部署/未连接结论为修复前记录。
+- 11:36 CST 仅触发一次既有公共 research collector 验收周期，退出码 0，日志确认只输出摘要，
+  新记录 hash/head 校验通过。11:38 CST 最终 acceptance 保存于上述证据根：Dashboard 五个健康
+  分项全部 healthy，交易权限 blocked，强平心跳 age 1.79 秒、69 条事件、连接/快照错误 0。
+  本地文档/部署引用 hygiene 与本批 `git diff --check` 通过。
+
+### 后续修复与 SSH 故障分流
+
+- 多条连接路径均未完成 SSH 登录；owner 提供的云端内网 SSH 同样超时，VNC 尚停留在登录阶段。
+  不能确认是 sshd、资源不足、网络策略还是其他实例内故障；未重启或修改 VPS。
+- 修复本地 `operations.health_probes` 将发布来源异常全部隐藏为 unavailable 的诊断问题：
+  使用固定错误码区分文件不可用、JSON/schema 错误、manifest hash 和 source-tree mismatch，
+  不输出异常原文或文件内容，所有失败继续阻断 execution/observation。
+- 新回归用实际临时发布树覆盖清单缺失、无效 JSON、非对象 JSON、源码变化、目录缺失和清单篡改；
+  `tests.test_operations_publisher tests.test_release_provenance tests.test_system_health` 共 29 项通过。
+  运维手册补充有界日志/工件检查与 VNC 接手方法。代码未部署，不能宣称远端问题已修复。
+
+### VPS 重启后只读核查
+
+- 按 owner 重启后复核请求，通过 `qount-vps` 读取启动时间、systemd units/timers/result、资源占用、
+  collector 状态和 Dashboard 已发布工件；当前结论与待核实项已补入 [current.md](current.md)。
+- 远端 `read_dashboard_v1(Path('/var/www/qount/data'))` 完成 12 个模型及 publication 校验；
+  paper 两条 service 的本次启动后日志分别扫描 5/4 条，无 failure/error/exception 关键词。
+  collector 心跳、no-order 守卫与来源不足原因已核实。未运行 paper 回放、采集周期、通知发送或私有 API。
+- 探针确认发布来源校验阻断及已有 arm 文件，仅检查存在性，不把它视为有效权限。
+  两个 FOMC 限时 timer 在 VPS 仍存在且日程耗尽；未停用、删除或恢复任何 unit。
+- 追加来源校验与 gap 核查时 SSH 握手超时；已结束本次未完成的诊断连接。
+  Dashboard/research collector 的本次开机全日志扫描未完成，不宣称全日志无错或持续在线。
+- 本次仅更新事实和记录文档；保留工作区原有修改。未部署代码、改变凭据、服务、策略或订单权限。
+- 本地验证：两份文档的 `git diff --check` 与 `repository_hygiene.py check` 通过；后者仍列出
+  工作区已有的未分类根目录文件，`ok=true`，未作清理。未运行无关的全量单元测试。
+
+## 2026-08-02 (Round 41)
+
+### High-complexity modules: first pure-collaborator extraction
+
+- Split the first deterministic, side-effect-free collaborator from each requested high-complexity module while retaining all existing runtime module imports and private compatibility names: Dashboard validation/freshness (`reporting/read_model_validation.py`), MiniTrend CCXT position/order views (`mini_trend/pilot_dispatch_views.py`), legacy risk runtime-state keys (`risk_state_keys.py`), and FOMC Binance USD-M market-rule normalization (`small_account/fomc_market_rules.py`).
+- Added independent unit tests for all four collaborators before implementation. Targeted verification passed: Dashboard validation/build/publication/staleness (`6` tests), MiniTrend dispatcher (`20` tests), risk engine optimization regression (`266` tests), and FOMC market-rule/preflight/arm coverage (`9` tests), plus package compilation.
+- The FOMC storage, arm, authorization, account, execution, management and live-order paths remain in their original coordinator module; no timer, arm, order, credential, account or VPS state was enabled or changed.
+- Running `tests.test_small_account_fomc_live` in isolation exposed three time-sensitive management assertions that resolved to `force_exit_flattened` or `management_state_uncertain` rather than their historic expected state; the complete `unittest discover` regression passed. This batch did not change those management branches or normalize their status; follow-up should freeze clock input before changing them.
+
+## 2026-08-02 (Round 40)
+
+### CLI parser registry and code-readability cleanup
+
+- Kept the public `qount-run = qount.main:main` entry point while reducing `main.py` from 1,236 to 649 lines. The main module now owns safe preflight, settings/profile setup and command dispatch only.
+- Moved parser construction and parser-only helpers to `src/qount/cli/registry.py`; isolated frozen L1/L3/L4/L6 compatibility command definitions in `src/qount/cli/legacy_research.py`. Command names, arguments, help visibility and `cta-paper-sim` delegation remain compatible.
+- Added parser compatibility coverage and a code-organization reference; repository hygiene now classifies the CLI registry as production control-plane code and checks the new document metadata.
+- Focused CLI/configuration/governance/architecture regression (`289` tests), `qount-run --help`, full `unittest discover`, compilation, Markdown/deployment/import-boundary governance checks and `git diff --check` passed. The full suite emitted only the existing timezone deprecation warning in legacy CTA data.
+- This was repository-only cleanup: it did not enable or change any live timer, authorization, arm, order, external account, credential or VPS state.
 
 ## 2026-08-02 (Round 39)
 

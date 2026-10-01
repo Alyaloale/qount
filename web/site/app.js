@@ -2,7 +2,7 @@
 
 const ROUTES = {
   live: ["权威读模型", "实时运行", "账户、组合与运行状态"],
-  paper: ["无订单模拟平台", "多策略模拟盘", "四种策略的信号净值与可执行净值"],
+  paper: ["无订单模拟平台", "五种模拟盘", "四个主账户与一个独立研究侧车"],
   positions: ["组合事实", "仓位", "实际仓位、批准目标与决策追踪"],
   orders: ["执行事实", "订单", "订单状态、成交、费用与恢复"],
   strategies: ["治理注册表", "策略", "策略版本、治理状态与最新决定"],
@@ -45,7 +45,7 @@ const ROUTE_MODELS = {
   paper: "paper",
 };
 
-const state = { status: "loading", publication: null, models: {}, ctaR: null, error: null };
+const state = { status: "loading", publication: null, models: {}, ctaR: null, c60v2: null, error: null };
 const $ = (id) => document.getElementById(id);
 
 function escapeHtml(value) {
@@ -788,6 +788,8 @@ const PAPER_CURVE_SERIES = {
   C60: { id: "c60", label: "加密趋势（C60）" },
   GC5: { id: "gc5", label: "固定组合（GC5）" },
   D15: { id: "d15", label: "动态组合（D15）" },
+  ctaR: { id: "cta-r", label: "CTA-R（研究侧车）" },
+  c60v2: { id: "c60-v2", label: "C60 v2 月度候选（研究侧车）" },
   benchmark: { id: "benchmark", label: "标普 500（SPY）" },
 };
 
@@ -829,6 +831,13 @@ function paperCurveSeries(snapshot) {
     })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.nav));
     return spec ? { ...spec, kind: "strategy", portfolio, points } : null;
   }).filter((row) => row && row.points.length >= 2);
+  if (strategies.length) {
+    const comparisonStart = Math.max(...strategies.map((row) => row.points[0].time));
+    [[state.ctaR, PAPER_CURVE_SERIES.ctaR], [state.c60v2, PAPER_CURVE_SERIES.c60v2]].forEach(([sidecar, spec]) => {
+      const row = alignedResearchSeries(sidecar, spec, comparisonStart);
+      if (row) strategies.push(row);
+    });
+  }
   const benchmark = (snapshot.benchmarks || []).find((row) => row.status === "available" && Array.isArray(row.nav?.points));
   if (benchmark) {
     const points = benchmark.nav.points.map((point) => ({
@@ -844,6 +853,31 @@ function paperCurveSeries(snapshot) {
   return strategies;
 }
 
+function alignedResearchSeries(sidecar, spec, comparisonStart) {
+  if (!sidecar || !Array.isArray(sidecar.points)) return null;
+  const replayPoints = sidecar.points.map((point) => ({
+    marked_at: `${point.date}T00:00:00Z`,
+    time: Date.parse(`${point.date}T00:00:00Z`),
+    replay_equity: Number(point.equity),
+  })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.replay_equity) && point.time >= comparisonStart);
+  const anchor = replayPoints[0];
+  if (!anchor || replayPoints.length < 2 || anchor.replay_equity <= 0) return null;
+  let previous = null;
+  const points = replayPoints.map((point) => {
+    const nav = point.replay_equity / anchor.replay_equity;
+    const aligned = {
+      ...point,
+      nav,
+      equity: nav * 10000,
+      daily_return_fraction: previous === null ? null : nav / previous - 1,
+      daily_pnl: previous === null ? null : (nav - previous) * 10000,
+    };
+    previous = nav;
+    return aligned;
+  });
+  return { ...spec, kind: "research", anchor, points };
+}
+
 function paperCurveValue(point, mode) {
   return mode === "equity" ? Number(point.equity) : Number(point.nav);
 }
@@ -853,7 +887,7 @@ function paperCurveAxisValue(value, mode, asset) {
 }
 
 function paperCurveDomain(series) {
-  const strategySeries = series.filter((row) => row.kind === "strategy");
+  const strategySeries = series.filter((row) => row.kind === "strategy" || row.kind === "research");
   const allTimes = (strategySeries.length ? strategySeries : series).flatMap((row) => row.points.map((point) => point.time));
   const first = Math.min(...allTimes);
   const last = Math.max(...allTimes);
@@ -889,6 +923,7 @@ function paperCurveTotalReturn(row) {
   const authoritative = Number(performance?.total_return_fraction);
   if (Number.isFinite(authoritative)) return authoritative;
   const latest = row.points.at(-1);
+  if (row.kind === "research") return Number.isFinite(latest?.nav) ? latest.nav - 1 : null;
   return Number.isFinite(latest?.nav) ? latest.nav - 1 : null;
 }
 
@@ -931,6 +966,8 @@ function paperCurveStyle(id, theme) {
     c60: { color: theme.amber, type: "solid" },
     gc5: { color: theme.green, type: "dashed" },
     d15: { color: theme.violet, type: "dotted" },
+    "cta-r": { color: "#f06f61", type: "solid" },
+    "c60-v2": { color: theme.amber, type: "dashed" },
     benchmark: { color: theme.text3, type: "dashed" },
   }[id] || { color: theme.text2, type: "solid" };
 }
@@ -1075,16 +1112,17 @@ function paperCurveEchartsOption(model) {
 
 function paperPerformanceChart(snapshot) {
   const series = paperCurveSeries(snapshot);
-  const strategySeries = series.filter((row) => row.kind === "strategy");
-  if (strategySeries.length < 2) return `<section class="panel full-panel"><div class="paper-chart-empty">等待四账户的第二个净值点</div></section>`;
+  const strategySeries = series.filter((row) => row.kind === "strategy" || row.kind === "research");
+  const accountSeries = strategySeries.filter((row) => row.kind === "strategy");
+  if (accountSeries.length < 2) return `<section class="panel full-panel"><div class="paper-chart-empty">等待四账户的第二个净值点</div></section>`;
   const hasBenchmark = series.some((row) => row.kind === "benchmark");
-  const hasEquity = strategySeries.every((row) => row.points.every((point) => Number.isFinite(point.equity)));
+  const hasEquity = accountSeries.every((row) => row.points.every((point) => Number.isFinite(point.equity)));
   if (paperCurveState.mode === "equity" && !hasEquity) paperCurveState.mode = "return";
   const visible = series.filter((row) => {
     if (row.kind === "benchmark") return hasBenchmark && paperCurveState.showBenchmark;
     return !paperCurveState.hiddenSeries.has(row.id);
   });
-  const displayed = visible.length ? visible : strategySeries;
+  const displayed = visible.length ? visible : accountSeries;
   const domain = paperCurveDomain(series);
   const viewport = paperCurveViewport(domain);
   const chartSeries = displayed.map((row) => ({
@@ -1092,14 +1130,14 @@ function paperPerformanceChart(snapshot) {
     points: row.points.filter((point) => point.time >= domain.start && point.time <= domain.end && Number.isFinite(paperCurveValue(point, paperCurveState.mode))),
   })).filter((row) => row.points.length >= 2);
   if (!chartSeries.length) return `<section class="panel full-panel"><div class="paper-chart-empty">当前缩放区间没有足够的净值点</div></section>`;
-  const rangeText = { all: "年初至今", "180": "近 180 天", "90": "近 90 天", "30": "近 30 天" }[paperCurveState.range];
+  const rangeText = { all: "共同可比区间", "180": "近 180 天", "90": "近 90 天", "30": "近 30 天" }[paperCurveState.range];
   paperCurveModel = { series: chartSeries, domain, mode: paperCurveState.mode, asset: snapshot.reporting_asset };
   const lineToggles = strategySeries.map((row) => `<button class="paper-series-toggle ${paperCurveState.hiddenSeries.has(row.id) ? "is-hidden" : ""}" type="button" data-paper-curve-action="series" data-series="${row.id}" aria-pressed="${!paperCurveState.hiddenSeries.has(row.id)}"><i></i><span>${escapeHtml(row.label)}</span><small>${escapeHtml(paperPerformanceText(paperCurveTotalReturn(row)))}</small></button>`).join("");
   const benchmark = series.find((row) => row.kind === "benchmark");
   const benchmarkToggle = `<button class="paper-series-toggle paper-series-benchmark ${!hasBenchmark || !paperCurveState.showBenchmark ? "is-hidden" : ""}" type="button" data-paper-curve-action="benchmark" ${hasBenchmark ? "" : "disabled"} aria-pressed="${hasBenchmark && paperCurveState.showBenchmark}"><i></i><span>${hasBenchmark ? escapeHtml(benchmark.label) : "大盘基准待补齐"}</span><small>${hasBenchmark ? escapeHtml(paperPerformanceText(paperCurveTotalReturn(benchmark))) : "需要完整公开回放"}</small></button>`;
   const zoomControl = `<label class="paper-curve-control paper-zoom-control"><span>缩放</span><input id="paper-curve-zoom-slider" type="range" min="1" max="12" step="0.1" value="${paperCurveState.zoom.toFixed(1)}" aria-label="曲线缩放倍数"><output>${paperCurveState.zoom.toFixed(1)}×</output></label>`;
   const dateWindow = `<span class="paper-date-window"><b>日期滑条</b><output id="paper-curve-date-window">${escapeHtml(formatShortDate(new Date(viewport.start).toISOString()))} — ${escapeHtml(formatShortDate(new Date(viewport.end).toISOString()))}</output></span>`;
-  return `<section class="panel full-panel paper-performance-panel"><header class="panel-head"><div><h2>策略收益曲线</h2><p id="paper-curve-window-title">${escapeHtml(paperCurveWindowText(viewport, paperCurveState.mode))}</p></div><span>${escapeHtml(rangeText)} · <output id="paper-curve-zoom-value">${paperCurveState.zoom.toFixed(1)}×</output></span></header><div class="paper-performance-toolbar"><div class="paper-range-buttons">${[["all", "YTD"], ["180", "180D"], ["90", "90D"], ["30", "30D"]].map(([value, label]) => `<button type="button" class="${paperCurveState.range === value ? "active" : ""}" data-paper-curve-action="range" data-value="${value}">${label}</button>`).join("")}</div><div class="paper-mode-buttons"><button type="button" class="${paperCurveState.mode === "return" ? "active" : ""}" data-paper-curve-action="mode" data-value="return">收益率</button><button type="button" class="${paperCurveState.mode === "equity" ? "active" : ""}" data-paper-curve-action="mode" data-value="equity" ${hasEquity ? "" : "disabled"}>金额</button></div>${zoomControl}${dateWindow}<button type="button" class="paper-reset-button" data-paper-curve-action="reset">复位视图</button><span class="paper-gesture-hint">缩放只用上方滑条；图下日期滑条只左右移动窗口 · 悬停查看逐日收益</span></div><div class="paper-series-toggles">${lineToggles}${benchmarkToggle}</div><div class="paper-performance-plot"><div id="paper-performance-echarts" class="paper-performance-echarts" role="img" aria-label="四账户模拟收益曲线与可选标普 500 对比"></div></div><div class="paper-performance-caption"><p>四条策略线均为可执行净值；悬停任一日期会显示各策略当日收益率、当日金额与净值。图下日期滑条锁定窗口宽度，只负责左右移动；缩放只由上方缩放滑条控制。可选灰色虚线为同起点的标普 500 ETF（SPY）未复权价格收益，不含股息再投资。曲线用于模拟盘比较，不代表真实账户收益。</p><span>调仓细节请在下方 K 线与调仓表中查看。</span></div></section>`;
+  return `<section class="panel full-panel paper-performance-panel"><header class="panel-head"><div><h2>策略收益曲线</h2><p id="paper-curve-window-title">${escapeHtml(paperCurveWindowText(viewport, paperCurveState.mode))}</p></div><span>${escapeHtml(rangeText)} · <output id="paper-curve-zoom-value">${paperCurveState.zoom.toFixed(1)}×</output></span></header><div class="paper-performance-toolbar"><div class="paper-range-buttons">${[["all", "YTD"], ["180", "180D"], ["90", "90D"], ["30", "30D"]].map(([value, label]) => `<button type="button" class="${paperCurveState.range === value ? "active" : ""}" data-paper-curve-action="range" data-value="${value}">${label}</button>`).join("")}</div><div class="paper-mode-buttons"><button type="button" class="${paperCurveState.mode === "return" ? "active" : ""}" data-paper-curve-action="mode" data-value="return">收益率</button><button type="button" class="${paperCurveState.mode === "equity" ? "active" : ""}" data-paper-curve-action="mode" data-value="equity" ${hasEquity ? "" : "disabled"}>金额</button></div>${zoomControl}${dateWindow}<button type="button" class="paper-reset-button" data-paper-curve-action="reset">复位视图</button><span class="paper-gesture-hint">曲线按真实日期对齐；悬停查看当日与累计值。缩放只用上方滑条；图下日期滑条只左右移动窗口</span></div><div class="paper-series-toggles">${lineToggles}${benchmarkToggle}</div><div class="paper-performance-plot"><div id="paper-performance-echarts" class="paper-performance-echarts" role="img" aria-label="四账户与 CTA-R 日期对齐模拟收益曲线及可选标普 500 对比"></div></div><div class="paper-performance-caption"><p>CTA-R 在四个主账户共同起始日后的首个有效观测点归一至 10,000 美元等值；按原始日期绘制，最后观测日后不外推。金额模式显示对齐比较值，不代表 CTA-R 原始回放资产。SPY 为未复权价格收益。</p><span>调仓细节请在下方 K 线与调仓表中查看。</span></div></section>`;
 }
 
 function wirePaperPerformanceChart() {
@@ -1212,7 +1250,7 @@ function renderPaper() {
   paperCurveModel = null;
   const payload = state.models.paper.payload;
   if (!payload.snapshot) {
-    $("view-paper").innerHTML = unavailableBlock("模拟盘曲线正在准备", "控制台已保留独立入口；2026 年初至最近完整交易日的公开行情模拟完成后显示四账户曲线。");
+    $("view-paper").innerHTML = `${unavailableBlock("模拟盘主快照不可用", "四个主账户的权威 paper 快照尚未发布；CTA-R 研究侧车也不会脱离发布边界单独冒充当前账户结果。")}${renderCtaRPaper()}${renderC60V2Paper()}`;
     return;
   }
   const snapshot = payload.snapshot;
@@ -1233,33 +1271,75 @@ function renderPaper() {
       <div class="table-wrap"><table><thead><tr><th>持仓</th><th>数量</th><th>权重</th><th>市值</th></tr></thead><tbody>${holdings.map((row) => `<tr><td><strong>${escapeHtml(row.symbol)}</strong></td><td>${escapeHtml(formatQuantity(row.quantity))}</td><td>${escapeHtml(formatPercent(row.actual_weight))}</td><td>${escapeHtml(formatMoney(row.market_value, snapshot.reporting_asset))}</td></tr>`).join("") || `<tr><td colspan="4" class="empty-cell">全现金</td></tr>`}</tbody></table></div>
     </article>`;
   }).join("");
-  $("view-paper").innerHTML = `<div class="paper-guard"><div><strong>模拟盘 / 不具备订单权限</strong><p>四个账户各以 10,000 美元等值起始。“信号净值”按理想分数份额且不计成本；“可执行净值”应用数量步长、最小名义金额和模拟成本。2026 年初至今曲线来自经所有者授权的公开历史行情模拟，不代表真实账户收益；美元与 USDT 仅按 1:1 等值假设展示。</p></div><div>${pill(snapshot.status)}<span class="mono">${escapeHtml(shortHash(snapshot.snapshot_hash))}</span></div></div>
-    <div class="metrics metrics-four">${metric("策略组合", String(snapshot.portfolios.length), "美股轮动 / 加密趋势 / 固定组合 / 动态组合", "accent")}${metric("年初模拟起点", formatTime(snapshot.forward_start_at), "2026 年初至今公开行情模拟", "")}${metric("美股轮动当前标的", g20.selected_symbol || "-", "63 日代理资产动量第一名 / 风险预算 20%", "good")}${metric("动态组合加密预算", formatPercent(decision.d15_c60_budget), `合格加密资产 ${c60.eligible_count ?? "-"} 个`, "")}</div>
+  $("view-paper").innerHTML = `<div class="paper-guard"><div><strong>模拟盘 / 不具备订单权限</strong><p>本页包含四个 Dual-Engine 主账户和一个独立 CTA-R 研究侧车。主账户各以 10,000 美元等值起始；“信号净值”按理想分数份额且不计成本，“可执行净值”应用数量步长、最小名义金额和模拟成本。所有曲线均来自公开历史行情模拟，不代表真实账户收益；美元与 USDT 仅按 1:1 等值假设展示。</p></div><div>${pill(snapshot.status)}<span class="mono">${escapeHtml(shortHash(snapshot.snapshot_hash))}</span></div></div>
+    <div class="metrics metrics-four">${metric("主账户", String(snapshot.portfolios.length), "G20 / C60 / GC5 / D15", "accent")}${metric("研究侧车", "CTA-R", "独立 research-only 模拟", "")}${metric("年初模拟起点", formatTime(snapshot.forward_start_at), "主账户公开行情模拟", "")}${metric("动态组合加密预算", formatPercent(decision.d15_c60_budget), `合格加密资产 ${c60.eligible_count ?? "-"} 个`, "")}</div>
     ${paperPerformanceChart(snapshot)}
     ${paperMarketExplorer(snapshot)}
-    ${renderCtaRPaper()}
+    ${renderCtaRPaper(snapshot)}
+    ${renderC60V2Paper()}
     <section class="panel full-panel"><header class="panel-head"><div><h2>最新策略决定</h2><p>决定时间 ${escapeHtml(formatTime(decision.decision_time))} / 数据截止 ${escapeHtml(formatTime(decision.data_cutoff))}</p></div>${pill(c60.btc_system_gate ? "pass" : "block")}</header><div class="paper-decision-band"><div><span>美股轮动配置目标</span><strong>${escapeHtml(Object.entries(g20.target_weights || {}).map(([symbol, weight]) => `${symbol} ${formatPercent(weight)}`).join(" · ") || "-")}</strong></div><div><span>加密动量前两名</span><strong>${escapeHtml((c60.candidates || []).join(" / ") || "无正动量候选")}</strong></div><div><span>比特币系统风控</span><strong>${escapeHtml(c60.btc_system_gate ? "通过" : "未通过")}</strong></div><div><span>波动率缩放比例</span><strong>${escapeHtml(formatPercent(c60.volatility_scalar))}</strong></div></div></section>
     <div class="paper-grid">${portfolioCards}</div>
     <section class="panel full-panel"><header class="panel-head"><div><h2>证据边界</h2><p>年初至今模拟与真实成交严格分离</p></div><span>${snapshot.audit_row_count} 行审计记录</span></header><dl class="fact-list"><div><dt>历史曲线</dt><dd>${escapeHtml(statusText(snapshot.history_reference.status || "unavailable"))}</dd></div><div><dt>大盘基准</dt><dd>${snapshot.benchmarks?.length ? "SPY 公开价格基准（未复权）" : "待完整公开回放补齐；未使用替代数据"}</dd></div><div><dt>真实组合净值</dt><dd>不可用：没有真实成交</dd></div><div><dt>订单与私有接口</dt><dd>全部禁用</dd></div><div><dt>审计链</dt><dd class="mono">${escapeHtml(shortHash(snapshot.audit_last_hash))}</dd></div></dl></section>`;
   wirePaperPerformanceChart();
 }
 
-function renderCtaRPaper() {
+function renderCtaRPaper(mainSnapshot = null) {
   const snapshot = state.ctaR;
-  if (!snapshot) return `<section class="panel full-panel cta-r-paper"><header class="panel-head"><div><h2>CTA-R 研究模拟</h2><p>独立侧车尚未发布</p></div>${pill("unavailable")}</header></section>`;
+  if (!snapshot) return `<section class="panel full-panel cta-r-paper"><header class="panel-head"><div><h2>05 · CTA-R 研究模拟</h2><p>第五项独立 research-only 侧车尚未发布</p></div>${pill("unavailable")}</header></section>`;
   const points = Array.isArray(snapshot.points) ? snapshot.points : [];
   const latest = points.length ? points[points.length - 1] : null;
   const weights = Object.entries(snapshot.current_weights || {}).sort((a, b) => b[1] - a[1]);
   const status = snapshot.status === "valid" ? "pass" : "warn";
   const reason = (snapshot.reason_codes || []).join(" / ") || "-";
-  const equityValues = points.map((point) => Number(point.equity)).filter(Number.isFinite);
-  const low = equityValues.length ? Math.min(...equityValues) : 0;
-  const high = equityValues.length ? Math.max(...equityValues) : 1;
-  const span = high - low || 1;
-  const chart = points.length > 1
-    ? `<svg class="cta-r-curve" viewBox="0 0 720 150" preserveAspectRatio="none" role="img" aria-label="CTA-R 研究模拟净值曲线"><polyline points="${points.map((point, index) => `${(index / (points.length - 1) * 710 + 5).toFixed(2)},${(145 - ((Number(point.equity) - low) / span * 135)).toFixed(2)}`).join(" ")}"></polyline></svg>`
-    : `<div class="paper-chart-empty">没有足够的共同交易日用于曲线</div>`;
-  return `<section class="panel full-panel cta-r-paper"><header class="panel-head"><div><h2>CTA-R 研究模拟</h2><p>独立 research-only 侧车 / 不并入四账户会计</p></div><div class="cta-r-head-status">${pill(status)}<span class="mono">${escapeHtml(reason)}</span></div></header><div class="cta-r-warning">数据状态：${escapeHtml(snapshot.status)}。数据截止 ${escapeHtml(formatDate(snapshot.data_cutoff))}；源数据超过新鲜度阈值时，回放仅作为历史证据，不代表当前策略结果。</div><div class="metrics metrics-four cta-r-metrics">${metric("当前模拟资产", formatMoney(snapshot.final_equity, "USD_EQ"), latest ? formatDate(latest.date) : "-", "accent")}${metric("累计收益", formatPercent(snapshot.total_return), "含模拟成本", "")}${metric("最大回撤", formatPercent(snapshot.max_drawdown), "历史回放", "")}${metric("调仓 / 成本", `${snapshot.rebalance_count ?? 0} / ${formatMoney(snapshot.cumulative_cost, "USD_EQ")}`, "基础成本", "")}</div>${chart}<div class="cta-r-details"><div><h3>当前目标权重</h3><div class="cta-r-weight-list">${weights.map(([symbol, weight]) => `<span><b>${escapeHtml(symbol)}</b><em>${formatPercent(weight)}</em></span>`).join("") || `<span class="empty-cell">全现金</span>`}</div></div><dl class="fact-list"><div><dt>信号参数</dt><dd>${escapeHtml((snapshot.parameters?.lookbacks || []).join(" / "))} 日 / ${escapeHtml(String(snapshot.parameters?.rebalance_days || "-"))} 日调仓</dd></div><div><dt>源 SHA-256</dt><dd class="mono">${escapeHtml(shortHash(snapshot.source_sha256))}</dd></div><div><dt>研究守卫</dt><dd>research_only=true / orders_authorized=false / pnl_evaluated=false</dd></div></dl></div></section>`;
+  const aligned = mainSnapshot ? paperCurveSeries(mainSnapshot).find((row) => row.id === "cta-r") : null;
+  const alignedFirst = aligned?.points[0];
+  const alignedLast = aligned?.points.at(-1);
+  const alignedReturn = alignedLast ? alignedLast.nav - 1 : null;
+  const replayStart = points[0]?.date || "-";
+  const replayEnd = latest?.date || "-";
+  const updateAt = snapshot.observed_at ? formatTime(snapshot.observed_at) : "-";
+  const forward = snapshot.forward || null;
+  const forwardText = !forward
+    ? "前瞻账本尚未发布"
+    : forward.bars
+      ? `前瞻账本 ${forward.start_date} 起 ${forward.bars} 个交易日：收益 ${formatPercent(forward.return)}（10 bps 压力 ${formatPercent(forward.stress_return)}），回撤 ${formatPercent(forward.max_drawdown)}，调仓 ${forward.rebalances} 次。`
+      : `前瞻账本自 ${forward.start_date} 起记录，尚无前瞻交易日。`;
+  return `<section class="panel full-panel cta-r-paper">
+    <header class="panel-head"><div><h2>CTA-R 研究模拟</h2><p>独立 research-only 侧车 / 与四账户共用日期轴，不并入其会计</p></div><div class="cta-r-head-status">${pill(status)}<span class="mono">${escapeHtml(reason)}</span></div></header>
+    <div class="cta-r-warning">数据状态：${escapeHtml(snapshot.status)}。原始回放区间 ${escapeHtml(replayStart)} 至 ${escapeHtml(replayEnd)}（${escapeHtml(forward?.in_sample_through || "-")} 及之前为样本内）；行情截止 ${escapeHtml(formatDate(snapshot.data_cutoff))}，快照记录年龄 ${snapshot.freshness?.age_calendar_days ?? "-"} 天。每日北京时间 18:45 更新；最近快照生成于 ${escapeHtml(updateAt)}。${escapeHtml(forwardText)}截止日后的 CTA-R 曲线不外推。</div>
+    <div class="metrics metrics-four cta-r-metrics">
+      ${metric("原始回放末值", formatMoney(snapshot.final_equity, "USD_EQ"), `截至 ${replayEnd}，非当前账户资产`, "accent")}
+      ${metric("对齐区间收益", formatPercent(alignedReturn), alignedFirst && alignedLast ? `${formatDate(alignedFirst.marked_at)} 至 ${formatDate(alignedLast.marked_at)}` : "共同区间数据不足", "")}
+      ${metric("对齐比较价值", alignedLast ? formatMoney(alignedLast.equity, "USD_EQ") : "—", "以共同起点 10,000 美元等值归一", "")}
+      ${metric("最大回撤 / 调仓", `${formatPercent(snapshot.max_drawdown)} / ${snapshot.rebalance_count ?? 0}`, `模拟成本 ${formatMoney(snapshot.cumulative_cost, "USD_EQ")}`, "")}
+    </div>
+    <div class="cta-r-details"><div><h3>目标权重（回放末日）</h3><div class="cta-r-weight-list">${weights.map(([symbol, weight]) => `<span><b>${escapeHtml(symbol)}</b><em>${formatPercent(weight)}</em></span>`).join("") || `<span class="empty-cell">全现金</span>`}</div></div><dl class="fact-list"><div><dt>共同比较起点</dt><dd>${alignedFirst ? escapeHtml(formatDate(alignedFirst.marked_at)) : "无重叠区间"}</dd></div><div><dt>信号参数</dt><dd>${escapeHtml((snapshot.parameters?.lookbacks || []).join(" / "))} 日 / ${escapeHtml(String(snapshot.parameters?.rebalance_days || "-"))} 日调仓</dd></div><div><dt>源 SHA-256</dt><dd class="mono">${escapeHtml(shortHash(snapshot.source_sha256))}</dd></div><div><dt>前瞻合同 / 账本头</dt><dd class="mono">${escapeHtml(shortHash(forward?.contract_hash))} / ${escapeHtml(shortHash(forward?.ledger_head_hash))}</dd></div><div><dt>研究守卫</dt><dd>research_only=true / orders_authorized=false / pnl_evaluated=false</dd></div></dl></div>
+  </section>`;
+}
+
+function renderC60V2Paper() {
+  const snapshot = state.c60v2;
+  if (!snapshot) return `<section class="panel full-panel cta-r-paper"><header class="panel-head"><div><h2>C60 v2 月度候选研究模拟</h2><p>research-only 侧车尚未发布</p></div>${pill("unavailable")}</header></section>`;
+  const points = Array.isArray(snapshot.points) ? snapshot.points : [];
+  const replayStart = points[0]?.date || "-";
+  const replayEnd = points.at(-1)?.date || "-";
+  const weights = Object.entries(snapshot.current_weights || {}).sort((a, b) => b[1] - a[1]);
+  const status = snapshot.status === "valid" ? "pass" : "warn";
+  const reason = (snapshot.reason_codes || []).join(" / ") || "-";
+  const forward = snapshot.forward || {};
+  const comparison = snapshot.comparison || {};
+  const forwardText = forward.bars ? `${forward.bars} 根日线 / v1 同引擎 ${formatPercent(forward.v1_same_engine_return)}` : `前瞻起点 ${forward.start_date || "-"}，尚无前瞻样本`;
+  return `<section class="panel full-panel cta-r-paper">
+    <header class="panel-head"><div><h2>C60 v2 月度候选研究模拟</h2><p>月末选候选 + 每日闸门 / 与冻结 v1 并行比较，不替代 Dual-Engine C60 账户</p></div><div class="cta-r-head-status">${pill(status)}<span class="mono">${escapeHtml(reason)}</span></div></header>
+    <div class="cta-r-warning">${escapeHtml(forward.start_date || "-")} 之前为样本内回放（Trial 150 已消耗历史池），不构成前瞻证据。回放区间 ${escapeHtml(replayStart)} 至 ${escapeHtml(replayEnd)}；行情截止 ${escapeHtml(formatDate(snapshot.data_cutoff))}，记录年龄 ${snapshot.freshness?.age_calendar_days ?? "-"} 天。每日北京时间 08:20 更新。</div>
+    <div class="metrics metrics-four cta-r-metrics">
+      ${metric("回放收益（YTD）", formatPercent(snapshot.total_return), `末值 ${formatMoney(snapshot.final_equity, "USD_EQ")}`, "accent")}
+      ${metric("v1 同引擎对照", formatPercent(comparison.v1_same_engine_total_return), `回撤 ${formatPercent(comparison.v1_same_engine_max_drawdown)} / 调仓 ${comparison.v1_same_engine_rebalance_count ?? "-"}`, "")}
+      ${metric("前瞻收益", forward.return == null ? "—" : formatPercent(forward.return), forwardText, "")}
+      ${metric("最大回撤 / 调仓", `${formatPercent(snapshot.max_drawdown)} / ${snapshot.rebalance_count ?? 0}`, `模拟成本 ${formatMoney(snapshot.cumulative_cost, "USD_EQ")}；BTC 持有 ${formatPercent(comparison.btc_buy_and_hold_return)}`, "")}
+    </div>
+    <div class="cta-r-details"><div><h3>目标权重（回放末日）</h3><div class="cta-r-weight-list">${weights.map(([symbol, weight]) => `<span><b>${escapeHtml(symbol)}</b><em>${formatPercent(weight)}</em></span>`).join("") || `<span class="empty-cell">全现金</span>`}</div></div><dl class="fact-list"><div><dt>合同</dt><dd class="mono">${escapeHtml(snapshot.contract?.contract_id || "-")} v${escapeHtml(snapshot.contract?.version || "-")}</dd></div><div><dt>合同哈希</dt><dd class="mono">${escapeHtml(shortHash(snapshot.contract_hash))}</dd></div><div><dt>数据哈希</dt><dd class="mono">${escapeHtml(shortHash(snapshot.data_hash))}</dd></div><div><dt>研究守卫</dt><dd>research_only=true / orders_authorized=false / replaces_frozen_v1=false</dd></div></dl></div>
+  </section>`;
 }
 
 function renderAll() {
@@ -1327,6 +1407,8 @@ async function load() {
     ]));
     let ctaR = null;
     try { ctaR = (await fetchJSON("data/cta_r_paper.json")).value; } catch (error) { ctaR = null; }
+    let c60v2 = null;
+    try { c60v2 = (await fetchJSON("data/c60_v2_paper.json")).value; } catch (error) { c60v2 = null; }
     const responses = Object.fromEntries(entries);
     Object.entries(responses).forEach(([type, response]) => validateModel(response, type, publication));
     const models = Object.fromEntries(Object.entries(responses).map(([type, response]) => [type, response.value]));
@@ -1334,6 +1416,7 @@ async function load() {
     state.publication = publication;
     state.models = models;
     state.ctaR = ctaR;
+    state.c60v2 = c60v2;
     state.error = null;
     renderAll();
   } catch (error) {
@@ -1341,6 +1424,7 @@ async function load() {
     state.publication = null;
     state.models = {};
     state.ctaR = null;
+    state.c60v2 = null;
     state.error = error && error.name === "AbortError" ? "请求超时" : String(error && error.message ? error.message : error);
     renderOffline();
     const banner = $("error-banner");

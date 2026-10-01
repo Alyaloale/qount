@@ -7,7 +7,8 @@
 
 - 当前代码有`overview`、`positions`、`orders`、`strategies`、`decisions`、`risk`、`readiness`、`system`、
   `alerts`、`reports`、`intelligence`和`paper`十二份read model；默认入口为`#/live`，非法或旧hash会无刷新归一到该入口。
-  VPS 生产已发布十二份版本；`paper` 已上线 2026 YTD 四账户曲线，每账户当前 217 点。
+  VPS 生产已发布十二份版本；`paper` 已上线 2026 YTD 四个 Dual-Engine 主账户曲线，页面另有独立 CTA-R research-only 侧车，二者不合并会计。
+  CTA-R 当前行情已补采至 `2026-09-29`，sidecar 状态为 `valid`；独立采集 timer 按北京时间每日 18:30 运行，最多延迟 5 分钟。
 - publisher必须输入完整`VerifiedDecisionBatch`和治理`StrategyRegistry`，并可接收自验证的
   `RuntimeLedgerSnapshot`、`NotificationSnapshot`、`SystemHealthSnapshot`、确定性`DailyBrief`和只读`DailyIntelligenceReport`。
 - `RuntimeLedgerSnapshot` schema v3只从同一SQLite读事务和hash-linked audit读取仓位、订单、成交、现金、NAV、账户观测、
@@ -22,7 +23,7 @@
 - 界面为中文优先：CJK字体优先使用苹方/冬青黑体/微软雅黑/思源黑体，正文`14px`、导航`13px`、标题`20-22px`、指标`18-21px`，
   证据链固定节点也做展示层中文化；策略ID、reason code、hash和标的代码等审计原值保持不变。模拟盘总图提供中文策略名、
   净值/日期坐标轴、1.000 基准线、可区分线型和移动端单列布局；数据待更新使用琥珀色，不与生产不可用混淆。
-- 模拟盘总图只消费同一份`paper.json`中服务端计算的可执行净值、周期收益/金额和公开 SPY 基准：四条策略线固定为
+- 模拟盘总图只消费同一份`paper.json`中服务端计算的可执行净值、周期收益/金额和公开 SPY 基准：四条主账户策略线固定为
   G20、C60、GC5、D15；SPY（标普500 ETF）是可开关的灰色虚线，明确标注为未复权价格收益。总图支持 YTD/180/90/30 日
   区间、独立缩放滑条与固定窗口日期滑条、收益率/金额轴、十字准星和逐日悬停详情；浏览器只绘图，不计算权威 PnL。若 SPY 没有覆盖模拟起点的完整
   公共历史，基准保持待补齐而不拼接或伪造。
