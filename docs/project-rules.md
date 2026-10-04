@@ -1,6 +1,6 @@
 # qount 项目规则
 
-> **状态**：active｜**权威**：L1 项目规则｜**最后更新**：2026-08-01
+> **状态**：active｜**权威**：L1 项目规则｜**最后更新**：2026-10-02
 > **本文回答**：代码放哪里、文档怎么分、研究线如何隔离、什么可以直接删。
 > **TL;DR**：生产代码、活跃研究、历史研究三层分开；脚本按线路归目录；规则以快速验证和及时删除为优先。
 
@@ -19,6 +19,8 @@ src/qount/
   alpha_agents/                          主动 research-only 多智能体线
   research_data/                         共享市场数据、指标和研究统计
   research/sleeves/                      主动 Sleeve 研究合同
+  research/etf_trader/                   P2 ETF 生成世界训练与历史探索性模拟
+  research/etf_alpha/                    P3 证据冻结、公开数据来源/分类、标签/切分与无订单会计
   legacy/{grid_b,rv_c,line_a,l1,l3,l4,l6,ashare_etf,x4}/ 已冻结线路实现
 
 scripts/

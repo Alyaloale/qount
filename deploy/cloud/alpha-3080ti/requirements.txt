@@ -1,0 +1,4 @@
+# Environment installation uses setup.sh's explicit official CUDA wheel index.
+torch==2.13.0
+numpy==2.5.1
+threadpoolctl==3.6.0

@@ -6,3 +6,11 @@ __pycache__/
 .DS_Store
 state/
 .qount-release-provenance.json
+
+# Local research artifacts and agent working material.
+/data/
+/models/
+/.claude-context
+/.claude/plans/
+/scripts/research/*.bak
+/scripts/research/*.bak2

@@ -1,6 +1,6 @@
 # qount 存储与计算拓扑
 
-> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-09-30
+> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-10-02
 > **本文回答**：跨主机职责、权威数据位置、WSL 计算流程、外置盘/清理规则。
 > **TL;DR**：Mac 研究/git、Windows 外置盘存储真相、WSL 计算、VPS 生产；大数据只在 Win/WSL 侧落外置盘。
 
@@ -48,6 +48,14 @@ qount/
   runtime-backups/      # 节点runtime压缩备份，不作为运行目录
   scratch/              # 外置盘传输临时区；完成后清理
 ```
+
+ETF P3 数据使用 `datasets/etf_alpha_p3/<dataset_id>/` 的不可变版本目录。
+每版分别放 `raw/{distributions,calendar,fees}/`、`normalized/`、`assumptions/`、`audit/`、`metadata/` 和 `provenance/`，
+以 source registry、数据字典和 SHA256 manifest 绑定来源、实际观察时间、日期/份额/单位、对账结果及资格。
+发现/失败/被替代版本保留并在版本索引标记 `discovery_only` 或 `superseded`，不能因为文件可解析就当训练输入。
+监管参考、历史快照和价差/冲击估计分开；缓存引用保留原观察时间，导入时间只作交接证据。
+版本索引和验证工件使用 `artifacts/etf_alpha_p3/data_supplement_<run_id>/`，Mac 只留轻量摘要与测试日志。
+具体版本和执行证据见 [P3 计划 §15](etf-p3-research-plan-2026-10.md#15-公开数据补采存储与资格分类2026-10-02)，运行资格仍以 [current.md](current.md) 为准。
 
 既存23G L2归档已于2026-07-18在同一ExFAT盘内原子移动到
 `E:\qount_data\qount\datasets\l6_l2_archive`，旧`E:\qount_data\qount_l2_archive`不再保留。

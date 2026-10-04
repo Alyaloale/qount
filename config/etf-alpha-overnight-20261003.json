@@ -1,0 +1,46 @@
+{
+  "schema": "etf-alpha-overnight-v1",
+  "run_id": "etf-alpha-overnight-20261003",
+  "research_only": true,
+  "orders_authorized": false,
+  "holdout_role": "discovery",
+  "training_start_authorized": true,
+  "owner_instruction": "检查训练速度，设计多维度综合自动训练脚本，梳理 WSL 后开始训练，E 盘存储，CPU/4060，8 小时时间预算，记录和调试输出。",
+  "proposal": "config/etf-alpha-stage1-proposal-20261002.json",
+  "max_hours": 8.0,
+  "max_fits": 224,
+  "concurrent_cuda_jobs": 1,
+  "compile_mode": "reduce-overhead",
+  "cpu_threads": 2,
+  "diagnostic_workers": 2,
+  "matmul_precision": "highest",
+  "amp": false,
+  "data_root": "/mnt/e/qount_data/qount/datasets/etf_alpha_p3/m0_m1_20261002T112648Z",
+  "dataset_manifest_sha256": "bfb139712e50be05e78df4b0eb305378d37e3c8ce0cd37c15bfd8545651235bb",
+  "fold_contract": "/mnt/e/qount_data/qount/artifacts/etf_alpha_p3/m0_m1_20261002T112648Z/m1/fold-contract.json",
+  "model_schedule": [
+    "E3-mlp-mtr",
+    "E3-mlp-raw",
+    "E4-mlp-multitask",
+    "E5-market-mlp",
+    "E5-market-gru"
+  ],
+  "seeds": [
+    1000,
+    1001,
+    1002,
+    1003,
+    1004
+  ],
+  "final_seeds": [
+    1005,
+    1006,
+    1007,
+    1008,
+    1009
+  ],
+  "outer_test_after_selection_freeze": true,
+  "retry_failed_jobs": false,
+  "restore_cloud_3090": false,
+  "change_services": false
+}

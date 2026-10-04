@@ -1,19 +1,39 @@
 # Configuration reference
 
-> **状态**：active｜**权威**：L2 configuration contract｜**最后更新**：2026-08-02
+> **状态**：active｜**权威**：L2 configuration contract｜**最后更新**：2026-10-04
 > **适用范围**：环境变量、配置来源、密钥边界和只读预检。
 > **TL;DR**：机器可读权威是 [`../../config/environment-contract.toml`](../../config/environment-contract.toml)。本文件解释如何安全使用它；不包含任何实际值、账户标识或凭证。
 
+P3 v2's non-secret [expanded training contract](../../config/etf-alpha-expanded-20261003.json) registers past-only bootstrap sources, seven ablations, five seeds, 259 fits and 24 CPU workers. It retains `max_hours=null/wall_clock_limit_enabled=false`, fixed per-fit pretraining and early stopping. The WSL contract is authorized by the latest owner instruction recorded in [current.md](../current.md); the separate3080Ti cloud contract remains paused. `automatic_restart_authorized=false` applies to both: connectivity recovery or a failed run does not restart tasks. A supervisor exits after the registered tasks finish. Original data limitations, discovery/fresh-confirmation boundaries and service/order limits remain unchanged.
+
+The isolated [3080Ti cloud contract](../../config/etf-alpha-cloud-3080ti-20261003.json) adds an explicit `compute_profile`: owner-designated machine, actual data mount/root, GPU type, CPU quota20/default18 workers, eightGiB disk reserve, four diagnostic threads, runtime compilation choices and declared hourly price. It changes storage topology only; dataset/fold hashes, learning options, seeds and risk/selection protocol remain fixed. This JSON is non-secret and does not load `.env` or expand the public `config-check` host profiles. The cloud adapter supplies its own cgroup/mount/GPU/input preflight. New cloud storage is temporary compute with final important results returned to E; deployment details are in [P3 §20](../etf-p3-research-plan-2026-10.md#20-3080-ti-付费云计算交付与性能策略2026-10-03).
+
 ## Sources and ownership
+
+The non-secret [residual pilot proposal](../../config/etf-alpha-residual-pilot-20261003.json) remains the historical, unfitted plan snapshot. Its [implemented runtime contract](../../config/etf-alpha-residual-ready-20261003.json) binds that proposal hash and preserves all target/model/seed/selection/budget/execution fields. It adds only declared engine choices: CUDA eager FP32, AdamW betas/epsilon and clip1, 500 interval draws, 400 stability draws, a first-2015-session rebalance phase, the shared CUDA lock and frozen original-fold path. `training_start_authorized=false/training_status=ready_waiting_owner` allows preparation but requires a later explicit owner instruction and a fresh receipt binding the ready/code/input manifests before fitting. The source contract stays immutable when a future receipt activates one new run. Pilot stops at51 fits without increment; the passing schedule caps at272 total fits. No automatic restart, ten-seed extension, cloud resumption or production authority. [Methods and deployment](../etf-p3-research-plan-2026-10.md#22-残差训练引擎实施与待命部署2026-10-03).
+
+The current [reviewed R3 contract](../../config/etf-alpha-residual-reviewed-20261003.json), schema-v2, retains those research fields and binds the historical runtime hash. It registers `null_minimum_shift_sessions=25` (20-session labels plus five-session separation) and `portfolio_boundary_policy=continuous_close_decisions_next_open_fills`. The engine rejects near-date null pairings and executes joined annual forecasts so a year-end close decision can fill at the next year's open. These refinements add no models, seeds or fits. Historical schema-v1 deliveries remain immutable evidence; use the current ready pointer rather than selecting a contract by filename. [Review and innovation choices](../etf-p3-research-plan-2026-10.md#23-r3开训前复审修正与创新取舍2026-10-03).
+
+The waiting-owner flags in a proposal, prepared contract or `READY.json` are snapshot fields. A later owner activation is a separate receipt bound to that snapshot and exactly one new output directory. Read the activated run's `owner-activation.json`, `status.json` and sibling exit receipt for execution state; `state/research_runs/etf_alpha_residual/latest-run.json` locates the run on the Mac. Keep all original contracts unchanged after completion, and do not treat a consumed activation as permission for another run.
 
 | Host | Configuration source | Secret policy | Data boundary |
 | --- | --- | --- | --- |
 | Mac | `<repo>/.env`（私有、`0600`） | 可保留本机研究所需最小密钥；不回显、不提交 | 代码、轻量 fixture 与摘要，不长期保存全量数据或生产状态。 |
 | Windows external disk | no `.env` | 禁止密钥 | `E:\qount_data` 保存数据集、不可变 artifact、环境锁与备份 manifest。 |
 | WSL | `deploy/wsl/qount-compute.env` | 不存密钥；只加载非敏感计算拓扑 | scratch 可清理；最终产物直写外置盘。 |
+| Owner-designated P3 cloud compute | standalone research JSON / public delivery | 不发送凭据或私有环境文件 | 数据盘临时生成/计算，最终重要结果回收到E；不承载生产服务。 |
 | VPS | `/etc/qount/*.env`，按服务拆分、`root:root 0600` | 仅服务需要的密钥；禁止复制回 Mac/WSL/外置盘 | 最小运行状态、公开缓存和审计材料。 |
 
 `deploy/wsl/qount-compute.env` 是非敏感拓扑文件，不得与私有 `.env` 合并，不得放入外置盘。VPS 的 `/etc/qount/*.env` 是主机拥有的部署配置，不在本仓库内创建或修改。
+
+## Research training proposals
+
+The bounded P3 Stage 1 run uses [config/etf-alpha-overnight-20261003.json](../../config/etf-alpha-overnight-20261003.json), an explicit research authorization/runtime contract layered over the immutable October 2 parameter proposal. It fixes the dataset/fold hashes, eight-hour ceiling, 224-fit ceiling, seeds, float32/no AMP and one RTX4060 trainer. It is consumed only by the research package/adapter, requires mounted E storage and does not load any `.env` or grant order/service authority. The historical proposal's `training_start_authorized=false` describes its original delivery; the new run contract and `current.md` record the later owner decision.
+
+[`config/etf-alpha-stage1-proposal-20261002.json`](../../config/etf-alpha-stage1-proposal-20261002.json) 保存 ETF P3 Stage 1 的待审批网络、训练与预算参数，
+对应 [P3 主计划 §16](../etf-p3-research-plan-2026-10.md#16-研究数据标准调整与-alpha-训练审批方案2026-10-02)。
+其中研究数据门按 owner 决定通过；原交付时 `training_start_authorized=false`；后续批准由上方独立运行合同承接，原提案仅提供冻结参数，不单独授予执行或生产权限。
+后续批准须在 `current.md` 单独登记，并在新 run 中冻结训练合同；原数据审计与 manifest 不覆写。
 
 ## Contract and preflight
 

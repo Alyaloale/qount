@@ -252,7 +252,7 @@ def render_repository_map(data: dict[str, object]) -> str:
     status_lines = ", ".join(f"{name}={count}" for name, count in status.items()) or "clean"
     return f"""# Repository map
 
-> **状态**：active｜**权威**：L3 generated reference｜**最后更新**：2026-08-02
+> **状态**：active｜**权威**：L3 generated reference｜**最后更新**：2026-10-03
 > **适用范围**：目录职责、公开入口、部署引用与治理检查。
 > **TL;DR**：生产控制面、活跃研究、冻结兼容、部署、文档和运行数据分层；本文件由 `repository_hygiene.py inventory --write` 生成，不记录密钥或运行时值。
 
@@ -267,9 +267,9 @@ def render_repository_map(data: dict[str, object]) -> str:
 | Domain | Responsibility | Host / entry |
 | --- | --- | --- |
 | `src/qount/cli`, `contracts`, `execution`, `governance`, `ledger`, `risk`, `operations`, `notifications`, `persistence`, `portfolio`, `reporting`, `venue` | Public CLI composition, production control plane and shared contracts | VPS is runtime truth; Mac performs lightweight checks. |
-| `src/qount/mini_trend`, `dual_engine`, `small_account`, `alpha_agents`, `research_data`, `research/sleeves` | Active research or no-order simulations | Mac/WSL research; external disk holds large artifacts. |
+| `src/qount/mini_trend`, `dual_engine`, `small_account`, `alpha_agents`, `research_data`, `research/sleeves`, `research/etf_trader`, `research/etf_alpha` | Active research or no-order simulations | Mac/WSL research; owner-designated P3 cloud is temporary compute; E holds final large artifacts. |
 | `src/qount/legacy` and `scripts/archive` | Frozen compatibility and historical evidence | No new business logic or timer restoration. |
-| `deploy/systemd`, `deploy/wsl`, `deploy/dual_engine`, `deploy/research` | Deployment templates and host topology | Static validation only without explicit VPS authorization. |
+| `deploy/systemd`, `deploy/wsl`, `deploy/dual_engine`, `deploy/research`, `deploy/cloud` | Deployment templates and host topology | Static validation only without explicit host authorization; cloud research delivery is isolated. |
 | `docs` | Current fact, rules, operations, reference and archive navigation | `docs/current.md` is the sole current fact source. |
 
 ## Inventory snapshot

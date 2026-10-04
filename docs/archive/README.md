@@ -24,6 +24,12 @@
 - [current-archive-pre-fomc-2026-07-29.md](current-archive-pre-fomc-2026-07-29.md)：从 `current.md` 迁出的
   2026-07-27 及更早生产、研究和架构记录。当前 FOMC 事实仍在 [../current.md](../current.md)。
 
+## P2 ETF Trader 的历史文档
+
+- [P2 历史分类索引](p2-history/README.md)：训练时点记录、实现/优化诊断和已撤回结论的说明；历史文字与命令不构成当前运行或验收依据。
+- [2026-10-02 文档归档审计](p2-history/archive-audit-20261002.md)：owner 授权范围、引用扫描、移动路径与内容 hash。
+- 当前替代入口为 [实际架构与研究结果](../p2-project-summary-20261002.md) 和 [设计协议](../etf-imitation-policy-design-2026-09.md)；文档归档不代表将 P2 研究代码冻结为 legacy。
+
 ## Legacy 生产线
 
 - [legacy/x4-rv/crypto-x4-plan.md](legacy/x4-rv/crypto-x4-plan.md)：X4/C×D，`legacy / live disabled`。

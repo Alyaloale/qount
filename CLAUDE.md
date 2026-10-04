@@ -7,3 +7,8 @@
 3. 研究默认 `research_only=true`、`orders_authorized=false`；不能因研究结果推断生产授权。
 4. 不回显、复制、提交或导出现有凭证。先用 `qount-run config-check` 做值隐藏的本地预检。
 5. 运行方式、测试和跨主机边界看 [docs/operations/local-development.md](docs/operations/local-development.md) 与 [docs/operations/host-runbooks.md](docs/operations/host-runbooks.md)。
+
+## P2 导航
+
+[P2 文档入口](docs/README-P2.md)；[研究主文档](docs/p2-project-summary-20261002.md)。
+本文件不维护第二套训练进度、最佳配置或收益结论。

@@ -1,6 +1,6 @@
 # Host runbooks
 
-> **状态**：active｜**权威**：L3 host operations reference｜**最后更新**：2026-09-30
+> **状态**：active｜**权威**：L3 host operations reference｜**最后更新**：2026-10-04
 > **适用范围**：Mac, Windows external disk, WSL and VPS ownership boundaries.
 > **TL;DR**：Mac owns code; Windows external disk owns large data/artifacts; WSL owns compute reruns; VPS owns runtime truth. No host may infer permission to turn on live, arm, orders, timers or production cron.
 
@@ -57,10 +57,34 @@ while the keepalive task runs; verified 2026-09-30. The older `screen … ssh ho
 **External disk**: `/mnt/e/qount_data/qount` must exist before any data job. `status` prints `external_disk=missing`
 when `E:` is not attached to Windows; jobs must fail closed rather than write elsewhere.
 
+If Windows can read `E:` but SSH reports `No such device`, compare the mount namespaces: a Windows `wsl.exe` command may use a different namespace from the systemd SSH/training processes. An authorized remount must target the namespace used by training (systemd PID1 via `nsenter --target 1 --mount`), with no active data consumers. Verify the data path and input hashes from a new SSH session before starting a job; a successful read only inside the Windows command does not prove the training mount is usable.
+
 **Rollback**: `ssh qount-win 'Unregister-ScheduledTask -TaskName qount-wsl-keepalive -Confirm:$false'`;
 restore `~/.ssh/config.bak-20260930`; set `QOUNT_WSL_HOST=home` only together with reverting the two WSL scripts to the `wsl.exe` transport.
 
 Boundary: WSL remains compute only. No secrets, `.env`, paper/live truth or production state on WSL; this helper never touches the VPS.
+
+## P3 R3 residual readiness and later launch
+
+The owner authorized deployment and preparation while explicitly waiting for a later training instruction. Follow the [standalone R3 reference](../../deploy/wsl/alpha-residual/README.md) and [current authority](../current.md). Use the immutable public bundle in a new WSL ext4 code directory and the existing isolated venv; E holds prepared slots, public source snapshot and numerical verification. `prepare/check/status` do not fit models. A new owner activation bound to the ready/code/data manifests is required by `launch/run` before any fitting or output run directory is created.
+
+The R3 launcher supplies its own detached single-run supervisor and `.pid.json/.supervisor.log/.exit.json`; it needs no waiting tmux task, daemon, cron or keepalive modification. The shared `etf-alpha-cuda.lock` excludes duplicate GPU jobs. Fifty-one pilot fits run first; a failed increment gate exits normally with outer withheld. A passing pilot allows at most272 total registered fits. Signals preserve partial checkpoints and exit; interrupted/failed jobs never retry automatically. Read current readiness with `check` immediately before a future activation; mounted storage, input/source drift or an occupied lock fails closed without host repair or service changes.
+
+Use the [reviewed schema-v2 contract](../../config/etf-alpha-residual-reviewed-20261003.json) and latest ready pointer. Its null controls require at least25-session date displacement, and the joined forecast ledger preserves a prior year's last-close decision through a next-year opening fill. Original proposals, earlier ready directories and their manifests remain immutable. A revised public delivery requires a new prepared root and a freshly verified source/data binding; do not modify an older ready directory in place. [Review rationale](../etf-p3-research-plan-2026-10.md#23-r3开训前复审修正与创新取舍2026-10-03).
+
+For progress, read the current authority and the Mac `state/research_runs/etf_alpha_residual/latest-run.json` pointer, then query `status --path RUN` and the sibling `.exit.json`. The ready pointer and `READY.json` describe immutable preparation, not a trainer's current progress. A completed pilot with `pilot_no_increment/exit_code=0` has consumed its single-run activation; reconnecting or a retained ready directory does not restart it. Preserve completed output manifests and use a separate directory for later reviews. [Result interpretation](../etf-p3-research-plan-2026-10.md#24-r3残差pilot执行与结果2026-10-04).
+
+## Owner-designated P3 RTX3080Ti cloud compute
+
+The owner-designated `jn1f8a7n6z` machine is separate from the stopped3090/P2 host. Current permissions/state are in [current.md](../current.md); cloud computation/sending remains paused. The later WSL training instruction does not resume cloud work. Reconnection does not authorize resumption.
+
+Only the non-secret P3 delivery and immutable public M0/M1 inputs may be sent. Use the [standalone deployment reference](../../deploy/cloud/alpha-3080ti/README.md) and [P3 §20](../etf-p3-research-plan-2026-10.md#20-3080-ti-付费云计算交付与性能策略2026-10-03). Never synchronize a private checkout/.env/SSH keys, or use a legacy cloud launch script.
+
+The data root is `/root/autodl-tmp/qount`, on a verified real data mount. Environment lives in an isolated system-disk venv; compiler caches live in dedicated cloud data-disk paths. GPU visibility must expose exactly the allocated single3080Ti. CPU affinity80 does not override the actual20-core cgroup quota; memory is constrained by the30GiB container, not host128GiB.
+
+The initial independent installer was interrupted when SSH closed during an owner-stop request. On a separately authorized recovery, first read the dedicated install log/owner-stop receipt and inspect only that task's process tree, then verify environment completeness. Do not overwrite a partial venv or automatically restart installation/training. This record does not prove platform shutdown or completed installation.
+
+Completed/failed run manifests and lightweight result archives return to E for permanent retention; Mac retains code deliveries and summaries only. Do not automatically expand/release disks, rent/switch instances, invoke platform account APIs or shutdown; those actions require an explicit owner decision. A finished trainer and an offline SSH endpoint are not proof of billing termination.
 
 ## VPS boundary
 

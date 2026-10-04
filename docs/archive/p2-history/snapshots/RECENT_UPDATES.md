@@ -1,3 +1,11 @@
+> **状态**：historical navigation / superseded｜**更新时间**：2026-10-02
+
+> **归档状态**：historical / non-restorable evidence｜**归档日期**：2026-10-02
+> **替代入口**：[当前架构与研究结果](../../../p2-project-summary-20261002.md)；运行事实及权限仅看 [current.md](../../../current.md)。
+> 保留现存正文用于追溯，旧时点状态、预计完成时间和历史命令不是当前结论或重启授权。
+> 以下为早期监控改动记录。时间估计和训练状态不是当前事实；最新核查见
+> [研究主文档](../../../p2-project-summary-20261002.md)及 [current.md](../../../current.md)。
+
 # 最近更新
 
 快速了解最近的重要改动和当前状态。
@@ -57,9 +65,9 @@ experiments/p2_us_20261002/
 ```
 
 ### 相关文档
-- [p2-monitoring-improvements.md](p2-monitoring-improvements.md) — 详细设计和实现
-- [p2-execution-guide.md](p2-execution-guide.md) — 执行指南
-- [current.md](current.md) — 更新了最新状态
+- [p2-monitoring-improvements.md](../p2-monitoring-improvements.md) — 详细设计和实现
+- [p2-execution-guide.md](../p2-execution-guide.md) — 执行指南
+- [current.md](../../../current.md) — 更新了最新状态
 
 ### 预估时间
 - Stage A（32 训练 × 30 episodes）: ~2 小时
@@ -115,24 +123,24 @@ cat experiments/.../history.json | jq '.[].ann_log_return'
 ## 项目文档结构
 
 ### 核心文档（必读）
-- [current.md](current.md) — 当前状态（L1 权威）
-- [AGENTS.md](AGENTS.md) — Agent 协作规则
-- [CLAUDE.md](CLAUDE.md) — Claude 接手入口
+- [current.md](../../../current.md) — 当前状态（L1 权威）
+- [AGENTS.md](../../../../AGENTS.md) — Agent 协作规则
+- [CLAUDE.md](../../../../CLAUDE.md) — Claude 接手入口
 - [RECENT_UPDATES.md](RECENT_UPDATES.md) — 本文件，最近更新
 
 ### P2 训练相关
-- [p2-execution-guide.md](p2-execution-guide.md) — 执行指南
-- [p2-monitoring-improvements.md](p2-monitoring-improvements.md) — 监控改进详解
-- [p2-optimization-final-summary.md](p2-optimization-final-summary.md) — 优化历程
-- [p2-hardware-analysis.md](p2-hardware-analysis.md) — 硬件分析
+- [p2-execution-guide.md](../p2-execution-guide.md) — 执行指南
+- [p2-monitoring-improvements.md](../p2-monitoring-improvements.md) — 监控改进详解
+- [p2-optimization-final-summary.md](../p2-optimization-final-summary.md) — 优化历程
+- [p2-hardware-analysis.md](../p2-hardware-analysis.md) — 硬件分析
 
 ### 其他研究
-- [qount_strategy_master_index.md](qount_strategy_master_index.md) — 策略总览
-- [research-advancement-roadmap.md](research-advancement-roadmap.md) — 研究路线图
+- [qount_strategy_master_index.md](../../../qount_strategy_master_index.md) — 策略总览
+- [research-advancement-roadmap.md](../../../research-advancement-roadmap.md) — 研究路线图
 
 ### 操作手册
-- [operations/local-development.md](operations/local-development.md) — 本地开发
-- [operations/host-runbooks.md](operations/host-runbooks.md) — 主机运维手册
+- [operations/local-development.md](../../../operations/local-development.md) — 本地开发
+- [operations/host-runbooks.md](../../../operations/host-runbooks.md) — 主机运维手册
 
 ---
 

@@ -1,10 +1,250 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-09-29
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-10-04
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-20 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-09-30
+更新时间：2026-10-04
+
+## 2026-10-04（ETF研究文档梳理与公开代码提交验证）
+
+按owner“梳理记录文档，并提交更新代码”整理公开提交范围：ETF Alpha的M0/M1、Stage1/v2、残差R3与独立云计算交付代码/合同/薄入口/测试，以及ETF Trader的历史数据回测、CPU世界存储和共享训练运行时。保留公开CLI与既有导入兼容。旧P2自动训练/搜索原型继续保留工作区；原始数据、模型、本地Agent计划/上下文和脚本备份加入忽略规则，轻量运行回执继续使用既有state忽略边界。
+
+文档入口补齐P3§24的残差pilot结果；主文档统一真实模型、空对照与固定基准的2×成本CAGR/现金超额Sharpe/MDD/效用，以及完整95%配对区间与失败门。current明确区分最新结论和旧决策快照，运行手册/配置/CLI/接手参考区分READY准备快照、run进度和已消费激活。研究结果仍为discovery，未新增训练、解封outer或扩大预算。
+
+Mac聚焦使用标准discovery入口：`PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test_etf*.py'`，246项运行、212通过/34条件跳过，30.329秒。全仓标准discovery运行2,767项、2,733通过/34条件跳过，65.375秒；没有将Torch/CUDA等条件跳过记为通过。最初包式聚焦调用的5个共享夹具导入错误通过沿用discovery导入约定解决，未为此修改测试或业务代码。
+
+`compileall -q src scripts/maintenance`、公开CLI `qount-run/qount-monitor --help`、新增云交付/批量回测shell语法、repository inventory/hygiene和diff空白检查通过。原18项归档正文hash重新匹配，既有两份历史手册的原360/419行正文完整保留、各仅新增4行归档提示；没有新增文件移动。归档认证文本仅有已脱敏占位说明，公开提交排除本机旧原型及产物。相关命令和轻量回执保留于本机state/research_runs的repository_commit目录。
+
+首次暂存检查发现既有P2历史正文437处行尾空白和1处末尾空行，均位于已审计归档。为保留Markdown硬换行及历史正文hash，添加仅作用于该目录的Git whitespace属性；活跃文档和源码仍保留默认检查，归档正文未重排。
+
+另从Git暂存区导出公开代码及版本化依赖，在独立目录执行ETF测试，验证不依赖工作区旧P2原型。第一份验证目录缺少既有CTA-R会计输入/会计模块及配置合同，出现1个模块加载错误；236项实际执行测试完成，补齐3个已版本化依赖后受影响的10项环境测试全部通过。依赖补齐仅作用于临时验证目录，本次提交没有修改CTA-R或配置合同代码。
+
+## 2026-10-04（R3按owner指令开训、pilot停止与结果核验）
+
+收到“开始训练！”后登记单轮授权，重新check并生成绑定复审schema-v2准备/源码/合同/新输出目录的激活回执，启动一次detached supervisor。51/51 fits（45神经＋6Ridge）全部完成、失败0；训练/选择55.36秒，最终退出码0。预设pilot门未通过，选择回落zero_residual_reconstruction，outer withheld，未继续其余inner/final或新增试验。
+
+WSL重新hash核验345项文件/2,135,115bytes及manifest文件集合；90个best/last checkpoint严格CPU加载、360个模型tensor和optimizer状态有限，45份history共1,685epochs/13,024optimizer steps，51份预测有限并核对输入hash与形状。33组实际空对照原日期配对0、最小位移46日≥25；没有run_failed、outer标签使用或final/outer产物。实机确认进程退出、CUDA锁释放、GPU0%。
+
+MLP平均残差RankIC为正，但两种空对照的40/60/120日95%配对区间全部覆盖零；Ridge另有自身正IC年数、Huber与组合增量门失败。current登记决定/运行事实，P3§24记录inner结果及解释边界。独立E盘核验目录保存轻量回执和公开文档快照，原run/准备/合同不改。文档更新运行repository hygiene与git diff空白检查；本次未改引擎代码或重复全仓测试，无新增训练、自动重启、云端/VPS/P2/生产操作。
+
+## 2026-10-04（R3开训前复审、两处修正与待命更新）
+
+owner要求检查下一轮设计、优化创新、整理文档并保持可训练。复现首版跨年分段漏rebalance决定及不完整尾块导致2–18日错配仍重叠20日标签；改为逐年预测拼接后单一连续账本，控制位移至少25日。新增5项回归覆盖边界旧预测/缺日重日、所有真实训练长度错配/掩码和修订合同绑定。schema-v2复审合同保留所有研究参数、seed、模型及51/272预算，记录20＋5间隔和边界政策，绑定原提案/首版runtime；旧合同/READY/v2结果不改。记录信号收缩/排序loss/多因子残差的条件性候选，本轮不加trial。
+
+Mac R3聚焦31项运行/28通过/3Torch skip，最终ETF Alpha owning suite120项运行/101通过/19条件skip；WSL新公开代码R3聚焦31项全通过、0skip。编译、公共CLI help、hygiene/diff检查通过，未跑或引用本轮全仓回执。首次上传因WSL关闭超时；Windows在线且原keepalive Ready，经既有ensure入口唤醒WSL后回读Running，未改任务注册/触发或主机配置。
+
+新55文件包整包/成员hash通过，部署到独立`etf-alpha-residual-reviewed-20261003T144343Z`；E盘`residual_reviewed_20261003T144343Z`冻结16槽。01:29:34CST源码/原输入/准备hash、因果purge、原outer日期、float32/有限值通过；160组空对照最小位移28日，原日期配对0。CUDA梯度有限、权重未变，真实fits/optimizer steps/保存模型0。无激活launch/run exit2不创建run，锁占用check拒绝，trainer0；01:30GPU0%。回执、公开包和环境锁保存E同级_delivery/_verification，Mac仅公开包与轻量证据。稳定ready指针更新并保留上一指针；后续明确训练时再次check/登记激活，无需重装/再准备。当前ready_waiting_owner，云端/VPS/P2/生产不改，无自动启动或十seed扩展。方法和交付细节见P3§23及当前事实。
+
+## 2026-10-03（P3 R3残差引擎部署，等待训练指令）
+
+owner要求参照方案部署训练引擎，明确等后续“训练”再启动。实现残差数据/小容量模型/训练/三年选模/运行与激活模块、薄入口和WSL手册；新runtime合同hash绑定原提案，保留51/272预算与风险边界。准备不拟合；启动必须新owner回执绑定已冻结code/data/run。Ridge至少2/3年配对控制增量、MLP五预测平均账本、inner年末标签因果purge、零原日期配对控制与153内层fit后冻结顺序均有聚焦验证。
+
+最终54文件公开包部署到WSL独立`etf-alpha-residual-ready-20261003T141654Z`，沿用已有隔离venv。E盘`residual_ready_20261003T141654Z`准备九inner/七final槽和公开源码快照，七outer执行日期精确匹配原fold；16槽×5seed×两种控制均无保留配对。22:19:16CST核验源码/输入/准备/验证清单hash、CUDA有限值与权重不变；真实fits0、optimizer steps0、保存模型0。缺激活的launch/run实测exit2且不创建run。
+
+WSL26测试全部通过；Mac聚焦26项23通过/3skip，最终全仓2762项2728通过/34条件skip。编译、公共CLI help、hygiene/diff验证完成；最终文档交付检查另有轻量回执。准备、公开交付包、环境锁及实机回执保存E，稳定Mac指针`state/research_runs/etf_alpha_residual_ready/latest-ready.json`；首份140614Z准备证据保留。更新current、P3§22及配置/CLI/主机/代码参考。22:25CST共享CUDA锁可获取、残差trainer0、GPU0%，最终源文件54项hash与公开包一致。交付摘要/指针/文档封存E盘同级`residual_ready_20261003T141654Z_handoff/`。状态`ready_waiting_owner/training_start_authorized=false/automatic_restart_authorized=false`；无等待daemon或调度器，云端/VPS/P2与生产未改，十seed扩展未授权。
+
+## 2026-10-03（P3负对照归因、选模稳定性与下一轮方案）
+
+owner要求分析负对照收益与单年选模稳定性、解释模型结果并决定下一轮。新增可测试`postmortem.py`与薄入口`etf_alpha_analyze.py`，在WSL CPU上读取冻结预测/曲线/checkpoint，不新增拟合。1,724个不同已消费结果文件hash匹配，49条原2×组合曲线重放一致；利润按资产价格、次日开盘成交、分红、现金和成本逐日对账，shuffle最大残差5.13e-10。105个冻结checkpoint原CPU前向与GPU保存预测匹配，最大差1.4343e-7，然后才干预身份embedding。
+
+shuffle累计净利润126.71%，QQQ/SPY占65.81%；上一验证年固定模板仍8.04%年化。日期块打乱保留身份/资产均值，16/35fit还留原日期配对。bootstrap固定模板8.61%接近原8.97%，统一身份embedding降至3.14%，保留分布偏移/非重训解释边界。七折验证到次年排序五折反向、中位相关-0.4；原2021折动量在日期块扰动中只保留15.8%–23.0%。账户重置仅使selected CAGR增加0.27个百分点；平均预测的验证账本改变2026折诊断赢家，原选择不回写。
+
+选定新残差pilot提案：真实20日标签扣训练资产均值/因果beta/残差均值；Ridge9参数、共享MLP161参数、两种MLP空对照，三年因果inner验证、同一平均预测连续账本。先51fits，失败于outer前停止；通过后全轮最多272fits（含pilot），十seed另登记。`training_start_authorized=false/plan_selected_not_started`，训练入口未实施，不扩大bootstrap/ETF/云端或生产。更新current、P3§21及配置/CLI/代码职责参考。
+
+Mac新7项通过；ETF Alpha owning suite 89项运行/73通过/16条件跳过；WSL同7项通过。真实曲线与模型复现采用上方新回读证据。派生分析、输入干预及综合报告各保存到原run同级新E目录并有manifest，Mac仅轻量JSON/CSV/报告/源码/验证回执；原run未改。新增源码编译、hygiene与diff检查回执随综合报告保存；未声称全仓或新训练实现已验证。
+
+## 2026-10-03（P3 v2 完整训练与结果核验）
+
+owner要求检查训练和结果。只读核实固定run于19:19:06 CST正常退出，exit_code=0，259/259 fits与七折outer均完成、失败0，总墙钟3小时19分07秒；原训练进程已退出，未重启或追加参数。
+
+在WSL重新回读3498项结果文件/641,824,327bytes，SHA256全部匹配；245个best checkpoint严格加载、3570个tensor有限；245份fit/history完成且有限，735份seed预测与91份outer预测通过有限值/形状检查。七fold过去验证选择重算一致，全部冻结在outer前；13个family×三成本的连续CAGR/现金超额Sharpe/MDD和净值/收益关系复算一致。35个bootstrap fit均完成256epochs，平均271.20秒；全部245个fit编译active，无run_failed。核对原输入/增强manifest绑定，本次不重读完整26.5GiB增强数据。
+
+19:58:21 CST补查六个原输入hash、七fold因果标签/purge/5日embargo，490份seed test/validation日期数组和91对outer prediction/IC日期均精确匹配冻结合同。实际回执 `prediction-date-audit-20261003T115821Z.json`，E盘原run同级另存日期核验JSON，不改run或已发布派生报告。
+
+最终selected 2×成本为5.69%/0.342/16.23%，删最佳2024后3.96%；同规则动量10.84%/0.753/13.63%，删最佳年仍9.47%。七fold均选简单基线，神经0/7胜出；bootstrap只有1/7折合格，fixed-family 8.97%/0.626/16.73%，未增强同结构9.36%/0.662/16.21%。标签块打乱负对照反而12.94%/0.920/15.34%，不能将其升级为策略。
+
+事后同步日期块诊断中，增强相对未增强的增量区间跨零；相对历史资产均值的RankIC差-0.0563，40/60/120日95%诊断区间均在零以下。结果完整但神经/增强增量Alpha未证明，保留discovery及原数据限制，不进入Stage2或生产。
+
+派生报告/CSV/完整指标/核验源码及回执共六项写入E盘新 `expanded_20261003T074405Z_review_20261003T115219Z/`，另有manifest并回读通过；原run未修改。Mac只保存轻量副本，实际核验回执 `state/research_runs/etf_alpha_wsl_restart_20261003T074405Z/artifact-audit-20261003T114826Z.json`。更新current及P3 §19.5；本次未改变训练参数、主机配置、服务或权限，没有把旧unit test回执算作本次新测试。本次Mac repository hygiene与三份变更文档的diff空白检查通过。
+
+## 2026-10-03（WSL 恢复授权、P3 v2 新任务启动）
+
+owner明确“wsl已修复，开始训练！！！！”；登记新指令、恢复WSL v2启动标记，保留 `max_hours=null`、固定7,168世界/259fits/单CUDA trainer与原per-fit预算。3080Ti云合同及旧P2/3090仍暂停，未改VPS或生产服务。
+恢复连接后发现E盘在SSH/systemd命名空间中报 `No such device`；Windows只读 `chkdsk E:` 报告无文件系统问题、0坏扇区，未清除dirty标记。Windows `wsl.exe` 和SSH处于不同mount namespace，在systemd PID1命名空间重挂后，训练进程重新读到原冻结数据。
+重新核验六个M0/M1数据文件、manifest `bfb139712e50be05e78df4b0eb305378d37e3c8ce0cd37c15bfd8545651235bb`、fold-contract `f04676a0bc9e037cd92f8e7b43d60d454c78a94a843e3f95b5fc7d23e66f322a` 和七个因果切分；未修改原输入。
+新公开同步包63项、SHA256 `583e0989a46c9802fdace8dc33dfc5a315c59efbaeaa1d384a048457faf5f6dc`，整包/逐文件hash通过；初次漏放cloud打包测试依赖，补齐后WSL聚焦 **67项全通过、0跳过**，未把中断连接或失败回执记作通过。
+Mac本次 expanded15项运行、8通过/7Torch或CUDA条件跳过；cloud12项全部通过。训练算法和注册学习/风险参数未改，不借本次启动扩大研究范围。
+
+**15:59:59 CST** 在 `alpha_v2_20261003T074405Z` 启动，supervisor/trainer PID8391/8393；共享CUDA文件锁和原始退出回执，无外层timeout或自动重试。
+**16:02:52 CST** 回读CPU增强生成，14个确定性fits完成、失败0，160/896分片即1,280/7,168世界完成；24CPU workers正常，样例receipt为CPU-only/past-only。GPU神经fits尚未开始，outer withheld；未声称完整训练或Alpha完成。
+**16:20:17 CST** 回读896分片/7,168世界全部生成、完整增强manifest及hash回读通过，已切入GPU；累计44/259fits完成（14确定性对照+30神经fits）、失败0。trainer存活、未产生退出回执、outer withheld，后台固定计划继续。
+WSL代码在独立ext4 scratch，沿用已验证venv；结果/增强数据在E盘新 `expanded_20261003T074405Z` 根，旧停止产物保留。Mac仅有公开包和轻量证据 `state/research_runs/etf_alpha_wsl_restart_20261003T074405Z/`。
+更新当前事实、配置/CLI/主机参考和P3 §19执行记录；hygiene/diff检查通过。任务继续后台运行，已核实固定CPU数据保存/hash及实际GPU拟合交接。
+
+**17:06:47 CST 中途结果回读：** 83/259 fits完成、失败0，bootstrap 9/35，当前WF2021/seed1004；WF2020的2019验证已完成五seed选模并选中 `E3-ridge-raw`。bootstrap平均RankIC0.1338较无预训练0.1123改善，但低于历史均值基线0.1920，且平均Huber比基线高5.96%；未过排序共识/误差门。更新current与P3 §19.4，保留验证与outer的区分；七折统一冻结和outer仍未发布，任务继续原固定计划。轻量回读 `validation-progress-20261003T090647.json`；本次只读结果并更新文档，不重训、不追加参数。文档hygiene/diff检查通过。
+
+## 2026-10-03（3080Ti 云端程序整理、交付准备与 owner 暂停）
+
+owner 指定内蒙B区457机 `jn1f8a7n6z`，要求程序打包/发送和完整付费性能策略；随后提供新实例连接。
+只读实机核实单3080Ti/12288MiB、595.71.05、可见CPU80而cgroup仅20核、内存30GiB、空闲数据盘50GiB，原镜像Torch2.7/cu128。
+上传独立安装脚本并开始新venv准备，没有启动增强生成/GPU标定/模型训练；未复制凭据、私有环境文件或旧P2启动任务。
+owner 随后要求“先梳理文档代码，停止，等我处理wsl”；立即暂停远程推进，并撤销WSL/v2与新云合同启动标记，自动续跑false。
+对本任务安装树发起停止请求时SSH关闭，后续只读探测仍被服务器关闭，停止回执未回读；中断环境、残留进程及平台计费状态均未宣称已核实，不自动续装。
+
+本地实现显式计算配置/cgroup配额与真实挂载/单GPU检查，取消4060/E路径在v2中的固定依赖；原WSL默认和公开CLI保留。
+CPU生成每worker缓存原始TR收益，分阶段生成全部数据；新增input/NumPy/generator/scorer/fold区间绑定与完整manifest/receipt/shape/dtype回读，完整数据可严格复用，partial目录拒绝。
+单GPU共享每fold输入、融合优化器/可选compiled forward及loss、四CPU诊断线程、独立编译缓存和监控；合成张量标定按数值与冷启动摊销选择runtime，保持原batch/精度/学习选模合同。
+标定子进程有180秒候选限额、独立process group和SIGTERM/SIGINT清理；paused合同在GPU调用前拒绝生成、标定、训练。
+白名单包按实际源代码逐文件hash、确定性gzip/tar、拒绝路径穿越/软链接/额外或损坏成员；输入包保留冻结原字节，结果包引用增强manifest、不重复压缩26.5GiB。
+完整策略并入[P3 §20](etf-p3-research-plan-2026-10.md#20-3080-ti-付费云计算交付与性能策略2026-10-03)，更新配置/CLI/主机手册/代码地图和`current.md`。
+
+Mac Torch聚焦67项运行3.031秒、65通过、2 CUDA跳过；全仓2729项运行64.449秒、2698通过、31条件跳过。hygiene、diff、compileall、安装shell语法通过。
+本地代码交付包53文件/128793bytes，整包SHA256 `b29a9f6c944a08a4bf752c695aa7e66451809fce2124e1fca2b246ee6c599471`，逐文件及独立解压导入验证通过；不含真实输入。
+轻量证据在 `state/research_runs/etf_alpha_cloud_3080ti_20261003/`；完整代码包按停止要求尚未发送，新3080Ti GPU标定/CUDA验证未运行，待WSL与owner后续指令。
+
+## 2026-10-03（owner 重新启动授权并取消整轮八小时上限）
+
+owner 明确“开始大规模训练”，随后要求“取消8小时上限，我都睡完了”。最新 v2 合同启动 true、max_hours=null，固定 259 fits/7,168 世界/五 seeds 和单 fit 256 epochs/600 秒保持。
+RunLog 支持 deadline=None 并记录 remaining_seconds=null；v2 训练和 outer 的停止检查在无期限时只响应手动 stop。旧有限时长路径保持预留十分钟/一分钟，并拒绝无效/NaN/负值时长。
+独立 supervisor 已准备，直接调用研究薄入口，不含外层 timeout；任务完成后退出、不自动扩搜或重启；报告记录整轮无上限。
+新增核对：100 小时模拟后无限时长不误停、手动 stop 有效、有限时长预留保持、null 日志可序列化。
+Mac Torch 聚焦 **31 项运行、29 通过、2 CUDA 跳过，1.527 秒**；Mac 全仓 **2,717 项运行、2,686 通过、31 条件跳过，64.300 秒**；hygiene、diff check、compileall 通过。
+
+当前未能实际启动：Mac Tailscale Running，但 Windows/WSL 两 peer offline，最后在线 14:30:15/14:30:46 CST；两条直接 SSH 均超时，既有 `qount-wsl.sh ensure` 唤醒失败，报告 Windows offline。
+已向 owner 核实计算机是否开机联网；公开源代码同步包与无 timeout launcher 准备在 Mac `/tmp`，新代码尚未传入 WSL，没有伪称新 CUDA 检查/训练已启动。
+后续恢复连接后按已授权范围继续检查/启动；不因网络不可用使用本机 bulk 计算、启用云端或改生产服务。
+
+## 2026-10-03（未达预期结果复盘、P3 v2 大规模训练）
+
+owner 明确要求分析/优化已有结果并推进下一步大规模训练，按已说明的默认风险调整收益与回撤兼顾目标、WSL/E/8 小时上限登记新合同。
+确认 v1 的实际换手不高于父模型条件误拦候选；新保留规则用硬预算，旧 scheduler 显式调用历史规则，原 run/源码/配置不覆写。
+新表征/容量/当前市场上下文、资产 ID、排序 loss、联合过去历史块预训练构成固定消融，配套同容量/ID/loss 的 60 日块打乱标签控制、资产历史均值、动量、现金、旧网络与 Ridge。
+全部五 seeds 完成，验证排序增量/误差容差/硬约束合格，才按固定 2× 成本风险效用选；七 fold 冻结后才解封所有固定 family 的 outer。
+最多 259 fits，7,168 世界、预计约 26.5 GiB；世界来源止于每 fold validation-5 sessions，跨块 next-open 标签屏蔽，重算因果特征，独立信息数不增加。
+24 个 forkserver CPU-only workers、BLAS=1、直接 mmap NPY+receipt/hash，整个数据保存回读并退出 workers 后才 GPU；GPU 各 fold 驻留一次、五 seed 复用、Inductor 前向/loss 与 fused AdamW、float32/无 TF32/无 AMP。
+单 bootstrap fit 固定最多 256 epochs/600 秒，然后真实日期 fine-tune/早停；八小时包含 CPU 生成，预留十分钟 outer/收尾，没有自动新架构/失败重试/Stage 2/生产动作。
+v2 结束自动保存 `REPORT.md`、summary、全部预测/曲线、源代码/环境锁、检查点和不可变清单；partial 报告不声称已完成 outer。
+
+验证：WSL P3 **69 项通过、0 跳过，47.181 秒**，包括两种新 ID 架构的 CUDA 编译/排序梯度/预训练→fine-tune/partial batches/checkpoints，以及原 M0/M1/source/training。
+Mac Torch 聚焦 **54 项运行、52 通过、2 CUDA 跳过，2.336 秒**；Mac 全仓 **2,716 项运行、2,686 通过、30 条件跳过，63.973 秒**；hygiene/diff/compileall 通过。
+实际 forkserver 双进程生成检查两 receipt 的 `torch_imported=false`，加载 hash/shape/scales 与 CUDA 驻留成功；声明的 1,290,240×9×84 完整输入前向/loss/反向三轮通过，峰值分配 4,084,366,336 bytes（3.80 GiB）。
+2,562 日真实面板 BLAS=1：旧冻结 source `build_features` 2.159 秒，新实现 1.163 秒，1.856×；raw 特征完全一致，market raw/normalized 与 covariance 数值误差在声明容差内。
+这些工程检查没有新增正式选模/历史 trial，也没有将 synthetic 计作独立证据。
+
+**实际启动 13:55 CST**，session `alpha_v2_20261003T055505Z`，约 21:55 CST 硬期限。
+run `/mnt/e/qount_data/qount/artifacts/etf_alpha_p3/expanded_20261003T055505Z`；dataset 在同名 `datasets/etf_alpha_p3`；launcher/console/exit receipt 在 run 同级。
+13:56 CST 运行中：七个真实 fold 准备冻结、14 个 Ridge/负对照完成、CPU 24 worker 生成，896 shards 中 25 完成，尚未进入 CUDA fits，outer withheld，失败 0。
+轻量 launch/验证/日志副本在 `state/research_runs/etf_alpha_expanded_20261003/`；后续实际阶段以 `current.md`/WSL status 更新。
+
+**随后 owner 要求停止、先完成计划和代码。** 已对本 run 的 timeout/trainer 进程发 SIGTERM，整个 CPU worker process group 退出；13:59:55 CST supervisor 已结束，核实关联进程与 GPU compute 应用为空，tmux 无该 session。
+中断发生在 CPU 生成阶段，14 次确定性 Ridge/负对照已完成，CUDA 神经 fits=0、outer withheld；保留 partial shards、receipt/日志，不发布完整 bootstrap 资格。
+原结果如实为 `BrokenProcessPool / failed / exit_code=1`，不覆写失败证据；在 run 同级写 `owner-stop.json` 记录明确中断原因和无进程证据。
+Mac 与 WSL 当前 v2 合同均撤销启动标记，`training_start_authorized=false/automatic_restart_authorized=false`；旧运行源码/合同快照保留历史 true。后续先计划/代码审阅，不自动重启。
+
+## 2026-10-03（引擎编译/并行与 WSL 八小时 P3 自动训练）
+
+owner 授权优化 C++/CUDA 与并行处理，世界生成/存储与训练分离；随后明确要求设计多维度自动训练并在 WSL/E 盘运行八小时。
+世界生成从 Torch 训练模块移入 CPU-only `worlds.py`，采用固定索引 seeds、spawn workers、直接 NPY 分片、receipt/hash、空间检查和精确合同续生成；完成片段损坏时拒绝恢复。
+native O3/ISA/禁止 fast-math 的数值语义保留，缓存加入编译器/CPU 身份、构建锁、超时、ABI 检查及构建 receipt。
+共享训练运行时增加 mmap、bounded prefetch、CUDA copy-stream 生命周期处理、原始键 checkpoint、前向/构造/成本编译状态与失败日志；旧 pipeline 入口委托同一循环。
+本轮没有运行正式 synthetic 世界训练或恢复 P2/cloud；P3 用冻结真实历史，CPU 准备完成后再进入 GPU 监督训练。
+
+新增 `etf_alpha` 模型/日期分区与 train-only scales、精确 date-balanced Ridge、固定多任务 loss、融合 AdamW、编译前向、检查点、IC/校准/三档成本诊断与有界调度器。
+`etf_alpha_train.py` 为薄入口；独立 `config/etf-alpha-overnight-20261003.json` 登记最新授权，原 pending 提案不覆写。
+五配置、七 folds、screening 1000–1004 与最终扩展 1005–1009 均按固定规则；结构/追加 seed 全部冻结才解封 outer test。
+失败与 partial 不自动重试或冒充合格结果；没有追加模型/搜参、Stage 2、生产或服务权限。
+
+WSL 初始未在线，使用既有 `scripts/hosts/qount-wsl.sh ensure` 唤醒既有 Windows keepalive；没有改任务/服务配置。
+原 WSL `.venv/bin/python` 指向 Mac，旧 overlay 的 Torch 包混合导致 compiler import 失败，保留旧环境，创建独立 Python 3.12.3 / Torch 2.13.0+cu130 / NumPy 2.5.1 环境。
+最终环境在 WSL ext4 `/home/alyaloale/.cache/qount-compute/venvs/etf-alpha-20261003`，计算代码在相邻 scratch 根；E 盘只保存数据、源代码快照、锁/日志及模型，不保存虚拟环境或凭据。
+RTX4060 Laptop 总显存 8,188 MiB，启动前无 CUDA compute 进程；E 盘约 918 GiB 可用。运行监控采用 WSL 的 `/usr/lib/wsl/lib/nvidia-smi`，非交互 SSH PATH 无该命令不被当作 GPU 缺失。
+
+实际启动 **2026-10-03 02:35:09 CST**，deadline **10:35:09 CST**，外层 `timeout --signal=TERM --kill-after=60s 28740s` 保证合作停止/强制停止均有界。
+run `/mnt/e/qount_data/qount/artifacts/etf_alpha_p3/overnight_20261002T183508Z`，tmux `alpha_20261002T183508Z`；launcher/console/exit receipt 在 run 同级。
+CPU 准备七 folds 和 14 次 Ridge/置换拟合在 14.664 秒完成，prepared manifest SHA256=`b29d40e4f63028cc2905a2d3deaba81c13e20565775e63b69fde2ef77b876d83`。
+02:36:55 核实 50 次拟合完成、失败 0、37 个 best checkpoints 已落盘；当前 WF2021 raw MLP，编译 active，outer test withheld。
+WF2020 的结构选择与五追加 seeds 已冻结；该结果仅过去 validation 选择，不是 outer test 或正式门通过。实测 raw MLP 稳态单 epoch 约 0.03–0.04 秒，首次编译耗时另计，不将该小模型吞吐外推到 P2 世界训练。
+
+验证：Mac 全仓 `unittest discover -s tests -p 'test*.py'` **2,702 项运行、2,678 通过、24 项条件跳过**，64.727 秒；
+WSL 引擎 **113/113 通过、0 跳过**，50.161 秒（native/worlds/runtime/torch/env/core/generator/structural，含 CUDA 编译梯度/成本对照）；
+WSL P3 **55/55 通过、0 跳过**，31.665 秒（M0/M1/source/training，含 CUDA MLP/multitask/market MLP/GRU 的 partial batches 与检查点）；
+Mac 独立 Torch 环境 P3 16 项运行、15 通过、1 CUDA 跳过。最初新 bridge 浮点上限测试把 sum≤1 写成精确比较，修为 1e-12 容差后本地/WSL/全仓重跑通过；实现约束不改。
+`repository_hygiene.py check`、`git diff --check`、compileall 和七个真实 frozen folds 的 hash/因果窗口/purge 检查通过。
+轻量回执 `state/research_runs/etf_alpha_overnight_20261003/validation.json`；WSL 详细验证日志/回执已复制到本 run 的 `verification/`。
+原输入 manifest、历史研究结果、P2/3090 停训和生产状态保持；所有报告 `research_only=true/orders_authorized=false/holdout_role=discovery`。
+
+**最终回执（同次运行，提前完成）：** 214/214 次拟合、失败 0，训练/诊断墙钟 481.908 秒；189 次初筛/负对照 +25 次已冻结候选 seed 扩展，WF2022/WF2026 选 Ridge，故没有另十次随机 seed 扩展。
+七个 fold 完成选择与扩展后才解封 outer test；七段连续持仓/DD/换手账本全部完成，02:44:01 CST supervisor `exit_code=0`，最终 2,288 项文件 manifest 回读通过。
+1×/2×/3× 连续 CAGR 9.70%/9.55%/9.40%，MDD 16.32%/16.36%/16.40%；2× 现金超额 Sharpe 0.684，剔除最好完整年 2025 后 CAGR 8.17%。
+2× 年度净收益：2020 +5.17%、2021 +6.79%、2022 -6.38%、2023 +15.51%、2024 +12.60%、2025 +17.68%、2026 截至 10 月 1 日 +14.74%（部分年度，非全年）。
+选择为 WF2020 静态 market MLP，WF2021/2023/2024/2025 MTR MLP，WF2022/2026 Ridge。
+40 日同步块现金超额日均收益区间跨零，outer RankIC 在 2021/2024 为负、2025 接近零；不能用净值正收益替代预测门或新鲜确认。
+新增 `etf_alpha_report.py` 薄入口与 stdlib 报告包，对原清单回读后在同级独立 `overnight_20261002T183508Z_review` 写易读 Markdown/全部验证配置 CSV，原始 run 不覆写。
+8 小时是上限；固定任务在早停与编译/驻留优化后已完成，不自动增加 trial、延长 epochs 或启动微调填满剩余时间。运行状态已据实更新 `current.md`。
+最终报告已实际生成，49 个 fold/配置验证汇总行，独立清单回读通过；Mac 仅取得 `REPORT.md`、轻量 CSV/summary/回执副本，位于 `state/research_runs/etf_alpha_overnight_20261003/`。
+报告入口加入后最后一次全仓回归仍为 **2,702 项运行、2,678 通过、24 项条件跳过**，64.102 秒；hygiene、diff check、compileall 再次通过。
+训练后原始冻结输入六文件重新回读通过，dataset manifest 仍为 `bfb139712e50be05e78df4b0eb305378d37e3c8ce0cd37c15bfd8545651235bb`；GPU compute 进程已退出。
+
+## 2026-10-02（ETF P3 研究数据门通过与 Alpha 训练提案，待审批）
+
+owner 明确降低数据标准、判定现有数据通过，并要求先确认网络/参数/训练方案，允许后才开始训练。
+`current.md` 登记 research_snapshot_v1 的 D 门 pass，历史来源/支付会计/实测报价缺口转为已接受限制；hash、因果特征、next-open 和 purge/embargo 保持。
+原 M0/M1/补采的严格 insufficient 审计和不可变来源资格标记未修改；首轮拟用冻结 M1 的同口径特征/标签，补采版只作审计参考。
+主计划 §16 与 `config/etf-alpha-stage1-proposal-20261002.json` 固定待审批的共享 MLP、multi-task、容量接近的静态市场 MLP/GRU 对照、loss、AdamW、日期批次、seeds、七个 folds 和选择规则。
+参数量解析计算：E3 raw MLP 5,921，E4 六头 6,086，E5 六头静态/GRU 为 12,598/12,566；正式初筛 182 次拟合，负对照 7 次，最终扩展最多 35 次，总上限 224。
+此次只读取源码/元数据、设计配置与修改文档，没有拟合 Ridge/神经网络、性能训练试跑、模型推理或训练调度；未接触其他训练、主机或服务配置。
+`training_start_authorized=false/training_status=awaiting_owner_plan_approval/alpha_result_status=not_run`；`research_only=true/orders_authorized=false`。
+
+验证：参数提案 JSON/审批边界、解析参数量、seed/拟合预算和既有冻结 manifest 元数据引用核对通过；107 项本地文档链接/锚点、repository hygiene、`git diff --check` 通过。
+本次为文档与配置设计，未运行训练/推理或重跑单元测试，也未进行新的远端全文件 hash 回读；既往测试结果未计作本次验证。
+轻量回执保存在 `state/research_runs/etf_alpha_training_proposal_20261002/validation.json`。
+
+## 2026-10-02（ETF P3 公开数据补采与分类，research_only）
+
+owner 要求“补齐数据，并合理储存标记分类”。新增可测试的官方来源采集、发行商全历史解析、独立规则交易日历、费率区间与来源对账；
+新增 `etf_alpha_supplement.py` 薄入口，所有批量下载和文件读回在 WSL/外置盘执行，Mac 只保留代码、文档和轻量审计。
+最终数据版本 `public_sources_20261002T124605Z`：42 份官方来源、44,640 行标准化 OHLCV、935 条分配记录（830 正现金/105 零现金）、30 段监管费率。
+名义价格是冻结行情的标准化引用，不冒称新独立行情或历史 PIT；每条分配都有支付日，8 处来源差异待审。
+独立日历与 4,464 个 session 完全一致；来源的窗口外日期错误完整保留，空 API、失败采集与解析中间件在发现批次单独分类。
+原始来源、标准化表、审计、假设、元数据与代码证据分层，保留真实采集时间；缓存导入逐项验证 hash，另记导入时间。
+初次试采、被替代版本和发现批次保留并登记非训练角色；未覆盖旧 P2/M0/M1、没有开始 Alpha 训练。
+数据 D 门保持 insufficient：PIT/历史 bid-ask、金额/事件冲突、新应收会计及券商/法律日期口径等未完成资格审计，早期 TAF 一段连续性推断保留。
+存储、冲突明细、SHA256 和复现见 [P3 主计划 §15](etf-p3-research-plan-2026-10.md#15-公开数据补采存储与资格分类2026-10-02)。
+
+继续复核找到 Nasdaq 向 SEC 提交的 2011–2012 年局部 QQQ/NBBO 研究参考，WSL 原文下载返回 403；只保存发现/失败元数据并标记不可训练，未把片段或论文结论当完整历史报价。
+
+验证：新增 11 项 owning 测试通过；WSL P3 39 项全部通过、0 跳过；Mac 全仓运行 2,668 项，2,656 通过、12 项 Torch 条件跳过（58.297 秒）。
+最终数据 63 项 hash、44,640 行计数、935 条 CSV/JSONL 一致、来源引用/布尔资格/支付时序/费率连续性回读通过；
+原 625 项 P2 输入及原 M0/M1 数据/工件 6/5/53 项 hash 再次匹配。源码、依赖 hash、环境与交付清单单独冻结；没有安装新依赖或改主机/服务状态。
+
+## 2026-10-02（ETF P3 M0/M1 执行，research_only）
+
+owner 要求“执行m0m1”。在 `src/qount/research/etf_alpha/` 新增可测试的冻结登记、来源面板、38 项特征、next-open 标签、purged folds、固定合同、事件会计与规则基准；
+新增两个 `scripts/research/etf_alpha_*.py` 薄入口和 28 项 owning 测试。公共 CLI、P2 scorer/policy/train/env 与原历史结果保持兼容。
+M0 `p2-frozen-20261002` 登记完成，训练状态仍为 partial；原四组 manifest 声明的 625 项文件及 manifest 前后 hash 匹配，42 个 CPU checkpoint 加载检查通过。
+M1 处理 4,464 个 source session、七个 fold、12 个规则版本 × 三档成本；2,700 个标签份额 oracle、prefix/permutation/Σ 检查通过。
+工程状态 completed，数据 **D 门 insufficient / qualification_blocked**，四项来源缺口未被工程通过或基准收益覆盖；Alpha trials=0，M2–M6 未开始。
+完整数据、账本和工件保存在 WSL 挂载的外置盘新根，Mac 只保留轻量 JSON/测试日志；实际公开源码 41 文件快照与合同逐项 hash 绑定。
+未读取/复制凭据、未恢复 3090、未干预 WSL 既有训练或 VPS/服务状态；没有账户、订单或 paper 授权变化。
+current 记录 owner 决定与当下事实，主计划 §14 保存工程证据、缺口与复现命令；规则、CLI、代码组织、repository map 与导航同步实际路径。
+
+验证：Mac 全仓 2,657 项通过（12 项 Torch 条件跳过）；WSL CPU 针对性 48 项全部通过（0 跳过）。
+首次全仓有一个原有 CN 生成器测试的四次抽样全部被拒绝；仅修正该测试 draw_budget=20、断言三个有效世界，未变生成器逻辑/参数/阈值，单项和全仓重跑通过。
+架构边界/CLI/治理针对性 20 项通过，repository hygiene、compileall（src、maintenance 与两个新薄入口）、CLI 参数帮助和 `git diff --check` 通过。
+文档专项检查与总清单回读在最终交付回执登记，未把未实现的模型训练与 Alpha 资格写成通过。
+产物和 hash 见 [P3 主计划 §14](etf-p3-research-plan-2026-10.md#14-m0m1-执行记录2026-10-02)。
+
+## 2026-10-02（ETF P3 结构重构设计，仅文档）
+
+owner 要求将 P2 review、双端训练和 G5 失败与现有设计结合，撰写推进计划及具体实施步骤；范围仅为文档。
+新增 [P3 研究及实施主计划](etf-p3-research-plan-2026-10.md)，统一保存 P2 冻结清单、分层合同、特征/标签、多任务预测、规则风险与交易、收益归因、walk-forward/regime/seed、E0–E10 和 M0–M6。
+依据 current 中的 3090 停训事实采用现有 ep60 作为未完成训练证据；新冻结 manifest 和所有新实验均未执行。
+历史时间因果 OOS 与已消费弱保留集、新鲜确认分别标记；原 v4.1 一次历史验收协议和新 P3 Alpha 架构不混名。原 G5、既有结果和主机状态未改变。
+current 记录本轮文档决定，原设计、P2 证据文档、README-P2、文档入口与研究线导航补充链接。
+
+验证：`PYTHONPATH=src ./.venv/bin/python scripts/maintenance/repository_hygiene.py check` 与 `git diff --check` 通过；对本轮八份文档的路径/本地标题锚点、主计划元数据、代码围栏和尾部空白进行了专项静态检查，结果通过。
+人工对照 P2 主文档与 current 核对停训、checkpoint、G5、Sharpe 和弱保留集口径；写入范围仅上述八份 Markdown，未新增代码或移动/删除文件。本轮未运行训练、回测、模型单测或全仓回归，未连接远端或读取凭据。
 
 ## 2026-09-30（ETF 专家交易员 P1：结构族生成器，research_only）
 

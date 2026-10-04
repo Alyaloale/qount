@@ -17,8 +17,7 @@ from __future__ import annotations
 import json
 import math
 import time
-import warnings
-from concurrent.futures import ProcessPoolExecutor
+from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -26,17 +25,12 @@ import numpy as np
 import torch
 
 from . import constraints as C
-from .costs import RANDOMIZATION_RANGE, cost_params_for
-from .features import WorldFeatures, world_features
-from .generator.params import sample_world
-from .generator.plausibility import check
-from .generator.specs import ACCOUNT_SPECS
-from .generator.structural import simulate_world
+from .costs import cost_params_for
 from .policy import PolicyConfig, Trader, construct, kl_to_prior, n_params
 from .torch_env import Batch, TorchEnv
+from .training_runtime import COMPILE_MODES, PolicyRunner, episode_tensors, load_training_dataset
 from .universe import ACCOUNTS, Account
-
-SPLITS = {"train": 0, "val": 1, "test": 2}
+from .worlds import SPLITS, WorldArrays, _gen, generate_world, world_seed
 
 
 @dataclass(frozen=True)
@@ -60,60 +54,11 @@ class TrainConfig:
     workers: int = 8
     device: str = "cuda"
     plausibility_years: float = 100.0
-    compile_mode: str = "reduce-overhead"  # torch.compile mode: reduce-overhead, max-autotune, default
+    compile_mode: str = "default"  # recurrent BPTT uses compilation without CUDA Graph output reuse
 
 
 # ---------------------------------------------------------------------------
-# World pipeline (CPU workers)
-
-
-@dataclass
-class WorldArrays:
-    close_adj: np.ndarray
-    close: np.ndarray
-    open: np.ndarray
-    adv: np.ndarray
-    sigma: np.ndarray
-    cash_return: np.ndarray
-    spread: np.ndarray
-    buy_blocked: np.ndarray
-    features: WorldFeatures
-    spread_mult: float
-    impact_mult: float
-    params_seed: int
-
-
-def world_seed(root: int, split: str, index: int) -> np.random.SeedSequence:
-    return np.random.SeedSequence((root, SPLITS[split], index))
-
-
-def generate_world(account: str, root: int, split: str, index: int, years: float, warmup_years: float,
-                   plausibility_years: float = 100.0, max_draws: int = 50) -> WorldArrays:
-    """Draw accepted (§7.2) parameters, simulate, compute features; return trading rows only."""
-    rng = np.random.default_rng(world_seed(root, split, index))
-    spec, acct = ACCOUNT_SPECS[account], ACCOUNTS[account]
-    for _ in range(max_draws):
-        params = sample_world(account, rng)
-        if plausibility_years <= 0 or not check(simulate_world(spec, params, years=plausibility_years))[1]:
-            break
-    else:
-        raise RuntimeError(f"no plausible world in {max_draws} draws ({split}/{index})")
-    w = simulate_world(spec, params, years=years, warmup_years=warmup_years)
-    d = w.data
-    with warnings.catch_warnings():  # nanmean over all-NaN warmup rows
-        warnings.simplefilter("ignore", RuntimeWarning)
-        f = world_features(d.close_adj, acct, w.valuation, d.adv, d.spread)
-    s = w.start
-    lo, hi = RANDOMIZATION_RANGE
-    return WorldArrays(
-        close_adj=d.close_adj[s:], close=d.close[s:], open=d.open[s:], adv=d.adv[s:], sigma=d.sigma[s:],
-        cash_return=d.cash_return[s:], spread=d.spread[s:], buy_blocked=d.buy_blocked[s:], features=f.sliced(s),
-        spread_mult=float(rng.uniform(lo, hi)), impact_mult=float(rng.uniform(lo, hi)), params_seed=params.seed,
-    )
-
-
-def _gen(args):
-    return generate_world(*args)
+# WorldArrays/generate_world remain re-exported for existing imports.
 
 
 @dataclass
@@ -181,7 +126,8 @@ def run_segment(env: TorchEnv, model: Trader, ep: EpisodeTensors, h: torch.Tenso
         asset, market, acc = policy_inputs(env, ep, obs, account)
         act, h = model(asset, market, acc, h)
         t = obs.t
-        target = construct(ep.static[:, t, :, :4], ep.sigma_c[:, t], ep.eligible[:, t], act, account)
+        weights = model.construct if isinstance(model, PolicyRunner) else construct
+        target = weights(ep.static[:, t, :, :4], ep.sigma_c[:, t], ep.eligible[:, t], act, account)
         out = env.step(target.to(env.dtype), act.band.to(env.dtype), act.kappa.to(env.dtype))
         rets.append(out["ret"])
         eqs.append(out["equity"])
@@ -203,59 +149,45 @@ def tail_mean(x: torch.Tensor, q: float, largest: bool) -> torch.Tensor:
 
 
 def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: float | None = None,
-          use_compile: bool = True, checkpoint_every: int = 10) -> dict:
+          use_compile: bool = True, checkpoint_every: int = 10, world_dataset: Path | None = None) -> dict:
+    if min(cfg.episodes, cfg.batch_worlds, cfg.segment, log_every, checkpoint_every) < 1:
+        raise ValueError("episodes, batch size, segment and logging/checkpoint intervals must be positive")
+    if cfg.compile_mode not in COMPILE_MODES:
+        raise ValueError("unknown compile mode")
+    dataset = load_training_dataset(cfg, world_dataset) if world_dataset is not None else None
+    if dataset is not None and str(cfg.device).startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but unavailable; use device=cpu explicitly for fixture verification")
+    if dataset is not None and out_dir.exists():
+        raise FileExistsError("saved-dataset training requires a new output directory")
     out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(cfg.device if torch.cuda.is_available() or cfg.device == "cpu" else "cpu")
     torch.manual_seed(cfg.seed)
     acct = ACCOUNTS[cfg.account]
     model = Trader(cfg.policy).to(device)
 
-    # torch.compile for 3-5x speedup by reducing kernel launch overhead
-    compile_mode = getattr(cfg, 'compile_mode', 'reduce-overhead')
-    if use_compile and device.type == "cuda":
-        try:
-            if compile_mode == 'max-autotune':
-                model = torch.compile(model, mode='max-autotune', fullgraph=False)
-            elif compile_mode == 'default':
-                model = torch.compile(model, mode='default', fullgraph=False)
-            else:
-                model = torch.compile(model, mode='reduce-overhead', fullgraph=False)
-            compiled = True
-            print(f"torch.compile enabled with mode={compile_mode}", flush=True)
-        except Exception as e:
-            print(f"Warning: torch.compile failed ({e}), falling back to eager mode", flush=True)
-            compiled = False
-    else:
-        compiled = False
-
-    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    runner = PolicyRunner(model, enabled=use_compile and device.type == "cuda", mode=cfg.compile_mode)
+    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, fused=device.type == "cuda")
     costs = cost_params_for(acct)
     lam = {"dd": 0.0, "cvar": 0.0}
     hist: list[dict] = []
     t_start = time.time()
     meta = {"config": asdict(cfg), "n_params": n_params(model), "device": str(device),
-            "compiled": compiled, "research_only": True, "orders_authorized": False, "trial": False}
+            "compiled": False, "compilation": runner.status, "research_only": True, "orders_authorized": False, "trial": False}
+    meta["world_source"] = "saved_dataset" if dataset is not None else "online_generator"
+    if dataset is not None:
+        meta["dataset"] = {"path": str(dataset.root), "manifest_sha256": dataset.manifest_sha256,
+                           "contract_sha256": dataset.manifest["contract_sha256"],
+                           "seed": dataset.cfg.seed, "start_index": dataset.cfg.start_index,
+                           "worlds_used": cfg.episodes * cfg.batch_worlds}
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
 
-    def jobs(ep):
-        base = ep * cfg.batch_worlds
-        return [(cfg.account, cfg.seed, "train", base + i, cfg.years, cfg.warmup_years, cfg.plausibility_years)
-                for i in range(cfg.batch_worlds)]
-
-    with ProcessPoolExecutor(max_workers=cfg.workers) as pool:
-        pending = [pool.submit(_gen, j) for j in jobs(0)]
+    with closing(episode_tensors(cfg, device, to_tensors, dataset)) as batches:
         update = 0
-        for ep in range(cfg.episodes):
-            t_ep_start = time.time()
-            worlds = [f.result() for f in pending]
-            t_gen = time.time() - t_ep_start
-            if ep + 1 < cfg.episodes:
-                pending = [pool.submit(_gen, j) for j in jobs(ep + 1)]  # prefetch while training
-            t_tensor_start = time.time()
-            et = to_tensors(worlds, device)
-            t_tensor = time.time() - t_tensor_start
+        t_ep_start = time.time()
+        for ep, (et, timing) in enumerate(batches):
             t_env_start = time.time()
             env = TorchEnv(et.batch, acct, costs, exact=False, spread_mult=et.spread_mult, impact_mult=et.impact_mult)
+            env.cost_fn = runner.cost
             t_env = time.time() - t_env_start
             h = model.initial_state(env.B, device=device)
             peak = torch.ones(env.B, device=device)  # running peak relative to initial equity
@@ -264,7 +196,7 @@ def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: f
             seg_stats = []
             t_rollout_start = time.time()
             while env.t < env.T - 1:
-                out, h = run_segment(env, model, et, h, cfg.segment, acct)
+                out, h = run_segment(env, runner, et, h, cfg.segment, acct)
                 if out is None:
                     break
                 logr = torch.log1p(out["ret"].clamp_min(-0.999)).sum(dim=1)
@@ -279,7 +211,7 @@ def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: f
                         + cfg.lambda_turnover * to_pen)
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
-                gn = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+                gn = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip, error_if_nonfinite=True)
                 opt.step()
                 update += 1
                 lam["dd"] = max(0.0, lam["dd"] + cfg.dual_lr * float(g_dd.detach()))
@@ -288,14 +220,15 @@ def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: f
                 ep_dd = torch.maximum(ep_dd, dd.detach())
                 h = h.detach()
                 env.detach_()
-                seg_stats.append({"logr": float(logr.mean()), "kl": float(kl), "g_dd": float(g_dd),
-                                  "g_cvar": float(g_cv), "grad_norm": float(gn), "turnover_pen": float(to_pen)})
+                seg_stats.append({"logr": float(logr.detach().mean()), "kl": float(kl.detach()),
+                                  "g_dd": float(g_dd.detach()), "g_cvar": float(g_cv.detach()),
+                                  "grad_norm": float(gn.detach()), "turnover_pen": float(to_pen.detach())})
             t_rollout = time.time() - t_rollout_start
             years = (env.t) / 252.0
             t_ep_total = time.time() - t_ep_start
             rec = {
                 "episode": ep, "updates": update, "seconds": round(t_ep_total, 2),
-                "time_gen": round(t_gen, 2), "time_tensor": round(t_tensor, 2),
+                **{k: round(v, 4) for k, v in timing.items()},
                 "time_env": round(t_env, 2), "time_rollout": round(t_rollout, 2),
                 "ann_log_return": float(np.mean([s["logr"] for s in seg_stats])),
                 "p95_max_dd": float(torch.quantile(ep_dd, 0.95)), "lambda_dd": lam["dd"], "lambda_cvar": lam["cvar"],
@@ -313,8 +246,11 @@ def train(cfg: TrainConfig, out_dir: Path, *, log_every: int = 1, max_minutes: f
                           checkpoint_path)
                 (out_dir / f"history_ep{ep}.json").write_text(json.dumps(hist, indent=2))
 
+            meta["compiled"] = runner.status["state"] == "active"
             if max_minutes is not None and (time.time() - t_start) / 60 > max_minutes:
                 break
+            t_ep_start = time.time()
+    (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
     torch.save({"model": model.state_dict(), "config": asdict(cfg), "lambda": lam}, out_dir / "model.pt")
     (out_dir / "history.json").write_text(json.dumps(hist, indent=2))
     return {"meta": meta, "history": hist, "lambda": lam}

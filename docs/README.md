@@ -1,6 +1,6 @@
 # 文档入口
 
-> **状态**：active｜**权威**：L2 documentation navigation｜**最后更新**：2026-09-29
+> **状态**：active｜**权威**：L2 documentation navigation｜**最后更新**：2026-10-04
 > **适用范围**：当前事实、规则、运行手册、参考资料、活跃研究和历史归档的稳定入口。
 > **TL;DR**：当前事实只在 [current.md](current.md)。本页组织导航，不复制生产状态或研究结论。
 
@@ -24,6 +24,8 @@
 - [验证边界](holdout.md)
 - [研究路线](research-advancement-roadmap.md)
 - [近期记录](update-log.md)
+- [ETF P2 / P3 文档入口](README-P2.md) — P2 架构与证据、原验收协议、P3 分层重构及实施计划。
+- [ETF P3 残差 pilot 结果与核验](etf-p3-research-plan-2026-10.md#24-r3残差pilot执行与结果2026-10-04) — 验证口径、增量门、对照与解释边界。
 - 事件线：`personal-200u-event-strategy.md`、`pre-event-range-strategy.md`、`fomc-trigger-study-and-v03-extension.md`
 - 主动研究：`alpha-agent-plan.md`、`l1-passive-allocation-preregistration.md`、`carry-active-basis-hypothesis.md`
 - 组合与演进：`long-run-personal-strategy-design.md`、`personal-strategy-research-directions.md`、`trading-system-evolution-plan.md`

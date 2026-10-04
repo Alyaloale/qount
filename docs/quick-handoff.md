@@ -1,6 +1,6 @@
 # qount 快速接手手册
 
-> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-09-30
+> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-10-04
 > **本文回答**：首次接手的最短阅读路径、值隐藏预检和跨主机安全边界。
 > **TL;DR**：生产事实只看 [current.md](current.md)。本项目当前不因接手工作启用 live、arm、订单、交易 timer 或生产 cron；不要把已有部署模板或历史命令当作授权。
 
@@ -38,6 +38,7 @@ PYTHONPATH=src ./.venv/bin/python -m compileall -q src scripts/maintenance
 
 ## Where details live
 
+- [ETF P2/P3 navigation](README-P2.md) and [R3 pilot interpretation](etf-p3-research-plan-2026-10.md#24-r3残差pilot执行与结果2026-10-04)
 - [Configuration contract and safe loading](reference/configuration.md)
 - [CLI and scripts](reference/cli-and-scripts.md)
 - [Local development](operations/local-development.md)
@@ -49,3 +50,5 @@ PYTHONPATH=src ./.venv/bin/python -m compileall -q src scripts/maintenance
 - [Historical archive index](archive/README.md)
 
 长命令、一次性部署细节和历史服务状态不在本页重复维护；需要时先由 `current.md` 选择对应的运行手册，再取得明确 owner 授权。
+
+ETF R3进度回读使用Mac的`state/research_runs/etf_alpha_residual/latest-run.json`定位run，再按CLI参考查询其`status.json`及同级退出回执。`latest-ready.json/READY.json`是准备快照；已完成任务的结果和激活回执不能触发自动续训。全量数据、预测和模型仍在E盘，本机只维护代码、文档和轻量回执。

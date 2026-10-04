@@ -33,6 +33,22 @@ def _t(x, dtype, device):
     return torch.as_tensor(np.asarray(x), dtype=dtype, device=device)
 
 
+def fill_cost(notional, price, adv, sigma, series, p, half_static, spread_mult, k_impact, mult):
+    """Stateless tensor cost calculation; shared by eager and fused training kernels."""
+    size = notional.abs()
+    traded = size > 0
+    commission = torch.where(traded, torch.clamp_min(p.commission_rate * size, p.min_fee), torch.zeros_like(size))
+    shares = size / price
+    fees = torch.where(notional < 0, p.sec_fee_rate * size + torch.clamp_max(p.taf_per_share * shares, p.taf_max),
+                       torch.zeros_like(size))
+    base = half_static if series is None else spread_mult * series
+    half = torch.maximum(base.expand_as(price), 0.5 * p.tick / price)
+    spread = half * size
+    safe_adv = torch.where(adv > 0, adv, torch.ones_like(adv))
+    impact = torch.where(adv > 0, k_impact * sigma * size.pow(1.5) / safe_adv.sqrt(), torch.zeros_like(size))
+    return mult * (commission + fees + spread + impact)
+
+
 @dataclass
 class Batch:
     """(B, T, n) market panels (cash_return (B, T)); rows are the episode's trading rows."""
@@ -116,6 +132,7 @@ class TorchEnv:
         self.half_static = _t(costs.half_spread, dt, dev)[None, :] * sm[:, None]
         self.k_impact = (costs.k_impact * im)[:, None]
         self.costs = costs
+        self.cost_fn = fill_cost
         self.mult = float(cost_multiplier)
         dr = derisk or C.DeRisk()
         self.d1, self.d2, self.cap1, self.cap2 = dr.d1, dr.d2, dr.cap1, dr.cap2
@@ -307,16 +324,5 @@ class TorchEnv:
                 "voided": voided, "forced_breach": breach, "budget_scale": scale, "gross_cap": cap}
 
     def _cost(self, notional, price, adv, sigma, series):
-        p = self.costs
-        size = notional.abs()
-        traded = size > 0
-        commission = torch.where(traded, torch.clamp_min(p.commission_rate * size, p.min_fee), torch.zeros_like(size))
-        shares = size / price
-        fees = torch.where(notional < 0, p.sec_fee_rate * size + torch.clamp_max(p.taf_per_share * shares, p.taf_max),
-                           torch.zeros_like(size))
-        base = self.half_static if series is None else self.spread_mult * series
-        half = torch.maximum(base.expand_as(price), 0.5 * p.tick / price)
-        spread = half * size
-        safe_adv = torch.where(adv > 0, adv, torch.ones_like(adv))
-        impact = torch.where(adv > 0, self.k_impact * sigma * size.pow(1.5) / safe_adv.sqrt(), torch.zeros_like(size))
-        return self.mult * (commission + fees + spread + impact)
+        return self.cost_fn(notional, price, adv, sigma, series, self.costs,
+                            self.half_static, self.spread_mult, self.k_impact, self.mult)

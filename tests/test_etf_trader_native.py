@@ -1,7 +1,10 @@
 import datetime as dt
 import json
 import unittest
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -38,6 +41,38 @@ class NativeKernelTest(unittest.TestCase):
 
     def test_abi_matches_loader(self):
         self.assertEqual(native.load().qount_kernel_abi(), native.ABI)
+
+    def test_concurrent_build_compiles_once_and_preserves_build_receipt(self):
+        import subprocess
+        run = subprocess.run
+        compiles = []
+
+        def tracked(command, **kwargs):
+            if str(native.SOURCE) in command:
+                compiles.append(command)
+            return run(command, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(native, "_cache_dir", return_value=Path(tmp)), \
+                patch.object(native.subprocess, "run", side_effect=tracked):
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                paths = list(pool.map(lambda _: native.build(), range(4)))
+            self.assertEqual(len(set(paths)), 1)
+            self.assertEqual(len(compiles), 1)
+            meta = json.loads(paths[0].with_suffix(".json").read_text())
+            self.assertIn("-O3", meta["flags"])
+            self.assertIn("-fno-fast-math", meta["flags"])
+            self.assertTrue(meta["compiler_version"])
+
+    def test_native_cache_changes_with_cpu_and_compiler_identity(self):
+        original = native.build_metadata()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(native, "_cache_dir", return_value=Path(tmp)):
+            with patch.object(native, "build_metadata", return_value=original):
+                a = native.build()
+            for field in ("cpu", "compiler_version"):
+                changed = {**original, field: original[field] + "-fixture"}
+                with patch.object(native, "build_metadata", return_value=changed):
+                    self.assertNotEqual(native.build(), a)
 
     def test_helpers_match_numpy(self):
         rng = np.random.default_rng(3)
@@ -124,8 +159,14 @@ class TargetsTest(unittest.TestCase):
         self.assertFalse(gates["dy_r2_5y"]["passed"])
 
     def test_report_uses_targets_and_is_worker_invariant(self):
-        a = calibration_report("cn", 3, seed=5, plausibility_years=30.0, stylized_years=12.0, workers=1)
-        b = calibration_report("cn", 3, seed=5, plausibility_years=30.0, stylized_years=12.0, workers=2)
+        # The default budget gives seed=5 only four draws, all rejected. This
+        # aggregation/worker test needs three accepted worlds to exercise gates.
+        a = calibration_report("cn", 3, seed=5, plausibility_years=30.0, stylized_years=12.0,
+                               workers=1, draw_budget=20)
+        b = calibration_report("cn", 3, seed=5, plausibility_years=30.0, stylized_years=12.0,
+                               workers=2, draw_budget=20)
+        self.assertEqual(a["n_worlds_stylized"], 3)
+        self.assertEqual(b["n_worlds_stylized"], 3)
         self.assertIsNotNone(a["targets_sha256"])
         self.assertIn("autocorr_calibrated", a["stylized"])
         self.assertIn("dy_r2_5y", a["stylized_undecided"])

@@ -1,0 +1,272 @@
+{
+  "schema": "etf-alpha-residual-engine-v1",
+  "run_id": "etf-alpha-residual-pilot-20261003",
+  "research_only": true,
+  "orders_authorized": false,
+  "holdout_role": "discovery",
+  "training_start_authorized": false,
+  "training_status": "ready_waiting_owner",
+  "implementation_status": "implemented",
+  "automatic_restart_authorized": false,
+  "owner_instruction": "分析负对照的收益来源和单年验证选模的稳定性，分析实验结果和模型原因，决定下一轮训练方案",
+  "decision_reference": "docs/current.md",
+  "research_reference": "docs/etf-p3-research-plan-2026-10.md#21-负对照归因选模稳定性与下一轮训练方案2026-10-03",
+  "source_result_manifest_sha256": "c68a68a8eac804186632581627037307c4bca232a548102eb86c782b59036b98",
+  "data": {
+    "root": "/mnt/e/qount_data/qount/datasets/etf_alpha_p3/m0_m1_20261002T112648Z",
+    "manifest_sha256": "bfb139712e50be05e78df4b0eb305378d37e3c8ce0cd37c15bfd8545651235bb",
+    "symbols": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "EFA",
+      "EEM",
+      "IEF",
+      "TLT",
+      "GLD",
+      "DBC"
+    ],
+    "new_data_acquisition": false,
+    "bootstrap_worlds": 0,
+    "generated_independent_dates": 0,
+    "features": [
+      "return5",
+      "return20",
+      "return60",
+      "return120",
+      "rv20",
+      "rv60",
+      "drawdown252",
+      "ma_distance200"
+    ],
+    "normalization": "frozen M1 causal trailing z-score; no asset embeddings or new market encoder"
+  },
+  "target": {
+    "horizon_sessions": 20,
+    "entry": "next_open",
+    "label": "u_i=e20_i-m_i-beta252_i*(e20_SPY-m_SPY); delta_i=u_i-kappa_i",
+    "cash_excess": "e20_i=next_open_total_return_i-next_open_cash_return",
+    "m_i": "per-asset training-only mean of e20_i",
+    "beta252_i": "causal trailing 252-session daily excess-return beta to SPY at decision close",
+    "kappa_i": "per-asset training-only mean of u_i; ensures zero training mean for each learned residual target",
+    "learned_symbols": [
+      "QQQ",
+      "IWM",
+      "EFA",
+      "EEM",
+      "IEF",
+      "TLT",
+      "GLD",
+      "DBC"
+    ],
+    "SPY_residual": "identically zero; excluded from residual IC/loss",
+    "forecast_reconstruction": "mu20_i=c20_forecast+m_i+kappa_i+beta252_i*(SPY_return120/6-c20_forecast-m_SPY)+predicted_delta_i",
+    "cash_forecast": "trailing BIL 20-session close return; realised future cash only in training labels",
+    "constant_parameters_fit_only_inside_training_partition": true
+  },
+  "models": [
+    {
+      "name": "R3-ridge-residual",
+      "parameters": 9,
+      "l2_mean_mse": 0.01,
+      "deterministic": true
+    },
+    {
+      "name": "R3-ridge-residual-time-shuffle",
+      "parameters": 9,
+      "l2_mean_mse": 0.01,
+      "deterministic": true
+    },
+    {
+      "name": "R3-mlp-residual",
+      "layers": [
+        8,
+        16,
+        1
+      ],
+      "activation": "GELU",
+      "dropout": 0.1,
+      "parameters": 161
+    },
+    {
+      "name": "R3-mlp-residual-time-shuffle",
+      "layers": [
+        8,
+        16,
+        1
+      ],
+      "activation": "GELU",
+      "dropout": 0.1,
+      "parameters": 161
+    },
+    {
+      "name": "R3-mlp-residual-time-and-asset-shuffle",
+      "layers": [
+        8,
+        16,
+        1
+      ],
+      "activation": "GELU",
+      "dropout": 0.1,
+      "parameters": 161
+    }
+  ],
+  "controls": {
+    "no_iterative_fit": [
+      "zero_residual_reconstruction",
+      "asset_train_mean",
+      "momentum120",
+      "cash"
+    ],
+    "shuffle_block_sessions": 60,
+    "shuffle_unchanged_date_pairs_allowed": 0,
+    "shuffle_asset_columns": "additional independently seeded within-block permutation of the eight residual asset columns; move masks jointly",
+    "shuffle_source": "training partition only; validation labels remain genuine and controls share checkpoint selection protocol",
+    "primary_effect": "paired improvement over zero-residual reconstruction and both capacity-matched shuffled MLP controls; control absolute profit is not alpha"
+  },
+  "training": {
+    "seeds": [
+      1000,
+      1001,
+      1002,
+      1003,
+      1004
+    ],
+    "learning_rate": 0.0003,
+    "matrix_weight_decay": 0.001,
+    "batch_dates": 64,
+    "max_epochs": 80,
+    "early_stopping_patience": 8,
+    "early_stopping_min_delta": 0.0001,
+    "loss": "date-balanced Huber of training-standardized centered residual; no auxiliary rank objective in this pilot",
+    "checkpoint_criterion": "same residual Huber loss on preceding checkpoint year",
+    "final_outer_epochs": "per-seed median of best_epoch+1 from its three prior inner OOS fit receipts, bounded 1..80; no outer-year early stopping",
+    "amp": false,
+    "tf32": false,
+    "pretraining": false
+  },
+  "walk_forward": {
+    "outer_fold_ids": [
+      "WF2020",
+      "WF2021",
+      "WF2022",
+      "WF2023",
+      "WF2024",
+      "WF2025",
+      "WF2026"
+    ],
+    "outer_execution_rows": "exact existing frozen test calendar; 2026 is partial to 2026-10-01",
+    "inner_eval_years_unique": [
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "inner_eval_for_outer": "for outer Y use only Y-3,Y-2,Y-1",
+    "inner_train": "2015 to inner_eval_year-2; purge labels against checkpoint start",
+    "inner_checkpoint": "inner_eval_year-1; purge labels against inner_eval start",
+    "inner_evaluation": "inner_eval_year; never used for checkpoint stopping of that fit",
+    "final_outer_train": "2015 through Y-1, labels realised before Y with purge and embargo; final epochs fixed by the three past inner fits",
+    "purge": "actual 20-session label end strictly before next partition start minus five sessions",
+    "embargo_sessions": 5,
+    "derived_fold_contract_must_be_frozen_before_fitting": true,
+    "reuse_inner_fits": "same input/target/architecture/seed/date contract cached once per unique inner eval year; no future inner receipt may affect an earlier outer fold"
+  },
+  "selection": {
+    "baseline_fallback": "zero_residual_reconstruction; momentum120 remains a fixed external comparator, not a annually switched fallback",
+    "candidate_families": [
+      "R3-ridge-residual",
+      "R3-mlp-residual"
+    ],
+    "ledger_object": "MLP: trade the arithmetic mean of five predictions before computing utility, identically in inner validation and outer test; deterministic Ridge: trade its single prediction once",
+    "state": "continuous shares, cash, drawdown and rolling turnover across the three inner evaluation years and across outer years; never reset annually",
+    "prediction_gate": "positive centered-residual RankIC in at least 2 of 3 prior inner years; MLP additionally requires at least 3/5 paired seeds; deterministic Ridge uses paired annual evidence without artificial seed votes; paired date-balanced rank increment >0.01 against both MLP null controls for MLP, and Ridge shuffle for Ridge",
+    "signal_interval_gate": "synchronous moving-date-block 95% paired residual RankIC-difference lower bounds >0 for 40/60/120 sessions, estimated only on three past inner years",
+    "huber_gate": "mean residual Huber <=1.05 * min(zero_residual_Huber,real_residual_Ridge_Huber)",
+    "utility": "Sharpe_cash_2x - 2*MDD_2x - 0.025*rolling_voluntary/4",
+    "portfolio_increment": "pooled three-year utility exceeds zero-residual reconstruction; leave-one-inner-year-out utility increment positive in at least 2/3 cases",
+    "winner_stability": "original winner retained >=0.70 for all 40/60/120-session synchronous block perturbations of the three-year validation ledger; observed hard constraints held fixed in this sensitivity diagnostic",
+    "hard_constraints": "no forced budget breach; cash >=0; voluntary rolling 252-session turnover <=4; existing exposure/cost/risk constants",
+    "ties": "simpler real candidate; failing either prediction or utility gate falls back to zero-residual reconstruction",
+    "freeze": "all seven selections, epochs and artifacts frozen before any new outer report is read"
+  },
+  "budget": {
+    "pilot_inner_years": [
+      2017,
+      2018,
+      2019
+    ],
+    "pilot_max_fits": 51,
+    "pilot_neural_fits": 45,
+    "pilot_deterministic_ridge_fits": 6,
+    "stop_before_outer_if_pilot_has_no_increment": true,
+    "full_unique_fit_slots": 16,
+    "full_max_fits": 272,
+    "full_neural_fits": 240,
+    "full_deterministic_ridge_fits": 32,
+    "full_budget_includes_pilot": true,
+    "concurrent_cuda_jobs": 1,
+    "max_hours": null,
+    "retry_failed_jobs": false,
+    "additional_architectures_after_test": false,
+    "qualified_10_seed_extension_is_separate": {
+      "seeds": [
+        1005,
+        1006,
+        1007,
+        1008,
+        1009
+      ],
+      "maximum_additional_neural_fits": 240,
+      "authorization_now": false
+    }
+  },
+  "execution": {
+    "host": "WSL RTX4060",
+    "storage": "E:/qount_data",
+    "cost_multipliers": [
+      1,
+      2,
+      3
+    ],
+    "selection_cost_multiplier": 2,
+    "rebalance_sessions": 21,
+    "initial_equity": 1000000,
+    "reuse_existing_no_order_ledger_and_risk_constants": true,
+    "cloud_resume": false,
+    "change_services": false,
+    "production_effect": "none"
+  },
+  "fresh_confirmation": {
+    "history_status": "all 2015-2026 exposed history remains discovery",
+    "pilot_cannot_pass_final_R_gate": true,
+    "formal_DSR_PBO_computed": false,
+    "future_confirmation_requires_separately_frozen_protocol": true
+  },
+  "proposal_path": "config/etf-alpha-residual-pilot-20261003.json",
+  "proposal_sha256": "9b84830113c34b1cdc0655ac6af74d042fa55cf2aae5af3dd0657a891adfdc84",
+  "deployment_authorized": true,
+  "owner_deployment_instruction": "参照方案部署训练引擎，做到随时能开始训练，等我说训练再立马开始",
+  "engine": {
+    "device": "cuda",
+    "compile": false,
+    "interval_samples": 500,
+    "stability_samples": 400,
+    "decision_anchor": "first_2015_execution_date",
+    "gradient_clip_norm": 1,
+    "optimizer_betas": [
+      0.9,
+      0.999
+    ],
+    "optimizer_epsilon": 1e-08,
+    "cuda_lock": "/home/alyaloale/.cache/qount-compute/locks/etf-alpha-cuda.lock",
+    "original_fold_contract": "/mnt/e/qount_data/qount/artifacts/etf_alpha_p3/m0_m1_20261002T112648Z/m1/fold-contract.json",
+    "activation_policy": "fresh_explicit_owner_instruction_bound_to_ready_manifest",
+    "environment_python": "/home/alyaloale/.cache/qount-compute/venvs/etf-alpha-20261003/bin/python"
+  }
+}

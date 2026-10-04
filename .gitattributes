@@ -1,0 +1,2 @@
+# Preserve the bytes and Markdown line breaks of audited historical snapshots.
+docs/archive/p2-history/** whitespace=-blank-at-eol,-blank-at-eof

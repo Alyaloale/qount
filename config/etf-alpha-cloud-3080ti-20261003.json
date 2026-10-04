@@ -1,0 +1,93 @@
+{
+  "schema": "etf-alpha-expanded-v2",
+  "run_id": "etf-alpha-cloud-3080ti-20261003",
+  "research_only": true,
+  "orders_authorized": false,
+  "holdout_role": "discovery",
+  "training_start_authorized": false,
+  "owner_instruction": "梳理程序、打包发送，准备在内蒙B区457机jn1f8a7n6z充分利用性能",
+  "owner_decision_reference": "docs/current.md",
+  "primary_goal": "risk_adjusted_return_and_drawdown",
+  "max_hours": null,
+  "max_fits": 259,
+  "concurrent_cuda_jobs": 1,
+  "cpu_generation_workers": 18,
+  "matmul_precision": "highest",
+  "amp": false,
+  "retry_failed_jobs": false,
+  "change_services": false,
+  "restore_cloud_3090": false,
+  "outer_test_after_selection_freeze": true,
+  "selector": "validation_rank_controls_huber_1.05_hard_budget_risk_utility_v2",
+  "control_proposal": "config/etf-alpha-stage1-proposal-20261002.json",
+  "data_root": "/root/autodl-tmp/qount/datasets/etf_alpha_p3/m0_m1_20261002T112648Z",
+  "dataset_manifest_sha256": "bfb139712e50be05e78df4b0eb305378d37e3c8ce0cd37c15bfd8545651235bb",
+  "fold_contract": "/root/autodl-tmp/qount/artifacts/etf_alpha_p3/m0_m1_20261002T112648Z/m1/fold-contract.json",
+  "model_schedule": [
+    "E3-mlp-mtr",
+    "E3-mlp-raw",
+    "v2-levels",
+    "v2-levels-id",
+    "v2-rank-id",
+    "v2-rank-shuffle",
+    "v2-bootstrap-rank-id"
+  ],
+  "seeds": [
+    1000,
+    1001,
+    1002,
+    1003,
+    1004
+  ],
+  "bootstrap": {
+    "worlds_per_fold": 1024,
+    "worlds_per_shard": 8,
+    "warmup_sessions": 1280,
+    "training_sessions": 1260,
+    "block_sessions": 252,
+    "seed": 20261003
+  },
+  "training": {
+    "learning_rate": 0.0003,
+    "matrix_weight_decay": 0.001,
+    "batch_dates": 64,
+    "max_epochs": 200,
+    "early_stopping_patience": 15,
+    "early_stopping_min_delta": 0.0001,
+    "pretrain_batch_dates": 4096,
+    "pretrain_max_epochs": 256,
+    "pretrain_max_seconds_per_fit": 600
+  },
+  "selection_protocol": {
+    "checkpoint_criterion": "mu20_huber + 0.3 * date_balanced_ranknet",
+    "rank_minimum_standardized_label_gap": 0.1,
+    "eligibility": "3/5 seeds RankIC > max(0,train_asset_mean_IC,mean_shuffle_IC)+0.01; mean Huber <= 1.05*best Ridge/asset_mean Huber; no hard breach",
+    "utility": "mean_seed(Sharpe_cash_2x - 2*MDD_2x - 0.025*rolling_voluntary/4)",
+    "baseline_fallbacks": [
+      "E3-ridge-raw",
+      "train-asset-mean",
+      "momentum120",
+      "cash"
+    ],
+    "ensemble": "arithmetic mean of all five registered seeds",
+    "outer_test": "all frozen families and selected continuous strategy, only after all seven selections freeze",
+    "repeated_history_role": "discovery_consumed_window_not_fresh_confirmation"
+  },
+  "training_status": "owner_stopped_waiting_wsl",
+  "latest_owner_instruction": "先梳理文档代码，停止，等我处理wsl",
+  "automatic_restart_authorized": false,
+  "wall_clock_limit_enabled": false,
+  "compute_profile": {
+    "kind": "cloud_3080ti",
+    "machine_id": "jn1f8a7n6z",
+    "storage_root": "/root/autodl-tmp/qount",
+    "mount": "/root/autodl-tmp",
+    "gpu_name": "RTX 3080 Ti",
+    "cpu_limit": 20,
+    "disk_reserve_bytes": 8589934592,
+    "diagnostic_workers": 4,
+    "compile_real": false,
+    "compile_bootstrap": true,
+    "price_per_hour_cny": 1.08
+  }
+}

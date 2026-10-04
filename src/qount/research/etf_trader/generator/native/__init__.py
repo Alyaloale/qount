@@ -13,7 +13,9 @@ production packages.
 from __future__ import annotations
 
 import ctypes
+import fcntl
 import hashlib
+import json
 import os
 import platform
 import shlex
@@ -21,6 +23,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from functools import lru_cache
 
 import numpy as np
 
@@ -72,6 +75,42 @@ def _flags() -> list[str]:
     return ["-O3", *arch, "-ffp-contract=off", "-fno-fast-math", "-std=c++17", "-shared", "-fPIC"]
 
 
+@lru_cache(maxsize=8)
+def _toolchain_identity(command: tuple[str, ...]) -> str:
+    try:
+        res = subprocess.run([*command, "--version"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise NativeUnavailable("cannot identify the C++ toolchain") from exc
+    if res.returncode != 0:
+        raise NativeUnavailable("cannot identify the C++ toolchain")
+    return res.stdout.strip()
+
+
+def _cpu_identity() -> str:
+    # -march/-mcpu=native caches must not be reused after moving to a different CPU.
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.is_file():
+        lines = cpuinfo.read_text().splitlines()
+        return "\n".join(sorted({line for line in lines if line.startswith(("model name", "flags", "Features"))}))
+    if platform.system() == "Darwin":
+        res = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True)
+        if res.returncode == 0:
+            return res.stdout.strip()
+    return platform.processor() or platform.machine()
+
+
+def build_metadata() -> dict:
+    cxx = _compiler()
+    if cxx is None:
+        raise NativeUnavailable("no C++ compiler on PATH")
+    executable = Path(shutil.which(cxx[0]) or cxx[0]).resolve()
+    stat = executable.stat()
+    return {"source_sha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(), "abi": ABI,
+            "compiler": [str(executable), *cxx[1:]], "compiler_version": _toolchain_identity(tuple(cxx)),
+            "compiler_mtime_ns": stat.st_mtime_ns, "compiler_bytes": stat.st_size,
+            "flags": _flags(), "platform": platform.platform(), "cpu": _cpu_identity()}
+
+
 def _cache_dir() -> Path:
     root = os.environ.get("QOUNT_NATIVE_CACHE")
     return Path(root) if root else Path.home() / ".cache" / "qount" / "native"
@@ -81,22 +120,33 @@ def build(force: bool = False) -> Path:
     cxx = _compiler()
     if cxx is None:
         raise NativeUnavailable("no C++ compiler on PATH")
-    flags = _flags()
-    key = hashlib.sha256(SOURCE.read_bytes() + " ".join([*cxx, *flags, platform.platform()]).encode()).hexdigest()[:16]
+    meta = build_metadata()
+    flags = meta["flags"]
+    key = hashlib.sha256(json.dumps(meta, sort_keys=True).encode()).hexdigest()[:20]
     ext = ".dylib" if platform.system() == "Darwin" else ".so"
     out = _cache_dir() / f"structural_kernel-{key}{ext}"
-    if out.exists() and not force:
-        return out
     out.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=out.parent, suffix=ext, delete=False) as tmp:
-        tmp_path = Path(tmp.name)
-    try:
-        res = subprocess.run([*cxx, *flags, str(SOURCE), "-o", str(tmp_path)], capture_output=True, text=True)
-        if res.returncode != 0:
-            raise NativeUnavailable(f"compile failed: {res.stderr.strip()[:2000]}")
-        os.replace(tmp_path, out)  # atomic: concurrent workers may race to build
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    with out.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if out.exists() and not force:
+            return out
+        with tempfile.NamedTemporaryFile(dir=out.parent, suffix=ext, delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            res = subprocess.run([*cxx, *flags, str(SOURCE), "-o", str(tmp_path)], capture_output=True, text=True,
+                                 timeout=120)
+            if res.returncode != 0:
+                raise NativeUnavailable(f"compile failed: {res.stderr.strip()[:2000]}")
+            lib = ctypes.CDLL(str(tmp_path))
+            lib.qount_kernel_abi.restype = ctypes.c_int
+            if lib.qount_kernel_abi() != ABI:
+                raise NativeUnavailable("compiled kernel ABI mismatch")
+            os.replace(tmp_path, out)
+            out.with_suffix(".json").write_text(json.dumps(meta, indent=2) + "\n")
+        except subprocess.TimeoutExpired as exc:
+            raise NativeUnavailable("C++ compilation timed out") from exc
+        finally:
+            tmp_path.unlink(missing_ok=True)
     return out
 
 
