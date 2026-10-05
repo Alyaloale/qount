@@ -1,0 +1,217 @@
+{
+  "study_id": "dual_engine_renewal_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 10,
+  "cumulative_local_candidate_trials": 108,
+  "global_trial_count": null,
+  "planned_curves": 72,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "sweep20_rotate",
+      "cap40_rotate",
+      "active20_rotate",
+      "sweep20_sector",
+      "cap40_sector",
+      "active20_sector"
+    ],
+    "controls": [
+      "aware_gold_rotate",
+      "capital_reset_rotate",
+      "capital_lock_rotate",
+      "capital_reset_sector"
+    ],
+    "sources": {
+      "sweep20_rotate": "aware_gold_rotate",
+      "cap40_rotate": "aware_gold_rotate",
+      "active20_rotate": "aware_gold_rotate",
+      "sweep20_sector": "sector3_guard",
+      "cap40_sector": "sector3_guard",
+      "active20_sector": "sector3_guard"
+    },
+    "capital_policy": {
+      "initial_shares": {
+        "equity_crisis": 0.2,
+        "gold": 0.2,
+        "reserve": 0.6
+      },
+      "policies": {
+        "sweep20": "at original monthly signal close cap each equity_crisis/gold book share at20%; no loss replenishment; remainder reserve",
+        "cap40": "at original monthly signal close cap each equity_crisis/gold book share at40%; no loss replenishment; remainder reserve",
+        "active20": "monthly closed source target contains positive non-BIL weight =>20% book share, otherwise zero; remainder reserve; explicit recapitalization when active",
+        "scope": "shares frozen at original monthly closed decision and filled after original delay; continuous cap not claimed; original source target stream unchanged; gross per-book fees including opposite fills",
+        "profit": "capital transfers sum zero and excluded from profit; three initial shares20/20/60; no new yield sources"
+      }
+    }
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "resume_all_risk4",
+      "resume_core_risk4",
+      "staged_risk4",
+      "scoped_risk4"
+    ],
+    "controls": [
+      "dual_sat4_risk",
+      "units_risk4",
+      "fresh_units_risk4",
+      "core_weekly_risk4"
+    ],
+    "sources": {
+      "resume_all_risk4": "dual_sat4_risk",
+      "resume_core_risk4": "dual_sat4_risk",
+      "staged_risk4": "dual_sat4_risk",
+      "scoped_risk4": "dual_sat4_risk"
+    }
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "inverse_ETF_model": "SH/PSQ/TBF actual adjusted open/close prices; long units of daily inverse funds, including embedded expenses and daily compounding; no synthetic minus-index returns",
+  "previously_consumed_later_data": "Fifth-round July31..Sep30 equity and September crypto observations already inspected; no new independent later check in this round",
+  "missing_asset_policy": "All ETH/PAXG segments resolved by decision-day available full history; never choose a latest future segment or fill gaps",
+  "fundamental_scope": "No broader fundamental claim from price/liquidity proxies. Previous issued-supply/fee data already consumed and limited. Funding/basis/staking require new point-in-time histories and proper signed/margin accounting; not fabricated into this spot experiment",
+  "primary_sources": [
+    "https://www.aqr.com/-/media/AQR/Documents/Insights/Working-Papers/AQR--Craftsmanship-Alpha.pdf",
+    "https://www.aqr.com/Insights/Research/White-Papers/Transactions-Costs-Practical-Application"
+  ],
+  "prior_result": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/results",
+    "manifest_sha256": "41c3cd13f759ecd8cc52859d33d4f42707df7e8b8dc337e258f6df2233bb7532"
+  },
+  "stop_policy": "One frozen run of10 candidates, all72 curves retained; no parameter rescue after seeing returns; preserve failed artifact for a separately documented implementation revision.",
+  "structural_question": "Separate risk exit from causal risk recovery; distribute realized source capital under declared profit sweep, monthly cap and activation rules.",
+  "target_sources": {
+    "g20": {
+      "sweep20_rotate": "aware_gold_rotate",
+      "cap40_rotate": "aware_gold_rotate",
+      "active20_rotate": "aware_gold_rotate",
+      "sweep20_sector": "sector3_guard",
+      "cap40_sector": "sector3_guard",
+      "active20_sector": "sector3_guard"
+    },
+    "c60": {
+      "resume_all_risk4": "dual_sat4_risk",
+      "resume_core_risk4": "dual_sat4_risk",
+      "staged_risk4": "dual_sat4_risk",
+      "scoped_risk4": "dual_sat4_risk"
+    }
+  },
+  "accounting": "Actual long spot and fund units; cash and gross book trade fees explicit. Capital transfers net zero and excluded from book profits. Closed crypto episodes and capital source net contributions separately reconciled.",
+  "mechanisms": {
+    "c60": {
+      "transition": "nominal weight zero or absent at previous close to positive at decision close; no new thresholds, no return-conditioned recovery",
+      "all": "transition in any asset triggers full-book rebalance in addition to weekly buys",
+      "core": "only BTC/ETH transitions trigger full-book rebalance in addition to weekly buys",
+      "staged": "any transition triggers full-book rebalance with recovered asset weight halved outside Sunday; next closed session if still positive permits full-book refill; Sunday overrides staging",
+      "scoped": "weekly full-book buys; other days vintage reductions then purchases only in recovered assets; unchanged other units frozen, cash-funded; covariance applied to combined planned weights",
+      "stale": "all recovery candidates cancel positive full-book weights if latest t-1 nominal weight is zero; scoped recoveries also cancel stale acquisition",
+      "lag": "closed decision t, execution t+1+extra delay; never execution-day close"
+    },
+    "g20": {
+      "sweep20": "at original monthly signal close cap each equity_crisis/gold book share at20%; no loss replenishment; remainder reserve",
+      "cap40": "at original monthly signal close cap each equity_crisis/gold book share at40%; no loss replenishment; remainder reserve",
+      "active20": "monthly closed source target contains positive non-BIL weight =>20% book share, otherwise zero; remainder reserve; explicit recapitalization when active",
+      "scope": "shares frozen at original monthly closed decision and filled after original delay; continuous cap not claimed; original source target stream unchanged; gross per-book fees including opposite fills",
+      "profit": "capital transfers sum zero and excluded from profit; three initial shares20/20/60; no new yield sources"
+    }
+  },
+  "implementation_revision": 2,
+  "failed_initial_run": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z",
+    "reason": "pre-start delayed monthly signal lacked all-cash allocation snapshot",
+    "economic_rules_unchanged": true,
+    "failure_receipt": "_records/failed-result-inventory.json"
+  }
+}

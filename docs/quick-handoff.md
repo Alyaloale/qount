@@ -1,6 +1,6 @@
 # qount 快速接手手册
 
-> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-10-04
+> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-10-05
 > **本文回答**：首次接手的最短阅读路径、值隐藏预检和跨主机安全边界。
 > **TL;DR**：生产事实只看 [current.md](current.md)。本项目当前不因接手工作启用 live、arm、订单、交易 timer 或生产 cron；不要把已有部署模板或历史命令当作授权。
 
@@ -38,6 +38,7 @@ PYTHONPATH=src ./.venv/bin/python -m compileall -q src scripts/maintenance
 
 ## Where details live
 
+- [G20/C60研究总览与十三轮证据](dual-engine-optimization-2026-10.md#研究总览与阅读路径)：当前事实先看current；合同／命令／包职责见各reference，原结果按[机器登记](../config/dual-engine-research-registry.json)访问E盘。Mac本地研究回执不随Git提交。
 - [ETF P2/P3 navigation](README-P2.md) and [R3 pilot interpretation](etf-p3-research-plan-2026-10.md#24-r3残差pilot执行与结果2026-10-04)
 - [Configuration contract and safe loading](reference/configuration.md)
 - [CLI and scripts](reference/cli-and-scripts.md)

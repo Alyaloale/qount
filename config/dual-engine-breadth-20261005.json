@@ -1,0 +1,163 @@
+{
+  "study_id": "dual_engine_breadth_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 14,
+  "cumulative_local_candidate_trials": 76,
+  "global_trial_count": null,
+  "planned_curves": 84,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "gold_clock_inverse",
+      "gold_clock_macro",
+      "sector3_cash",
+      "sector3_guard",
+      "sector3_inverse",
+      "sector3_macro"
+    ],
+    "controls": [
+      "aware_gold_cash",
+      "aware_gold_rotate",
+      "macro_fund",
+      "gold_short_crisis"
+    ]
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "btc_pool_ex_eth",
+      "dual_pool_all",
+      "dual_sat4",
+      "dual_sat4_risk",
+      "dual_sat4_publicgate",
+      "family_gold",
+      "family_gold_publicgate",
+      "crisis_gold_transfer"
+    ],
+    "controls": [
+      "residual2",
+      "dual_core",
+      "core_only"
+    ]
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "stop_policy": "14 fixed structural candidates once; preserve all outputs; no outcome-driven rescue; no new independent observations",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "structural_question": "Factorial core/pool attribution; sector and satellite breadth; separate protection exit; gated crypto/gold risk families",
+  "inverse_ETF_model": "SH/PSQ/TBF actual adjusted open/close prices; long units of daily inverse funds, including embedded expenses and daily compounding; no synthetic minus-index returns",
+  "previously_consumed_later_data": "Fifth-round July31..Sep30 equity and September crypto observations already inspected; no new independent later check in this round",
+  "missing_asset_policy": "All ETH/PAXG segments resolved by decision-day available full history; never choose a latest future segment or fill gaps",
+  "g20_breadth": "Monthly raw63-day proxy rank of original seven execution families; Top3 equal20% total; no positivity filter; GLD20; sector3_cash has no panic; guarded versions each held proxy independently panic/slow recovery; retain state only for continuing names",
+  "protection_clocks": "Equity panic/slow recovery inherited; hedge source permissions recomputed daily independently using cash-relative signavg21/63/126 plus r5 sign and above/belowSMA10. Changes only monthly or target membership/state change; inverse selects one SPY/QQQ source plus negative TLT→TBF; macro selects positive GLD/DBC/UUP/TLT plus negative TLT→TBF. Only released equity budget, up to15%",
+  "c60_factorial": "Original BTC70/poolall residual2; BTC70/exETH btc_pool_ex_eth; BTC50ETH20/poolall dual_pool_all; BTC50ETH20/exETH original dual_core. ETH exposure additive if present in core and satellite; preserve same BTC satellite gate and covariance cap; factorial descriptive attribution includes downstream vol-cap effects",
+  "c60_breadth": "Exclude ETH before PIT formation; residual-positive monthlyTop4; satellite slots30/4, absent slots staycash; risk variant monthly inversevol60 shares with same total selected-slot budget; actual held covariance60 cap60 remains daily",
+  "public_gate": "Matched publicgate variants use max(BTC own long trend, ETH own long trend) for satellites; both zero shuts satellite risk; do not infer market-neutral or independent crypto source",
+  "crypto_gold": "family_gold BTC35 ETH20 PAXG15 satellites30/4; family_gold_publicgate only changes satellite gate. crisis_gold_transfer BTC50 ETH20 satellites30*BTCstrength, PAXG budget30*(1-BTCstrength), all sources own long trend; unused slots/source/gates remaincash",
+  "accounting": "Spot/inverse ETF long cash-units only; no synthetic shorts, funding receipts or stablecoin yields; source PnL is initial-NAV dollars before portfolio fee allocation",
+  "fundamental_scope": "No broader fundamental claim from price/liquidity proxies. Previous issued-supply/fee data already consumed and limited. Funding/basis/staking require new point-in-time histories and proper signed/margin accounting; not fabricated into this spot experiment",
+  "primary_sources": [
+    {
+      "url": "https://www.proshares.com/our-etfs/leveraged-and-inverse/sh",
+      "role": "actual daily inverse ETF, multi-day compounding"
+    },
+    {
+      "url": "https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum",
+      "role": "distinct futures/forward markets motivate source diversity; not performance transfer"
+    },
+    {
+      "url": "https://docs.paxos.com/guides/stablecoin/paxg",
+      "role": "allocated gold backing distinct from crypto directional risk; custody/token risk remains"
+    }
+  ]
+}

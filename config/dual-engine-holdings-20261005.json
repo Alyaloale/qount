@@ -1,0 +1,17 @@
+{
+  "study_id": "dual_engine_holdings_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "new_candidate_trials": 0,
+  "planned_curves": 549,
+  "registered_versions": 140,
+  "registry_manifest_sha256": "59ee624f9a474d7ec7e8a3fdeb0d17813a5b319251f404da6dbd5a5f772689d5",
+  "scope": "all seven G20/C60 studies and every registered curve, same immutable original ledgers",
+  "profit_unit": "initial NAV dollars; net asset PnL equals portfolio wealth change",
+  "holding_definition": "continuous positive unit position from entry to full exit; all buys/sells and notional allocated fees included; terminal positions censored; not FIFO trade lots",
+  "loss_reason_features": "observational entry/exit r21/r63 and SMA20/SMA50, asset/year/max-drawdown attribution, fees that flip gross-positive closed episodes negative; not causal proof",
+  "weight_only_policy": "keep exposure and gain/loss day diagnostics; never invent missing fills/cash/position episodes",
+  "dedup": "same line and byte-identical manifest-bound ledger analyzed once, every exposure retained",
+  "stop": "one complete frozen inventory, reconcile all cash/unit curves; no retrospective loser blacklist or future-selected entry filters"
+}

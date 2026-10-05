@@ -1,0 +1,135 @@
+{
+  "study_id": "dual_engine_expansion_20261004",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 19,
+  "cumulative_local_candidate_trials": 30,
+  "global_trial_count": null,
+  "planned_curves": 116,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "gold20",
+      "duration20",
+      "macro_static",
+      "macro_trend",
+      "multi3_macro",
+      "macro_fund",
+      "crisis_cash",
+      "crisis_rotation"
+    ],
+    "controls": [
+      "g20",
+      "macro_only_static",
+      "macro_only_trend"
+    ]
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "raw2",
+      "raw_positive2",
+      "equal_positive8",
+      "residual4_8",
+      "residual4_20",
+      "equal_positive20",
+      "residual4_robust20",
+      "risk_weighted4_20",
+      "fundamental4",
+      "usage_gate4",
+      "residual2_ex_SOL"
+    ],
+    "controls": [
+      "btc_continuous",
+      "core_only",
+      "residual2",
+      "coverage4",
+      "random_positive2_s11",
+      "random_positive2_s29",
+      "random_positive2_s47"
+    ]
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "stop_policy": "run all registered designs once; no outcome-driven rescue tuning",
+  "network_feature": "7 calendar day lag; own-chain 30-day level versus preceding 30 days; require both fields; latest retrieval not historical vintages",
+  "rates": "DFII10 and T10YIE lag 2 equity sessions, max staleness 7 calendar days; latest vintage discovery only",
+  "postselection_diagnostics": [
+    "residual2_ex_SOL; excluded asset fixed from preceding round before expansion PnL"
+  ],
+  "crisis": "SPY drawdown63<-8% AND return5<-4% OR return5<-8%; recovery above SMA20 AND return21>0; classify at entry by IEF negative63 plus rising real yield or breakeven; retain class until recovery",
+  "equity_budget": "20% winner plus macro45%; three positive macro slots each15%; crisis equity5%, rotation freed15% allocated only positive class assets; cash receives vacancies",
+  "satellite_budget": "BTC70%, satellite30%; equal divide max(2,count); risk weighted uses same selection, missing/dead share cash",
+  "interpretation": "report all ablations; macro exposure is different risk source but independent alpha is unproved; no inherited two-position constraint",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  }
+}

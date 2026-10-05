@@ -1,0 +1,163 @@
+{
+  "study_id": "dual_engine_nextgen_20261004",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 16,
+  "cumulative_local_candidate_trials": 46,
+  "global_trial_count": null,
+  "planned_curves": 104,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "aware_gold_cash",
+      "aware_gold_rotate",
+      "aware_macro_cash",
+      "aware_macro_rotate",
+      "source_selective_macro",
+      "gold_recovery",
+      "gold_tail5",
+      "gold_tail_static5"
+    ],
+    "controls": [
+      "g20",
+      "gold20",
+      "macro_trend",
+      "macro_fund",
+      "crisis_rotation"
+    ]
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "crisis_core_cash",
+      "crisis_satellite_cash",
+      "recovery_core",
+      "recovery_source",
+      "supply_gate2",
+      "supply_rank2",
+      "supply_recovery",
+      "fee_density2"
+    ],
+    "controls": [
+      "residual2",
+      "btc_continuous",
+      "core_only",
+      "supply_covered2",
+      "fee_covered2"
+    ]
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "stop_policy": "run 16 fixed candidates once; preserve rejected outcomes; no outcome-driven tuning; later check never reselects the frozen leaders",
+  "network_feature": "7 calendar day lag; own-chain 30-day level versus preceding 30 days; require both fields; latest retrieval not historical vintages",
+  "rates": "DFII10 and T10YIE lag 2 equity sessions, max staleness 7 calendar days; latest vintage discovery only",
+  "postselection_diagnostics": [],
+  "crisis": "G20 held 1x proxy drawdown63<-8% and r5<-4%, or r5<-8%; reset when monthly winner changes; restore above SMA20 and r21>0 (gold_recovery SMA10/r5); macro composition frozen between monthly clocks. C60 BTC drawdown63<-15% and r5<-10%, or r5<-15%; normal recovery SMA20/r21, early recovery SMA10/r5",
+  "equity_budget": "equity20 plus gold20 or macro45; defensive equity5; freed15 cash or positive regime rotation; VIXY5 funded from BIL, with equity20 unchanged; static insurance monthly",
+  "satellite_budget": "PIT anchors plus volume Top8, then BTC/PAXG excluded from satellites; positive beta-adjusted residual Top2; BTC70/sat30, core defensive25 and early probe30; covariance vol cap60%",
+  "interpretation": "report all ablations; macro exposure is different risk source but independent alpha is unproved; no inherited two-position constraint",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "supply_feature": "7 calendar day lag; 60 exact consecutive days; issued supply log growth over 30d; optional own-chain fee/issued-unit density growth; not float/unlock or holder cash flow; latest vintage",
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "later_period_check": {
+    "data_role": "not_selected_in_first_four_rounds_global_consumption_unreconciled",
+    "select_leader_before_acquiring_later_prices": true,
+    "g20": [
+      "2026-07-31",
+      "2026-09-30"
+    ],
+    "c60": [
+      "2026-09-01",
+      "2026-09-30"
+    ],
+    "cannot_certify_independent_oos": true
+  }
+}

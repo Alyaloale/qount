@@ -1,10 +1,36 @@
 # qount 当前状态
 
-> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-10-04
+> **状态**：active｜**权威**：L1 当前事实（#1）｜**最后更新**：2026-10-05
 > **本文回答**：当前生产事实、能力边界、运行状态、下一步、硬边界。
-> **TL;DR**：P3 v2 未证明神经/增强增量Alpha；R3复审schema-v2已按owner指令完成51/51-fit pilot，未通过增量门，pilot_no_increment正常退出且outer withheld，结果核验通过。Dashboard、paper及公共采集沿用既有状态，交易timer仍关闭，研究来源缺口保留。
+> **TL;DR**：第十三轮共同结算与家族刷新研究完成，8候选／76曲线；累计248版本／981曲线／132本地候选。C60卫星周度刷新成为历史排名领先，稳定增量未确认；G20原领先保留，pending源退出缺口明确。全部research_only，未来确认pending；P3 outer withheld及既有paper／Dashboard／公共采集事实保留，交易timer关闭。
 
-更新时间：2026-10-04
+更新时间：2026-10-05
+
+## G20 / C60 共同结算与家族刷新改革（2026-10-05，第十三轮完成）
+
+owner再次授权“推进下一版大改研究”。[合同](../config/dual-engine-zorder-20261005.json)冻结8新候选／11控制／76曲线；G20共同表达源变化和已收盘投资额预算、一书单次实际费用求解，C60分开核心／卫星周度刷新及恢复连带。v1第二起始前迟到指令错误资本重置现场隔离，未据其收益调参；v2只补正月度／初始标记，18专项及新公开源码冻结后新目录单次WSL130.74秒、exit0。原日期、名义目标／选择、风险门、四格成本延迟及政策不变。
+
+C60 `sat_week`成为条件历史排名领先，周日只刷新卫星、核心恢复仍耦合全书：基础／压力CAGR22.62%／22.02%，压力回撤16.90%，四格最弱Sharpe1.1531（在50bps次日格）、四格最坏回撤19.03%；旧卫星恢复24.12%／20.88%、23.13%、0.9780／25.23%。压力平均风险投资额20.58%→15.48%、波动21.82%→17.52%、费用减42.65%，削减核心周度刷新也损失基础收益。剔2021基础13.46%→11.17%、压力9.81%→10.23%；基础Sharpe区间跨零、压力Sharpe三块区间在0上方，但两格log-growth区间均跨零且未经全局选择校正，稳定增量未确认。核心周度／分日／局部核心恢复的完整取舍与负结果保留。
+
+G20 joint40_rotate对daily40压力17.87%→18.31%、回撤34.34%→33.38%、最弱0.6991→0.7184，仍低原0.8914；实际投资额峰值44.40%、资本峰值49.11%，不是连续40%硬上限。触及预算扩为全书，允许风险购入、总费用反增；四压力格还出现11／10／7／4个买回决策名义已零旧资产的事件，源退出仍在队列时共同目标保存旧实际仓位，pending所有权缺口没有解决。全部历史结果保留，不在收益后修规则，不作晋级证据。
+
+[登记](../config/dual-engine-research-registry.json)十三轮248版本／981曲线／132本地候选，旧229描述与十二结果、八诊断剔除及所有旧确认／信息／归因指针保留；222合资格（G20 109／C60 113）。G20仍`dual_engine_breadth_20261005/g20/aware_gold_rotate`；C60 `dual_engine_zorder_20261005/c60/sat_week`，不继承旧后续确认。状态historical_ranking_verified_stability_unconfirmed_pending_prospective；没有新独立OOS、DSR/PBO、后续采集、前向窗口、拟合或调度。
+
+独立76现金账本、33,104因果风险决策、100,512共同书预算／3,122预算触及成交、38持仓归因通过；44控制收益精确相同，39账本字节相同、4仅取消资产列表顺序、1仅现金／费用相关浮点求和传播≤2.22e−16且单位／NAV／目标／收益精确相同，逐叶差异及失败复核日志保存。8源目标／选择字节相同，64源码同冻结；现金／指标／费用误差≤1.78e−15、财富误差≤1.23e−14，缺价／无法成交0。Mac18／WSL18专项，修正后全仓3,041（3,007通过／34跳过）95.876秒、exit0；编译／公开CLI及最后hygiene／diff／交接收据保存。
+
+E根`/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2`，结果manifest `c9a2db406d4809c1516612c8bc5ffd728f9cfbc04b218cf7d4e26dbdb875fc78`，登记manifest `aec48f178b83edaee12b95f6be21e4f615db4c8735d20b0203d0297b64e11fcc`；拒绝v1保留`/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T092858Z`。Mac`state/research_runs/dual_engine_zorder_20261005/`。[完整结果、归因与下一问题](dual-engine-optimization-2026-10.md#18-源目标与风险共同结算家族刷新分离第十三轮)。本轮research_only=true/orders_authorized=false/promotion_evidence=false；paper／生产／账户／服务／VPS／调度与各线窗口边界不变。
+
+## G20 / C60 研究证据与接手路径
+
+十三轮的运行前协议、完整正负结果、历轮排名和失败修订统一保存于[主研究总览](dual-engine-optimization-2026-10.md#研究总览与阅读路径)。本页上方只维护最新研究事实；旧轮次的累计数量和当轮领先是历史快照，不能覆盖当前登记或既有模拟盘合同。
+
+- 查版本、固定选择政策及原结果hash：[研究登记](../config/dual-engine-research-registry.json)。
+- 查候选与数据合同：[配置参考](reference/configuration.md#g20c60-离线研究合同)。
+- 查采集、回放、登记与确认参数：[CLI参考](reference/cli-and-scripts.md#g20c60-research-studies)。
+- 查包职责、薄适配器和验证位置：[仓库地图](reference/repository-map.md#g20c60-offline-research-ownership)。
+- 查既有paper口径：[策略总集](qount_strategy_master_index.md#当前有效模拟盘合同覆盖下方历史歧义)；研究排名不更换paper参数。
+
+所有原manifest、旧确认、失败结果与诊断剔除均保留；Mac只留轻量回执，E保留完整不可变数据／账本。下一窗口与其他研究线的授权按本文各线事实读取，不能从历史研究或部署模板推定。
 
 ## 最新 ETF P3 运行结论与已消费授权
 

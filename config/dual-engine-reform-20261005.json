@@ -1,0 +1,252 @@
+{
+  "study_id": "dual_engine_reform_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 14,
+  "cumulative_local_candidate_trials": 98,
+  "global_trial_count": null,
+  "planned_curves": 100,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "capital_reset_rotate",
+      "capital_lock_rotate",
+      "capital_reset_inverse",
+      "capital_lock_inverse",
+      "capital_reset_macro",
+      "capital_lock_macro",
+      "capital_reset_sector",
+      "capital_lock_sector"
+    ],
+    "controls": [
+      "aware_gold_rotate",
+      "gold_clock_inverse",
+      "gold_clock_macro",
+      "sector3_guard",
+      "scoped_rotate",
+      "scoped_sector"
+    ],
+    "sources": {
+      "capital_reset_rotate": "aware_gold_rotate",
+      "capital_lock_rotate": "aware_gold_rotate",
+      "capital_reset_inverse": "gold_clock_inverse",
+      "capital_lock_inverse": "gold_clock_inverse",
+      "capital_reset_macro": "gold_clock_macro",
+      "capital_lock_macro": "gold_clock_macro",
+      "capital_reset_sector": "sector3_guard",
+      "capital_lock_sector": "sector3_guard"
+    },
+    "capital_policy": {
+      "initial_shares": {
+        "equity_crisis": 0.2,
+        "gold": 0.2,
+        "reserve": 0.6
+      },
+      "crisis_funding": "original released equity budget and own BIL inside equity_crisis book; no separate unfunded hedge allocation",
+      "gold_base": "original GLD 20%, defensive additional GLD belongs to equity_crisis book",
+      "reset": "explicit full monthly budget transfers, zero net transfer; conservative gross independent book fees",
+      "lock": "no cross-book transfers after initialization; own profits and losses reinvested, risk capital may drift",
+      "between_months": "changed source targets only; other book units remain exact",
+      "fee_policy": "gross independent book fills, no internal netting discount"
+    }
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "units_residual2",
+      "units_core2",
+      "units_risk4",
+      "current_risk4",
+      "fresh_units_risk4",
+      "core_weekly_risk4"
+    ],
+    "controls": [
+      "residual2",
+      "dual_core",
+      "dual_sat4_risk",
+      "weekly_risk4",
+      "fresh_risk4"
+    ],
+    "sources": {
+      "units_residual2": "residual2",
+      "units_core2": "dual_core",
+      "units_risk4": "dual_sat4_risk",
+      "current_risk4": "dual_sat4_risk",
+      "fresh_units_risk4": "dual_sat4_risk",
+      "core_weekly_risk4": "dual_sat4_risk"
+    },
+    "intent_policy": {
+      "units": "captured vintage quantities; clamp each original vintage to still-owned units, never consume later buys",
+      "zero": "nominal zero/removal is a distinct account-wide risk exit, including named pending buys",
+      "current": "on scheduled reduction execution use latest t-1 closed nominal target and actual prior close weights; recalculate covariance without execution-day close",
+      "fresh": "cancel delayed full positive targets if latest closed original nominal target is zero; no reranking",
+      "core_weekly": "BTC/ETH full buys weekly, vintage core reductions daily; original satellite weights trade daily, funded by actual cash without raising frozen core units",
+      "version": "every decision records account version, pending buy assets, captured unit vintages and original closed nominal risk target",
+      "risk": "original 60-day/60% covariance policy checked on planned weights; realized weights may drift with execution and prices"
+    }
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "inverse_ETF_model": "SH/PSQ/TBF actual adjusted open/close prices; long units of daily inverse funds, including embedded expenses and daily compounding; no synthetic minus-index returns",
+  "previously_consumed_later_data": "Fifth-round July31..Sep30 equity and September crypto observations already inspected; no new independent later check in this round",
+  "missing_asset_policy": "All ETH/PAXG segments resolved by decision-day available full history; never choose a latest future segment or fill gaps",
+  "fundamental_scope": "No broader fundamental claim from price/liquidity proxies. Previous issued-supply/fee data already consumed and limited. Funding/basis/staking require new point-in-time histories and proper signed/margin accounting; not fabricated into this spot experiment",
+  "primary_sources": [
+    "https://www.aqr.com/-/media/AQR/Documents/Insights/Working-Papers/AQR--Craftsmanship-Alpha.pdf",
+    "https://www.aqr.com/Insights/Research/White-Papers/Transactions-Costs-Practical-Application"
+  ],
+  "prior_result": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/results",
+    "manifest_sha256": "a8eefdc0e72006c56d9bf27887ae8336462d0b8c65ed2372e63be3bea249ef9d"
+  },
+  "prior_eighth_holding_analysis": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/results",
+    "manifest_sha256": "7a6e7652f0df93c85735189ac70b6936445c2392f739d8cb5742e2e0d5bec51d",
+    "new_trials": 0,
+    "original_curves": 549,
+    "exact_cash_unit_curves": 464,
+    "weight_only_curves": 85
+  },
+  "prior_eighth_accounting": "Spot/inverse ETF long cash-units only; no synthetic shorts, funding receipts or stablecoin yields; source PnL is initial-NAV dollars before portfolio fee allocation",
+  "mechanism_evidence": {
+    "result_manifest_sha256": "a8eefdc0e72006c56d9bf27887ae8336462d0b8c65ed2372e63be3bea249ef9d",
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/_analysis/mechanism-diagnostics.json",
+    "sha256": "313711e4b7d9ef203731bbe36bcdce9ed4c90fd1d3ef1aa24992cbcf4468a236",
+    "role": "consumed historical diagnosis before ninth-return freeze; no new OOS"
+  },
+  "prior_eighth_protocol": {
+    "stop_policy": "8 fixed structural candidates, once, preserve all outcomes, no retrospective asset blacklist or threshold rescue",
+    "structural_question": "Uncouple source target updates from portfolio trading; asymmetric weekly acquisition/daily reductions; latest closed-gate stale entry cancellation",
+    "target_sources": {
+      "g20": {
+        "scoped_rotate": "aware_gold_rotate",
+        "scoped_inverse": "gold_clock_inverse",
+        "scoped_macro": "gold_clock_macro",
+        "scoped_sector": "sector3_guard"
+      },
+      "c60": {
+        "weekly_residual2": "residual2",
+        "weekly_core2": "dual_core",
+        "weekly_risk4": "dual_sat4_risk",
+        "fresh_risk4": "dual_sat4_risk"
+      }
+    },
+    "g20_scoped": "Same seventh-round target/event stream. Monthly full refresh; between monthly refreshes trade only instruments whose requested weight changed plus BIL funding. Unchanged actual units remain exact. Nominal budgets reset monthly; untouched holdings can drift. Self-financing fee equation and funding capacity enforced.",
+    "c60_weekly": "Same prior daily target and selection stream. Sunday close full buy/rebalance decision, other close decisions min(nominal target, actual current close weight), then covariance60 annual60 cap recomputed. Fill reduces physical units only on reduction days. Initial lag warmup targets start full as original initial account. Same fixed execution lag; no change in scores, horizons or crypto cash yield.",
+    "c60_fresh": "Same weekly_risk4 plus pending positive orders cancelled if latest already-closed original target is zero for the asset. Uses execution-day previous close, not execution-day future close; current ranked removal also counts. No positive re-ranking or new selection.",
+    "attribution_protocol": "First preserve complete seven-study holding diagnosis; 0 attribution trials. New eight structural trials counted separately; episodes net of notional allocated fees, censored open holdings separate."
+  },
+  "stop_policy": "One frozen run of14 candidates; preserve failures and all100 cells. No return-dependent parameter/code rescue; implementation errors preserve failed artifact and require explicitly documented separate revision.",
+  "structural_question": "Replace stale absolute account reductions with vintage-owned risk intents and explicit nominal-zero exits; compare current-close risk authority and core/satellite clocks; fund independent capital books with declared transfer and gross cost policies.",
+  "target_sources": {
+    "g20": {
+      "capital_reset_rotate": "aware_gold_rotate",
+      "capital_lock_rotate": "aware_gold_rotate",
+      "capital_reset_inverse": "gold_clock_inverse",
+      "capital_lock_inverse": "gold_clock_inverse",
+      "capital_reset_macro": "gold_clock_macro",
+      "capital_lock_macro": "gold_clock_macro",
+      "capital_reset_sector": "sector3_guard",
+      "capital_lock_sector": "sector3_guard"
+    },
+    "c60": {
+      "units_residual2": "residual2",
+      "units_core2": "dual_core",
+      "units_risk4": "dual_sat4_risk",
+      "current_risk4": "dual_sat4_risk",
+      "fresh_units_risk4": "dual_sat4_risk",
+      "core_weekly_risk4": "dual_sat4_risk"
+    }
+  },
+  "accounting": "Actual long spot and fund units; cash and gross book trade fees explicit. Capital transfers net zero and excluded from book profits. Closed crypto episodes and capital source net contributions separately reconciled."
+}

@@ -1,0 +1,181 @@
+{
+  "study_id": "dual_engine_clocks_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 8,
+  "cumulative_local_candidate_trials": 84,
+  "global_trial_count": null,
+  "planned_curves": 60,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "scoped_rotate",
+      "scoped_inverse",
+      "scoped_macro",
+      "scoped_sector"
+    ],
+    "controls": [
+      "aware_gold_rotate",
+      "gold_clock_inverse",
+      "gold_clock_macro",
+      "sector3_guard"
+    ]
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "weekly_residual2",
+      "weekly_core2",
+      "weekly_risk4",
+      "fresh_risk4"
+    ],
+    "controls": [
+      "residual2",
+      "dual_core",
+      "dual_sat4_risk"
+    ]
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "stop_policy": "8 fixed structural candidates, once, preserve all outcomes, no retrospective asset blacklist or threshold rescue",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "structural_question": "Uncouple source target updates from portfolio trading; asymmetric weekly acquisition/daily reductions; latest closed-gate stale entry cancellation",
+  "inverse_ETF_model": "SH/PSQ/TBF actual adjusted open/close prices; long units of daily inverse funds, including embedded expenses and daily compounding; no synthetic minus-index returns",
+  "previously_consumed_later_data": "Fifth-round July31..Sep30 equity and September crypto observations already inspected; no new independent later check in this round",
+  "missing_asset_policy": "All ETH/PAXG segments resolved by decision-day available full history; never choose a latest future segment or fill gaps",
+  "accounting": "Spot/inverse ETF long cash-units only; no synthetic shorts, funding receipts or stablecoin yields; source PnL is initial-NAV dollars before portfolio fee allocation",
+  "fundamental_scope": "No broader fundamental claim from price/liquidity proxies. Previous issued-supply/fee data already consumed and limited. Funding/basis/staking require new point-in-time histories and proper signed/margin accounting; not fabricated into this spot experiment",
+  "primary_sources": [
+    {
+      "url": "https://www.proshares.com/our-etfs/leveraged-and-inverse/sh",
+      "role": "actual daily inverse ETF, multi-day compounding"
+    },
+    {
+      "url": "https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum",
+      "role": "distinct futures/forward markets motivate source diversity; not performance transfer"
+    },
+    {
+      "url": "https://docs.paxos.com/guides/stablecoin/paxg",
+      "role": "allocated gold backing distinct from crypto directional risk; custody/token risk remains"
+    },
+    {
+      "url": "https://www.aqr.com/-/media/AQR/Documents/Insights/Working-Papers/AQR--Craftsmanship-Alpha.pdf",
+      "role": "Trading to theoretical targets versus cost and opportunity cost motivates separate execution clocks"
+    }
+  ],
+  "target_sources": {
+    "g20": {
+      "scoped_rotate": "aware_gold_rotate",
+      "scoped_inverse": "gold_clock_inverse",
+      "scoped_macro": "gold_clock_macro",
+      "scoped_sector": "sector3_guard"
+    },
+    "c60": {
+      "weekly_residual2": "residual2",
+      "weekly_core2": "dual_core",
+      "weekly_risk4": "dual_sat4_risk",
+      "fresh_risk4": "dual_sat4_risk"
+    }
+  },
+  "g20_scoped": "Same seventh-round target/event stream. Monthly full refresh; between monthly refreshes trade only instruments whose requested weight changed plus BIL funding. Unchanged actual units remain exact. Nominal budgets reset monthly; untouched holdings can drift. Self-financing fee equation and funding capacity enforced.",
+  "c60_weekly": "Same prior daily target and selection stream. Sunday close full buy/rebalance decision, other close decisions min(nominal target, actual current close weight), then covariance60 annual60 cap recomputed. Fill reduces physical units only on reduction days. Initial lag warmup targets start full as original initial account. Same fixed execution lag; no change in scores, horizons or crypto cash yield.",
+  "c60_fresh": "Same weekly_risk4 plus pending positive orders cancelled if latest already-closed original target is zero for the asset. Uses execution-day previous close, not execution-day future close; current ranked removal also counts. No positive re-ranking or new selection.",
+  "attribution_protocol": "First preserve complete seven-study holding diagnosis; 0 attribution trials. New eight structural trials counted separately; episodes net of notional allocated fees, censored open holdings separate.",
+  "holding_analysis": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/results",
+    "manifest_sha256": "7a6e7652f0df93c85735189ac70b6936445c2392f739d8cb5742e2e0d5bec51d",
+    "new_trials": 0,
+    "original_curves": 549,
+    "exact_cash_unit_curves": 464,
+    "weight_only_curves": 85
+  }
+}

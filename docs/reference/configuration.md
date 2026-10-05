@@ -1,6 +1,6 @@
 # Configuration reference
 
-> **状态**：active｜**权威**：L2 configuration contract｜**最后更新**：2026-10-04
+> **状态**：active｜**权威**：L2 configuration contract｜**最后更新**：2026-10-05
 > **适用范围**：环境变量、配置来源、密钥边界和只读预检。
 > **TL;DR**：机器可读权威是 [`../../config/environment-contract.toml`](../../config/environment-contract.toml)。本文件解释如何安全使用它；不包含任何实际值、账户标识或凭证。
 
@@ -69,3 +69,31 @@ qount-run --help
 - `host_not_allowed`: 将配置移到批准的主机，不把密钥同步到 WSL 或外置盘。
 - `unsafe_permissions`: 若文件有已配置密钥，人工执行 `chmod 600 <file>`；检查工具只报告，不修改权限。
 - `disabled_strategy_requested` / `live_enable_requested`: 立即移除该请求；本次治理不授权 live、arm、订单、timer 或 cron。
+
+## G20/C60 离线研究合同
+
+这些JSON是独立离线研究的运行前合同，均为`research_only=true/orders_authorized=false/promotion_evidence=false`；既有paper合同和当前授权按[current.md](../current.md)读取。下表的候选与曲线是各轮固定口径，完整算法、比较与修订见[主研究总览](../dual-engine-optimization-2026-10.md#研究总览与阅读路径)。
+
+| 轮次 | 冻结合同 | 新候选 / 历史曲线 | 固定研究范围 |
+| --- | --- | ---: | --- |
+| 1 | [optimization](../../config/dual-engine-optimization-20261004.json) | 2 / 17 | 有限优化 |
+| 2 | [execution](../../config/dual-engine-execution-20261004.json) | 2 / 64 | 归因与执行 |
+| 3 | [structural](../../config/dual-engine-structural-20261004.json) | 7 / 60 | 结构探索 |
+| 4 | [expansion](../../config/dual-engine-expansion-20261004.json) | 19 / 116 | 扩仓、基本面与危机 |
+| 5 | [nextgen](../../config/dual-engine-nextgen-20261004.json) | 16 / 104 | 来源改革与版本维护 |
+| 6 | [regimes](../../config/dual-engine-regimes-20261004.json) | 16 / 104 | 核心交接与自主卫星 |
+| 7 | [breadth](../../config/dual-engine-breadth-20261005.json) | 14 / 84 | 广度与保护退出 |
+| 8 | [clocks](../../config/dual-engine-clocks-20261005.json) | 8 / 60 | 盈亏归因与交易时钟 |
+| 9 | [reform](../../config/dual-engine-reform-20261005.json) | 14 / 100 | 批次意图与资本分书 |
+| 10 | [renewal](../../config/dual-engine-renewal-20261005.json) | 10 / 72 | 风险恢复与再分配 |
+| 11 | [sources](../../config/dual-engine-sources-20261005.json) | 8 / 52 | 公开信息源 |
+| 12 | [zonal](../../config/dual-engine-zonal-20261005.json) | 8 / 72 | 恢复范围与实际敞口 |
+| 13 | [zorder](../../config/dual-engine-zorder-20261005.json) | 8 / 76 | 共同结算与家族刷新 |
+
+[holdings归因合同](../../config/dual-engine-holdings-20261005.json)绑定前七轮549曲线及原现金／单位账本，不创建新候选；区分闭合与未退出持仓，并将实际费用分配到资产／持仓段。仅权重历史标记为不支持完整单位归因。
+
+[研究登记索引](../../config/dual-engine-research-registry.json)绑定各轮原结果根／manifest、所有策略描述、固定四格最弱超额Sharpe政策、剔除理由和确认收据。`prior_*`保留原轮次快照；旧轮次数量、领先与冻结后检查不覆盖当前登记，也不能确认新版本。宏观候选存在修订暴露时按原声明排除选择；全球trial计数和DSR/PBO限制见主研究。
+
+G20月度资本份额、日度实际投资额指令和穿透杠杆是不同约束；迟到成交与价格漂移使20%／40%决策预算不等于连续硬上限。第十三轮预算触及扩为全书共同再平衡，可能买入风险资产。C60周度刷新、名义零退出及非周日恢复有各自范围，不能把卫星周度版本解释为所有核心交易都停止。所有买卖费用按原现金单位／分书规则计入，不合成独立收益。
+
+运行使用独立新E目录，源码／输入／合同在读收益前绑定；失败v1、修正版v2及其manifest分开保留。warmup修正记录在原结果与主研究，本文不修改冻结JSON。任何确认需要对应候选自己的账户和窗口，旧确认或准备快照不授予重跑／调度权限。

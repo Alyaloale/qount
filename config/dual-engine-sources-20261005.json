@@ -1,0 +1,209 @@
+{
+  "study_id": "dual_engine_sources_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 8,
+  "cumulative_local_candidate_trials": 116,
+  "global_trial_count": null,
+  "planned_curves": 52,
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "inverse_ETF_model": "SH/PSQ/TBF actual adjusted open/close prices; long units of daily inverse funds, including embedded expenses and daily compounding; no synthetic minus-index returns",
+  "previously_consumed_later_data": "Fifth-round July31..Sep30 equity and September crypto observations already inspected; no new independent later check in this round",
+  "missing_asset_policy": "All ETH/PAXG segments resolved by decision-day available full history; never choose a latest future segment or fill gaps",
+  "fundamental_scope": "Settled funding is a public crowding feature only; no derivative, funding cashflow, staking, basis income or broad fundamentals claim. Macro latest snapshots remain revision-exposed diagnostic-only.",
+  "stop_policy": "One frozen run,8 candidates/52 curves; no return-conditioned rescue; macro candidates remain registered diagnostic-only; preserve any failed implementation in a separate directory.",
+  "structural_question": "Add settled funding crowding and closed taker-flow permissions to staged spot recovery; use revision-exposed credit/financial conditions and curve signals to fund defensive source reallocations.",
+  "accounting": "Actual long spot and fund units; cash and gross book trade fees explicit. Capital transfers net zero and excluded from book profits. Closed crypto episodes and capital source net contributions separately reconciled.",
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "controls": [
+      "aware_gold_rotate",
+      "capital_reset_sector"
+    ],
+    "candidates": [
+      "nfci_cash",
+      "credit_cash",
+      "credit_gold",
+      "curve_credit"
+    ]
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "controls": [
+      "staged_risk4",
+      "dual_sat4_risk",
+      "fresh_units_risk4"
+    ],
+    "candidates": [
+      "funding_core",
+      "funding_all",
+      "flow_entry",
+      "funding_flow"
+    ]
+  },
+  "mechanisms": {
+    "c60": {
+      "funding_core": "half BTC/ETH original core targets individually when own positive 7-day mean daily settled rate ranks at or above75th percentile of preceding180 seven-day means; satellites unchanged",
+      "funding_all": "half all original spot risk targets if either BTC or ETH is crowded by the same funding rule",
+      "flow_entry": "original BTC/ETH targets require own prior20-day quote-weighted taker imbalance>0; satellites require BTC imbalance>0; missing feature is neutral and explicitly counted",
+      "funding_flow": "funding_all times flow_entry, fixed factorial interaction",
+      "execution": "same tenth-round staged recovery and owned vintage reductions; modified nominal targets may create information-driven recovery/exit; original universe and selection unchanged",
+      "available": "funding and closed spot flow through prior UTC day only; no received funding PnL, derivative positions or fabricated stablecoin yield"
+    },
+    "g20": {
+      "nfci_cash": "latest NFCI>0 halves original selected equity instruments; released budget to BIL",
+      "credit_cash": "latest NFCI Credit contribution>0 halves original selected equity instruments; released budget to BIL",
+      "credit_gold": "same credit rule but released equity capital buys actual GLD units",
+      "curve_credit": "credit contribution>0 OR lagged10y-3m slope<0 halves selected equity instruments; released budget to BIL",
+      "timing": "NFCI reference Friday+7 calendar days, stale after21 days; slope2 equity-session lag, stale after7 days; changed targets trade at original T+1/T+2",
+      "missing": "missing source feature is neutral; no backward fill or fabricated zero values",
+      "qualification": "latest macro snapshots have revision exposure; all four G20 information candidates are diagnostic-only and excluded from current leader selection"
+    }
+  },
+  "target_sources": {
+    "g20": {
+      "nfci_cash": "aware_gold_rotate",
+      "credit_cash": "aware_gold_rotate",
+      "credit_gold": "aware_gold_rotate",
+      "curve_credit": "aware_gold_rotate"
+    },
+    "c60": {
+      "funding_core": "staged_risk4",
+      "funding_all": "staged_risk4",
+      "flow_entry": "staged_risk4",
+      "funding_flow": "staged_risk4"
+    }
+  },
+  "prior_result": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/results",
+    "manifest_sha256": "63bcffd2fa91634765bacc0d9ffa1e860467b0fed5ff1c15b1cefa3b91aaf571"
+  },
+  "information_manifest_sha256": "82a9fbdf5f2ba2559476148d614c7ba45d229343e73dc601b047b3adf66e7bd4",
+  "selection_exclusions": [
+    "dual_engine_sources_20261005/g20/nfci_cash",
+    "dual_engine_sources_20261005/g20/credit_cash",
+    "dual_engine_sources_20261005/g20/credit_gold",
+    "dual_engine_sources_20261005/g20/curve_credit"
+  ],
+  "source_contract": {
+    "funding_months": [
+      "2020-06",
+      "2026-08"
+    ],
+    "flow_months": [
+      "2020-12",
+      "2026-08"
+    ],
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "funding_features": [
+      7,
+      180,
+      0.75
+    ],
+    "flow_days": 20,
+    "information_lag_calendar_days": 1,
+    "macro_vintage_certified": false,
+    "crypto_vintage_certified": false
+  },
+  "primary_sources": [
+    "https://github.com/binance/binance-public-data",
+    "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-History",
+    "https://www.chicagofed.org/research/data/nfci/current-data",
+    "https://fred.stlouisfed.org/series/T10Y3M"
+  ],
+  "information_root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/inputs/information"
+}

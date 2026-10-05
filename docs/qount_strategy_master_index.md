@@ -1,11 +1,17 @@
 # 🏛️ Qount 宏观量化交易系统 - 核心策略总集 (Master Index)
 
-> **状态**：deployed paper / 2026 YTD curves active｜**权威**：Dual-Engine 策略与模拟盘合同｜**最后更新**：2026-09-23
+> **状态**：deployed paper / 2026 YTD curves active｜**权威**：Dual-Engine 策略与模拟盘合同｜**最后更新**：2026-10-05
 > **TL;DR**：冻结 G20/C60/GC5/D15 四个公共数据模拟账户；9 月 23 日核查每账户 272 点及完整审计链。C60 成本负担明显，D15 尚未优于 GC5；所有结果为 simulated_not_realized，不产生订单授权。当前运行事实见 current.md。
 
 **系统代号**: Qount Dual-Engine (G20 + C60 Dynamic)
 
 本文档归档双引擎研究，并冻结当前模拟盘实现口径。文中的长期 CAGR / MaxDD / Sharpe 仍仅来自既有研究脚本；本次 2026 YTD replay 只建立当前 paper 状态和曲线，不能验证那些长期数字，更不得当作收益承诺。
+
+## G20 / C60 离线研究导航（research_only）
+
+[主研究总览](dual-engine-optimization-2026-10.md#研究总览与阅读路径)按十三轮列出问题、候选、曲线和历史判断，并链接每轮冻结协议、正负结果与修订。最新[共同结算与家族刷新研究§18](dual-engine-optimization-2026-10.md#18-源目标与风险共同结算家族刷新分离第十三轮)同时保存成本／参与度取舍和pending源退出缺口；[新增公开信息源§16](dual-engine-optimization-2026-10.md#16-新增信息源与信息驱动风险改革第十一轮)说明资金费率、方向流和宏观修订限制。
+
+版本、原结果hash、诊断剔除及确认收据见[机器登记](../config/dual-engine-research-registry.json)，当前研究事实与运行授权见[current.md](current.md)。研究领先仍待前向确认，不继承旧版本后续月份。本索引下方保留既有paper冻结口径和历史复盘，研究排名不自动改变四个模拟账户。
 
 ## 当前有效模拟盘合同（覆盖下方历史歧义）
 

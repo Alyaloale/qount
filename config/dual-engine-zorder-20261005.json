@@ -1,0 +1,210 @@
+{
+  "study_id": "dual_engine_zorder_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 8,
+  "cumulative_local_candidate_trials": 132,
+  "global_trial_count": null,
+  "planned_curves": 76,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "joint20_rotate",
+      "joint40_rotate",
+      "joint20_sector",
+      "joint40_sector"
+    ],
+    "controls": [
+      "aware_gold_rotate",
+      "daily20_rotate",
+      "daily40_rotate",
+      "daily20_sector",
+      "daily40_sector",
+      "cap40_rotate",
+      "capital_reset_sector"
+    ],
+    "sources": {
+      "sweep20_rotate": "aware_gold_rotate",
+      "cap40_rotate": "aware_gold_rotate",
+      "active20_rotate": "aware_gold_rotate",
+      "sweep20_sector": "sector3_guard",
+      "cap40_sector": "sector3_guard",
+      "active20_sector": "sector3_guard"
+    },
+    "capital_policy": {
+      "initial_shares": {
+        "equity_crisis": 0.2,
+        "gold": 0.2,
+        "reserve": 0.6
+      },
+      "policies": {
+        "sweep20": "at original monthly signal close cap each equity_crisis/gold book share at20%; no loss replenishment; remainder reserve",
+        "cap40": "at original monthly signal close cap each equity_crisis/gold book share at40%; no loss replenishment; remainder reserve",
+        "active20": "monthly closed source target contains positive non-BIL weight =>20% book share, otherwise zero; remainder reserve; explicit recapitalization when active",
+        "scope": "shares frozen at original monthly closed decision and filled after original delay; continuous cap not claimed; original source target stream unchanged; gross per-book fees including opposite fills",
+        "profit": "capital transfers sum zero and excluded from profit; three initial shares20/20/60; no new yield sources"
+      }
+    }
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "core_week",
+      "sat_week",
+      "split_week",
+      "split_local"
+    ],
+    "controls": [
+      "satellite_staged",
+      "staged_risk4",
+      "dual_sat4_risk",
+      "family_staged"
+    ],
+    "sources": {
+      "resume_all_risk4": "dual_sat4_risk",
+      "resume_core_risk4": "dual_sat4_risk",
+      "staged_risk4": "dual_sat4_risk",
+      "scoped_risk4": "dual_sat4_risk"
+    }
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "inverse_ETF_model": "SH/PSQ/TBF actual adjusted open/close prices; long units of daily inverse funds, including embedded expenses and daily compounding; no synthetic minus-index returns",
+  "previously_consumed_later_data": "Fifth-round July31..Sep30 equity and September crypto observations already inspected; no new independent later check in this round",
+  "missing_asset_policy": "All ETH/PAXG segments resolved by decision-day available full history; never choose a latest future segment or fill gaps",
+  "fundamental_scope": "No new source cashflow or fundamental claim; no funding, short, margin, borrowing or manufactured cash yield. Existing public sources remain frozen; forward windows not read.",
+  "prior_result": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/results",
+    "manifest_sha256": "b0eec4974ce2632be2c2bc8352e3aa33c79d38535860508504ecab6214ec5bd5"
+  },
+  "stop_policy": "One frozen study,8 new candidates/11 controls/76 curves; preserve every result; no return-conditioned rescue.",
+  "structural_question": "Merge source and closed risk budgets into one funded book execution; separate family refresh from coupled recovery.",
+  "target_sources": {
+    "g20": {
+      "joint20_rotate": "aware_gold_rotate",
+      "joint40_rotate": "aware_gold_rotate",
+      "joint20_sector": "sector3_guard",
+      "joint40_sector": "sector3_guard"
+    },
+    "c60": {
+      "core_week": "staged_risk4",
+      "sat_week": "staged_risk4",
+      "split_week": "staged_risk4",
+      "split_local": "staged_risk4"
+    }
+  },
+  "accounting": "Actual spot/fund units, owned vintage reductions and same-book BIL financing; gross independent book fees, no internal crossing discount; capital transfers sum zero and are not profit.",
+  "mechanisms": {
+    "g20": {
+      "decision": "same closed source targets/scopes and monthly sweep20/cap40 shares; after each close merge feasible source changes with held complementary non-BIL weights; cap projected investment dollars per book/global NAV at20%/40%",
+      "settlement": "one dated target and scope per book; binding budget expands to full-book target with funded BIL remainder; original T+1/T+2; no separate cap order/epoch cancellation or round-trip fee paths",
+      "qualification": "binding daily targets are full source-book rebalances and may buy risk units at fill; same-book cash funding and actual gross fees; no continuous hard exposure or derivative look-through claim; monthly capital transfers remain zero-sum"
+    },
+    "c60": {
+      "core_week": "Sunday refresh acquires core only; satellite transitions/refills acquire satellites; any core transition/refill retains coupled full fill",
+      "sat_week": "Sunday refresh acquires satellites only; satellite transitions/refills acquire satellites; any core transition/refill retains coupled full fill",
+      "split_week": "Sunday core and Wednesday satellite refresh; satellite transitions/refills scoped; any core transition/refill retains coupled full fill",
+      "split_local": "Sunday core and Wednesday satellite refresh; all recovery/refill triggers acquire their own family, simultaneous triggers union both; no coupled core override",
+      "common": "original zero/absent nominal to positive, half recovered targets outside Sunday and next-close refill; scheduled acquisitions union scoped recovery; complement uses owned-vintage reductions and nominal-zero exits; latest-closed-zero acquisition cancellation; 60-day60% covariance cap over combined planned weights and shared cash, not actual hard volatility ceiling"
+    }
+  },
+  "implementation_revision": 2,
+  "prior_registered_studies": 12,
+  "selection_exclusions": [],
+  "failed_initial_run": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T092858Z",
+    "reason": "second pre-start delayed instruction falsely declared monthly capital reset",
+    "economic_rules_unchanged": true,
+    "failure_receipt": "_records/failed-result-inventory.json"
+  }
+}

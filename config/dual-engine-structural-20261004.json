@@ -1,0 +1,43 @@
+{
+  "study_id": "dual_engine_structural_20261004",
+  "research_only": true,
+  "orders_authorized": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "promotion_evidence": false,
+  "new_candidate_trials": 7,
+  "cumulative_local_candidate_trials": 11,
+  "global_trial_count": null,
+  "planned_curves": 60,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "horizons": [21, 63, 126],
+    "risk_windows": [20, 60],
+    "annual_volatility_budget": 0.12,
+    "rebalance_sessions": 5,
+    "levered_gross_cap": 0.6,
+    "proxy_gross_cap": 1.0,
+    "cost_bps": [20, 40],
+    "delays": [1, 2],
+    "candidates": ["winner_risk", "blend_levered", "blend_proxy"],
+    "controls": ["g20", "spy_risk", "passive_levered", "passive_proxy"]
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [20, 60, 90],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "adjustment_fraction": 0.25,
+    "cost_bps": [25, 50],
+    "delays": [0, 1],
+    "candidates": ["pit_continuous", "btc_continuous", "core_satellite", "core_satellite_partial"],
+    "controls": ["pit", "btc_daily", "btc_static_risk", "core_only"]
+  },
+  "paired_bootstrap": {"block_lengths": [40, 60, 120], "draws": 400, "seed": 20261004},
+  "interpretation": "mechanism exploration with all ablations reported; no inherited acceptance gates or automatic promotion",
+  "stop_policy": "run registered designs once; report failures without tuning this run; implementation defects require a separate recorded correction",
+  "dsr_pbo": "not calculated; history consumed and global trial count unreconciled"
+}

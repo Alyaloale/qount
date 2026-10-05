@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "study_id": "dual_engine_optimization_20261004",
+  "research_only": true,
+  "orders_authorized": false,
+  "holdout_role": "discovery",
+  "data_role": "consumed_historical_discovery_pool",
+  "promotion_evidence": false,
+  "local_candidate_trials": 2,
+  "global_trial_count": null,
+  "global_trial_reconciliation": "pending; P2/P3 exposures prevent assuming the old 151 count",
+  "untouched_data_ids": [],
+  "g20": {
+    "data_start": "2017-09-01",
+    "evaluation_start": "2018-01-01",
+    "evaluation_end": "2026-07-30",
+    "signal": "frozen 63-session price momentum on seven 1x proxies",
+    "risk_weight": 0.2,
+    "candidate": "absolute_momentum; selected proxy momentum <= 0 means 100% BIL",
+    "entry_confirmation_days": 1,
+    "base": {"cost_bps": 20, "execution_delay_sessions": 1},
+    "stress": {"cost_bps": 40, "execution_delay_sessions": 2},
+    "benchmark": "monthly 60% SPY / 40% BIL",
+    "gates": {
+      "cash_excess_sharpe_improvement_both_scenarios": 0.0,
+      "max_drawdown_not_worse_both_scenarios": true,
+      "maximum_base_cagr_sacrifice": 0.01,
+      "minimum_positive_discovery_slices": 3,
+      "positive_cagr_excluding_best_complete_year": true
+    }
+  },
+  "c60": {
+    "evaluation_start": "2020-12-06",
+    "evaluation_end": "2026-08-31",
+    "baseline": "Trial 150 monthly candidates, frozen SMA20 / BTC SMA50 / 60% vol cap",
+    "candidate": "entry_confirmation; two consecutive combined gate passes, immediate exit on failure",
+    "entry_confirmation_days": 2,
+    "primary_universe": "PIT top 8 trailing 30-day quote volume plus BTC/PAXG; 100-day history",
+    "survivor_universe_role": "bias diagnostic only",
+    "missing_price_policy": "total loss on first unavailable next-day mark; no advance delisting exit",
+    "legacy_exit_role": "optimistic lookahead diagnostic; not candidate evidence",
+    "base": {"cost_bps": 25, "execution_delay_sessions": 0},
+    "stress": {"cost_bps": 50, "execution_delay_sessions": 1},
+    "benchmark": "existing BTC-only daily 90d momentum and frozen gates/vol cap",
+    "gates": {
+      "maximum_base_turnover_ratio": 0.85,
+      "minimum_sharpe_improvement_both_scenarios": 0.05,
+      "max_drawdown_not_worse_both_scenarios": true,
+      "ex_2021_sharpe_above_btc_gate_both_scenarios": true,
+      "minimum_positive_discovery_slices": 3,
+      "positive_cagr_excluding_best_complete_year": true
+    }
+  },
+  "discovery_slices": 5,
+  "paired_bootstrap": {"block_lengths": [40, 60, 120], "draws": 400, "seed": 20261004},
+  "dsr_pbo": "not calculated; global trial count unreconciled and no selection grid",
+  "stop_policy": "one run of these two candidates; any failed gate rejects that candidate; no parameter rescue",
+  "forward_requirement": "new preregistered observations after this study, at least 180 days; no scheduled collection or paper deployment authorized"
+}

@@ -1,0 +1,154 @@
+{
+  "study_id": "dual_engine_regimes_20261004",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 16,
+  "cumulative_local_candidate_trials": 62,
+  "global_trial_count": null,
+  "planned_curves": 104,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "gold_short_crisis",
+      "macro_long_book",
+      "macro_directional_book",
+      "macro_directional_crisis",
+      "macro_two_speed",
+      "gold_trend_budget",
+      "macro_risk_book",
+      "macro_joint_defense"
+    ],
+    "controls": [
+      "g20",
+      "gold20",
+      "aware_gold_cash",
+      "aware_gold_rotate",
+      "macro_fund"
+    ]
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "handoff_core",
+      "handoff_source",
+      "continuous_two_speed",
+      "autonomous_satellites",
+      "dual_core",
+      "dual_autonomous",
+      "gold_crisis_reserve",
+      "gold_autonomous"
+    ],
+    "controls": [
+      "residual2",
+      "btc_continuous",
+      "core_only",
+      "recovery_core",
+      "recovery_source"
+    ]
+  },
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "stop_policy": "16 fixed structural candidates once; preserve all outputs; consumed history only; no outcome-driven rescue; no new prospective observations yet",
+  "crisis": "Inherited held-proxy G20 panic/reset, BTC C60 panic and slow/fast recovery; macro_joint_defense is simultaneous SPY/TLT belowSMA63 and r63<0; macro_two_speed equity5/10/20; ordinary macro books equity20 and no crisis switch",
+  "crisis_windows": {
+    "g20": {
+      "covid": [
+        "2020-02-19",
+        "2020-06-30"
+      ],
+      "inflation2022": [
+        "2022-01-03",
+        "2022-12-30"
+      ],
+      "carry2024": [
+        "2024-07-01",
+        "2024-09-30"
+      ],
+      "tariff2025": [
+        "2025-02-01",
+        "2025-06-30"
+      ]
+    },
+    "c60": {
+      "selloff2021": [
+        "2021-04-01",
+        "2021-07-31"
+      ],
+      "terra2022": [
+        "2022-04-01",
+        "2022-07-31"
+      ],
+      "ftx2022": [
+        "2022-10-01",
+        "2022-12-31"
+      ]
+    }
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "prospective_confirmation": {
+    "start": "2026-10-05",
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false,
+    "global_optimum_claim": false
+  },
+  "structural_question": "Separate long/short macro payoff sources, core recovery handoff and autonomous crypto satellite risk",
+  "inverse_ETF_model": "SH/PSQ/TBF actual adjusted open/close prices; long units of daily inverse funds, including embedded expenses and daily compounding; no synthetic minus-index returns",
+  "macro_book": "Monthly independent GLD/DBC/UUP/TLT families, budget45; sign average of cash-relative log21/63/126; long-only matched book versus TLT/TBF directional duration; negative other families leave cash; risk book inverse trailing60-day instrument volatility, denominator includes inactive families",
+  "crisis_hedge": "Only during defensive state; freed15 budget split between strongest negative SPY/QQQ trend (SH/PSQ, one equity source) and negative TLT trend (TBF); empty sources remain cash; hedge changes at monthly or state transitions",
+  "core_handoff": "Original panic/slow/fast state criteria unchanged; 30*fast recovery probe persists past normal-state exit until 70*long absorbs it or fast recovery fails; new panic clears probe; defensive core25*long",
+  "autonomous_satellite": "Same monthly PIT/residual-positive Top2, own absolute trend controls satellites without BTC core trend multiplier; compare same core and full covariance60 cap",
+  "dual_core": "BTC50/ETH20, own trends; explicitly exclude ETH before PIT satellite selection; satellites30, optionally autonomous",
+  "gold_source": "PAXG actual public spot prices and liquidity pool; crisis reserve20 with core25 and satellites off while nonnormal; persistent gold10+BTC50/ETH20/autonomous satellites20; absent causal history leaves cash",
+  "paired_ablation_role": "Structural alternatives remain discovery; matched pairs separate inverse duration, handoff and autonomous satellite interventions; dual-core changes selection pool as well as core exposure",
+  "previously_consumed_later_data": "Fifth-round July31..Sep30 equity and September crypto observations already inspected; no new independent later check in this round",
+  "missing_asset_policy": "All ETH/PAXG segments resolved by decision-day available full history; never choose a latest future segment or fill gaps"
+}
