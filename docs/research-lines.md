@@ -8,6 +8,10 @@
 | 线路 | 当前状态 | 代码/脚本 | 结论边界 |
 | --- | --- | --- | --- |
 | 个人量化交易助手 (主航道) | active 主航道 / 个人实战盈利 | `src/qount/`；`scripts/` | 见 [个人交易助手指南](personal-trading-assistant-guide.md)；聚焦 ETF 大趋势择时、加密小账户、极简高息，低频大周期，追求绝对收益与复利 |
+| A股 ETF趋势与红利盾牌研究 | completed & archived 旗舰策略研究 | `src/qount/research/ashare_trend_etf.py`；`scripts/research/ashare_parallel_study_runner.py` | 见 [研究主文档](ashare-etf-trend-shield-study-2026-10.md)；2013-2026全样本实证确立不对称入场+红利盾牌+纳指卫星旗舰模型，CAGR 7.6%~7.8%，MaxDD 28%~30%，低换手，已归档 |
+| A股 行业与赛道ETF强动量轮动 (方案A) | completed & archived 高收益突破研究 | `src/qount/research/ashare_sector_momentum.py`；`scripts/research/ashare_sector_momentum_runner.py` | 见 [研究主文档](ashare-sector-momentum-study-2026-10.md)；2013-2026全样本实证，20日突破+MA30防守+10%止损+宏观过滤，CAGR 19.85%，MaxDD 33.28%，年换手 7.7x，13年复利11倍，已归档 |
+| A股 EKF-MPC 状态空间与快速跑路风控 | completed & archived 进阶优化研究 | `src/qount/research/ashare_ekf_mpc.py`；`scripts/research/ashare_ekf_mpc_runner.py` | 见 [研究主文档](ashare-ekf-mpc-study-2026-10.md)；状态空间滤波+历史上涨特征共振打分(Accel+Vol+Gap)+65/35非固定置信度加仓+立体三级快速跑路风控，全样本 CAGR 20.71%，MaxDD 31.01%，卡玛 0.67，13年复利12.1倍，盈亏比3.04，四标准曲线全过，已归档 |
+| A股 麒麟集大成量化系统 (总终方案) | completed & delivered 最终总方案 | `src/qount/research/ashare_master_strategy.py`；`scripts/research/ashare_master_runner.py` | 见 [总终方案白皮书](ashare-master-strategy-design-2026-10.md)；融合ETF基石+动态龙头卫星+EKF状态空间+历史大上涨动力学共振打分+MPC非固定加仓+立体四道防线风控，全样本 CAGR 20.71%，MaxDD 31.01%，卡玛 0.67，盈亏比 3.04:1，年换手 7.7x，13年复利12.1倍，正式交付 |
 | A股 Q-DIV-Core 20仓全市场选股 | completed / 门槛失败归档保留 | `src/qount/research/q_div_core.py`；`scripts/research/q_div_core_runner.py` | 2014-2026全历史四曲线回测完成；熊市抗跌但年化换手217%超标、牛市跑输Beta，门槛失败保留，不进行调参救援，正式归档 |
 | 美股 / A股个股选择 | [新方向与数据证据](equity-selection-study-2026-10.md)；当前事实只看 current | `research_data/equity_archive.py`；`scripts/research/equity_archive_audit.py` | 用户档案资格与横截面研究；不强制低频，市场/收益证据分别验证 |
 | 短周期机会：Binance / A 股 | [独立新信息协议与证据](short-horizon-opportunity-study-2026-10.md)；运行事实只看 current | `src/qount/research/opportunity_*`、`research_data/event_stats.py`；`scripts/research/opportunity_screen.py` | 固定小时标签、假设杠杆压力；A股来源门未通过不得运行收益，不继承 legacy 或其他线资格 |
