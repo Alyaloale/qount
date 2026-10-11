@@ -1,12 +1,16 @@
 # 研究线总览
 
-> 状态：active navigation｜权威：`docs/current.md`、`docs/project-rules.md` 与各线路合同｜最后更新：2026-10-04
-> TL;DR：当前只推进有明确合同的 research-only 线路；Dual-Engine 是已部署的无订单模拟盘，CTA-R 只保留独立数据侧车，旧线路全部冻结。
+> 状态：active navigation｜权威：`docs/current.md`、[docs/personal-trading-assistant-guide.md](personal-trading-assistant-guide.md) 与各线路合同｜最后更新：2026-10-11
+> TL;DR：当前主航道全面聚焦【个人量化交易助手与个人实战盈利】（ETF大趋势择时、极简核心资产、加密小账户）；公募基金式20仓全市场选股(Q-DIV-Core)、C60梯度等历史实验均已完成并保留失败证据归档参考，旧高频/微观套利线路永久冻结。
 
 ## 状态分类
 
 | 线路 | 当前状态 | 代码/脚本 | 结论边界 |
 | --- | --- | --- | --- |
+| 个人量化交易助手 (主航道) | active 主航道 / 个人实战盈利 | `src/qount/`；`scripts/` | 见 [个人交易助手指南](personal-trading-assistant-guide.md)；聚焦 ETF 大趋势择时、加密小账户、极简高息，低频大周期，追求绝对收益与复利 |
+| A股 Q-DIV-Core 20仓全市场选股 | completed / 门槛失败归档保留 | `src/qount/research/q_div_core.py`；`scripts/research/q_div_core_runner.py` | 2014-2026全历史四曲线回测完成；熊市抗跌但年化换手217%超标、牛市跑输Beta，门槛失败保留，不进行调参救援，正式归档 |
+| 美股 / A股个股选择 | [新方向与数据证据](equity-selection-study-2026-10.md)；当前事实只看 current | `research_data/equity_archive.py`；`scripts/research/equity_archive_audit.py` | 用户档案资格与横截面研究；不强制低频，市场/收益证据分别验证 |
+| 短周期机会：Binance / A 股 | [独立新信息协议与证据](short-horizon-opportunity-study-2026-10.md)；运行事实只看 current | `src/qount/research/opportunity_*`、`research_data/event_stats.py`；`scripts/research/opportunity_screen.py` | 固定小时标签、假设杠杆压力；A股来源门未通过不得运行收益，不继承 legacy 或其他线资格 |
 | Dual-Engine G20/C60/GC5/D15 | deployed paper / research-only | `src/qount/dual_engine/`、`scripts/operations/` | 公共行情无订单模拟；不产生订单或账户授权 |
 | C60 v2 月度候选 | research-paper sidecar；前瞻自 2026-09-30 | `src/qount/research/c60_*`、`scripts/research/c60_*` | Trial 150 规则与冻结 v1 并行比较；换手归因：闸门进出占 82%（见 `c60-turnover-attribution-diagnostic-2026-09.md`）；时点宇宙下选币优势不成立（剔除 2021 年 Sharpe 0.47，低于仅 BTC 闸门的 0.69），视为 BTC beta（见 `c60-pit-universe-survivorship-2026-09.md`）；不替代 v1，无订单权限 |
 | CTA-R ETF | data sidecar valid；规则冻结；前瞻账本自 2026-09-30 起（`cta-r-forward-ledger-2026-09.md`）；Trial 151 美股复现 `replicated`（Sharpe 0.75，未超 60/40） | `src/qount/research/cta_r_*`、`scripts/research/cta_r_*` | 只提供独立研究输入和历史侧车；不写 Dual-Engine 账本，不生成 StrategyIntent |
@@ -32,3 +36,9 @@
 - 跨线综合判断与方向设计（2026-09-29，待 owner 决策）：[research-direction-review-2026-09.md](research-direction-review-2026-09.md)
 - Alpha Agents 路线：[alpha-agent-plan.md](alpha-agent-plan.md)
 - 历史索引：[archive/README.md](archive/README.md)
+
+## A股独立选股与持仓研究
+
+owner指定A股为独立研究线，进取取向，以选股和持有规则检验盈利；[主协议](ashare-strategy-study-2026-10.md)、[研究索引](../config/ashare-research-registry.json)。行业/价格策略与企业/政策证据分层，逐项冻结候选后做成本/延迟代理回测，持仓/受阻/缺价、集中度及组合冷却单独管理。最新运行事实只看[current](current.md)；research_only=true/orders_authorized=false/promotion_evidence=false，不产生生产交易权限。
+
+新增[Q-DIV-IVOL独立协议](ashare-q-div-ivol-study-2026-10.md)，以工业企业实际财报/分红、真实换手与市场残差波动做截止日筛选；历史版本/风险事件及组合执行引擎未完成前不产生历史收益。原低波候选与已失败价格实验保留。

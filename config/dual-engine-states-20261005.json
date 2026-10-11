@@ -1,0 +1,99 @@
+{
+  "study_id": "dual_engine_states_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 6,
+  "cumulative_local_candidate_trials": 142,
+  "planned_curves": 40,
+  "global_trial_count": null,
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "mature_half",
+      "rebound_half",
+      "mature_rebound_half",
+      "transition_fill",
+      "mature_transition_fill",
+      "guarded_transition_fill"
+    ],
+    "controls": [
+      "agreement",
+      "sat_week",
+      "satellite_staged",
+      "uniform75"
+    ]
+  },
+  "mechanisms": {
+    "rank": "current60-log-return efficiency midrank against previous252 calendar-day efficiencies, excluding current; at least60 valid past efficiencies; unqualified history unknown",
+    "state_priority": "unknown if rank unavailable; otherwise BTC rebound first, own r20<=0 fading, own r60>0 and efficiency rank>=.75 and r20<=prior nonoverlapping20 return mature, own r20>0 and r20>prior20 accelerating, else balanced",
+    "market_rebound": "BTC20-day simple return>0 and60-day simple return<0 and stdev(last20 log returns)>stdev(last60 log returns); all from current closed history",
+    "sizing": "original agreement nominal weights; mature_half halves mature; rebound_half halves rebound; mature_rebound_half and guarded_transition_fill halve either; mature_transition_fill halves mature; transition_fill unchanged; no redistribution or PAXG change",
+    "events": "additional acquisition of each already source-positive asset on non-unknown non-accelerating to accelerating transition; union with original sat_week scope; no full-core coupling from this event alone; covariance gate and cash financing retained",
+    "late_cancel": "event-only asset removed from acquisition scope when latest closed state is not accelerating; held units frozen, not sold merely to cancel top-up; latest closed nominal zero retains original exit/cancellation behavior",
+    "clock": "original Sunday satellite refresh, coupled core zero-to-positive recovery/refill, off-Sunday new recovery half and next-close refill; same vintage-owned complement reductions and60-day60% covariance gate",
+    "objective": "all four cells CAGR higher, MaxDD no worse and closed net episode win rate higher than agreement; separately report original sat_week comparison; ranking unchanged"
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "selection_exclusions": [
+    "dual_engine_states_20261005/c60/uniform75"
+  ],
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "prior_result": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/results",
+    "manifest_sha256": "c6961bcf1be7e43b7b45b4f29c9372e05ba28a5bf3617dd03c96de13f90a208b"
+  },
+  "stop_policy": "One frozen40-curve study with6 economic candidates; all positive/negative outcomes retained; no result-conditioned rescue, tuning, new source, refit or prospective window read.",
+  "owner_instruction": "推进下一版大改研究",
+  "prospective_confirmation": {
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false
+  },
+  "g20_scope": "No new G20 candidate; pending source-exit ownership defect remains unresolved; original leaderboard retained.",
+  "data_scope": "Frozen PIT cache and crypto adjusted opens only through2026-08-31; no new sources, independent OOS, P3 outer, fit, production or service changes.",
+  "state_settings": {
+    "reference_days": 252,
+    "minimum_history": 60,
+    "mature_rank": 0.75
+  }
+}

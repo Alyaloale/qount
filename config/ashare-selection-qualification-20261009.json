@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "study_id": "ashare_selection_qualification_20261009",
+  "phase": "source_and_calendar_qualification",
+  "owner_instruction": "开始推进",
+  "owner_activation_utc": "2026-10-09T09:17:40.941938+00:00",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "holdout_role": "discovery",
+  "proposal_file": "config/ashare-selection-proposal-20261009.json",
+  "proposal_sha256": "a7e2fa0adf14f09c73bbdb4e4f583dc45fd1e0e6afe02f2146eb027e310f6a81",
+  "authorization": {
+    "qualification_run": true,
+    "information_study_after_source_gate": true,
+    "automatic_restart": false,
+    "production_or_account_access": false
+  },
+  "source": {
+    "archive": "/mnt/e/qount_data/qount/datasets/equity_selection/user_stocks_20261009T073341Z_f19e592894ea/raw/stocks.zip",
+    "sha256": "f19e592894eaa96e8297b434d696a4b931b573f97a2782c90feacd5dfe9566eb",
+    "audit_root": "/mnt/e/qount_data/qount/artifacts/equity_selection/intake_20261009T073341Z",
+    "audit_manifest_sha256": "ff0b10804ecb50adf74aabec65c9ba5f3e5c3aa1a3de45d5f22526cbce9db49d"
+  },
+  "qualification": {
+    "calendar_start": "2014-01-01",
+    "calendar_end": "2026-09-30",
+    "study_start": "2015-01-01",
+    "study_end": "2026-09-30",
+    "past_valid_price_observations": 252,
+    "complete_recent_sessions": 65,
+    "minimum_cross_section": 500,
+    "workers": 4,
+    "prefix_locator_not_historical_identity": {
+      "SH": [
+        "600",
+        "601",
+        "603",
+        "605"
+      ],
+      "SZ": [
+        "000",
+        "001",
+        "002",
+        "003"
+      ]
+    },
+    "returns_or_rankings": false,
+    "availability_calendar_authority": "SSE_original_notices_with_SZSE_source_gaps_disclosed"
+  },
+  "source_evidence": {
+    "source_vendor_verified": false,
+    "amount_units_verified": false,
+    "adjustment_semantics_verified": false,
+    "historical_identity_verified": false,
+    "historical_tradability_verified": false,
+    "PIT_industry_verified": false,
+    "corporate_actions_verified": false,
+    "opening_fills_verified": false
+  },
+  "information_gate_required": [
+    "source_vendor_verified",
+    "adjustment_semantics_verified",
+    "independent_calendar_verified"
+  ],
+  "portfolio_gate_required": [
+    "amount_units_verified",
+    "historical_identity_verified",
+    "historical_tradability_verified",
+    "PIT_industry_verified",
+    "corporate_actions_verified",
+    "opening_fills_verified"
+  ],
+  "if_gate_pending": "preserve_qualification_report_do_not_compute_returns_or_redefine_strategy",
+  "calendar_source_review_sha256": "f046aeb45f2a006b0673788c9454bb6fc9cf3fe78c23fcaa4318746f40d13bc7"
+}

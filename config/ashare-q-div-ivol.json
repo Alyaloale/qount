@@ -1,0 +1,159 @@
+{
+  "source": {
+    "root": "/mnt/e/qount_data/qount/datasets/equity_selection/tushare_same_source_20261009T122856Z",
+    "manifest_sha256": "15fdb1c214e97cda9a1116c779ddc6f46d359a9f88ce74969b4e7fb84a729adb",
+    "archive": "/mnt/e/qount_data/qount/datasets/equity_selection/user_stocks_20261009T073341Z_f19e592894ea/raw/stocks.zip",
+    "archive_sha256": "f19e592894eaa96e8297b434d696a4b931b573f97a2782c90feacd5dfe9566eb"
+  },
+  "qualification": {
+    "root": "/mnt/e/qount_data/qount/artifacts/equity_selection/tushare_proxy_qualification_20261010T014117Z",
+    "manifest_sha256": "6ae4b834e93d91a259684191ba108399c37a86a3221f764b1a2ced0d782e1cd8"
+  },
+  "calendar": {
+    "path": "state/research_runs/ashare_szse_calendar_evidence_20261009T114416Z/calendar-source-review-full.json",
+    "sha256": "c0c28888dba59222493de0a57c33f3d7d93a79c608c8cac77231aadeaa74c82a"
+  },
+  "prefix_locators": {
+    "SH": [
+      "600",
+      "601",
+      "603",
+      "605"
+    ],
+    "SZ": [
+      "000",
+      "001",
+      "002",
+      "003"
+    ]
+  },
+  "expected_source_securities": 3211,
+  "expected_retired_securities": 196,
+  "python_version": "3.12.3",
+  "price_cutoff": "20260930",
+  "metadata_observed_at": "2026-10-09T12:36:12.205162+00:00",
+  "schema_version": 1,
+  "study_id": "ashare_q_div_ivol_20261010",
+  "created_at": "2026-10-10T11:28:00.649739+00:00",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "phase": "frozen_strategy_protocol_and_dated_snapshot_historical_backtest_pending_evidence",
+  "implementation_scope": "snapshot_features_financial_normalization_selection_weights_exit_primitives_not_historical_execution_engine",
+  "owner_basis": "推进高质量红利低特质波动策略；新增财务和换手率数据仅用于研究",
+  "rules": {
+    "capital_cny": 1000000,
+    "price_cutoff": "20260930",
+    "universe": "existing_3211_original_plus196_retired_panel_not_all_A",
+    "maturity": "252_past_valid_raw_observations_and220_consecutive_valid_exchange_sessions",
+    "liquidity": "ADV20_ge30m_and_keep_top80pct_of_mature_price_valid_panel_symbol_tie",
+    "risk_warning": "dated_stock_st_list_complete_for_signal_date_missing_status_unknown",
+    "turnover": "daily_basic_turnover_rate_percent_mean20_exact_sessions_keep_lowest85pct_of_liquid_nonST_pool_symbol_tie",
+    "financial_scope": "industrial_comp_type1_only_financial_cashflow_not_comparable",
+    "quality": "parent_profit_TTM_positive_ROE_TTM_ge8pct_CFO_TTM_div_parent_profit_TTM_ge0.8_debt_assets_lt0.70",
+    "TTM": "current_YTD_plus_previous_full_year_minus_previous_same_period_YTD_annual_used_directly",
+    "ROE_TTM": "parent_profit_TTM_div_mean_parent_equity_current_and_prior_same_period_both_positive",
+    "report_clock": "max_ann_date_f_ann_date_strictly_before_signal_date_210day_period_age_limit_conflicting_same_date_values_unknown",
+    "dividend": "three_previous_completed_fiscal_years_each_positive_implemented_cash_and_implemented_paid_TTM_yield_ge2.5pct",
+    "dividend_clock": "implementation_ann_strictly_before_signal_date_ex_date_and_pay_date_le_signal_date_no_proposals",
+    "dividend_yield": "sum_cash_div_tax_CNY_per_share_times_base_share_10k_div_current_total_mv_10k_CNY_last365calendar_days",
+    "IVOL": "120_exact_simple_adjusted_returns_single_market_OLS_with_intercept_population_residual_std_times_sqrt252",
+    "market_proxy": "399300.SZ_price_index_close_div_pre_close_minus1_not_all_A_total_return_index",
+    "rate_proxy": "previous_exchange_session_SHIBOR_ON_percent_div100_div252_not_certified_risk_free",
+    "trend": "adjusted_close_gt_MA200_and_MA200_ge_MA200_20sessions_ago",
+    "entry": "Bias60_in_closed_interval_minus3pct_plus12pct_Bias120_lt20pct_return60_le30pct_raw_volume5_le0.85_volume60",
+    "ranking": "IVOL_ascending_symbol_tie",
+    "maximum_positions": 20,
+    "entry_rank": 20,
+    "retention_rank": 35,
+    "review_sessions": 10,
+    "industry_slots": 3,
+    "industry_weight_cap": 0.2,
+    "stock_weight_cap": 0.08,
+    "weighting": "DY_div_IVOL_iterative_capped_proportional_cash_for_infeasible_capacity",
+    "industry": "20261009_snapshot_not_PIT_unknown_shared_group_not_industry_neutral",
+    "exit_priority": [
+      "known_fundamental_loss_or_cancel_or_investigation_or_ST",
+      "three_consecutive_valid_closes_below0.97_MA200",
+      "DY_lt1.5pct_or_Bias60_gt30pct",
+      "review_rank_beyond35"
+    ],
+    "exit_execution": "next_session_open_or_extra_one_session_Tplus1_limit_and_liquidity_guards_no_guaranteed_stop_price",
+    "portfolio_freeze": "12pct_anchor_drawdown_cancel_new_buys_no_forced_liquidation_resume_after20_full_sessions_reset_anchor",
+    "weight_caps_scope": "target_weights_only_price_drift_and_failed_fills_may_exceed_targets",
+    "curves": [
+      "base",
+      "double_cost",
+      "extra_day",
+      "equal_industry_control"
+    ],
+    "control": "same_qualified_pool_clock_exits_industry_slots_equal_weight_among_industries_then_names_same_caps",
+    "fees": "reuse_frozen_ashare_strategy_cost_schedule_1pct_prior_ADV_adjusted_unit_proxy_no_extra_dividend_cash",
+    "snapshot_scope": "all_technical_passers_fundamental_collection_max120_by_IVOL_not_full_historical_pool",
+    "snapshot_shortlist_limit": 120,
+    "independent_OOS": false
+  },
+  "gate": {
+    "minimum_each_primary_unknown_zero_CAGR_strict": 0.08,
+    "maximum_base_drawdown_strict": 0.25,
+    "minimum_base_daily_Sharpe_strict": 0.8,
+    "minimum_closed_trades": 100,
+    "historical_PIT_required": true,
+    "failure_action": "retain_and_stop_frozen_implementation_no_parameter_rescue"
+  },
+  "implementation_sha256": {
+    "src/qount/research/q_div.py": "bb5ae853c0656021ad81897c55f6aee8715c21706474499c1f4cb19dfd1d681d",
+    "src/qount/research/q_div_data.py": "401ff1645e5e2b57a75ea8a528aaee412d686b68d7dbbad3448170a735b9946a",
+    "scripts/research/q_div.py": "03b5710d746978ee364ce18f6fd3641b71b061e0a475c23a8a7130aa3fd503d2",
+    "tests/test_q_div.py": "3323208379cf4f8fb34214516f9600b4ebd88490c21f99e9bae908a2e6068c7d",
+    "tests/test_q_div_data.py": "191a210dfe659d3c5de2e178476d36b31e9c6a4e8960da23d15ed0904c12a573",
+    "src/qount/research/ashare_backtest_data.py": "e73ff936b126c8839a6a75367e7a6a4b5e3a6c26b8e9ff514fe00d05870fddd8",
+    "src/qount/research/ashare_selection.py": "1ff528498d9ad3d6eb73644f4c9b6d249db68c024c83c4f52e1df71bb28d5d3a",
+    "src/qount/research_data/equity_archive.py": "bdd8b91351f7de11e9257672a3dd38f822487112535b1d4c6e79e0fa58d50479",
+    "src/qount/research/ashare_tushare.py": "dd3dbdc405818ba65390d14bef2cfe69600c734b93013676f501c8079a72597d",
+    "src/qount/research/q_div_report.py": "e8693c15d0eacfbb29fd9f8a13f670c8c74e2043bfc08a346e16f3af3136a9d4"
+  },
+  "snapshot_public_sources": [
+    {
+      "root": "/mnt/e/qount_data/qount/datasets/equity_selection/q_div_probe_20261010T111326Z",
+      "contract_sha256": "19d5a3efb24d5dd80eb3e24cc654705faba852d0af983e676220d5b232619e53"
+    },
+    {
+      "root": "/mnt/e/qount_data/qount/datasets/equity_selection/q_div_turnover_20261010T112418Z",
+      "contract_sha256": "9a8c2f1289e7205eeb8abc2b4e3d76c7b4be585854d18105d096d52a0b8fd70a"
+    }
+  ],
+  "historical_protocol": {
+    "start": "20150101",
+    "end": "20260930",
+    "curves": [
+      "base",
+      "double_cost",
+      "extra_day",
+      "equal_industry_control"
+    ],
+    "daily_Sharpe": "mean_daily_excess_return_over_lagged_SHIBOR_proxy_div_population_std_times_sqrt252",
+    "unknown_terminal_recovery": "zero_for_final_unresolved_assets_stress",
+    "requires": "full_history_inputs_and_separate_execution_engine_validation_before_any_return_run",
+    "no_parameter_grid": true,
+    "failure_retention": true
+  },
+  "snapshot_limitations": [
+    "source_panel_not_all_A",
+    "20261009_industry_not_PIT",
+    "financial_download_vintages_not_certified",
+    "investigation_and_cancel_event_history_not_collected",
+    "20260930_price_cutoff_not_current_trade_date",
+    "current_snapshot_not_historical_pool_or_backtest"
+  ],
+  "revision": 2,
+  "technical_repair": {
+    "status": "technical_failure_before_selection",
+    "error": "request_receipt_mismatch_fields_list_vs_string",
+    "contract_sha256": "91b05b254cf2d64e4d44cca95d68873bdc31aa7b14daca016ecb4d3b7c6a0501",
+    "economic_results_produced": false,
+    "parameters_changed": false,
+    "prior_artifact_root": "/mnt/e/qount_data/qount/artifacts/equity_selection/ashare_q_div_technical_20261010T112418Z",
+    "prior_code_root": "/home/alyaloale/.cache/qount-compute/ashare-q-div-20261010T112418Z"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "study_id": "c60_gradient_20261011",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_primary_rules": 1,
+  "new_diagnostic_rules": 1,
+  "planned_curve_exposures": 12,
+  "parameter_searches": 0,
+  "global_trial_count": null,
+  "rules": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "btc_distance": "completed_close_div_SMA50_minus1",
+    "upper_bounds": [
+      -0.02,
+      0.0,
+      0.02
+    ],
+    "exposures": [
+      0.0,
+      0.35,
+      0.7,
+      1.0
+    ],
+    "own_gate": "unchanged_strict_close_gt_SMA20",
+    "PAXG": "BTC_gate_exempt_unchanged",
+    "deadband": 0.15,
+    "deadband_metric": "full_portfolio_L1_vs_actual_pretrade_weights",
+    "deadband_clock": "after_open_mark_before_fee_sizing_no_trade_when_L1_le15pct",
+    "small_exits": "also_suppressed_no_safety_override_new_rule",
+    "vol_cap": "unchanged_60pct_computed_on_scaled_weights",
+    "cells": [
+      [
+        25,
+        0
+      ],
+      [
+        25,
+        1
+      ],
+      [
+        50,
+        0
+      ],
+      [
+        50,
+        1
+      ]
+    ],
+    "variants": [
+      "binary",
+      "gradient_only",
+      "gradient_deadband"
+    ],
+    "selection": "none_report_all_no_parameter_rescue",
+    "historical_gate": "all4_cells_turnover_lower_CAGR_ge_baseline_MDD_no_worse"
+  },
+  "pit_cache": "/mnt/e/qount_data/qount/artifacts/dual_engine/optimization_20261004T080635Z/inputs/pit-cache",
+  "open_root": "/mnt/e/qount_data/qount/artifacts/dual_engine/execution_20261004T085317Z/inputs/crypto-opens",
+  "prior_input_audit": "/mnt/e/qount_data/qount/artifacts/dual_engine/execution_20261004T085317Z/results/input-audit.json",
+  "prior_input_audit_sha256": "45ad66517da8372a7b2f186ba482d0fc46806d6b4eb11c23b86a702f1c0299ce",
+  "implementation_sha256": {
+    "src/qount/research/c60_execution_control.py": "02342294dbd51a44ffad011bfcb935d0bdb787294dadbb04048b8de66a8ba8a9",
+    "src/qount/research/c60_gradient_study.py": "230591aec3ad1078d8a5966bfdd7ce4d886a87a043a851c324b09de9c43b6383",
+    "src/qount/research/dual_engine_execution_study.py": "2c48fa95c2ce74785ff2ad598a93ea872973ecf627da5899e384388030ebec36",
+    "src/qount/research/dual_engine_optimization.py": "4acb6ba398a380096a10805d31d1913d6aef690253f4e7b09afa56cf34bec5a9",
+    "src/qount/research/c60_pit_universe.py": "a2b39b5e929d08edc3ca5f25c7000eaad99c61030a36ea04937895cb47363c73",
+    "src/qount/research/c60_cost_study.py": "0ae361626da34f044645a745b3b42851157a4fffa9895146663cbcc17a9fdb1a",
+    "src/qount/research_data/replay_fees.py": "d5da87de58b115120c0240744ea0681440bbaa200a365131340c8c4b43035b9e",
+    "src/qount/dual_engine/strategy.py": "88b94fd4f4aff1f96e344cb4a71059cf23af310c5a2271107af22255c45eedbf",
+    "src/qount/dual_engine/contracts.py": "5a1d9bd2faa277168eb1352b3d622d183d23aca7c939980f832a4541d8019add",
+    "scripts/research/c60_gradient.py": "82056858ba63d759ed13b0f155fb729972773abe51b155b9c6574d7a58b90a19"
+  },
+  "freeze_before_returns": true,
+  "revision": 3,
+  "revision_reason": "Two original-hash public Binance archives projected into opens; no economic rule change, prior missing-input runs preserved. No candidate return result inspected.",
+  "supplemental_open_roots": [
+    {
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/inputs/crypto-opens",
+      "manifest_sha256": "832fd0542c343b45835824e198355c531b26641a85b45f0cfe543c293dbd1120"
+    },
+    {
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/inputs/crypto-opens",
+      "manifest_sha256": "9f3b6bc09d242c1d7ae8c9349eb89c18577403bb8bb6989e1ec3b036cb1afbd7"
+    },
+    {
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/expansion_20261004T120550Z/inputs/crypto-opens",
+      "manifest_sha256": "75f953d285dea548e9635cf11e826ce040a6fb87ba7a08e1cd2a850141b6ef98"
+    },
+    {
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/gradient_20261011_open_projection",
+      "manifest_sha256": "1b75a240ede994266f66950ed5c059984790b6caa52d74e1b23d801781063cd9"
+    }
+  ],
+  "preserved_failed_runs": [
+    "/mnt/e/qount_data/qount/artifacts/dual_engine/gradient_20261011T073000Z",
+    "/mnt/e/qount_data/qount/artifacts/dual_engine/gradient_20261011T073000Z_v2"
+  ],
+  "new_original_archive_requests": 2
+}

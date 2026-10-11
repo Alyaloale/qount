@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "study_id": "short_horizon_opportunity_20261009",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "holdout_role": "discovery",
+  "automatic_restart_authorized": false,
+  "candidate_trials_activated": 1,
+  "candidate_trials_reserved": 1,
+  "symbols": ["BTCUSDT", "ETHUSDT"],
+  "rules": ["flow_reclaim", "price_reclaim_control", "cash"],
+  "acquisition": {"first_month": "2020-12", "last_month": "2026-08", "workers": 6},
+  "evaluation": {"first": "2021-01-01", "last": "2026-08-31"},
+  "signal": {"volume_lookback_hours": 168, "low_lookback_hours": 24, "shock_return_max": -0.01, "volume_multiple_min": 3.0, "shock_buy_fraction_max": 0.35, "confirm_buy_fraction_min": 0.55},
+  "execution": {"hold_hours": 6, "cooldown_hours": 72, "max_entries_per_utc_month": 4, "cost_bps_per_side": [10, 25], "extra_delay_hours": [0, 1], "funding_ownership": "entry_inclusive_exit_exclusive_proxy", "stops": "none_fixed_horizon_labels_only"},
+  "gate": {"min_events": 60, "min_seven_day_blocks": 30, "min_net_win_rate": 0.6, "win_interval_lower_min": 0.5, "bootstrap_samples": 1000, "bootstrap_seed": 20261009},
+  "leverage_diagnostic": {"multiples": [1, 3, 5, 10, 20], "maintenance_rate_assumptions": [0.005, 0.01], "exit_cost_bps": 25, "historical_brackets_verified": false, "safe_leverage_certified": false},
+  "ashare": {"candidate": "forecast_upgrade_3session", "universe": "PIT_SSE_SZSE_main_board_including_delisted", "minimum_listed_sessions": 120, "median_quote20_min_cny": 100000000, "hold_sessions": 3, "monthly_entry_cap": 4, "financing_authorized": false, "returns_run_authorized": false, "data_gate": "pending", "required_evidence": ["historical_security_master", "original_disclosure_timestamps_and_revision_links", "same_period_net_profit_ranges", "unadjusted_ohlcv_including_delisted", "corporate_actions_cash_and_shares", "historical_st_and_suspensions", "daily_price_limits_and_fill_evidence", "calendar_and_dated_costs"]}
+}

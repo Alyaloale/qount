@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "study_id": "ashare_information_implementation_plan_20261009",
+  "status": "plan_not_run_source_semantics_pending",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "returns_or_rankings_computed": false,
+  "holdout_role": "discovery",
+  "independent_OOS_claim": false,
+  "owner_research_authorization_continues": true,
+  "original_proposal_sha256": "a7e2fa0adf14f09c73bbdb4e4f583dc45fd1e0e6afe02f2146eb027e310f6a81",
+  "hypothesis": {
+    "question": "Does higher relative recent trading amount improve 20-session selection within matched price-strength strata?",
+    "predeclared_direction": "positive_activity_increment",
+    "primary_horizon_sessions": 20,
+    "diagnostic_horizon_sessions": 5,
+    "reverse_sign_after_results": false,
+    "pick_best_horizon_after_results": false,
+    "win_rate_target": null,
+    "annual_return_target": null,
+    "fixed_monthly_entry_cap": null
+  },
+  "unchanged_sections": [
+    "universe",
+    "features",
+    "selection",
+    "information_test",
+    "portfolio",
+    "labels_and_execution",
+    "evaluation",
+    "trial_budget"
+  ],
+  "evidence": {
+    "source_vendor_verified": true,
+    "source_vendor_basis": "owner_attestation_and_prior_published_example_crosscheck",
+    "owner_provenance_sha256": "425ddf1cea278f7ee5490720b290b211003ca36e657d4ec8f61536e9b91aa4e1",
+    "independent_both_exchange_calendar_verified": true,
+    "calendar_full_review_sha256": "c0c28888dba59222493de0a57c33f3d7d93a79c608c8cac77231aadeaa74c82a",
+    "adjustment_semantics_verified": false,
+    "pending_mainboard_factor_anomaly_securities": 408,
+    "pending_mainboard_factor_bridge_differences": 838,
+    "supplement_contract_sha256": "91c515e98162a3a7082746fa0fa37b1b6c3173e4bfd14b3b183e4238d4ccda83",
+    "supplement_is_independent_provider_not_unified_Tushare_panel": true,
+    "retired_supplement_status": "completed_independently_reconciled",
+    "retired_supplement_securities": 196,
+    "retired_supplement_raw_rows": 450024,
+    "retired_supplement_factor_events": 2279,
+    "retired_supplement_manifest_sha256": "8043f5c6741ecdd033665603ac6622b7136526e41bf7bfc7bcc1a585bd191dd8",
+    "retired_supplement_verification_manifest_sha256": "cd5673231ba2c92b096432dae5b5b346501c76e8538c6f762b50c5c1917026aa",
+    "retired_supplement_reference_gap_dates_unfilled": 16
+  },
+  "implementation_review_sha256": "a8f471362188fa1e68c3c170d85808be74ee4f5690388c0051ece2823ed9688a",
+  "implemented_pure_interfaces": {
+    "feature_strata_date_increment": "qount.research.ashare_selection",
+    "uniform_maturity_and_purge_embargo": "qount.research.ashare_statistics.decision_mask",
+    "conditional_calendar_block_interval": "qount.research.ashare_statistics.calendar_block_mean_interval"
+  },
+  "remaining_interfaces": [
+    "qualified_same_provider_input_loader",
+    "calendar_aligned_typed_open_proxy_labels",
+    "frozen_membership_and_unknown_registry",
+    "shared_label_certified_adverse_bounds_if_available",
+    "paired_diagnostic_artifact_registry",
+    "statistical_gate_aggregator",
+    "separate_raw_price_cash_portfolio_ledger"
+  ],
+  "analysis_calendar": {
+    "source_calendar_start": "2014-01-01",
+    "source_end": "2026-09-30",
+    "decision_range": [
+      "2015-01-01",
+      "2026-09-30"
+    ],
+    "stability_segments": [
+      [
+        "2015-01-01",
+        "2018-12-31"
+      ],
+      [
+        "2019-01-01",
+        "2022-12-31"
+      ],
+      [
+        "2023-01-01",
+        "2026-09-30"
+      ]
+    ],
+    "boundary_rule": "first_official_session_on_or_after_2019-01-01_and_2023-01-01",
+    "latest_exit_offset": 22,
+    "uniform_maturity": "j+22 < source_session_count",
+    "purge": "exclude_indices_b-22_through_b-1",
+    "embargo": "exclude_indices_b_through_b+21",
+    "one_mask_for_all_statistics": true,
+    "retain_full_original_session_grid": true,
+    "no_annual_boundary_purge": true,
+    "planned_decision_dates_before_security_label_gates": 2745,
+    "last_uniform_mature_decision_date": "2026-08-28"
+  },
+  "labels": {
+    "horizons": [
+      20,
+      5
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "entry_index": "j+1+d",
+    "exit_index": "j+1+d+h",
+    "same_decision_membership_for_all_cells": true,
+    "endpoints": "positive_finite_same_semantics_adjusted_open_on_exact_official_sessions",
+    "synthetic_suspension_open_or_missing_endpoint": "typed_unknown_no_next_available_record_substitution",
+    "daily_quote_proves_fill": false,
+    "factor_anchor": "same_security_constant_anchor_cancels_in_ratios_but_does_not_waive_company_action_semantics"
+  },
+  "unknowns": {
+    "preserve_predecision_members_and_denominators": true,
+    "one_common_label_for_top_subset_and_full_stratum": true,
+    "lower_bound_coefficients": "(1/k-1/n)/5_for_top_and_-1/(5*n)_for_other_members",
+    "invent_finite_upper_return_cap": false,
+    "uncertifiable_bound": "inconclusive",
+    "conditional_known_date_CI_can_pass_complete_plan": false
+  },
+  "bootstrap": {
+    "method": "noncircular_moving_session_blocks",
+    "block_sessions": 60,
+    "draws": 2000,
+    "seed": 20261009,
+    "rng": "Python_random.Random_MT19937_randrange",
+    "implementation_python_version": "3.14.6",
+    "block_start": "uniform_integer_0_through_N-min(60,N)_inclusive",
+    "sample_length": "N_original_calendar_positions; concatenate_blocks_then_trim_last_block",
+    "unknown_and_mask_positions": "retained_in_each_draw; never_compact_calendar",
+    "pairing": "same_draw_indices_for_all_strata_groups_horizons_delays",
+    "quantile": "sorted_empirical_order_statistic_floor(p*(B-1))_p_0.025_0.975",
+    "empty_draw": "record_and_statistics_contract_not_passed_if_fewer_than_2000_nonempty_draws",
+    "conditional_mean_denominator": "observed_positions_in_each_draw; never_certifies_unknown_gate",
+    "complete_plan_gate_requires": "all_members_on_retained_analysis_dates_resolved_or_predeclared_certifiable_adverse_bounds; report_planned_mask_exclusions_separately",
+    "authoritative_run_python_version": "must_bind_WSL_version_in_later_run_freeze; recorded_Mac_version_is_fixture_only",
+    "original_grid": "2855_official_planned_decision_sessions_2015_first_session_through_2026-09-30; includes_predeclared_mask_positions_not_2014_warmup",
+    "mask_and_unknown_registry": "separate_predeclared_maturity_purge_embargo_exclusions_from_unknown_security_labels; both_keep_original_grid_positions"
+  },
+  "statistical_gate": {
+    "minimum_dates": 1000,
+    "minimum_dates_each_segment": 250,
+    "minimum_evaluable_years": 8,
+    "minimum_dates_each_evaluable_year": 120,
+    "primary": "20_session_delay0_mean_CI_lower_strictly_gt_0",
+    "positive_year_fraction": "at_least_ceil(2*evaluable_year_count/3); annual_mean_strictly_gt_0",
+    "best_year": "largest_annual_mean; tie_break_year_ascending",
+    "drop_best_year": "equal_date_mean_of_remaining_certified_dates_strictly_gt_0",
+    "segments": "report_all_fixed_segments; no_extra_numeric_direction_gate_invented",
+    "failure_policy": "stop_frozen_implementation_no_sign_horizon_universe_frequency_rescue",
+    "statuses": [
+      "data_blocked",
+      "inconclusive",
+      "information_gate_not_passed",
+      "information_price_proxy_passed"
+    ]
+  },
+  "same_supplier_fast_repair_plan": {
+    "credential_location": "Mac_only; read_local_token_only_if_owner_supplies_existing_location; never_copy_to_WSL_or_E",
+    "priority_1": "requery_all_factor_events_for_408_flagged_mainboard_locator_securities_and_match_838_bridge_dates_against_original_and_daily_pre_close",
+    "priority_2": "stock_basic_separate_L_D_P_statuses; explicit_identity_and_all_pagination",
+    "priority_3": "raw_daily_and_adj_factor_for_missing_retired_names_if_provider_returns_them; zero_result_not_assumed_complete",
+    "daily_paging": "explicit_bounded_date_windows_under_official_6000_row_cap; exactly_6000_requires_split_not_success",
+    "adjustment_algorithm": "retain_raw_factor_series_and_build_same_provider_adjusted_prices_with_frozen_anchor_only_after_anomalies_explained",
+    "unresolved_same_supplier_anomalies": "preserve_old_and_new_values; no_factor_patch_or_returns_run",
+    "alternative": "new_all_universe_single_provider_dataset_needs_new_acquisition_qualification_freeze; retired_supplement_alone_is_not_unified_panel"
+  },
+  "portfolio_gate": {
+    "historical_fee_source_schedule": "core_rate_change_dates_and_bases_evidenced; broker_bundle_and_rounding_pending",
+    "remaining": [
+      "dated_identity_and_historical_board",
+      "PIT_industry",
+      "dated_tradability_and_open_liquidity",
+      "cash_corporate_actions_and_terminal_recovery",
+      "broker_commission_bundle_and_rounding",
+      "pre_2015_08_SH_face_value_and_minimum_fee"
+    ],
+    "cost_assumptions_unchanged": {
+      "commission_rate_assumption": 0.0003,
+      "minimum_commission_cny_assumption": 5,
+      "broker_terms_verified": false,
+      "one_way_slippage_bps": [
+        10,
+        25
+      ],
+      "statutory_fee_schedule": "required_dated_schedule_not_yet_acquired",
+      "apply_current_tax_rate_to_all_history": false
+    },
+    "prototype_does_not_authorize_orders": true,
+    "statutory_fee_review_sha256": "5b7ff6cec9187458b72bc1546b24049a368893787a91713c06b4a00131b31d3e",
+    "statutory_fee_review_path": "state/research_runs/ashare_selection_repair_20261009/statutory-fee-source-review-v2.json",
+    "statutory_fee_review_E_manifest_sha256": "42120c16547a12d0a670846438ae2aff7315a69c0755173658fe0555a129da9a"
+  },
+  "actual_runs": 0,
+  "actual_model_fits": 0,
+  "parameter_searches": 0,
+  "implementation_hashes": {
+    "src/qount/research/ashare_selection.py": "1ff528498d9ad3d6eb73644f4c9b6d249db68c024c83c4f52e1df71bb28d5d3a",
+    "src/qount/research/ashare_statistics.py": "aba06ae06c1ef8cdd13fa78ddff44f6cc879143053ef3f8c6790cc56724cbb2d"
+  }
+}

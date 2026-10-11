@@ -175,7 +175,7 @@ def scan_markdown_links() -> list[dict[str, str]]:
     """Validate Markdown relative links from the directory of the source file."""
 
     problems: list[dict[str, str]] = []
-    sources = [REPOSITORY_ROOT / "README.md", REPOSITORY_ROOT / "CLAUDE.md", REPOSITORY_ROOT / "AGENTS.md"]
+    sources = [REPOSITORY_ROOT / "README.md", REPOSITORY_ROOT / "CLAUDE.md", REPOSITORY_ROOT / "AGENTS.md", REPOSITORY_ROOT / "CODEX.md"]
     sources.extend(path for path in _iter_files([DOCS_ROOT], {".md"}) if DOCS_ROOT / "archive" not in path.parents)
     for source in sources:
         if not source.exists():
@@ -231,7 +231,7 @@ def inventory() -> dict[str, object]:
     root_candidates = [
         name
         for name in top_level
-        if name not in {"README.md", "CLAUDE.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".env.example", ".gitignore"}
+        if name not in {"README.md", "CLAUDE.md", "AGENTS.md", "CODEX.md", "pyproject.toml", "uv.lock", ".env.example", ".gitignore"}
     ]
     return {
         "repository_root": str(REPOSITORY_ROOT),
@@ -315,7 +315,7 @@ def check() -> dict[str, object]:
         token in MANIFEST_PATH.read_text(encoding="utf-8", errors="ignore")
         for token in ("原路径", "类别", "状态", "目标位置", "处理结论")
     )
-    allowed_root_files = {"README.md", "CLAUDE.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".env.example", ".gitignore"}
+    allowed_root_files = {"README.md", "CLAUDE.md", "AGENTS.md", "CODEX.md", "pyproject.toml", "uv.lock", ".env.example", ".gitignore"}
     unclassified_root = sorted(
         path.name
         for path in REPOSITORY_ROOT.iterdir()

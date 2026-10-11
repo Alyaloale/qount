@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "phase": "vendor_price_proxy_qualification",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "returns_produced": false,
+  "original_proposal_sha256": "a7e2fa0adf14f09c73bbdb4e4f583dc45fd1e0e6afe02f2146eb027e310f6a81",
+  "original_qualification_sha256": "17f5c4226cb64256100581c2d609b4df6a48cf63763fbce4816e2abb0b5a8493",
+  "source_acquisition_contract_sha256": "1f1691df9d516296f37e3698063bd66eeaee777c8a13eb3259dd17d6fd94adc4",
+  "source_manifest_sha256": "15fdb1c214e97cda9a1116c779ddc6f46d359a9f88ce74969b4e7fb84a729adb",
+  "calendar_review_sha256": "c0c28888dba59222493de0a57c33f3d7d93a79c608c8cac77231aadeaa74c82a",
+  "adjustment_semantics_review_sha256": "30bc00e6865929ea60e354ad5e4e73a78d9f6c67870d3c24df411b7650efb3e7",
+  "adjustment_semantics_scope": "vendor_defined_adjusted_price_proxy",
+  "certification_scope": "current_provider_historical_snapshot_conditional_information_only",
+  "same_source_requery_entire_original_panel": false,
+  "same_source_requery_scope": "all_408_flagged_securities_and_196_retired_targets_2013_through_study_end",
+  "old_nonbridge_diagnostic_interpretation": "not_a_vendor_guaranteed_identity; preserve_vendor_reproduced_residuals_without_economic_accuracy_claim",
+  "supersedes_stage_words": "anomaly_explained_means_source_and_field_application_explained_for_price_proxy; corporate_action_economics_remains_unverified",
+  "original_policy_unchanged": "same_positive_hypothesis_features_horizons_delays_members_unknowns_and_statistics",
+  "precision": {
+    "raw_times_same_day_factor": "full_record_float_precision_no_SDK_bfill_or_2_decimal_rounding",
+    "original_adjusted_field_relative_tolerance": 1e-06,
+    "original_adjusted_field_absolute_tolerance": 1e-08,
+    "same_source_factor_relative_tolerance": 1e-10,
+    "same_source_factor_absolute_tolerance": 1e-08,
+    "anchor": "one_positive_constant_per_security; original_audit_anchor_multiplier_and_recorded_source_end; ratios_cancel_constant"
+  },
+  "remaining_unverified": [
+    "economic_corporate_action_accuracy",
+    "cash_total_return",
+    "historical_asof_vintages",
+    "complete_PIT_identity_industry",
+    "terminal_recovery",
+    "fills_NAV",
+    "broker_fee_ledger"
+  ],
+  "prior_bridge_evidence": {
+    "root": "/mnt/e/qount_data/qount/artifacts/equity_selection/evidence_20261009T111423Z",
+    "manifest_sha256": "4b8558505160b79e624e8c1f9671df6c9ad4f3c4ef82b646224d9422fb332462"
+  },
+  "evidence_bindings": {
+    "state/research_runs/ashare_tushare_repair_20261009/same-source-semantics-review.json": "30bc00e6865929ea60e354ad5e4e73a78d9f6c67870d3c24df411b7650efb3e7",
+    "state/research_runs/ashare_selection_repair_20261009/tushare-owner-confirmation.json": "425ddf1cea278f7ee5490720b290b211003ca36e657d4ec8f61536e9b91aa4e1",
+    "state/research_runs/ashare_szse_calendar_evidence_20261009T114416Z/calendar-source-review-full.json": "c0c28888dba59222493de0a57c33f3d7d93a79c608c8cac77231aadeaa74c82a",
+    "config/ashare-selection-proposal-20261009.json": "a7e2fa0adf14f09c73bbdb4e4f583dc45fd1e0e6afe02f2146eb027e310f6a81"
+  }
+}

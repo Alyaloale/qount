@@ -1,55 +1,59 @@
-# qount 快速接手手册
+# qount 快速接手手册 (Vibe Coding Handoff)
 
-> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-10-05
-> **本文回答**：首次接手的最短阅读路径、值隐藏预检和跨主机安全边界。
-> **TL;DR**：生产事实只看 [current.md](current.md)。本项目当前不因接手工作启用 live、arm、订单、交易 timer 或生产 cron；不要把已有部署模板或历史命令当作授权。
+> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-10-11
+> **本文回答**：首次接手与 Vibe Coding 的最短路径、项目定位、实战策略方向与安全边界。
+> **TL;DR**：生产事实只看 [current.md](current.md)。本项目定位于**个人量化交易助手**，以**个人实战盈利**为根本目标，摒弃公募基金 20 仓切碎的冗余形式主义；主攻 ETF 趋势择时与加密货币小账户，保持简洁高效敏捷开发。
 
-## First five minutes
+---
 
-1. 阅读 [current.md](current.md) 确认 owner 决策与当前服务事实。
-2. 阅读 [project-rules.md](project-rules.md) 确认代码、研究和 legacy 的边界。
-3. 在当前主机按 [host runbooks](operations/host-runbooks.md) 确认职责；VPS 是 runtime truth，Mac 是代码主仓，WSL 是计算节点，外置盘是大数据/artifact 真相。
-   连 WSL 计算节点：`scripts/hosts/qount-wsl.sh status` / `scripts/hosts/qount-wsl.sh`（自动拉起 Tailscale 与 WSL），
-   细节只维护在 [host runbooks · WSL compute](operations/host-runbooks.md#wsl-compute-connection-entry-canonical)。
-4. 仅在已人工确认可信的本机环境中执行值隐藏预检：
+## 🚀 5 分钟上手阅读路径 (First Five Minutes)
 
-```bash
-set -a
-. ./.env
-set +a
-qount-run config-check --profile mac
-qount-run --help
-```
+1. 阅读 [README.md](../README.md) 与 [docs/personal-trading-assistant-guide.md](personal-trading-assistant-guide.md) 了解个人交易助手的战略定位、策略三大支柱与 Vibe Coding 规范。
+2. 阅读 [current.md](current.md) 确认当前系统状态与 owner 最新决策。
+3. 了解多主机职责分工（[host runbooks](operations/host-runbooks.md)）：
+   - **Mac**：编写代码、策略逻辑、文档与 Git 管理；
+   - **WSL 计算节点**：CPU/GPU 深度回测与重跑（一键直连：`ssh qount-wsl`）；
+   - **Windows E 盘**：历史日线、财报数据与工件存储（`/mnt/e/qount_data/`）；
+   - **VPS**：只读日常看板与个人微信通知服务。
+4. 本地环境自检与验证：
+   ```bash
+   source .venv/bin/activate
+   PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
+   PYTHONPATH=src ./.venv/bin/python scripts/maintenance/repository_hygiene.py check
+   ```
 
-5. 改动前先找到最窄 `unittest`；结构、配置或文档入口改动后运行：
+---
 
-```bash
-PYTHONPATH=src ./.venv/bin/python scripts/maintenance/repository_hygiene.py check
-PYTHONPATH=src ./.venv/bin/python -m compileall -q src scripts/maintenance
-```
+## 🎯 核心实战策略方向
 
-## Non-negotiable boundaries
+1. **A 股 ETF 大周期趋势择时（最推荐 A 股实战）**：
+   - 标的：沪深300ETF (`510300`)、红利低波ETF (`512890`)、纳指ETF (`513100`)；
+   - 机制：MA200/MA120 趋势多头全仓吃 Beta，破位空仓 100% 现金保本；
+   - 优势：免印花税、零暴雷风险、几百元起投、超低换手率（< 0.5x/年）。
+2. **加密货币 (Crypto) 趋势突破**：
+   - 标的：BTC / ETH；
+   - 优势：无 100 股门槛、24h 交易、即时止损。
+3. **极简核心高息资产底仓**：
+   - 标的：精选 2~3 只极品高息股（如 长江电力）；
+   - 机制：平时享受 4%~6% 股息再投资，大级别见顶时择机减仓。
 
-- 不回显、复制、提交、导出或同步任何凭证；VPS `/etc/qount/*.env` 仅由受授权的主机运维处理。
-- 不启用或恢复 `systemctl` unit、交易 timer、production cron、arm 或订单路径。
-- 所有研究与模拟结果默认 `research_only=true`、`orders_authorized=false`，不能修改生产参数或状态。
-- 不从 `src/qount/legacy/`、`scripts/archive/` 或历史文档恢复功能；它们只保留证据。
-- 不移动或删除 `data/`、`models/`、日志、根目录报告或未追踪内容。候选和引用审计见 [archive manifest](archive/manifest.md)。
+---
 
-## Where details live
+## 🛡️ 安全与风控硬边界
 
-- [G20/C60研究总览与十三轮证据](dual-engine-optimization-2026-10.md#研究总览与阅读路径)：当前事实先看current；合同／命令／包职责见各reference，原结果按[机器登记](../config/dual-engine-research-registry.json)访问E盘。Mac本地研究回执不随Git提交。
-- [ETF P2/P3 navigation](README-P2.md) and [R3 pilot interpretation](etf-p3-research-plan-2026-10.md#24-r3残差pilot执行与结果2026-10-04)
-- [Configuration contract and safe loading](reference/configuration.md)
-- [CLI and scripts](reference/cli-and-scripts.md)
-- [Local development](operations/local-development.md)
-- [Host runbooks and VPS recovery limit](operations/host-runbooks.md)
-- [Repository map](reference/repository-map.md)
-- [Storage and compute topology](storage-topology.md)
-- [Architecture design](system-architecture-design.md)
-- [Active research roadmap](research-advancement-roadmap.md)
-- [Historical archive index](archive/README.md)
+- **绝不泄露凭据**：私密 Token 和密码仅保存在本地安全配置（Mac `0600`），严禁提交至 Git。
+- **实盘保护**：默认所有实验为 `research_only=true` / `orders_authorized=false`，未经明确指令不得擅自调用外部实盘下单。
+- **真实因果时钟**：回测严禁未来函数、严禁偷看收盘价作为开盘成交、严禁虚构零成本。
+- **简洁但不过分严谨**：代码模块化，拥有单元测试；但不要为了繁琐形式主义编写数十页理论预登记合同阻塞实战推进。
 
-长命令、一次性部署细节和历史服务状态不在本页重复维护；需要时先由 `current.md` 选择对应的运行手册，再取得明确 owner 授权。
+---
 
-ETF R3进度回读使用Mac的`state/research_runs/etf_alpha_residual/latest-run.json`定位run，再按CLI参考查询其`status.json`及同级退出回执。`latest-ready.json/READY.json`是准备快照；已完成任务的结果和激活回执不能触发自动续训。全量数据、预测和模型仍在E盘，本机只维护代码、文档和轻量回执。
+## 📂 核心文档与资源导航
+
+- [个人交易助手指南](personal-trading-assistant-guide.md) — 个人实战策略体系与开发指引（Vibe Coding 必读）。
+- [项目规则](project-rules.md) — 代码组织与研究规则。
+- [主机运行手册](operations/host-runbooks.md) — 多主机环境与连接说明。
+- [配置参考](reference/configuration.md) — 配置文件与安全加载规范。
+- [CLI 与脚本参考](reference/cli-and-scripts.md) — 常用工具与命令参考。
+- [系统架构主设计](system-architecture-design.md) — 系统整体架构设计。
+- [长期个人策略设计分析](long-run-personal-strategy-design.md) — 历史 148 次实验证伪与总结。

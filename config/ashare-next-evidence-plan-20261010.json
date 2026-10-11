@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "study_id": "ashare_next_evidence_plan_20261010",
+  "phase": "next_research_evidence_plan_not_run",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "prior_information_contract_sha256": "73cbba72454848a5c302ba74d4baaddc9abd2440428fe46863414991e01d3845",
+  "prior_information_result_manifest_sha256": "54db2f8d53b31d3be0942068cad592937ea5644771a42b9376269d1721b4e80e",
+  "prior_information_summary_sha256": "734d27214ae69eda26fa435829c3c4d2d81a5484044b52f49fe73785b46daf16",
+  "independent_information_verification_sha256": "d1cf363ad129d28fb0d4300fb95dd7b313d852e233883b0021a044f274aeb340",
+  "endpoint_audit_sha256": "cbb0e86da1589647fb392c253ac3dc7056265f696932ec32d9d2bac47a2ecbdd",
+  "completed_experiments": 1,
+  "additional_financial_experiments_authorized_by_this_plan": false,
+  "new_data_requests_executed": 0,
+  "frozen_candidate_disposition": "stop_no_portfolio_promotion; incomplete_plan_inconclusive; all_four_conditional_known_date_means_negative",
+  "do_not_rescue_with": [
+    "reverse_activity_sign",
+    "choose_diagnostic_horizon",
+    "change_price_or_activity_cutoff",
+    "exclude_future_missing_member",
+    "fill_halt_or_delisting_open",
+    "extend_read_period_or_open_other_line_holdout"
+  ],
+  "evidence_gaps_ranked": [
+    {
+      "priority": 1,
+      "need": "source-gap versus historical suspension/terminal lifecycle attribution",
+      "basis": {
+        "primary_unknown_member_labels": 13735,
+        "missing_entry": 1759,
+        "missing_exit": 11976,
+        "raw_source_records_absent": 13735,
+        "affected_source_identities": 1576
+      },
+      "required_evidence": [
+        "same-provider exact-date raw response for fixed missing cases",
+        "dated suspension/resumption intervals",
+        "historical identity/board/ST/name transitions",
+        "terminal delisting disposition where applicable"
+      ],
+      "rules": [
+        "freeze deterministic source-audit cases before requests",
+        "empty raw response is not a zero return",
+        "do not impute openings or change already tested members",
+        "retain vendor and official versions separately"
+      ]
+    },
+    {
+      "priority": 2,
+      "need": "PIT public event information feasibility for a genuinely new economic hypothesis",
+      "required_evidence": [
+        "original announcement first-publication date/time or conservative usable lag",
+        "initial versus revised financial guidance versions with source IDs",
+        "as-known expected earnings/previous guidance with missing expectations explicit",
+        "dated universe/industry identity including retired securities"
+      ],
+      "stage": "source availability audit only; not a selected backtest candidate",
+      "selection_rule": "choose at most one independently motivated hypothesis after source audit; freeze full endpoints/unknown/stats and trial budget before labels; owner continuation authority persists, data/protocol readiness remains required"
+    },
+    {
+      "priority": 3,
+      "need": "cash portfolio execution and cost evidence, after a new information candidate passes its own gate",
+      "required_evidence": [
+        "opening tradability/liquidity and price limits",
+        "cash corporate actions and delisting recovery",
+        "broker commission bundle/minimum aggregation/rounding",
+        "dated statutory fees and early SH face value"
+      ],
+      "do_not_build_NAV_from_price_proxy": true
+    }
+  ],
+  "source_vendor_price_proxy_qualification_reusable_only_with_bound_inputs": true,
+  "complete_PIT_cash_return_or_live_qualification": false,
+  "implementation_status": "evidence_and_strategy_sequence_frozen; no_new_candidate_labels_or_API_calls"
+}

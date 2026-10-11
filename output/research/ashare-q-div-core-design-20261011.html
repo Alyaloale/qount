@@ -1,0 +1,67 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Q-DIV-Core · 研究设计</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f4ef;color:#25302f;font:16px/1.8 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}header,main,footer{max-width:1140px;margin:auto;padding:40px 34px}header{padding-top:58px;padding-bottom:26px}h1{font-size:40px;line-height:1.25;letter-spacing:-1px;margin:14px 0}h2{font-size:25px;line-height:1.45;margin:54px 0 20px;padding-top:12px;border-top:2px solid #d9ddd6}p{margin:14px 0}a{color:#276758;text-underline-offset:4px}code{font-size:.9em;background:#e8ece7;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}.eyebrow{font-size:13px;letter-spacing:2px;color:#526e64}.lead{max-width:850px;font-size:19px}.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}.tile{background:#fff;border:1px solid #dce1d9;border-radius:10px;padding:20px}.tile strong{display:block;font-size:29px;line-height:1.5}.tile span{font-size:14px;color:#5b6962}.route{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:24px 0}.route div{background:#dfe9e2;padding:16px;border-radius:6px;font-size:14px}.route b{display:block;color:#28634f}.table-wrap{overflow:auto;border:1px solid #d9dfd8;background:#fff;border-radius:8px;margin:20px 0}table{border-collapse:collapse;width:100%;min-width:720px;font-size:14px;line-height:1.75}th,td{padding:15px 18px;vertical-align:top;text-align:left;border-bottom:1px solid #e4e8e1}th{background:#e7eee7;white-space:nowrap}td:first-child{font-weight:600;min-width:120px}td{min-width:210px}tr:last-child td{border-bottom:0}nav{display:flex;flex-wrap:wrap;gap:10px 24px;padding:16px 0;font-size:14px}ol{padding-left:26px}li{padding:6px 0}footer{font-size:13px;color:#617167;border-top:1px solid #d9ddd6}.status{display:inline-block;background:#f2e6cc;color:#805d1a;padding:4px 10px;border-radius:5px;font-size:13px}@media(max-width:640px){header,main,footer{padding:26px 20px}h1{font-size:31px}h2{font-size:22px;margin-top:38px}.lead{font-size:17px}.tiles{grid-template-columns:1fr;gap:9px}.tile{padding:13px 16px}.tile strong{font-size:24px}.route{grid-template-columns:1fr 1fr}.table-wrap{margin-right:0}table{font-size:14px}body{font-size:15px}}@media print{body{background:#fff}header,main{max-width:none;padding:18px}.table-wrap{overflow:visible}table{min-width:0;font-size:10px}td{min-width:0}nav{display:none}}</style></head><body><header><div class="eyebrow">QOUNT / A股策略研究 / 2026-10-11</div><h1>让复杂选股证明自己的价值</h1><p class="lead">精简质量、红利与低波；先把历史信息、分红现金与被动基准对齐，再检验成本后的增量。</p><span class="status">设计冻结 · 历史收益未运行</span><div class="tiles"><div class="tile"><strong>月度 · 20 × 5%</strong><span>一级行业目标20% · 不足留现金</span></div><div class="tile"><strong>1个主方案</strong><span>消融、邻域及方法对照固定角色</span></div><div class="tile"><strong>8项 / 6项</strong><span>累计主要规则 / 已有历史评价</span></div></div><div class="route"><div><b>01 证据</b>PIT、身份、分红与官方全收益</div><div><b>02 引擎</b>现金、应收、税与受阻成交</div><div><b>03 检验</b>一次批次，全结果保留</div><div><b>04 前向</b>通过后按月人工记录，无订单</div></div><nav><a href="#part2">主方案</a><a href="#part4">基准</a><a href="#part5">消融与邻域</a><a href="#part7">评价门</a><a href="#part8">下一步</a></nav></header><main><p><strong>研究问题：</strong> 在相同的历史资格、真实分红现金账本和交易约束下，精简质量＋红利＋低波组合能否比红利低波全收益指数提供足够净增量，同时降低换手？<strong>停止条件：</strong> PIT或结算资格未通过则不计算正式收益；主要净超额或稳健性门失败则保留失败，不选消融赢家、不移动阈值救援。<strong>最小验证：</strong> 先用合成公司行动/公告版本/受阻交易场景验证时钟与账本，再在WSL/E运行冻结批次。</p>
+<p><a href="../../output/research/ashare-q-div-core-design-20261011.html">可读设计报告</a>｜<a href="../../config/ashare-q-div-core-design-20261011.json">设计合同</a>。这是新增第8项主要规则的设计登记；此前7项规则、6项历史评价保持，当前新增筛选/历史收益实验/参数搜索均0。交付复核澄清首仓预算、消融字段依赖及统计门后冻结revision2；revision1及hash留在轻量回执，期间没有读取新增筛选或收益。设计文件的hash只冻结研究选择；尚无代码hash、合格历史输入及运行回执，不能当作可执行运行合同或PIT认证。原Q-DIV-IVOL revision2及其最低门不变。</p>
+<h2 id="part1">研究判断与可证伪假说</h2>
+<p>当前没有建立市场预期差、便宜入场价或收益改善证据。行动状态为“等待证据”。假说是：少用入场技术门、按月复核和简单等权，可能减少交易摩擦；稳定分红和现金覆盖可能减少低波股中的经营风险。相反，组合也可能只是价值、低beta、公用事业及资源暴露，成本后不能跑赢现成指数。两者都须由同一引擎检验，不能由现有20名单推断。</p>
+<p>原3407→124是整条资格漏斗，不能把全部淘汰率归于技术门；更接近技术门条件淘汰率的是1954→124，约93.7%，仍显示技术条件影响很大。原电力合计23.40%与细分行业20%规则可以同时成立，它不等于满足申万一级行业20%。行业口径需换，旧结果不改写为违规。原120家财务和20候选不能用于新方案全市场消融，须逐信号日重建声明股票池。</p>
+<h2 id="part2">主方案：Q-DIV-Core v1</h2>
+<p>以下数值是待检验的固定设计选择，不是回测证明的最佳参数。</p>
+<div class="table-wrap"><table><thead><tr><th>环节</th><th>固定规则</th><th>目的与边界</th></tr></thead><tbody>
+<tr><td>宇宙与身份</td><td>沿用声明的沪深主板前缀面板范围，逐日重建上市/退市/ST与行业；仅工业企业。金融企业不套工业现金流门；不称全A。</td><td>保留已退市证券；缺历史身份列未知，不能用当前名称排历史股票。</td></tr>
+<tr><td>基础资格</td><td>至少252个过去有效价格观察；连续126个收益区间；过去20个准确交易日ADV≥3000万元；无额外成交额分位或低换手分位筛选。</td><td>同源原价/公司行动；停牌/缺价不前填成低波收益。明确上市年龄与资料覆盖的选择效应。</td></tr>
+<tr><td>质量门</td><td>ROE TTM≥8%；CFO TTM/归母利润TTM≥0.8；资产负债率&lt;70%；权益和现金覆盖的利润分母须为正。</td><td>三类质量约束；正权益下ROE≥8%已蕴含盈利，独立盈利门是冗余逻辑，不重复算因子贡献。合并CFO/归母利润仅为代理，不认证母公司现金或FCF。</td></tr>
+<tr><td>财报可用性</td><td>有可靠日内时间的原始或修订公告须早于信号收盘时点；仅日期的公告从下一交易日可用。沿用最新期末≤210自然日的资料新鲜度限制。</td><td>210日属于资料资格而非质量贡献；月度报告过期/未知淘汰，不把缺资料当坏公司。</td></tr>
+<tr><td>分红资格与信号</td><td>前三个完整财年均有正额已实施、已除息、已到账的普通现金分红。DY3为这三财年A股每股现金权益桥接到当时股数后的均值/信号日未复权收盘价。</td><td>未完成付款的年度不提前纳入；送转桥可比；特别分红、回购单列。取消滚动365日2.5%硬门。</td></tr>
+<tr><td>排序</td><td>在同一合格池内，DY3降序和126日总回报波动率升序各取百分位，平均后升序，代码破同值；两项同值取平均秩。</td><td>等权合成；完整合格池计算，不只看当前20只。IVOL另作对照，不加FF3。</td></tr>
+<tr><td>调仓</td><td>上月末收盘形成目标，下一交易日开盘起执行；首仓为2015首交易日，使用此前已知信息。最多20只，合格持仓总分排名≤30优先保留，再按分数补位。</td><td>保留者也须重新通过质量/分红/身份门；行业冲突按分数留优。不是自动采集或调度授权。</td></tr>
+<tr><td>组合权重</td><td>每名额目标5%，单股≤5%；PIT申万一级行业≤20%，即最多4个名额；未知行业列未知、不新买。</td><td>不因剩余容量提高单股权重；不足10只则目标投资不足50%，余额留现金，禁止放宽规则。</td></tr>
+<tr><td>换手与容量</td><td>首仓豁免常规预算；后续月度拟交易买＋卖金额≤当次复核NAV的40%，成交量≤前20日ADV的1%；先卖后买，100股买入整手。</td><td>清仓/减仓优先于新增，未执行目标留现金；安全事件卖出可突破常规换手预算并单列。不以当日成交量验证开盘可成交。</td></tr>
+<tr><td>退出</td><td>基础无ATR、价格阈值止损、阶梯止盈或组合回撤冷却。月末资格失败/排名出缓冲/行业容量冲突产生退出；已公开ST、调查或取消分红事件触发下一可交易时点退出。</td><td>事件类定义和来源覆盖需在运行前合同冻结；不保证退出价格或最大回撤。只有公告明确事件才触发。</td></tr>
+<tr><td>漂移与受阻</td><td>一级行业与单股上限是目标约束；每日报告实际权重及超标原因。常规漂移到月末修正，期间禁止增加已超限暴露。</td><td>未成交卖出按实际持仓占用名额及行业容量，新买不得用预计卖出释放的空间；长期受阻不能隐藏。</td></tr>
+</tbody></table></div>
+<p>首次运行前需将确定性目标求解、事件范围、修订时钟及费用表落实成代码和fixture，固定输入/代码hash。月末目标先为保留及受阻仓占位；计划卖出未释放容量前，补位只能使用实际空位。普通卖出按资格失败优先、超行业优先、分数从差到好，同优先级代码排序；买入按分数从好到差。买意图到当次月度执行窗结束失效，卖意图持续至成交或由下一次已知目标明确取消。执行窗为应执行日起5个交易日，额外一天格整体后移1日；每日可部分成交，不足整手资金留现金。季度对照也使用相同5日窗。首仓及三个替代起点、等权控制均豁免40%常规预算，仍受现金、整手、ADV和成交限制。常规成交累计消耗当次复核预算，到下一复核重置并重算旧意图；只有安全事件卖出豁免，普通资格失败不豁免。安全事件退出独立持续，不能被排名恢复取消。</p>
+<h2 id="part3">分红与PIT：两套用途、同一因果时钟</h2>
+<p>因子只使用当时已知且已实施付款的现金；前3完整财年按信号日年份减1、减2、减3固定，不事后挑有数据的年份。对A/H公司按A股每股权益与A股未复权价配对，不沿用“全公司现金/A报价总市值”代理。没有可靠特别分红标签、股数桥或支付日期则该因子未知。固定信号年前三财年会使年初上年尚未付普通现金的公司退出资格，逐月单列这类淘汰和现金暴露，不把季节性低仓位算作选股贡献。3年平均不保证抗周期；FCF、5年均值、周期滤波保留为后续假说，本轮不加硬门。</p>
+<p>账本在登记日确认权益，在除息日将股价损失对应的分红记为应收，到账日应收转现金；登记后卖出仍保留已确定应收。分红税按历史适用规则和持仓lot处理，税负变化及出售补税有独立记录。收益采用未复权价格＋真实股数变化＋现金/应收/税项；总回报信号通过当时已生效公司行动构造，禁止再加一遍复权分红。未到账应收计NAV却不能用于买入。完整账本支持拆并股、送转、配股选择、退市补偿、退款/冲回，不把缺价默认清零；期末未解决资产另报零回收压力。</p>
+<p>每条记录至少含证券永久ID、适用日期、报告期/财年、首次公开时间、修订公开时间、来源版本/hash、首次入库时间及单位。当前下载的“最新修订值＋历史公告日”不构成PIT。缺原始历史版本时只能另登记公告过滤代理诊断，不能通过正式数据门。历史行业版本按生效日使用，不将2026分类倒灌；当前120财务包仅作字段/口径测试。</p>
+<h2 id="part4">基准：先固定比较对象，再读取收益</h2>
+<div class="table-wrap"><table><thead><tr><th>比较对象</th><th>用途</th><th>资格要求</th></tr></thead><tbody>
+<tr><td>中证红利低波动100的官方全收益序列</td><td>唯一主要经济基准；价格母指数930955已核名称与方法</td><td>全收益序列ID、币种、再投资/税口径和历史版本仍须从供应商/编制机构认证；不能拿930955价格曲线替代。</td></tr>
+<tr><td>沪深300官方全收益序列</td><td>大盘市场机会成本</td><td>精确全收益ID及完整日历待认证，不沿用399300价格指数冒充。</td></tr>
+<tr><td>声明宇宙的PIT合格股票等权总回报组合</td><td>同范围选股增量；不称全A等权</td><td>所有基本合格工业股1/N目标，不继承20仓、5%名额或行业上限；同本金/整手/费用/执行，无法买到一手的目标留现金，报告覆盖与行业差异。</td></tr>
+<tr><td>现金</td><td>仓位效应参照</td><td>基础现金利息固定0，不把SHIBOR当可赚取存款利率；滞后SHIBOR只用于可比夏普诊断。</td></tr>
+</tbody></table></div>
+<p>官方指数是无交易摩擦的机会成本，ETF并非零成本。分别报告税前总回报对应、含假定税费的策略净回报和实际可投资代理的后续验证；不能把税差解释为选股alpha。主门使用净策略对官方全收益基准的较严格比较。指数发布前回溯和发布后单独列示；已核官方930955材料发布日期为2017-05-26，发布后仍属本研究已消费历史，不变成独立OOS。公开方法版本只说明设计相似，不认证2015–2026每个历史版本。</p>
+<p>官方方法显示红利低波100本身采用三年平均分红和低波筛选，因此这次改动也可能仅重现已有风格。是否值得复杂化取决于质量门和执行后的增量。<a href="https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/20231208180204-930955_Index_Methodology_cn.pdf">中证官方方法</a>、<a href="https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/930955factsheet.pdf">官方简介</a>。两份材料本次已读，历史基准数据未取得。</p>
+<h2 id="part5">一次批次、固定角色：28种设计＋成本格</h2>
+<p>主方案唯一为CORE；以下全部为诊断，不能从中事后挑赢家或自动替换CORE。所有失败、未知与未完成项都展示。旧规则消融采用共同合格数据/现金引擎以隔离条件贡献，标记“旧选股规则的统一引擎诊断”，不当作原冻结协议复现或改写旧合同。旧规则锚保留原技术/换手门、10日复核/35缓冲、DY/IVOL权重、退出和组合暂停；统一采用PIT一级行业、新现金账本/执行预算，365日DY改为可比A股每股现金/原价。所有旧规则消融共享这些改动，其作用只在该锚内配对解释。</p>
+<div class="table-wrap"><table><thead><tr><th>家族</th><th>预登记版本</th><th>数量</th></tr></thead><tbody>
+<tr><td>主方案与核心归因</td><td>CORE；分别取消ROE、现金覆盖、负债率门；联合取消全部质量门；取消全部分红资格及DY排序（只留低波）；取消波动率排序（只留DY）；126日单市场IVOL替换普通波动；季度复核；增加单一趋势退出</td><td>10</td></tr>
+<tr><td>旧规则技术归因</td><td>统一引擎旧规则锚；分别去掉缩量、Bias60、Bias120、60日收益上限、低换手分位、整组趋势；联合去掉缩量＋两项Bias</td><td>8</td></tr>
+<tr><td>CORE单维邻域</td><td>ROE 6%/10%；CFO覆盖0.6/1.0；负债率65%/75%；波动窗105/147日；保留名次25/35。其他选择与CORE相同，无笛卡尔积</td><td>10</td></tr>
+</tbody></table></div>
+<p>趋势对照仅要求连续3个交易所会话的有效收盘低于MA200后退出，停牌/缺价打断计数并列未知，下一可交易时点执行；每月入选也须不在该破位状态，不加0.97倍带、斜率或价格止损。MA200缺历史时未知，不当作未破位。季度对照在3/6/9/12月末复核，首仓时点同CORE。IVOL对照使用相同126日总回报、含截距单市场OLS与沪深300全收益市场收益，残差总体标准差×√252；市场方差或残差为0列未知。每月先在普通波动与IVOL均可算的全合格池报Spearman相关性、中位数/10%分位和持仓重合率；不能用“相关&gt;0.9”直接证明持仓相同或必定不值得研究。</p>
+<p>每设计固定base、double_cost、extra_day、double_cost_extra_day四格，共112条主起点路径。双成本将佣金、过户、印花及滑点统一乘2，分红税按法律历史规则原样；这是压力假定，不是新税法。额外一天仅后移意图最早执行时点，不重算信号。仅CORE增加2016、2019、2022首交易日独立起点×4格，共12条路径；资本重置、特征预热不重置，无历史选择，合计计划124条策略/诊断路径。声明宇宙等权对照另4格，共128条需执行账本；两个官方指数为外部基准序列，不计为策略试验。年度/regime统计由既有曲线切片，不算独立重跑证据。禁止基于中途收益增补组合。</p>
+<p>消融共享证券日历、原始证据和执行假定；移除某条件时同步移除该条件独有的字段要求，不能用所有方案完整字段交集暗中过滤对照。单独去ROE同步移除该门独有权益分母要求，仍保留现金覆盖的正利润分母；质量全去版本同时移除财务比率、210日资料年龄及比率版本/比较期要求，但保留工业身份与分红/排序所需证据。原盈利门去除的逻辑等价关系静态核验即可，不额外制造一条相同收益曲线。</p>
+<p>消融统一报告净年化、最大回撤、单边年均资金换手（全期买卖金额和/2/时间加权平均NAV/实际年数，包含首仓与安全退出）、平均现金、总收益贡献、基准净超额、持仓数和重合率，给出配对差值及固定30交易日循环块bootstrap（2000次、seed=20261011）的95%区间。无显著贡献是精简线索，不能据这轮结果自动删门；后续修改另登记新规则及已消费历史。邻域报告全部结果、中位/最差和通过比例，不展示“最优参数”。</p>
+<h2 id="part6">数据与引擎前置门</h2>
+<ol>
+<li>声明宇宙全历史逐日身份/ST/退市、PIT一级行业、财报版本和分红事件可核；数据不足的日期/证券列未知并报告覆盖，不能只检查最终成交证券。缺覆盖不得把正式起点悄悄后移后声称全历史通过。</li>
+<li>公告盘后/同日修订不泄漏；财报比较期的可用版本、退市前记录、零现金与缺现金分开。首仓所需前三财年与126日窗必须由2015前输入支持。</li>
+<li>原价现金账本与应收/税款/股份对账恒等式通过；登记后卖出、派息日晚于除息、拆股、卖后补税、部分成交、T+1和行业容量冲突有合成场景验证。</li>
+<li>交易所日历、历史涨跌停价格/制度、停复牌、板块身份与费率来源通过。仅有日线开盘价不证明排队成交；涨停买/跌停卖受阻，缺开盘可成交证据记未知并报告保守成交区间，不能用全天高低价偷看开盘成交资格。</li>
+<li>旧Book为复权单位价格代理，不能直接作为本次现金引擎。旧成本表仅作先验假定；需逐时期认证佣金假定、最低费、过户费、印花税及分红税。数据/税费表未冻结前不运行正式收益门。</li>
+</ol>
+<h2 id="part7">固定评价与失败处理</h2>
+<p>以下门是新设计选择，不是对旧8%/25%门的替换；只决定是否值得建立前向观察证据，不能晋级paper/live。</p>
+<div class="table-wrap"><table><thead><tr><th>门</th><th>事前固定口径</th></tr></thead><tbody>
+<tr><td>经济增量</td><td>CORE基础净CAGR至少高于主要全收益基准1个百分点；基础最大回撤不高于该基准；2倍成本、延迟、组合压力格的净CAGR差均≥0。</td></tr>
+<tr><td>年度/阶段</td><td>完整2015–2025年中至少6年净收益跑赢主要基准；2015、2018、2021、2022全年及2024-09-24至2026-09-30五固定窗口全部报告，至少3窗超额≥0。2026年明确为YTD。</td></tr>
+<tr><td>起点/换手</td><td>三个独立起点的CORE基础净CAGR差均≥0；基础单边年均换手≤120%。低换手不强求100笔闭合交易，另报有效投资年数、现金与可用观测。</td></tr>
+<tr><td>参数高原</td><td>10个邻域中至少8个在基础格净CAGR差&gt;0，且邻域超额CAGR中位≥CORE超额CAGR的50%；四成本格全部展示。</td></tr>
+<tr><td>统计证据</td><td>日净超额的固定块bootstrap均值95%区间下界&gt;0；DSR在预冻结的有效试验数假设及保守全部可重建路径数敏感性下均≥0.95，试验族覆盖和假设完整披露。试验族不能重建则统计门为insufficient，不能宣称稳健alpha。</td></tr>
+</tbody></table></div>
+<p>DSR校正多重选择和非正态性，不能消除历史规则形成时的事后信息，也不能制造OOS。<a href="https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf">Bailey与López de Prado原论文</a>。报告必须分开：历史7主要规则/6评价、本次新增1主设计、28诊断设计、124计划路径及实际完成数；成本格/嵌套策略不是相互独立的124次试验。用实际试验收益、Sharpe分布及相关结构估计有效试验数，并做以可重建全部路径数为上限的敏感性；缺旧收益记录则只报有条件/下界分析，不能只代入8便宣称完成DSR。时间相关另由块bootstrap处理，DSR高也不自动过门。</p>
+<p>风格归因只作解释：按PIT行业、账面/市值、规模、126日波动、滚动市场beta及公开10年国债收益率变动暴露报告，不做利率择时。经济簇固定展示公用事业（电力/水务/环保）、交通运输（港口/航运/公路）、资源（煤炭/油气）各合计及三簇总暴露；这些不是新增合并硬上限，资料不足不伪造中性化。全期与上述固定regime、指数发布前后同时报告，不挑最好窗口。</p>
+<h2 id="part8">完成顺序与前向观察</h2>
+<p>顺序为设计hash登记→历史证据用途审计→现金/执行引擎及合成验证→绑定最终数据/实现的执行合同→WSL/E单次固定批次→账本独立复算与全结果交付。发现技术错误保留失败工件，修复另revision，注明是否已查看收益；不能覆盖原结果。</p>
+<p>通过研究门后才建立按月、人工触发的无订单前向信号记录：信号时间、公开信息截止时点、数据/代码/合同hash、全漏斗及未知原因、分数、目标/现金、受阻假设、后续可核表现、规则偏离。首条只能使用未来当时可用信息，不将2026-09-30名单补记为新鲜信号。不启动服务、自动采集、定时器或通知。下一项实际工作是历史版本/身份/公司行动与官方全收益基准的最小覆盖审计；设计尚未建立收益可行性。</p></main><footer>research_only=true · orders_authorized=false · promotion_evidence=false<br>当前操作事实以仓库 docs/current.md 为准；本报告是待验证的研究设计，没有新增历史收益或可买资格。</footer></body></html>

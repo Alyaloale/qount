@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "line": "ashare_selection_and_holding",
+  "task": "business_leadership_and_dated_trend_review",
+  "asof": "2026-10-10",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "scope_declared_before_acquisition": "12 symbols: existing lowrisk ten plus predeclared bank/telecom operating comparisons",
+  "formal_record_created_after_partial_financial_acquisition": true,
+  "not_preregistered_economic_experiment": true,
+  "existing_virtual_holdings": [
+    "000001.SZ",
+    "000088.SZ",
+    "000333.SZ",
+    "000651.SZ",
+    "600018.SH",
+    "600177.SH",
+    "600377.SH",
+    "600887.SH",
+    "600900.SH",
+    "600941.SH"
+  ],
+  "operating_comparisons_only": [
+    "600036.SH",
+    "601728.SH"
+  ],
+  "historical_strategy": "config/ashare-lowrisk-backtest-20261010.json",
+  "historical_strategy_sha256": "20831405e35b6af22258ca5db287901405f6aa66401c6b15a614333f7f01aa4a",
+  "qualified_price_cutoff": "2026-09-30",
+  "new_raw_reference_quote_date": "2026-10-09",
+  "quote_use": "separate unadjusted reference; no historical splice/NAV/signal update",
+  "financial_period": "2026H1, with explicitly dated later operating/corporate-action updates if acquired",
+  "review_checks": [
+    "issuer/share class and primary document",
+    "revenue/parent/recurring profit/CFO and comparative units",
+    "industry-specific quality and cash classifications",
+    "scoped leadership evidence and management versus independent claims",
+    "driver to operating metrics/profit/cash transmission",
+    "valuation and entry gaps, prove/kill and next review",
+    "existing holding weights versus business evidence and dated trend"
+  ],
+  "priority_meaning": {
+    "A": "deeper_research_only",
+    "B": "watchlist_needs_operating_trigger",
+    "C": "deprioritize_for_operating_leader_theme"
+  },
+  "stop_condition": "Unsupported leadership or missing economic exposure remains watchlist/unproven; do not fill missing valuation, trade status or cash economics. No threshold retuning to rescue prior failure.",
+  "new_primary_rules": 0,
+  "new_backtests": 0,
+  "new_return_curves": 0,
+  "parameter_search": false,
+  "historical_rankings_unchanged": true,
+  "historical_PIT": false,
+  "cash_NAV_certified": false,
+  "current_execution_eligibility_certified": false,
+  "scheduler": false,
+  "production_effect": "none"
+}

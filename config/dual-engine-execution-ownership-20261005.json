@@ -1,0 +1,160 @@
+{
+  "study_id": "dual_engine_execution_ownership_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 9,
+  "cumulative_local_candidate_trials": 151,
+  "planned_curves": 72,
+  "global_trial_count": null,
+  "g20": {
+    "start": "2018-04-02",
+    "end": "2026-07-30",
+    "cost_bps": [
+      20,
+      40
+    ],
+    "delays": [
+      1,
+      2
+    ],
+    "candidates": [
+      "owned20_rotate",
+      "owned40_rotate",
+      "owned20_sector",
+      "owned40_sector"
+    ],
+    "controls": [
+      "aware_gold_rotate",
+      "joint20_rotate",
+      "joint40_rotate",
+      "joint20_sector",
+      "joint40_sector"
+    ],
+    "sources": {
+      "sweep20_rotate": "aware_gold_rotate",
+      "cap40_rotate": "aware_gold_rotate",
+      "active20_rotate": "aware_gold_rotate",
+      "sweep20_sector": "sector3_guard",
+      "cap40_sector": "sector3_guard",
+      "active20_sector": "sector3_guard"
+    },
+    "capital_policy": {
+      "initial_shares": {
+        "equity_crisis": 0.2,
+        "gold": 0.2,
+        "reserve": 0.6
+      },
+      "policies": {
+        "sweep20": "at original monthly signal close cap each equity_crisis/gold book share at20%; no loss replenishment; remainder reserve",
+        "cap40": "at original monthly signal close cap each equity_crisis/gold book share at40%; no loss replenishment; remainder reserve",
+        "active20": "monthly closed source target contains positive non-BIL weight =>20% book share, otherwise zero; remainder reserve; explicit recapitalization when active",
+        "scope": "shares frozen at original monthly closed decision and filled after original delay; continuous cap not claimed; original source target stream unchanged; gross per-book fees including opposite fills",
+        "profit": "capital transfers sum zero and excluded from profit; three initial shares20/20/60; no new yield sources"
+      }
+    }
+  },
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "local_recovery",
+      "topup10",
+      "topup25",
+      "local_topup10",
+      "local_topup25"
+    ],
+    "controls": [
+      "rebound_half",
+      "mature_rebound_half",
+      "agreement",
+      "sat_week"
+    ]
+  },
+  "c60_rules": {
+    "local_recovery": [
+      0.0,
+      true
+    ],
+    "topup10": [
+      0.1,
+      false
+    ],
+    "topup25": [
+      0.25,
+      false
+    ],
+    "local_topup10": [
+      0.1,
+      true
+    ],
+    "local_topup25": [
+      0.25,
+      true
+    ]
+  },
+  "mechanisms": {
+    "g20": "Carry last explicit sparse source per book; exclude source-zero held complement from binding joint budget; at fill veto positive target when latest closed source is zero, assign BIL remainder; same dated lag, monthly funding, actual gross book fees. Veto in full/scoped acquisitions may exit existing units before a later queued exit; no continuous investment cap claim.",
+    "c60": "Copy rebound_half nominal targets and selection exactly; only Sunday satellite refresh. local variants recover/refill the triggered core/satellite family without coupled core override; simultaneous families union. Suppress only positive requested topups of already-owned assets whose prefee increase/owned open value is <=10% or25%; freeze suppressed units, no redistribution; original reductions, zeros, risk gate and cash solver retained.",
+    "protected": "Initial pre-start funding, recovered and next-close continuing assets bypass topup filter; band changes no source target, state threshold, Sunday, lag or fee rate. Bands applied only at acquisition, not a sell inaction region or theoretically optimal cost rule.",
+    "objective": "C60 all four cells CAGR strictly higher, drawdown no worse, closed net win rate strictly higher than rebound_half; separately compare historical ranking leader mature_rebound_half. G20 zero source buys at both decision and latest-fill closed source is correctness gate, not return gate. Original historical selection policy unchanged.",
+    "stop": "One frozen9-candidate/9-control/72-curve study. No result-conditioned band, timing, state threshold, fit, new source, forward window or rescue."
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "selection_exclusions": [],
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "prior_results": {
+    "g20": {
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/results",
+      "manifest_sha256": "c9a2db406d4809c1516612c8bc5ffd728f9cfbc04b218cf7d4e26dbdb875fc78"
+    },
+    "c60": {
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/results",
+      "manifest_sha256": "5139f6029d2a93063dcfe244902da97e8d1a9774c812f7268f267a2bf5638d6b"
+    }
+  },
+  "owner_instruction": "\u63a8\u8fdb\u4e0b\u4e00\u7248\u5927\u6539\u7814\u7a76",
+  "prospective_confirmation": {
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false
+  },
+  "data_scope": "Same frozen historical inputs through old endpoints; no new source, fit, P3 outer, production, account or service change."
+}

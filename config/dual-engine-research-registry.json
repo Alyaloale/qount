@@ -1,97 +1,123 @@
 {
-  "schema_version": 1,
-  "research_only": true,
-  "orders_authorized": false,
-  "promotion_evidence": false,
-  "studies": [
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/optimization_20261004T080635Z/results",
-      "manifest_sha256": "f0e906e05fa595629e9c74479dc75f6044462e68fcee79dec9772abd59dce219"
+  "aggregate_known_curve_exposures_with_supplemental": 1151,
+  "confirmation_assessment": {
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/_verification/leader-assessment.json",
+    "sha256": "d6bc463af3e03f27931f68c2c543d4fa47114f16139d40430f23d310aacaf78a",
+    "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+  },
+  "current_selection_receipt": {
+    "manifest_sha256": "f712bcd72bdb5be199ad74a7ede3318e6bd79363b7b941a888a4916a573d335b",
+    "role": "sixteenth_round_original_four_cell_policy_source_ownership_and_repeat_acquisition; correctness_and_joint_goal_reported_separately",
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/registry"
+  },
+  "economic_strategy_lineage": {
+    "c60": {
+      "current_version_id": "dual_engine_zorder_20261005/c60/sat_week",
+      "identity": "same original nominal targets/universe; Sunday satellite refresh without routine core refresh; core recovery retains coupled full fill; staged recovery and vintage complement reductions; historical risk/cost tradeoff, no confirmed stable increment",
+      "later_receipts_inherited": false,
+      "original_version_id": "dual_engine_zorder_20261005/c60/sat_week",
+      "prior_version_id": "dual_engine_zonal_20261005/c60/satellite_staged"
     },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/execution_20261004T085317Z/results",
-      "manifest_sha256": "916fbdf0e23341375f6ebefa0bac18c50b4e2c54dd49808f823fdc649c024371"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/structural_20261004T112642Z/results",
-      "manifest_sha256": "2691785605149b2e1532c5cea11b197c788bf5ae89a479dca4cf479507402aee"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/expansion_20261004T120550Z/results",
-      "manifest_sha256": "9f522bc82285790981598b21c9b32844050813a6a7384cf75324c6ce8a255559"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/results",
-      "manifest_sha256": "a1f92989fa0dbc7707694dca4abbded641b96af1eadb517038c354c825cbc6bf"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/results",
-      "manifest_sha256": "011470a4962f67793f19543fef660cf6a1ba41e314d94498dd530198e77276f2"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/results",
-      "manifest_sha256": "800f01ab79fdcd1108bfcf014da10b3e9fc41aff670a8ee4436c27489750a1fc"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/results",
-      "manifest_sha256": "a8eefdc0e72006c56d9bf27887ae8336462d0b8c65ed2372e63be3bea249ef9d"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/results",
-      "manifest_sha256": "41c3cd13f759ecd8cc52859d33d4f42707df7e8b8dc337e258f6df2233bb7532",
-      "selection_exclusions": []
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/results",
-      "manifest_sha256": "63bcffd2fa91634765bacc0d9ffa1e860467b0fed5ff1c15b1cefa3b91aaf571",
-      "selection_exclusions": []
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/results",
-      "manifest_sha256": "8921869a0de2610870d9612706132cd5cf07a8ca8ed77f3c6c3829d4f4a5c639",
-      "selection_exclusions": [
-        "dual_engine_sources_20261005/g20/nfci_cash",
-        "dual_engine_sources_20261005/g20/credit_cash",
-        "dual_engine_sources_20261005/g20/credit_gold",
-        "dual_engine_sources_20261005/g20/curve_credit"
-      ]
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/results",
-      "manifest_sha256": "b0eec4974ce2632be2c2bc8352e3aa33c79d38535860508504ecab6214ec5bd5"
-    },
-    {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/results",
-      "manifest_sha256": "c9a2db406d4809c1516612c8bc5ffd728f9cfbc04b218cf7d4e26dbdb875fc78"
+    "g20": {
+      "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+      "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor",
+      "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate"
     }
-  ],
-  "selection_exclusions": [
-    "dual_engine_expansion_20261004/c60/random_positive2_s11",
-    "dual_engine_expansion_20261004/c60/random_positive2_s29",
-    "dual_engine_expansion_20261004/c60/random_positive2_s47",
-    "dual_engine_expansion_20261004/c60/residual2_ex_SOL",
-    "dual_engine_sources_20261005/g20/credit_cash",
-    "dual_engine_sources_20261005/g20/credit_gold",
-    "dual_engine_sources_20261005/g20/curve_credit",
-    "dual_engine_sources_20261005/g20/nfci_cash"
-  ],
+  },
+  "eighth_holdings_verification": {
+    "curves": 30,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/_verification/holding-clocks-verification.json",
+    "sha256": "6d1da53484247bfd941cb24bccb6f09dd34f66706472114b9ceff92c1eed11f9"
+  },
+  "eleventh_holdings_verification": {
+    "capital_curves": 2,
+    "curves": 26,
+    "episode_curves": 24,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/holding-sources-verification.json",
+    "sha256": "18cffe445c807401c5233896a22f7fa834f0b19664fe8ffa08b2d00d315eba25"
+  },
+  "eleventh_information": {
+    "crypto_contemporaneous_archive_vintage_certified": false,
+    "macro_candidates_selection_excluded": true,
+    "macro_snapshot_vintage_certified": false,
+    "manifest_sha256": "82a9fbdf5f2ba2559476148d614c7ba45d229343e73dc601b047b3adf66e7bd4",
+    "nfci_last_observation": "2026-04-24",
+    "nfci_missing_decisions": 50,
+    "qualification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/information-verification.json",
+    "qualification_sha256": "6bae7dbccd2dd5a8ba8467b85e213e60ac226a8392799901c518f32024a6f5d2",
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/inputs/information"
+  },
+  "fifteenth_verification": {
+    "closed_risk_decisions": 82760,
+    "curves": 40,
+    "event_scope_checks": 27000,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/_verification/result-verification.json",
+    "sha256": "026a682953ab408c73bd1db5d309823ac707ab7ecbfb0ca124366a2ebf7a592d",
+    "state_rows_checked": 6815,
+    "target_values_checked": 68150
+  },
+  "fourteenth_preflight_failure": {
+    "economic_rules_unchanged": true,
+    "new_curve_exposures": 0,
+    "reason": "public bundle missing transitively imported test fixtures; candidate replay never started",
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z"
+  },
+  "fourteenth_verification": {
+    "closed_risk_decisions": 66208,
+    "curves": 32,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/_verification/result-verification.json",
+    "sha256": "c59ea19adfc4cbfea46ed731b8f4003e482dfa986377020c841e7493d1dfef75",
+    "target_values_checked": 54520
+  },
+  "g20_source_ownership_correctness": {
+    "candidate_curves": 16,
+    "passed": true,
+    "scope": "new round16 owned variants only; old results/engines retain historical defect",
+    "zero_source_buys_at_decision": 0,
+    "zero_source_buys_at_latest_fill_close": 0
+  },
+  "global_optimum_confirmed": false,
+  "global_trial_count": null,
+  "holding_attribution": {
+    "cash_unit_curves": 464,
+    "curves": 549,
+    "failure_preserved_root": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z",
+    "manifest_sha256": "7a6e7652f0df93c85735189ac70b6936445c2392f739d8cb5742e2e0d5bec51d",
+    "role": "seven original studies, observational asset/episode attribution, no new strategy trials",
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/results",
+    "strategy_summary_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/_handoff/strategy-holdings-index.json",
+    "strategy_summary_sha256": "72d9145ddd41b05b699e21fed1156b319b1b37762211bf590ceb3a7469f85602",
+    "summary_manifest_sha256": "c6410e6d2cd8367a1bd33dbe0a498feb8455ea90648e1c4f000629d4248b5d54",
+    "unique_ledgers": 422,
+    "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/_verification/result-verification.json",
+    "verification_sha256": "2e4a32cbe60e626041da3172a3815a37b052774bece834ea0a897db81b73cb6e",
+    "weights_only_curves": 85
+  },
   "latest_registry": {
-    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/registry",
-    "manifest_sha256": "aec48f178b83edaee12b95f6be21e4f615db4c8735d20b0203d0297b64e11fcc"
+    "manifest_sha256": "b302fcb8f7a3e9f62c68307bc51d18c9ffbf5bd1466102bd6becf6cb2041a579",
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/cashflow_20261006T075644Z_v4/registry"
   },
   "leaders": {
     "c60": {
       "confirmation_status": "historical_leader_verified_pending_prospective",
-      "eligible_versions": 113,
-      "leader": "dual_engine_zorder_20261005/c60/sat_week",
+      "eligible_versions": 138,
+      "leader": "dual_engine_execution_ownership_20261005/c60/mature_rebound_half",
       "pareto": [
-        "dual_engine_sources_20261005/c60/funding_flow",
-        "dual_engine_zorder_20261005/c60/sat_week"
+        "dual_engine_execution_ownership_20261005/c60/local_topup10",
+        "dual_engine_execution_ownership_20261005/c60/local_topup25",
+        "dual_engine_execution_ownership_20261005/c60/mature_rebound_half",
+        "dual_engine_execution_ownership_20261005/c60/rebound_half",
+        "dual_engine_execution_ownership_20261005/c60/topup10",
+        "dual_engine_execution_ownership_20261005/c60/topup25",
+        "dual_engine_features_20261005/c60/joint_quality",
+        "dual_engine_states_20261005/c60/mature_half",
+        "dual_engine_states_20261005/c60/mature_rebound_half",
+        "dual_engine_states_20261005/c60/rebound_half"
       ]
     },
     "g20": {
       "confirmation_status": "historical_leader_verified_pending_prospective",
-      "eligible_versions": 109,
+      "eligible_versions": 118,
       "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
       "pareto": [
         "dual_engine_breadth_20261005/g20/aware_gold_rotate",
@@ -101,6 +127,9 @@
         "dual_engine_clocks_20261005/g20/scoped_rotate",
         "dual_engine_clocks_20261005/g20/scoped_sector",
         "dual_engine_clocks_20261005/g20/sector3_guard",
+        "dual_engine_execution_ownership_20261005/g20/aware_gold_rotate",
+        "dual_engine_execution_ownership_20261005/g20/joint20_rotate",
+        "dual_engine_execution_ownership_20261005/g20/joint40_rotate",
         "dual_engine_expansion_20261004/g20/gold20",
         "dual_engine_expansion_20261004/g20/macro_fund",
         "dual_engine_expansion_20261004/g20/macro_only_static",
@@ -141,6 +170,21 @@
       ]
     }
   },
+  "local_candidate_trials": 152,
+  "mechanism_diagnostics": {
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/_analysis/mechanism-diagnostics.json",
+    "role": "post-result descriptive book/asset/year and suppressed-acquisition attribution; no new curve, fit, threshold or source",
+    "sha256": "68da22958a2e69f6fa17be69fd9821450ac653457f7a3cc01399ab529d6b56c3"
+  },
+  "new_later_check_curves": 0,
+  "ninth_holdings_verification": {
+    "capital_curves": 16,
+    "curves": 50,
+    "episode_curves": 34,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/_verification/holding-reform-verification.json",
+    "sha256": "f1998eed420cf0849118ebcef3b74f9dcee2c594866f98a8f37154358ea099a8"
+  },
+  "orders_authorized": false,
   "policy": {
     "data_role": "consumed_historical_discovery_pool",
     "global_optimum_confirmed": false,
@@ -153,277 +197,36 @@
     "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
     "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID"
   },
-  "global_optimum_confirmed": false,
-  "global_trial_count": null,
-  "local_candidate_trials": 132,
-  "registered_versions": 248,
-  "registered_historical_curves": 981,
-  "prospective_confirmation": {
-    "start": "2026-10-05",
-    "status": "pending_observations",
-    "manual_only": true,
-    "scheduler_created": false
-  },
-  "current_selection_receipt": {
-    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/registry",
-    "manifest_sha256": "aec48f178b83edaee12b95f6be21e4f615db4c8735d20b0203d0297b64e11fcc",
-    "role": "thirteenth_round_original_four_cell_policy_joint_book_budgets_and_family_refresh_clocks"
-  },
-  "confirmation_assessment": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/assessment/leader-assessment.json",
-    "sha256": "3bab5ff982279477ec5c8b53f86e212becf2cbac8f1ec421e98284092c6cefbd",
-    "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
-  },
-  "mechanism_diagnostics": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/_analysis/mechanism-diagnostics.json",
-    "sha256": "8d2d2d158f0fc048d25f5130bc35dea1d276c998e43b084ef2e2f7e7cb4a7fa6",
-    "role": "family_refresh_recovery_fees_wealth_and_joint_source_budget_ownership_diagnostics"
-  },
-  "prior_fifth_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/registry-v2",
-      "manifest_sha256": "c72c72ff318d6bcc641dab916dc26dc3e9656c5db6da4e24e583fa6cc40b5900"
-    },
-    "frozen_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/registry",
-      "manifest_sha256": "398d9109926b04c064751db379be437ce0b3f5ba56608445d42739cb10d77dfe"
-    },
-    "latest_frozen_later_check": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/later-check",
-      "manifest_sha256": "2284179579902d50bb71d05addc7236fd6bc8d205ace893e4481750e98e9cc7d"
-    },
-    "confirmation_assessment": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/assessment/leader-assessment.json",
-      "sha256": "33163b2cf10bbd21b782ed0ef143d7a2ed1194593957b794c7e47754c96c001c",
-      "status": "mixed_later_evidence_pending_prospective"
-    },
-    "daily_archive_bridge": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/_verification/daily-bridge-verification.json",
-      "sha256": "0f896c5905fd40f5886f5a20389e387e253640beff25f2fd77510d4f1ad5c42f",
-      "daily_input_manifest_sha256": "6791e79d787db699fefd7c318bc9f4dfd1537d2d473534222091a9fc71d73b15",
-      "frozen_rest_manifest_sha256": "e12a8f0559f33ec6b7b899345344fa089c4bb06e4b88d15ebd5c14d839afe00a",
-      "status": "verified_300_daily_archive_rows_match_frozen_REST"
-    },
-    "registry_metadata_revision": {
-      "role": "contract_binding_metadata_correction_only",
-      "corrected_versions": 23,
-      "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/_registry_revision/contract-binding-verification.json",
-      "verification_sha256": "719a825c7ff5671d3732d147cc1a40663f23db02ad6fd4cc49a962fae81b09fb",
-      "all_return_summaries_and_ranks_unchanged": true
-    },
-    "implementation_reproduction": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/later-check-v2",
-      "manifest_sha256": "c9e5980598a13abd504da27cd37c424849da9cca9e6038be35f18c9c3db67c64",
-      "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/_verification/metadata-replay-verification.json",
-      "verification_sha256": "a732edfbdb27ea4f0d811dfedcfb1591489927f0bfc905d3255bc995dd5e6957",
-      "all_24_ledger_files_byte_identical": true,
-      "new_trials": 0,
-      "new_independent_evidence": false
-    }
-  },
   "previously_consumed_later_periods": [
     "G20 2026-07-31..2026-09-30",
     "C60 2026-09-01..2026-09-30"
   ],
-  "new_later_check_curves": 0,
-  "prior_mechanism_diagnostics": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_analysis/mechanism-diagnostics.json",
-    "sha256": "bb63182b604b46a40002b1f4c13da86d7989ded906d55f48398e28fca4c3f50f",
-    "role": "postselection descriptive causal recovery/source-capital and scoped gross fee checks; zero new trials"
-  },
-  "prior_sixth_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/registry",
-      "manifest_sha256": "e494cd72847eb05aa753efc9ee5ff8a3942f023271522e1e6f297835099360f1"
-    },
-    "current_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/registry",
-      "manifest_sha256": "e494cd72847eb05aa753efc9ee5ff8a3942f023271522e1e6f297835099360f1",
-      "role": "historical_ranking_after_previously_consumed_later_data; not a pre-September selection"
-    },
-    "confirmation_assessment": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/assessment/leader-assessment.json",
-      "sha256": "cdd08056814896af4bac82e87811ce07899e62cb38f293d487945ff8a3432387",
-      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
-    },
-    "mechanism_diagnostics": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/_analysis-v2/mechanism-diagnostics.json",
-      "sha256": "30199858b6834ccb994e536c789a4f4d2530fbb7b19bb389ffd8992fdeae2f3e",
-      "role": "postselection diagnostics; research-period dates and actual satellite membership; zero new trials"
-    },
-    "leaders": {
-      "c60": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 53,
-        "leader": "dual_engine_regimes_20261004/c60/dual_core",
-        "pareto": [
-          "dual_engine_expansion_20261004/c60/core_only",
-          "dual_engine_expansion_20261004/c60/residual2",
-          "dual_engine_expansion_20261004/c60/usage_gate4",
-          "dual_engine_nextgen_20261004/c60/core_only",
-          "dual_engine_nextgen_20261004/c60/crisis_satellite_cash",
-          "dual_engine_nextgen_20261004/c60/fee_density2",
-          "dual_engine_nextgen_20261004/c60/residual2",
-          "dual_engine_nextgen_20261004/c60/supply_covered2",
-          "dual_engine_nextgen_20261004/c60/supply_gate2",
-          "dual_engine_nextgen_20261004/c60/supply_rank2",
-          "dual_engine_regimes_20261004/c60/core_only",
-          "dual_engine_regimes_20261004/c60/dual_core",
-          "dual_engine_regimes_20261004/c60/residual2",
-          "dual_engine_structural_20261004/c60/core_only",
-          "dual_engine_structural_20261004/c60/core_satellite",
-          "dual_engine_structural_20261004/c60/core_satellite_partial"
-        ]
-      },
-      "g20": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 44,
-        "leader": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-        "pareto": [
-          "dual_engine_expansion_20261004/g20/gold20",
-          "dual_engine_expansion_20261004/g20/macro_fund",
-          "dual_engine_expansion_20261004/g20/macro_only_static",
-          "dual_engine_expansion_20261004/g20/macro_only_trend",
-          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-          "dual_engine_nextgen_20261004/g20/gold20",
-          "dual_engine_nextgen_20261004/g20/macro_fund",
-          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
-          "dual_engine_regimes_20261004/g20/gold20",
-          "dual_engine_regimes_20261004/g20/macro_fund",
-          "dual_engine_structural_20261004/g20/spy_risk"
-        ]
-      }
-    }
-  },
-  "economic_strategy_lineage": {
-    "g20": {
-      "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-      "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-      "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor"
-    },
-    "c60": {
-      "original_version_id": "dual_engine_zorder_20261005/c60/sat_week",
-      "current_version_id": "dual_engine_zorder_20261005/c60/sat_week",
-      "prior_version_id": "dual_engine_zonal_20261005/c60/satellite_staged",
-      "identity": "same original nominal targets/universe; Sunday satellite refresh without routine core refresh; core recovery retains coupled full fill; staged recovery and vintage complement reductions; historical risk/cost tradeoff, no confirmed stable increment",
-      "later_receipts_inherited": false
-    }
-  },
-  "prior_seventh_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/registry",
-      "manifest_sha256": "59ee624f9a474d7ec7e8a3fdeb0d17813a5b319251f404da6dbd5a5f772689d5"
-    },
-    "current_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/registry",
-      "manifest_sha256": "59ee624f9a474d7ec7e8a3fdeb0d17813a5b319251f404da6dbd5a5f772689d5",
-      "role": "historical ranking on consumed history; all earlier later-month observations already consumed"
-    },
-    "confirmation_assessment": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/assessment/leader-assessment.json",
-      "sha256": "725a4ebd2d7b29a167667d87141b6821f2de979a7f4862023db0cb3f035dfcfd",
-      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
-    },
-    "mechanism_diagnostics": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/_analysis/mechanism-diagnostics.json",
-      "sha256": "4f35127ecabe20bdf7d0ea0c79df6e026e32a3c64848c66bf995809c6db03945",
-      "role": "postselection descriptive factorial net-return and budget/source diagnostics; zero new trials"
-    },
-    "leaders": {
-      "c60": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 64,
-        "leader": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "pareto": [
-          "dual_engine_breadth_20261005/c60/core_only",
-          "dual_engine_breadth_20261005/c60/dual_core",
-          "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-          "dual_engine_expansion_20261004/c60/core_only",
-          "dual_engine_expansion_20261004/c60/usage_gate4",
-          "dual_engine_nextgen_20261004/c60/core_only",
-          "dual_engine_nextgen_20261004/c60/fee_density2",
-          "dual_engine_nextgen_20261004/c60/supply_covered2",
-          "dual_engine_nextgen_20261004/c60/supply_gate2",
-          "dual_engine_nextgen_20261004/c60/supply_rank2",
-          "dual_engine_regimes_20261004/c60/core_only",
-          "dual_engine_regimes_20261004/c60/dual_core",
-          "dual_engine_structural_20261004/c60/core_only",
-          "dual_engine_structural_20261004/c60/core_satellite_partial"
-        ]
-      },
-      "g20": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 54,
-        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "pareto": [
-          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-          "dual_engine_breadth_20261005/g20/macro_fund",
-          "dual_engine_breadth_20261005/g20/sector3_guard",
-          "dual_engine_expansion_20261004/g20/gold20",
-          "dual_engine_expansion_20261004/g20/macro_fund",
-          "dual_engine_expansion_20261004/g20/macro_only_static",
-          "dual_engine_expansion_20261004/g20/macro_only_trend",
-          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-          "dual_engine_nextgen_20261004/g20/gold20",
-          "dual_engine_nextgen_20261004/g20/macro_fund",
-          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
-          "dual_engine_regimes_20261004/g20/gold20",
-          "dual_engine_regimes_20261004/g20/macro_fund"
-        ]
-      }
-    },
-    "economic_strategy_lineage": {
-      "g20": {
-        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor"
-      },
-      "c60": {
-        "original_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "current_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "identity": "new four-satellite inverse-volatility historical ranking leader; stability unconfirmed"
-      }
-    }
-  },
-  "holding_attribution": {
-    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/results",
-    "manifest_sha256": "7a6e7652f0df93c85735189ac70b6936445c2392f739d8cb5742e2e0d5bec51d",
-    "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/_verification/result-verification.json",
-    "verification_sha256": "2e4a32cbe60e626041da3172a3815a37b052774bece834ea0a897db81b73cb6e",
-    "curves": 549,
-    "unique_ledgers": 422,
-    "cash_unit_curves": 464,
-    "weights_only_curves": 85,
-    "strategy_summary_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z_v2/_handoff/strategy-holdings-index.json",
-    "strategy_summary_sha256": "72d9145ddd41b05b699e21fed1156b319b1b37762211bf590ceb3a7469f85602",
-    "summary_manifest_sha256": "c6410e6d2cd8367a1bd33dbe0a498feb8455ea90648e1c4f000629d4248b5d54",
-    "failure_preserved_root": "/mnt/e/qount_data/qount/artifacts/dual_engine/holdings_20261005T013145Z",
-    "role": "seven original studies, observational asset/episode attribution, no new strategy trials"
-  },
-  "eighth_holdings_verification": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/_verification/holding-clocks-verification.json",
-    "sha256": "6d1da53484247bfd941cb24bccb6f09dd34f66706472114b9ceff92c1eed11f9",
-    "curves": 30
-  },
   "prior_eighth_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/registry",
-      "manifest_sha256": "c0ee201242fd77a0f3eec14474ef377c3bb0d408482c51b6ad0f77b29485175b"
-    },
-    "current_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/registry",
-      "manifest_sha256": "c0ee201242fd77a0f3eec14474ef377c3bb0d408482c51b6ad0f77b29485175b",
-      "role": "eighth consumed-history ranking; both economic leaders and descriptor IDs retained"
-    },
     "confirmation_assessment": {
       "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/assessment/leader-assessment.json",
       "sha256": "836c7922ae9eb2b79008b166cbbb5d1a13d95566914951abe34d854676f2ecb3",
       "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
     },
-    "mechanism_diagnostics": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/_analysis/mechanism-diagnostics.json",
-      "sha256": "313711e4b7d9ef203731bbe36bcdce9ed4c90fd1d3ef1aa24992cbcf4468a236",
-      "role": "post hoc frozen-book holding and queued-plan diagnostics; zero additional trials"
+    "current_selection_receipt": {
+      "manifest_sha256": "c0ee201242fd77a0f3eec14474ef377c3bb0d408482c51b6ad0f77b29485175b",
+      "role": "eighth consumed-history ranking; both economic leaders and descriptor IDs retained",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/registry"
+    },
+    "economic_strategy_lineage": {
+      "c60": {
+        "current_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
+        "identity": "new four-satellite inverse-volatility historical ranking leader; stability unconfirmed",
+        "original_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk"
+      },
+      "g20": {
+        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor",
+        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate"
+      }
+    },
+    "latest_registry": {
+      "manifest_sha256": "c0ee201242fd77a0f3eec14474ef377c3bb0d408482c51b6ad0f77b29485175b",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/registry"
     },
     "leaders": {
       "c60": {
@@ -474,259 +277,57 @@
         ]
       }
     },
-    "economic_strategy_lineage": {
-      "g20": {
-        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor"
-      },
-      "c60": {
-        "original_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "current_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "identity": "new four-satellite inverse-volatility historical ranking leader; stability unconfirmed"
-      }
-    }
-  },
-  "ninth_holdings_verification": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/_verification/holding-reform-verification.json",
-    "sha256": "f1998eed420cf0849118ebcef3b74f9dcee2c594866f98a8f37154358ea099a8",
-    "curves": 50,
-    "capital_curves": 16,
-    "episode_curves": 34
-  },
-  "prior_ninth_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/registry",
-      "manifest_sha256": "de20934e268c5f75e9a10ca84a0effc95f861c685ed4be79129884832daef206"
-    },
-    "current_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/registry",
-      "manifest_sha256": "de20934e268c5f75e9a10ca84a0effc95f861c685ed4be79129884832daef206",
-      "role": "ninth consumed-history ranking; both retained economic leaders and descriptor IDs unchanged"
-    },
-    "confirmation_assessment": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/assessment/leader-assessment.json",
-      "sha256": "367f0d4b29377c354c56a99b8941b05e283c1d97cfa499296b747136438d8e44",
-      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
-    },
     "mechanism_diagnostics": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/_analysis-v2/mechanism-diagnostics.json",
-      "sha256": "7b9fcc86d8377e5454c9f0829f5df064c4755bb9e6ef4042d2a074b9220089e7",
-      "role": "observational batch ownership, capital drift and source profit decomposition, no additional trials",
-      "prior_observational_revision_preserved": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/_analysis"
-    },
-    "leaders": {
-      "c60": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 82,
-        "leader": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "pareto": [
-          "dual_engine_breadth_20261005/c60/core_only",
-          "dual_engine_breadth_20261005/c60/dual_core",
-          "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-          "dual_engine_clocks_20261005/c60/dual_core",
-          "dual_engine_clocks_20261005/c60/dual_sat4_risk",
-          "dual_engine_expansion_20261004/c60/core_only",
-          "dual_engine_expansion_20261004/c60/usage_gate4",
-          "dual_engine_nextgen_20261004/c60/core_only",
-          "dual_engine_nextgen_20261004/c60/supply_gate2",
-          "dual_engine_reform_20261005/c60/core_weekly_risk4",
-          "dual_engine_reform_20261005/c60/current_risk4",
-          "dual_engine_reform_20261005/c60/dual_core",
-          "dual_engine_reform_20261005/c60/dual_sat4_risk",
-          "dual_engine_reform_20261005/c60/units_risk4",
-          "dual_engine_regimes_20261004/c60/core_only",
-          "dual_engine_regimes_20261004/c60/dual_core",
-          "dual_engine_structural_20261004/c60/core_only"
-        ]
-      },
-      "g20": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 76,
-        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "pareto": [
-          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-          "dual_engine_breadth_20261005/g20/macro_fund",
-          "dual_engine_breadth_20261005/g20/sector3_guard",
-          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
-          "dual_engine_clocks_20261005/g20/scoped_rotate",
-          "dual_engine_clocks_20261005/g20/scoped_sector",
-          "dual_engine_clocks_20261005/g20/sector3_guard",
-          "dual_engine_expansion_20261004/g20/gold20",
-          "dual_engine_expansion_20261004/g20/macro_fund",
-          "dual_engine_expansion_20261004/g20/macro_only_static",
-          "dual_engine_expansion_20261004/g20/macro_only_trend",
-          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-          "dual_engine_nextgen_20261004/g20/gold20",
-          "dual_engine_nextgen_20261004/g20/macro_fund",
-          "dual_engine_reform_20261005/g20/aware_gold_rotate",
-          "dual_engine_reform_20261005/g20/capital_lock_rotate",
-          "dual_engine_reform_20261005/g20/capital_reset_sector",
-          "dual_engine_reform_20261005/g20/scoped_rotate",
-          "dual_engine_reform_20261005/g20/scoped_sector",
-          "dual_engine_reform_20261005/g20/sector3_guard",
-          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
-          "dual_engine_regimes_20261004/g20/gold20",
-          "dual_engine_regimes_20261004/g20/macro_fund"
-        ]
-      }
-    },
-    "economic_strategy_lineage": {
-      "g20": {
-        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor"
-      },
-      "c60": {
-        "original_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "current_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "identity": "new four-satellite inverse-volatility historical ranking leader; stability unconfirmed"
-      }
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/_analysis/mechanism-diagnostics.json",
+      "role": "post hoc frozen-book holding and queued-plan diagnostics; zero additional trials",
+      "sha256": "313711e4b7d9ef203731bbe36bcdce9ed4c90fd1d3ef1aa24992cbcf4468a236"
     }
-  },
-  "tenth_holdings_verification": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_verification/holding-renewal-verification.json",
-    "sha256": "4b870cd287b207ece8c2586bfb505a4559289089f9560eda694967d4c400ad62",
-    "curves": 36,
-    "capital_curves": 12,
-    "episode_curves": 24
-  },
-  "prior_tenth_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/registry",
-      "manifest_sha256": "08505192ffdae9d4148011d24fa0af1615e156a927e02add3bb57914282e6f9a"
-    },
-    "current_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/registry",
-      "manifest_sha256": "08505192ffdae9d4148011d24fa0af1615e156a927e02add3bb57914282e6f9a",
-      "role": "tenth consumed-history ranking, recovery candidate selected; no inherited later evidence"
-    },
-    "confirmation_assessment": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/assessment/leader-assessment.json",
-      "sha256": "552897bf57a339a2ab46b162f6f5f3fbc91c0bb50eafc33af3cb8563dba5b5e1",
-      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
-    },
-    "mechanism_diagnostics": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_analysis/mechanism-diagnostics.json",
-      "sha256": "bb63182b604b46a40002b1f4c13da86d7989ded906d55f48398e28fca4c3f50f",
-      "role": "postselection descriptive causal recovery/source-capital and scoped gross fee checks; zero new trials"
-    },
-    "leaders": {
-      "c60": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 90,
-        "leader": "dual_engine_renewal_20261005/c60/staged_risk4",
-        "pareto": [
-          "dual_engine_breadth_20261005/c60/core_only",
-          "dual_engine_expansion_20261004/c60/core_only",
-          "dual_engine_expansion_20261004/c60/usage_gate4",
-          "dual_engine_nextgen_20261004/c60/core_only",
-          "dual_engine_nextgen_20261004/c60/supply_gate2",
-          "dual_engine_reform_20261005/c60/current_risk4",
-          "dual_engine_reform_20261005/c60/units_risk4",
-          "dual_engine_regimes_20261004/c60/core_only",
-          "dual_engine_renewal_20261005/c60/resume_core_risk4",
-          "dual_engine_renewal_20261005/c60/staged_risk4",
-          "dual_engine_renewal_20261005/c60/units_risk4",
-          "dual_engine_structural_20261004/c60/core_only"
-        ]
-      },
-      "g20": {
-        "confirmation_status": "historical_leader_verified_pending_prospective",
-        "eligible_versions": 86,
-        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "pareto": [
-          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-          "dual_engine_breadth_20261005/g20/macro_fund",
-          "dual_engine_breadth_20261005/g20/sector3_guard",
-          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
-          "dual_engine_clocks_20261005/g20/scoped_rotate",
-          "dual_engine_clocks_20261005/g20/scoped_sector",
-          "dual_engine_clocks_20261005/g20/sector3_guard",
-          "dual_engine_expansion_20261004/g20/gold20",
-          "dual_engine_expansion_20261004/g20/macro_fund",
-          "dual_engine_expansion_20261004/g20/macro_only_static",
-          "dual_engine_expansion_20261004/g20/macro_only_trend",
-          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-          "dual_engine_nextgen_20261004/g20/gold20",
-          "dual_engine_nextgen_20261004/g20/macro_fund",
-          "dual_engine_reform_20261005/g20/aware_gold_rotate",
-          "dual_engine_reform_20261005/g20/capital_lock_rotate",
-          "dual_engine_reform_20261005/g20/capital_reset_sector",
-          "dual_engine_reform_20261005/g20/scoped_rotate",
-          "dual_engine_reform_20261005/g20/scoped_sector",
-          "dual_engine_reform_20261005/g20/sector3_guard",
-          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
-          "dual_engine_regimes_20261004/g20/gold20",
-          "dual_engine_regimes_20261004/g20/macro_fund",
-          "dual_engine_renewal_20261005/g20/active20_sector",
-          "dual_engine_renewal_20261005/g20/aware_gold_rotate",
-          "dual_engine_renewal_20261005/g20/cap40_rotate",
-          "dual_engine_renewal_20261005/g20/capital_lock_rotate",
-          "dual_engine_renewal_20261005/g20/capital_reset_sector",
-          "dual_engine_renewal_20261005/g20/sweep20_rotate",
-          "dual_engine_renewal_20261005/g20/sweep20_sector"
-        ]
-      }
-    },
-    "economic_strategy_lineage": {
-      "g20": {
-        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor"
-      },
-      "c60": {
-        "original_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
-        "current_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
-        "prior_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "identity": "same original closed targets/universe; new two-stage recovery and vintage-owned reductions; historical stability unconfirmed"
-      }
-    },
-    "tenth_holdings_verification": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_verification/holding-renewal-verification.json",
-      "sha256": "4b870cd287b207ece8c2586bfb505a4559289089f9560eda694967d4c400ad62",
-      "curves": 36,
-      "capital_curves": 12,
-      "episode_curves": 24
-    }
-  },
-  "eleventh_information": {
-    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/inputs/information",
-    "manifest_sha256": "82a9fbdf5f2ba2559476148d614c7ba45d229343e73dc601b047b3adf66e7bd4",
-    "qualification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/information-verification.json",
-    "qualification_sha256": "6bae7dbccd2dd5a8ba8467b85e213e60ac226a8392799901c518f32024a6f5d2",
-    "macro_snapshot_vintage_certified": false,
-    "crypto_contemporaneous_archive_vintage_certified": false,
-    "nfci_last_observation": "2026-04-24",
-    "nfci_missing_decisions": 50,
-    "macro_candidates_selection_excluded": true
-  },
-  "eleventh_holdings_verification": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/holding-sources-verification.json",
-    "sha256": "18cffe445c807401c5233896a22f7fa834f0b19664fe8ffa08b2d00d315eba25",
-    "curves": 26,
-    "capital_curves": 2,
-    "episode_curves": 24
   },
   "prior_eleventh_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/registry",
-      "manifest_sha256": "195a5121f75b585c234913e2071cdd628282535b040aebd22cd46dbedc016e79"
-    },
-    "current_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/registry",
-      "manifest_sha256": "195a5121f75b585c234913e2071cdd628282535b040aebd22cd46dbedc016e79",
-      "role": "eleventh_round_unchanged_policy_macros_diagnostic_only"
-    },
     "confirmation_assessment": {
       "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/assessment/leader-assessment.json",
       "sha256": "36b98de678cf1c6ba8c4e34cf7204bfef60d84adb570581d5707ea14dfc665d9",
       "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
     },
-    "mechanism_diagnostics": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_analysis/mechanism-diagnostics.json",
-      "sha256": "e597972b8a9985d891a5e4813fc44bf5b14081cad95656c645a8b644ccab932b",
-      "role": "public_information_intervention_net_wealth_and_qualification_diagnostics"
+    "current_selection_receipt": {
+      "manifest_sha256": "195a5121f75b585c234913e2071cdd628282535b040aebd22cd46dbedc016e79",
+      "role": "eleventh_round_unchanged_policy_macros_diagnostic_only",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/registry"
+    },
+    "economic_strategy_lineage": {
+      "c60": {
+        "current_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
+        "identity": "same original closed targets/universe; new two-stage recovery and vintage-owned reductions; historical stability unconfirmed",
+        "original_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
+        "prior_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk"
+      },
+      "g20": {
+        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor",
+        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate"
+      }
+    },
+    "eleventh_holdings_verification": {
+      "capital_curves": 2,
+      "curves": 26,
+      "episode_curves": 24,
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/holding-sources-verification.json",
+      "sha256": "18cffe445c807401c5233896a22f7fa834f0b19664fe8ffa08b2d00d315eba25"
+    },
+    "eleventh_information": {
+      "crypto_contemporaneous_archive_vintage_certified": false,
+      "macro_candidates_selection_excluded": true,
+      "macro_snapshot_vintage_certified": false,
+      "manifest_sha256": "82a9fbdf5f2ba2559476148d614c7ba45d229343e73dc601b047b3adf66e7bd4",
+      "nfci_last_observation": "2026-04-24",
+      "nfci_missing_decisions": 50,
+      "qualification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/information-verification.json",
+      "qualification_sha256": "6bae7dbccd2dd5a8ba8467b85e213e60ac226a8392799901c518f32024a6f5d2",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/inputs/information"
+    },
+    "latest_registry": {
+      "manifest_sha256": "195a5121f75b585c234913e2071cdd628282535b040aebd22cd46dbedc016e79",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/registry"
     },
     "leaders": {
       "c60": {
@@ -790,64 +391,821 @@
         ]
       }
     },
-    "economic_strategy_lineage": {
-      "g20": {
-        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor"
-      },
-      "c60": {
-        "original_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
-        "current_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
-        "prior_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
-        "identity": "same original closed targets/universe; new two-stage recovery and vintage-owned reductions; historical stability unconfirmed"
-      }
-    },
-    "eleventh_information": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/inputs/information",
-      "manifest_sha256": "82a9fbdf5f2ba2559476148d614c7ba45d229343e73dc601b047b3adf66e7bd4",
-      "qualification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/information-verification.json",
-      "qualification_sha256": "6bae7dbccd2dd5a8ba8467b85e213e60ac226a8392799901c518f32024a6f5d2",
-      "macro_snapshot_vintage_certified": false,
-      "crypto_contemporaneous_archive_vintage_certified": false,
-      "nfci_last_observation": "2026-04-24",
-      "nfci_missing_decisions": 50,
-      "macro_candidates_selection_excluded": true
-    },
-    "eleventh_holdings_verification": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_verification/holding-sources-verification.json",
-      "sha256": "18cffe445c807401c5233896a22f7fa834f0b19664fe8ffa08b2d00d315eba25",
-      "curves": 26,
-      "capital_curves": 2,
-      "episode_curves": 24
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/_analysis/mechanism-diagnostics.json",
+      "role": "public_information_intervention_net_wealth_and_qualification_diagnostics",
+      "sha256": "e597972b8a9985d891a5e4813fc44bf5b14081cad95656c645a8b644ccab932b"
     }
   },
-  "twelfth_holdings_verification": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/_verification/holding-zonal-verification.json",
-    "sha256": "eb926e776a2925ed4c4a52ca63ecc019d92c2dee2b488b15d63bbad581f6bd45",
-    "curves": 36,
-    "capital_curves": 18,
-    "episode_curves": 18
-  },
-  "prior_twelfth_round": {
-    "latest_registry": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/registry",
-      "manifest_sha256": "67657764bcc04f375d89481ad6ac86a9523ac44f4330f2a01f96829f22a364c9"
+  "prior_fifteenth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/_verification/leader-assessment.json",
+      "sha256": "d56f252a26cb135aa2ab20421511fec1e4706562ed3fb9c40607c4e071763082",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
     },
     "current_selection_receipt": {
-      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/registry",
-      "manifest_sha256": "67657764bcc04f375d89481ad6ac86a9523ac44f4330f2a01f96829f22a364c9",
-      "role": "twelfth_round_original_four_cell_policy_scoped_recovery_and_delayed_investment_ceiling"
+      "manifest_sha256": "91a975a4973a4748630a4924bbc6211ed59fde52b00b24e8097beccb26e2ad28",
+      "role": "fifteenth_round_original_four_cell_policy_causal_states_and_scoped_transitions; three_objective_gate_reported_separately",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/registry"
     },
+    "fifteenth_verification": {
+      "closed_risk_decisions": 82760,
+      "curves": 40,
+      "event_scope_checks": 27000,
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/_verification/result-verification.json",
+      "sha256": "026a682953ab408c73bd1db5d309823ac707ab7ecbfb0ca124366a2ebf7a592d",
+      "state_rows_checked": 6815,
+      "target_values_checked": 68150
+    },
+    "latest_registry": {
+      "manifest_sha256": "91a975a4973a4748630a4924bbc6211ed59fde52b00b24e8097beccb26e2ad28",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 129,
+        "leader": "dual_engine_states_20261005/c60/mature_rebound_half",
+        "pareto": [
+          "dual_engine_features_20261005/c60/joint_quality",
+          "dual_engine_states_20261005/c60/mature_half",
+          "dual_engine_states_20261005/c60/mature_rebound_half",
+          "dual_engine_states_20261005/c60/rebound_half"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 109,
+        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+          "dual_engine_breadth_20261005/g20/macro_fund",
+          "dual_engine_breadth_20261005/g20/sector3_guard",
+          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_sector",
+          "dual_engine_clocks_20261005/g20/sector3_guard",
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_reform_20261005/g20/aware_gold_rotate",
+          "dual_engine_reform_20261005/g20/capital_lock_rotate",
+          "dual_engine_reform_20261005/g20/capital_reset_sector",
+          "dual_engine_reform_20261005/g20/scoped_rotate",
+          "dual_engine_reform_20261005/g20/scoped_sector",
+          "dual_engine_reform_20261005/g20/sector3_guard",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund",
+          "dual_engine_renewal_20261005/g20/active20_sector",
+          "dual_engine_renewal_20261005/g20/aware_gold_rotate",
+          "dual_engine_renewal_20261005/g20/cap40_rotate",
+          "dual_engine_renewal_20261005/g20/capital_lock_rotate",
+          "dual_engine_renewal_20261005/g20/capital_reset_sector",
+          "dual_engine_renewal_20261005/g20/sweep20_rotate",
+          "dual_engine_renewal_20261005/g20/sweep20_sector",
+          "dual_engine_sources_20261005/g20/aware_gold_rotate",
+          "dual_engine_sources_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/aware_gold_rotate",
+          "dual_engine_zonal_20261005/g20/cap40_rotate",
+          "dual_engine_zonal_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/daily20_sector",
+          "dual_engine_zonal_20261005/g20/sweep20_rotate",
+          "dual_engine_zonal_20261005/g20/sweep20_sector",
+          "dual_engine_zorder_20261005/g20/aware_gold_rotate",
+          "dual_engine_zorder_20261005/g20/cap40_rotate",
+          "dual_engine_zorder_20261005/g20/capital_reset_sector",
+          "dual_engine_zorder_20261005/g20/daily20_sector",
+          "dual_engine_zorder_20261005/g20/joint20_rotate",
+          "dual_engine_zorder_20261005/g20/joint40_rotate"
+        ]
+      }
+    },
+    "local_candidate_trials": 142,
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/_analysis/mechanism-diagnostics.json",
+      "role": "post-result descriptive attribution; no new candidate, label, threshold, curve or fit",
+      "sha256": "03584a9dcbe189613cffa58687d298a5df98a762ee5f952e73d9856b12af044c"
+    },
+    "registered_historical_curves": 1053,
+    "registered_versions": 266,
+    "three_objective_goal": {
+      "all_cell_cagr_drawdown_closed_net_win_rate_passed": false,
+      "contract": "config/dual-engine-states-20261005.json",
+      "original_sat_week_gate_reported_separately": true,
+      "ranking_is_not_goal_confirmation": true,
+      "reference": "agreement",
+      "status": "joint_objective_not_met"
+    }
+  },
+  "prior_fifth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/assessment/leader-assessment.json",
+      "sha256": "33163b2cf10bbd21b782ed0ef143d7a2ed1194593957b794c7e47754c96c001c",
+      "status": "mixed_later_evidence_pending_prospective"
+    },
+    "daily_archive_bridge": {
+      "daily_input_manifest_sha256": "6791e79d787db699fefd7c318bc9f4dfd1537d2d473534222091a9fc71d73b15",
+      "frozen_rest_manifest_sha256": "e12a8f0559f33ec6b7b899345344fa089c4bb06e4b88d15ebd5c14d839afe00a",
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/_verification/daily-bridge-verification.json",
+      "sha256": "0f896c5905fd40f5886f5a20389e387e253640beff25f2fd77510d4f1ad5c42f",
+      "status": "verified_300_daily_archive_rows_match_frozen_REST"
+    },
+    "frozen_selection_receipt": {
+      "manifest_sha256": "398d9109926b04c064751db379be437ce0b3f5ba56608445d42739cb10d77dfe",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/registry"
+    },
+    "implementation_reproduction": {
+      "all_24_ledger_files_byte_identical": true,
+      "manifest_sha256": "c9e5980598a13abd504da27cd37c424849da9cca9e6038be35f18c9c3db67c64",
+      "new_independent_evidence": false,
+      "new_trials": 0,
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/later-check-v2",
+      "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/_verification/metadata-replay-verification.json",
+      "verification_sha256": "a732edfbdb27ea4f0d811dfedcfb1591489927f0bfc905d3255bc995dd5e6957"
+    },
+    "latest_frozen_later_check": {
+      "manifest_sha256": "2284179579902d50bb71d05addc7236fd6bc8d205ace893e4481750e98e9cc7d",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/later-check"
+    },
+    "latest_registry": {
+      "manifest_sha256": "c72c72ff318d6bcc641dab916dc26dc3e9656c5db6da4e24e583fa6cc40b5900",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/registry-v2"
+    },
+    "registry_metadata_revision": {
+      "all_return_summaries_and_ranks_unchanged": true,
+      "corrected_versions": 23,
+      "role": "contract_binding_metadata_correction_only",
+      "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/_registry_revision/contract-binding-verification.json",
+      "verification_sha256": "719a825c7ff5671d3732d147cc1a40663f23db02ad6fd4cc49a962fae81b09fb"
+    }
+  },
+  "prior_fourteenth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/_verification/leader-assessment.json",
+      "sha256": "e29511644368a4946213127072d9f129a8072ab5a2b4e506cc07fdf0df9dbefa",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+    },
+    "current_selection_receipt": {
+      "manifest_sha256": "5d5062d263237ef222dd59fa74cbd04a237dca4da608c8231ec265199604b247",
+      "role": "fourteenth_round_original_four_cell_policy_closed_path_quality; three_objective_gate_reported_separately",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/registry"
+    },
+    "fourteenth_verification": {
+      "closed_risk_decisions": 66208,
+      "curves": 32,
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/_verification/result-verification.json",
+      "sha256": "c59ea19adfc4cbfea46ed731b8f4003e482dfa986377020c841e7493d1dfef75",
+      "target_values_checked": 54520
+    },
+    "latest_registry": {
+      "manifest_sha256": "5d5062d263237ef222dd59fa74cbd04a237dca4da608c8231ec265199604b247",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 120,
+        "leader": "dual_engine_features_20261005/c60/agreement",
+        "pareto": [
+          "dual_engine_features_20261005/c60/agreement",
+          "dual_engine_features_20261005/c60/downside",
+          "dual_engine_features_20261005/c60/joint_quality",
+          "dual_engine_features_20261005/c60/sat_week",
+          "dual_engine_zorder_20261005/c60/sat_week"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 109,
+        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+          "dual_engine_breadth_20261005/g20/macro_fund",
+          "dual_engine_breadth_20261005/g20/sector3_guard",
+          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_sector",
+          "dual_engine_clocks_20261005/g20/sector3_guard",
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_reform_20261005/g20/aware_gold_rotate",
+          "dual_engine_reform_20261005/g20/capital_lock_rotate",
+          "dual_engine_reform_20261005/g20/capital_reset_sector",
+          "dual_engine_reform_20261005/g20/scoped_rotate",
+          "dual_engine_reform_20261005/g20/scoped_sector",
+          "dual_engine_reform_20261005/g20/sector3_guard",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund",
+          "dual_engine_renewal_20261005/g20/active20_sector",
+          "dual_engine_renewal_20261005/g20/aware_gold_rotate",
+          "dual_engine_renewal_20261005/g20/cap40_rotate",
+          "dual_engine_renewal_20261005/g20/capital_lock_rotate",
+          "dual_engine_renewal_20261005/g20/capital_reset_sector",
+          "dual_engine_renewal_20261005/g20/sweep20_rotate",
+          "dual_engine_renewal_20261005/g20/sweep20_sector",
+          "dual_engine_sources_20261005/g20/aware_gold_rotate",
+          "dual_engine_sources_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/aware_gold_rotate",
+          "dual_engine_zonal_20261005/g20/cap40_rotate",
+          "dual_engine_zonal_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/daily20_sector",
+          "dual_engine_zonal_20261005/g20/sweep20_rotate",
+          "dual_engine_zonal_20261005/g20/sweep20_sector",
+          "dual_engine_zorder_20261005/g20/aware_gold_rotate",
+          "dual_engine_zorder_20261005/g20/cap40_rotate",
+          "dual_engine_zorder_20261005/g20/capital_reset_sector",
+          "dual_engine_zorder_20261005/g20/daily20_sector",
+          "dual_engine_zorder_20261005/g20/joint20_rotate",
+          "dual_engine_zorder_20261005/g20/joint40_rotate"
+        ]
+      }
+    },
+    "local_candidate_trials": 136,
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/_analysis/label-year-diagnostics.json",
+      "role": "post-result descriptive fixed-bin/year attribution; no threshold selection, no new curves",
+      "sha256": "f6d13102b74ebe96b86afdd37cb8f23b2437ac6939a5c236e97028238ee24a5f"
+    },
+    "registered_historical_curves": 1013,
+    "registered_versions": 256,
+    "three_objective_goal": {
+      "all_cell_cagr_drawdown_closed_net_win_rate_passed": false,
+      "contract": "config/dual-engine-features-20261005.json",
+      "ranking_is_not_goal_confirmation": true,
+      "status": "joint_objective_not_met"
+    }
+  },
+  "prior_mechanism_diagnostics": {
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_analysis/mechanism-diagnostics.json",
+    "role": "postselection descriptive causal recovery/source-capital and scoped gross fee checks; zero new trials",
+    "sha256": "bb63182b604b46a40002b1f4c13da86d7989ded906d55f48398e28fca4c3f50f"
+  },
+  "prior_ninth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/assessment/leader-assessment.json",
+      "sha256": "367f0d4b29377c354c56a99b8941b05e283c1d97cfa499296b747136438d8e44",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+    },
+    "current_selection_receipt": {
+      "manifest_sha256": "de20934e268c5f75e9a10ca84a0effc95f861c685ed4be79129884832daef206",
+      "role": "ninth consumed-history ranking; both retained economic leaders and descriptor IDs unchanged",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/registry"
+    },
+    "economic_strategy_lineage": {
+      "c60": {
+        "current_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
+        "identity": "new four-satellite inverse-volatility historical ranking leader; stability unconfirmed",
+        "original_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk"
+      },
+      "g20": {
+        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor",
+        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate"
+      }
+    },
+    "latest_registry": {
+      "manifest_sha256": "de20934e268c5f75e9a10ca84a0effc95f861c685ed4be79129884832daef206",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 82,
+        "leader": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
+        "pareto": [
+          "dual_engine_breadth_20261005/c60/core_only",
+          "dual_engine_breadth_20261005/c60/dual_core",
+          "dual_engine_breadth_20261005/c60/dual_sat4_risk",
+          "dual_engine_clocks_20261005/c60/dual_core",
+          "dual_engine_clocks_20261005/c60/dual_sat4_risk",
+          "dual_engine_expansion_20261004/c60/core_only",
+          "dual_engine_expansion_20261004/c60/usage_gate4",
+          "dual_engine_nextgen_20261004/c60/core_only",
+          "dual_engine_nextgen_20261004/c60/supply_gate2",
+          "dual_engine_reform_20261005/c60/core_weekly_risk4",
+          "dual_engine_reform_20261005/c60/current_risk4",
+          "dual_engine_reform_20261005/c60/dual_core",
+          "dual_engine_reform_20261005/c60/dual_sat4_risk",
+          "dual_engine_reform_20261005/c60/units_risk4",
+          "dual_engine_regimes_20261004/c60/core_only",
+          "dual_engine_regimes_20261004/c60/dual_core",
+          "dual_engine_structural_20261004/c60/core_only"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 76,
+        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+          "dual_engine_breadth_20261005/g20/macro_fund",
+          "dual_engine_breadth_20261005/g20/sector3_guard",
+          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_sector",
+          "dual_engine_clocks_20261005/g20/sector3_guard",
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_reform_20261005/g20/aware_gold_rotate",
+          "dual_engine_reform_20261005/g20/capital_lock_rotate",
+          "dual_engine_reform_20261005/g20/capital_reset_sector",
+          "dual_engine_reform_20261005/g20/scoped_rotate",
+          "dual_engine_reform_20261005/g20/scoped_sector",
+          "dual_engine_reform_20261005/g20/sector3_guard",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund"
+        ]
+      }
+    },
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/_analysis-v2/mechanism-diagnostics.json",
+      "prior_observational_revision_preserved": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/_analysis",
+      "role": "observational batch ownership, capital drift and source profit decomposition, no additional trials",
+      "sha256": "7b9fcc86d8377e5454c9f0829f5df064c4755bb9e6ef4042d2a074b9220089e7"
+    }
+  },
+  "prior_seventh_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/assessment/leader-assessment.json",
+      "sha256": "725a4ebd2d7b29a167667d87141b6821f2de979a7f4862023db0cb3f035dfcfd",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+    },
+    "current_selection_receipt": {
+      "manifest_sha256": "59ee624f9a474d7ec7e8a3fdeb0d17813a5b319251f404da6dbd5a5f772689d5",
+      "role": "historical ranking on consumed history; all earlier later-month observations already consumed",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/registry"
+    },
+    "economic_strategy_lineage": {
+      "c60": {
+        "current_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
+        "identity": "new four-satellite inverse-volatility historical ranking leader; stability unconfirmed",
+        "original_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk"
+      },
+      "g20": {
+        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor",
+        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate"
+      }
+    },
+    "latest_registry": {
+      "manifest_sha256": "59ee624f9a474d7ec7e8a3fdeb0d17813a5b319251f404da6dbd5a5f772689d5",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 64,
+        "leader": "dual_engine_breadth_20261005/c60/dual_sat4_risk",
+        "pareto": [
+          "dual_engine_breadth_20261005/c60/core_only",
+          "dual_engine_breadth_20261005/c60/dual_core",
+          "dual_engine_breadth_20261005/c60/dual_sat4_risk",
+          "dual_engine_expansion_20261004/c60/core_only",
+          "dual_engine_expansion_20261004/c60/usage_gate4",
+          "dual_engine_nextgen_20261004/c60/core_only",
+          "dual_engine_nextgen_20261004/c60/fee_density2",
+          "dual_engine_nextgen_20261004/c60/supply_covered2",
+          "dual_engine_nextgen_20261004/c60/supply_gate2",
+          "dual_engine_nextgen_20261004/c60/supply_rank2",
+          "dual_engine_regimes_20261004/c60/core_only",
+          "dual_engine_regimes_20261004/c60/dual_core",
+          "dual_engine_structural_20261004/c60/core_only",
+          "dual_engine_structural_20261004/c60/core_satellite_partial"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 54,
+        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+          "dual_engine_breadth_20261005/g20/macro_fund",
+          "dual_engine_breadth_20261005/g20/sector3_guard",
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund"
+        ]
+      }
+    },
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/_analysis/mechanism-diagnostics.json",
+      "role": "postselection descriptive factorial net-return and budget/source diagnostics; zero new trials",
+      "sha256": "4f35127ecabe20bdf7d0ea0c79df6e026e32a3c64848c66bf995809c6db03945"
+    }
+  },
+  "prior_sixteenth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/_verification/leader-assessment.json",
+      "sha256": "d6bc463af3e03f27931f68c2c543d4fa47114f16139d40430f23d310aacaf78a",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+    },
+    "current_selection_receipt": {
+      "manifest_sha256": "f712bcd72bdb5be199ad74a7ede3318e6bd79363b7b941a888a4916a573d335b",
+      "role": "sixteenth_round_original_four_cell_policy_source_ownership_and_repeat_acquisition; correctness_and_joint_goal_reported_separately",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/registry"
+    },
+    "latest_registry": {
+      "manifest_sha256": "f712bcd72bdb5be199ad74a7ede3318e6bd79363b7b941a888a4916a573d335b",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 138,
+        "leader": "dual_engine_execution_ownership_20261005/c60/mature_rebound_half",
+        "pareto": [
+          "dual_engine_execution_ownership_20261005/c60/local_topup10",
+          "dual_engine_execution_ownership_20261005/c60/local_topup25",
+          "dual_engine_execution_ownership_20261005/c60/mature_rebound_half",
+          "dual_engine_execution_ownership_20261005/c60/rebound_half",
+          "dual_engine_execution_ownership_20261005/c60/topup10",
+          "dual_engine_execution_ownership_20261005/c60/topup25",
+          "dual_engine_features_20261005/c60/joint_quality",
+          "dual_engine_states_20261005/c60/mature_half",
+          "dual_engine_states_20261005/c60/mature_rebound_half",
+          "dual_engine_states_20261005/c60/rebound_half"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 118,
+        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+          "dual_engine_breadth_20261005/g20/macro_fund",
+          "dual_engine_breadth_20261005/g20/sector3_guard",
+          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_sector",
+          "dual_engine_clocks_20261005/g20/sector3_guard",
+          "dual_engine_execution_ownership_20261005/g20/aware_gold_rotate",
+          "dual_engine_execution_ownership_20261005/g20/joint20_rotate",
+          "dual_engine_execution_ownership_20261005/g20/joint40_rotate",
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_reform_20261005/g20/aware_gold_rotate",
+          "dual_engine_reform_20261005/g20/capital_lock_rotate",
+          "dual_engine_reform_20261005/g20/capital_reset_sector",
+          "dual_engine_reform_20261005/g20/scoped_rotate",
+          "dual_engine_reform_20261005/g20/scoped_sector",
+          "dual_engine_reform_20261005/g20/sector3_guard",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund",
+          "dual_engine_renewal_20261005/g20/active20_sector",
+          "dual_engine_renewal_20261005/g20/aware_gold_rotate",
+          "dual_engine_renewal_20261005/g20/cap40_rotate",
+          "dual_engine_renewal_20261005/g20/capital_lock_rotate",
+          "dual_engine_renewal_20261005/g20/capital_reset_sector",
+          "dual_engine_renewal_20261005/g20/sweep20_rotate",
+          "dual_engine_renewal_20261005/g20/sweep20_sector",
+          "dual_engine_sources_20261005/g20/aware_gold_rotate",
+          "dual_engine_sources_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/aware_gold_rotate",
+          "dual_engine_zonal_20261005/g20/cap40_rotate",
+          "dual_engine_zonal_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/daily20_sector",
+          "dual_engine_zonal_20261005/g20/sweep20_rotate",
+          "dual_engine_zonal_20261005/g20/sweep20_sector",
+          "dual_engine_zorder_20261005/g20/aware_gold_rotate",
+          "dual_engine_zorder_20261005/g20/cap40_rotate",
+          "dual_engine_zorder_20261005/g20/capital_reset_sector",
+          "dual_engine_zorder_20261005/g20/daily20_sector",
+          "dual_engine_zorder_20261005/g20/joint20_rotate",
+          "dual_engine_zorder_20261005/g20/joint40_rotate"
+        ]
+      }
+    },
+    "local_candidate_trials": 151,
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/_analysis/mechanism-diagnostics.json",
+      "role": "post-result descriptive book/asset/year and suppressed-acquisition attribution; no new curve, fit, threshold or source",
+      "sha256": "68da22958a2e69f6fa17be69fd9821450ac653457f7a3cc01399ab529d6b56c3"
+    },
+    "registered_historical_curves": 1125,
+    "registered_versions": 284,
+    "sixteenth_verification": {
+      "book_rows_checked": 201024,
+      "closed_risk_decisions": 74484,
+      "curves": 72,
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/_verification/result-verification.json",
+      "scope_checks": 43254,
+      "sha256": "380bd130a5c954d0dc40a3ad5164596b4b09a092782ebbcd4ccae9f8586bf9c6"
+    },
+    "three_objective_goal": {
+      "all_cell_cagr_drawdown_closed_net_win_rate_passed": false,
+      "contract": "config/dual-engine-execution-ownership-20261005.json",
+      "ranking_is_not_goal_confirmation": true,
+      "reference": "rebound_half",
+      "status": "joint_objective_not_met"
+    }
+  },
+  "prior_sixth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/assessment/leader-assessment.json",
+      "sha256": "cdd08056814896af4bac82e87811ce07899e62cb38f293d487945ff8a3432387",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+    },
+    "current_selection_receipt": {
+      "manifest_sha256": "e494cd72847eb05aa753efc9ee5ff8a3942f023271522e1e6f297835099360f1",
+      "role": "historical_ranking_after_previously_consumed_later_data; not a pre-September selection",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/registry"
+    },
+    "latest_registry": {
+      "manifest_sha256": "e494cd72847eb05aa753efc9ee5ff8a3942f023271522e1e6f297835099360f1",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 53,
+        "leader": "dual_engine_regimes_20261004/c60/dual_core",
+        "pareto": [
+          "dual_engine_expansion_20261004/c60/core_only",
+          "dual_engine_expansion_20261004/c60/residual2",
+          "dual_engine_expansion_20261004/c60/usage_gate4",
+          "dual_engine_nextgen_20261004/c60/core_only",
+          "dual_engine_nextgen_20261004/c60/crisis_satellite_cash",
+          "dual_engine_nextgen_20261004/c60/fee_density2",
+          "dual_engine_nextgen_20261004/c60/residual2",
+          "dual_engine_nextgen_20261004/c60/supply_covered2",
+          "dual_engine_nextgen_20261004/c60/supply_gate2",
+          "dual_engine_nextgen_20261004/c60/supply_rank2",
+          "dual_engine_regimes_20261004/c60/core_only",
+          "dual_engine_regimes_20261004/c60/dual_core",
+          "dual_engine_regimes_20261004/c60/residual2",
+          "dual_engine_structural_20261004/c60/core_only",
+          "dual_engine_structural_20261004/c60/core_satellite",
+          "dual_engine_structural_20261004/c60/core_satellite_partial"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 44,
+        "leader": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund",
+          "dual_engine_structural_20261004/g20/spy_risk"
+        ]
+      }
+    },
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/_analysis-v2/mechanism-diagnostics.json",
+      "role": "postselection diagnostics; research-period dates and actual satellite membership; zero new trials",
+      "sha256": "30199858b6834ccb994e536c789a4f4d2530fbb7b19bb389ffd8992fdeae2f3e"
+    }
+  },
+  "prior_tenth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/assessment/leader-assessment.json",
+      "sha256": "552897bf57a339a2ab46b162f6f5f3fbc91c0bb50eafc33af3cb8563dba5b5e1",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+    },
+    "current_selection_receipt": {
+      "manifest_sha256": "08505192ffdae9d4148011d24fa0af1615e156a927e02add3bb57914282e6f9a",
+      "role": "tenth consumed-history ranking, recovery candidate selected; no inherited later evidence",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/registry"
+    },
+    "economic_strategy_lineage": {
+      "c60": {
+        "current_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
+        "identity": "same original closed targets/universe; new two-stage recovery and vintage-owned reductions; historical stability unconfirmed",
+        "original_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
+        "prior_version_id": "dual_engine_breadth_20261005/c60/dual_sat4_risk"
+      },
+      "g20": {
+        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor",
+        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate"
+      }
+    },
+    "latest_registry": {
+      "manifest_sha256": "08505192ffdae9d4148011d24fa0af1615e156a927e02add3bb57914282e6f9a",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 90,
+        "leader": "dual_engine_renewal_20261005/c60/staged_risk4",
+        "pareto": [
+          "dual_engine_breadth_20261005/c60/core_only",
+          "dual_engine_expansion_20261004/c60/core_only",
+          "dual_engine_expansion_20261004/c60/usage_gate4",
+          "dual_engine_nextgen_20261004/c60/core_only",
+          "dual_engine_nextgen_20261004/c60/supply_gate2",
+          "dual_engine_reform_20261005/c60/current_risk4",
+          "dual_engine_reform_20261005/c60/units_risk4",
+          "dual_engine_regimes_20261004/c60/core_only",
+          "dual_engine_renewal_20261005/c60/resume_core_risk4",
+          "dual_engine_renewal_20261005/c60/staged_risk4",
+          "dual_engine_renewal_20261005/c60/units_risk4",
+          "dual_engine_structural_20261004/c60/core_only"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 86,
+        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+          "dual_engine_breadth_20261005/g20/macro_fund",
+          "dual_engine_breadth_20261005/g20/sector3_guard",
+          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_sector",
+          "dual_engine_clocks_20261005/g20/sector3_guard",
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_reform_20261005/g20/aware_gold_rotate",
+          "dual_engine_reform_20261005/g20/capital_lock_rotate",
+          "dual_engine_reform_20261005/g20/capital_reset_sector",
+          "dual_engine_reform_20261005/g20/scoped_rotate",
+          "dual_engine_reform_20261005/g20/scoped_sector",
+          "dual_engine_reform_20261005/g20/sector3_guard",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund",
+          "dual_engine_renewal_20261005/g20/active20_sector",
+          "dual_engine_renewal_20261005/g20/aware_gold_rotate",
+          "dual_engine_renewal_20261005/g20/cap40_rotate",
+          "dual_engine_renewal_20261005/g20/capital_lock_rotate",
+          "dual_engine_renewal_20261005/g20/capital_reset_sector",
+          "dual_engine_renewal_20261005/g20/sweep20_rotate",
+          "dual_engine_renewal_20261005/g20/sweep20_sector"
+        ]
+      }
+    },
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_analysis/mechanism-diagnostics.json",
+      "role": "postselection descriptive causal recovery/source-capital and scoped gross fee checks; zero new trials",
+      "sha256": "bb63182b604b46a40002b1f4c13da86d7989ded906d55f48398e28fca4c3f50f"
+    },
+    "tenth_holdings_verification": {
+      "capital_curves": 12,
+      "curves": 36,
+      "episode_curves": 24,
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_verification/holding-renewal-verification.json",
+      "sha256": "4b870cd287b207ece8c2586bfb505a4559289089f9560eda694967d4c400ad62"
+    }
+  },
+  "prior_thirteenth_round": {
+    "confirmation_assessment": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/assessment/leader-assessment.json",
+      "sha256": "3bab5ff982279477ec5c8b53f86e212becf2cbac8f1ec421e98284092c6cefbd",
+      "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
+    },
+    "current_selection_receipt": {
+      "manifest_sha256": "aec48f178b83edaee12b95f6be21e4f615db4c8735d20b0203d0297b64e11fcc",
+      "role": "thirteenth_round_original_four_cell_policy_joint_book_budgets_and_family_refresh_clocks",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/registry"
+    },
+    "latest_registry": {
+      "manifest_sha256": "aec48f178b83edaee12b95f6be21e4f615db4c8735d20b0203d0297b64e11fcc",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/registry"
+    },
+    "leaders": {
+      "c60": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 113,
+        "leader": "dual_engine_zorder_20261005/c60/sat_week",
+        "pareto": [
+          "dual_engine_sources_20261005/c60/funding_flow",
+          "dual_engine_zorder_20261005/c60/sat_week"
+        ]
+      },
+      "g20": {
+        "confirmation_status": "historical_leader_verified_pending_prospective",
+        "eligible_versions": 109,
+        "leader": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "pareto": [
+          "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+          "dual_engine_breadth_20261005/g20/macro_fund",
+          "dual_engine_breadth_20261005/g20/sector3_guard",
+          "dual_engine_clocks_20261005/g20/aware_gold_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_rotate",
+          "dual_engine_clocks_20261005/g20/scoped_sector",
+          "dual_engine_clocks_20261005/g20/sector3_guard",
+          "dual_engine_expansion_20261004/g20/gold20",
+          "dual_engine_expansion_20261004/g20/macro_fund",
+          "dual_engine_expansion_20261004/g20/macro_only_static",
+          "dual_engine_expansion_20261004/g20/macro_only_trend",
+          "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
+          "dual_engine_nextgen_20261004/g20/gold20",
+          "dual_engine_nextgen_20261004/g20/macro_fund",
+          "dual_engine_reform_20261005/g20/aware_gold_rotate",
+          "dual_engine_reform_20261005/g20/capital_lock_rotate",
+          "dual_engine_reform_20261005/g20/capital_reset_sector",
+          "dual_engine_reform_20261005/g20/scoped_rotate",
+          "dual_engine_reform_20261005/g20/scoped_sector",
+          "dual_engine_reform_20261005/g20/sector3_guard",
+          "dual_engine_regimes_20261004/g20/aware_gold_rotate",
+          "dual_engine_regimes_20261004/g20/gold20",
+          "dual_engine_regimes_20261004/g20/macro_fund",
+          "dual_engine_renewal_20261005/g20/active20_sector",
+          "dual_engine_renewal_20261005/g20/aware_gold_rotate",
+          "dual_engine_renewal_20261005/g20/cap40_rotate",
+          "dual_engine_renewal_20261005/g20/capital_lock_rotate",
+          "dual_engine_renewal_20261005/g20/capital_reset_sector",
+          "dual_engine_renewal_20261005/g20/sweep20_rotate",
+          "dual_engine_renewal_20261005/g20/sweep20_sector",
+          "dual_engine_sources_20261005/g20/aware_gold_rotate",
+          "dual_engine_sources_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/aware_gold_rotate",
+          "dual_engine_zonal_20261005/g20/cap40_rotate",
+          "dual_engine_zonal_20261005/g20/capital_reset_sector",
+          "dual_engine_zonal_20261005/g20/daily20_sector",
+          "dual_engine_zonal_20261005/g20/sweep20_rotate",
+          "dual_engine_zonal_20261005/g20/sweep20_sector",
+          "dual_engine_zorder_20261005/g20/aware_gold_rotate",
+          "dual_engine_zorder_20261005/g20/cap40_rotate",
+          "dual_engine_zorder_20261005/g20/capital_reset_sector",
+          "dual_engine_zorder_20261005/g20/daily20_sector",
+          "dual_engine_zorder_20261005/g20/joint20_rotate",
+          "dual_engine_zorder_20261005/g20/joint40_rotate"
+        ]
+      }
+    },
+    "local_candidate_trials": 132,
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/_analysis/mechanism-diagnostics.json",
+      "role": "family_refresh_recovery_fees_wealth_and_joint_source_budget_ownership_diagnostics",
+      "sha256": "8d2d2d158f0fc048d25f5130bc35dea1d276c998e43b084ef2e2f7e7cb4a7fa6"
+    },
+    "registered_historical_curves": 981,
+    "registered_versions": 248
+  },
+  "prior_twelfth_round": {
     "confirmation_assessment": {
       "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/assessment/leader-assessment.json",
       "sha256": "30b0335bad183a48cc85674c5deb175cbb9434539427262886b2f86262315ec6",
       "status": "historical_ranking_verified_stability_unconfirmed_pending_prospective"
     },
-    "mechanism_diagnostics": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/_analysis/mechanism-diagnostics.json",
-      "sha256": "9054977f30f193b03231990d0189aa6d2e27ed6e35b8c779f6433883fe290265",
-      "role": "scoped_recovery_family_event_fees_and_daily_investment_versus_capital_wealth_diagnostics"
+    "current_selection_receipt": {
+      "manifest_sha256": "67657764bcc04f375d89481ad6ac86a9523ac44f4330f2a01f96829f22a364c9",
+      "role": "twelfth_round_original_four_cell_policy_scoped_recovery_and_delayed_investment_ceiling",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/registry"
+    },
+    "economic_strategy_lineage": {
+      "c60": {
+        "current_version_id": "dual_engine_zonal_20261005/c60/satellite_staged",
+        "identity": "original nominal targets and selection unchanged; satellite-only staged recovery/refill acquires satellites, any core trigger and Sunday retain coupled full fills; complementary vintage reductions; historical stability unconfirmed",
+        "later_receipts_inherited": false,
+        "original_version_id": "dual_engine_zonal_20261005/c60/satellite_staged",
+        "prior_version_id": "dual_engine_renewal_20261005/c60/staged_risk4"
+      },
+      "g20": {
+        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
+        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor",
+        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate"
+      }
+    },
+    "latest_registry": {
+      "manifest_sha256": "67657764bcc04f375d89481ad6ac86a9523ac44f4330f2a01f96829f22a364c9",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/registry"
     },
     "leaders": {
       "c60": {
@@ -916,41 +1274,220 @@
         ]
       }
     },
-    "economic_strategy_lineage": {
-      "g20": {
-        "original_version_id": "dual_engine_nextgen_20261004/g20/aware_gold_rotate",
-        "current_version_id": "dual_engine_breadth_20261005/g20/aware_gold_rotate",
-        "identity": "four control ledgers byte-identical; stable-ID tie selects seventh control descriptor"
-      },
-      "c60": {
-        "original_version_id": "dual_engine_zonal_20261005/c60/satellite_staged",
-        "current_version_id": "dual_engine_zonal_20261005/c60/satellite_staged",
-        "prior_version_id": "dual_engine_renewal_20261005/c60/staged_risk4",
-        "identity": "original nominal targets and selection unchanged; satellite-only staged recovery/refill acquires satellites, any core trigger and Sunday retain coupled full fills; complementary vintage reductions; historical stability unconfirmed",
-        "later_receipts_inherited": false
-      }
+    "mechanism_diagnostics": {
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/_analysis/mechanism-diagnostics.json",
+      "role": "scoped_recovery_family_event_fees_and_daily_investment_versus_capital_wealth_diagnostics",
+      "sha256": "9054977f30f193b03231990d0189aa6d2e27ed6e35b8c779f6433883fe290265"
     },
     "twelfth_holdings_verification": {
-      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/_verification/holding-zonal-verification.json",
-      "sha256": "eb926e776a2925ed4c4a52ca63ecc019d92c2dee2b488b15d63bbad581f6bd45",
-      "curves": 36,
       "capital_curves": 18,
-      "episode_curves": 18
+      "curves": 36,
+      "episode_curves": 18,
+      "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/_verification/holding-zonal-verification.json",
+      "sha256": "eb926e776a2925ed4c4a52ca63ecc019d92c2dee2b488b15d63bbad581f6bd45"
     }
   },
+  "promotion_evidence": false,
+  "prospective_confirmation": {
+    "manual_only": true,
+    "scheduler_created": false,
+    "start": "2026-10-05",
+    "status": "pending_observations"
+  },
+  "ranking_control_alias": {
+    "cause": "unchanged four-cell policy uses lexical stable version ID to break equal-control tie",
+    "current_control_alias": "dual_engine_execution_ownership_20261005/c60/mature_rebound_half",
+    "economic_rule": "mature_rebound_half",
+    "new_candidate_won": false,
+    "prior_original_version": "dual_engine_states_20261005/c60/mature_rebound_half",
+    "prospective_evidence_inherited": false,
+    "robust_metrics_and_full_cells_identical": true
+  },
+  "registered_historical_curves": 1137,
+  "registered_versions": 287,
+  "research_only": true,
+  "schema_version": 1,
+  "selection_exclusions": [
+    "dual_engine_expansion_20261004/c60/random_positive2_s11",
+    "dual_engine_expansion_20261004/c60/random_positive2_s29",
+    "dual_engine_expansion_20261004/c60/random_positive2_s47",
+    "dual_engine_expansion_20261004/c60/residual2_ex_SOL",
+    "dual_engine_sources_20261005/g20/credit_cash",
+    "dual_engine_sources_20261005/g20/credit_gold",
+    "dual_engine_sources_20261005/g20/curve_credit",
+    "dual_engine_sources_20261005/g20/nfci_cash",
+    "dual_engine_features_20261005/c60/uniform75",
+    "dual_engine_states_20261005/c60/uniform75"
+  ],
+  "seventeenth_cashflow": {
+    "assessment_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/cashflow_20261006T075644Z_v4/_verification/cashflow-assessment.json",
+    "assessment_sha256": "5964caf6febd72bd264edeb05ebb0c082c86da72f3ba8aebe93822dfc592436f",
+    "c60_joint_goal_tested": false,
+    "cashflow_selection_eligible": false,
+    "contract": "config/dual-engine-cashflow-20261005.json",
+    "contract_sha256": "9e4555bda090d8b615ac497ba26fb245e4ff5dab720a6844b42c9c863fd5bcf3",
+    "diagnostics_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/cashflow_20261006T075644Z_v4/_analysis/mechanism-diagnostics.json",
+    "diagnostics_sha256": "d14243c4886ad6ff1ea3bf2fed7749e3824d0c994ef8fd4f93bcfb4d184fce65",
+    "exact_exchange_receipts_certified": false,
+    "feasibility_passed": false,
+    "historical_margin_tiers_certified": false,
+    "orders_authorized": false,
+    "promotion_evidence": false,
+    "research_only": true,
+    "result_manifest_sha256": "a249a5c7bf8e11b2c2fc656329a7461b9eac495fb7a5e5aba508cc81d7a65d3c",
+    "result_root": "/mnt/e/qount_data/qount/artifacts/dual_engine/cashflow_20261006T075644Z_v4/results",
+    "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/cashflow_20261006T075644Z_v4/_verification/result-verification.json",
+    "verification_sha256": "328f07b0b0a2b3bc6de6501bb68df45268d8295aa2f300637517720a232d033b"
+  },
+  "sixteenth_verification": {
+    "book_rows_checked": 201024,
+    "closed_risk_decisions": 74484,
+    "curves": 72,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/_verification/result-verification.json",
+    "scope_checks": 43254,
+    "sha256": "380bd130a5c954d0dc40a3ad5164596b4b09a092782ebbcd4ccae9f8586bf9c6"
+  },
+  "studies": [
+    {
+      "manifest_sha256": "f0e906e05fa595629e9c74479dc75f6044462e68fcee79dec9772abd59dce219",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/optimization_20261004T080635Z/results"
+    },
+    {
+      "manifest_sha256": "916fbdf0e23341375f6ebefa0bac18c50b4e2c54dd49808f823fdc649c024371",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/execution_20261004T085317Z/results"
+    },
+    {
+      "manifest_sha256": "2691785605149b2e1532c5cea11b197c788bf5ae89a479dca4cf479507402aee",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/structural_20261004T112642Z/results"
+    },
+    {
+      "manifest_sha256": "9f522bc82285790981598b21c9b32844050813a6a7384cf75324c6ce8a255559",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/expansion_20261004T120550Z/results"
+    },
+    {
+      "manifest_sha256": "a1f92989fa0dbc7707694dca4abbded641b96af1eadb517038c354c825cbc6bf",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/nextgen_20261004T131016Z/results"
+    },
+    {
+      "manifest_sha256": "011470a4962f67793f19543fef660cf6a1ba41e314d94498dd530198e77276f2",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/regimes_20261004T153845Z/results"
+    },
+    {
+      "manifest_sha256": "800f01ab79fdcd1108bfcf014da10b3e9fc41aff670a8ee4436c27489750a1fc",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/breadth_20261004T163042Z/results"
+    },
+    {
+      "manifest_sha256": "a8eefdc0e72006c56d9bf27887ae8336462d0b8c65ed2372e63be3bea249ef9d",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/clocks_20261005T014909Z/results"
+    },
+    {
+      "manifest_sha256": "41c3cd13f759ecd8cc52859d33d4f42707df7e8b8dc337e258f6df2233bb7532",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/reform_20261005T023729Z/results",
+      "selection_exclusions": []
+    },
+    {
+      "manifest_sha256": "63bcffd2fa91634765bacc0d9ffa1e860467b0fed5ff1c15b1cefa3b91aaf571",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/results",
+      "selection_exclusions": []
+    },
+    {
+      "manifest_sha256": "8921869a0de2610870d9612706132cd5cf07a8ca8ed77f3c6c3829d4f4a5c639",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/sources_20261005T034529Z/results",
+      "selection_exclusions": [
+        "dual_engine_sources_20261005/g20/nfci_cash",
+        "dual_engine_sources_20261005/g20/credit_cash",
+        "dual_engine_sources_20261005/g20/credit_gold",
+        "dual_engine_sources_20261005/g20/curve_credit"
+      ]
+    },
+    {
+      "manifest_sha256": "b0eec4974ce2632be2c2bc8352e3aa33c79d38535860508504ecab6214ec5bd5",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/results"
+    },
+    {
+      "manifest_sha256": "c9a2db406d4809c1516612c8bc5ffd728f9cfbc04b218cf7d4e26dbdb875fc78",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/results"
+    },
+    {
+      "manifest_sha256": "c6961bcf1be7e43b7b45b4f29c9372e05ba28a5bf3617dd03c96de13f90a208b",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/features_20261005T111416Z_v2/results",
+      "selection_exclusions": [
+        "dual_engine_features_20261005/c60/uniform75"
+      ]
+    },
+    {
+      "manifest_sha256": "5139f6029d2a93063dcfe244902da97e8d1a9774c812f7268f267a2bf5638d6b",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/states_20261005T115802Z/results"
+    },
+    {
+      "manifest_sha256": "8df6871a8466903d2a1c3b143559f24d4016310ef9ef8a1adac93468aa8f87f9",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/ownership_20261005T124238Z/results"
+    },
+    {
+      "manifest_sha256": "a249a5c7bf8e11b2c2fc656329a7461b9eac495fb7a5e5aba508cc81d7a65d3c",
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/cashflow_20261006T075644Z_v4/results"
+    }
+  ],
+  "supplemental_discovery_studies": [
+    {
+      "completed_comparison_curves": 12,
+      "contract": "config/c60-gradient-20261011.json",
+      "contract_sha256": "26afd8763f7cd1b4274cec23d55857d653d218f053a2d561859321a04a18abc3",
+      "explanation": "Existing ranked-universe counts/leader receipts remain frozen. This supplemental study adds two observed economic rule forms (primary+diagnostic), no new winner. Global trial reconciliation still pending.",
+      "failed_input_roots": [
+        "/mnt/e/qount_data/qount/artifacts/dual_engine/gradient_20261011T073000Z",
+        "/mnt/e/qount_data/qount/artifacts/dual_engine/gradient_20261011T073000Z_v2"
+      ],
+      "id": "c60_gradient_20261011",
+      "manifest_sha256": "24084c8aeaa97210767707fdc9cbd2eef691c640dfdaf7dd5bf6be3805d16a47",
+      "new_diagnostic_rules": 1,
+      "new_primary_rules": 1,
+      "orders_authorized": false,
+      "parameter_searches": 0,
+      "prior_failed_input_runs_control_curves": 2,
+      "promotion_evidence": false,
+      "ranking_scope": "separate_owner_remediation_comparison_not_added_to_frozen_seventeen_round_ranking",
+      "research_only": true,
+      "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/gradient_20261011T073000Z_v3",
+      "selection_eligible": false,
+      "status": "historical_screen_fail_preserved",
+      "total_curve_exposures_including_retained_controls": 14
+    }
+  ],
+  "tenth_holdings_verification": {
+    "capital_curves": 12,
+    "curves": 36,
+    "episode_curves": 24,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/renewal_20261005T031225Z_v2/_verification/holding-renewal-verification.json",
+    "sha256": "4b870cd287b207ece8c2586bfb505a4559289089f9560eda694967d4c400ad62"
+  },
   "thirteenth_holdings_verification": {
-    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/_verification/holding-zorder-verification.json",
-    "sha256": "353c3c190d14dcd5f57d20d59b8185551c7ad90226a967967119f36a33019f2f",
-    "curves": 38,
     "capital_curves": 20,
-    "episode_curves": 18
+    "curves": 38,
+    "episode_curves": 18,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/_verification/holding-zorder-verification.json",
+    "sha256": "353c3c190d14dcd5f57d20d59b8185551c7ad90226a967967119f36a33019f2f"
   },
   "thirteenth_rejected_implementation": {
-    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T092858Z/results",
-    "manifest_sha256": "81689c467bb10e9aa27cd97eed575e986654204e275fb5632481f77b87f62315",
-    "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T092858Z/_records/failed-result-inventory.json",
-    "verification_sha256": "184cdde99abd013ac25a04c13b4be70115346bbb1a47bb4c36f625edcec78eb6",
     "eligible_for_selection": false,
-    "reason": "second pre-start delayed instruction falsely declared monthly capital reset"
+    "manifest_sha256": "81689c467bb10e9aa27cd97eed575e986654204e275fb5632481f77b87f62315",
+    "reason": "second pre-start delayed instruction falsely declared monthly capital reset",
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T092858Z/results",
+    "verification_path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T092858Z/_records/failed-result-inventory.json",
+    "verification_sha256": "184cdde99abd013ac25a04c13b4be70115346bbb1a47bb4c36f625edcec78eb6"
+  },
+  "three_objective_goal": {
+    "all_cell_cagr_drawdown_closed_net_win_rate_passed": false,
+    "contract": "config/dual-engine-execution-ownership-20261005.json",
+    "ranking_is_not_goal_confirmation": true,
+    "reference": "rebound_half",
+    "status": "joint_objective_not_met"
+  },
+  "twelfth_holdings_verification": {
+    "capital_curves": 18,
+    "curves": 36,
+    "episode_curves": 18,
+    "path": "/mnt/e/qount_data/qount/artifacts/dual_engine/zonal_20261005T071911Z/_verification/holding-zonal-verification.json",
+    "sha256": "eb926e776a2925ed4c4a52ca63ecc019d92c2dee2b488b15d63bbad581f6bd45"
   }
 }

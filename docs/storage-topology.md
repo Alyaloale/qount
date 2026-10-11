@@ -1,10 +1,10 @@
 # qount 存储与计算拓扑
 
-> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-10-02
+> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-10-09
 > **本文回答**：跨主机职责、权威数据位置、WSL 计算流程、外置盘/清理规则。
 > **TL;DR**：Mac 研究/git、Windows 外置盘存储真相、WSL 计算、VPS 生产；大数据只在 Win/WSL 侧落外置盘。
 
-更新时间：2026-07-31
+更新时间：2026-10-09
 
 这份文档定义跨主机职责、权威数据位置、WSL计算流程和清理规则。策略结论仍以
 [current.md](current.md)为准，生产运行仍以VPS为准。
@@ -48,6 +48,8 @@ qount/
   runtime-backups/      # 节点runtime压缩备份，不作为运行目录
   scratch/              # 外置盘传输临时区；完成后清理
 ```
+
+个股选择新线的用户原包使用`datasets/equity_selection/<dataset_id>/raw/`独立不可变目录；原始传输回执与hash保留，未经过数据资格的来源也不覆盖已有输入。全量CSV结构审计、公开代码交付和运行回执使用`artifacts/equity_selection/`，Mac只留代码和轻量摘要；主文档见[个股选择研究](equity-selection-study-2026-10.md)，运行事实只看current。
 
 ETF P3 数据使用 `datasets/etf_alpha_p3/<dataset_id>/` 的不可变版本目录。
 每版分别放 `raw/{distributions,calendar,fees}/`、`normalized/`、`assumptions/`、`audit/`、`metadata/` 和 `provenance/`，

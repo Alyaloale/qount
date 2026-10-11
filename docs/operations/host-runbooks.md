@@ -92,6 +92,16 @@ VPS service environment files are `/etc/qount/*.env`, owned `root:root` with mod
 
 Current runtime truth and enabled-service facts are only in [current.md](../current.md). Read-only probes must never be converted into `systemctl enable`, `start`, deployment sync, order, arm or cron actions. In particular, legacy and production trading timers stay disabled unless a future owner decision explicitly changes `current.md`.
 
+## Personal proxy and SSH entry
+
+The owner's personal-proxy/SSH authorization and current operating facts are recorded in [current.md](../current.md#vps-个人代理与-ssh-恢复2026-10-10) and detailed in [network-proxy-and-anti-ban-guide.md](network-proxy-and-anti-ban-guide.md). This is separate from qount execution authority. Keep proxy UUIDs, residential credentials and private WebSocket paths out of repository files and diagnostic output.
+
+Mac operational files are `~/.config/aliyun-manila-relay/ssh-client.json`, `~/Library/LaunchAgents/com.alyaloale.aliyun-manila-relay.plist` and the `qount-vps` entry in `~/.ssh/config`. Verify actual SSH authentication with `ssh -o BatchMode=yes -o ControlPath=none qount-vps 'uptime'`; a listening SOCKS port alone is insufficient. The private client config is `0600`. It is independent of the main Clash Verge mode/selection and must not fall back silently to Windows or a subscription exit.
+
+Clash Verge client routing uses `mode: rule`, with `Aliyun-Manila-Relay` configured as the persistent overseas fallback selector (`良心云`) and US residential proxy chained for AI services (`AI-美国住宅`). Cloudflare trace domains (`cloudflare.com`, `www.cloudflare.com`) route to the AI residential group so CLI pre-flight checks (e.g. `claude-us`) pass. Local developer proxy environment variables for terminal tools (such as Codex CLI) are sourced via `~/.codex/proxy-env.zsh`.
+
+The server's dedicated unit is `/etc/systemd/system/aliyun-relay.service`, with binary `/opt/aliyun-relay/xray` and root-only config/metadata in `/etc/aliyun-relay/`. Read only bounded health properties for this unit. Caddy's marked `owner-aliyun-relay` insertion wraps the original site handlers; metadata records the inserted prefix/suffix and original hash for targeted rollback. Do not dump the Caddyfile or private metadata, replace the entire Caddy configuration, or remove original authentication. Any future rollback must preserve all unrelated routes and validate the resulting Caddy configuration before reload; it is not authority to restart qount or trading services.
+
 ## Recovery limits
 
 Use the existing package tests and static deployment-reference check before a host-specific change. Recover only an explicitly approved service from its documented release/provenance; do not use an archived script or a historical unit as a recovery shortcut. The present governance batch does not authorize any recovery action.

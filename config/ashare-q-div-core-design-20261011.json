@@ -1,0 +1,463 @@
+{
+  "schema_version": 1,
+  "study_id": "ashare_q_div_core_design_20261011",
+  "revision": 2,
+  "status": "frozen_research_design_not_executable_run_contract",
+  "owner_basis": "继续设计选股策略；证据质量、PIT、基准、消融和参数高原优先",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "implementation_ready": false,
+  "historical_inputs_qualified": false,
+  "historical_backtest_run": false,
+  "data_acquisition_run": false,
+  "scheduler": false,
+  "production_effect": "none",
+  "question": "Can a simpler quality/dividend/low-volatility portfolio add net value over the dividend-low-volatility total-return benchmark with lower turnover?",
+  "parent": {
+    "contract": "config/ashare-q-div-ivol.json",
+    "sha256": "146119161042837d4c09e987dcbc93e8a6681c4521b2ae118f18fb570fcd0bab",
+    "preserve_unchanged": true
+  },
+  "evidence": {
+    "prior_primary_rules": 7,
+    "prior_evaluated_rule_sets": 6,
+    "new_primary_designs": 1,
+    "cumulative_primary_rules": 8,
+    "new_return_experiments_run": 0,
+    "parameter_search_run": 0,
+    "independent_OOS": false,
+    "history_status": "2015_20260930_consumed_discovery",
+    "forward_observation": "not_started_no_backfill"
+  },
+  "rules": {
+    "capital_cny": 1000000,
+    "start": "20150101",
+    "end": "20260930",
+    "initial_signal": "last_exchange_close_before_first_2015_session_full_prestart_evidence_required",
+    "universe": "declared_existing_mainboard_prefix_panel_with_historical_retirements_not_all_A",
+    "financial_scope": "industrial_only",
+    "historical_identity_and_sw_level1_required": true,
+    "maturity_valid_observations": 252,
+    "risk_sessions": 126,
+    "ADV_sessions": 20,
+    "ADV_min_cny": 30000000,
+    "quality": {
+      "roe_min": 0.08,
+      "cfo_profit_min": 0.8,
+      "debt_assets_max_strict": 0.7,
+      "equity_denominators_positive": true,
+      "CFO_profit_denominator_positive": true,
+      "redundant_separate_profit_gate": "not_counted_ROE_implies_positive_profit_when_equity_positive",
+      "TTM": "current_YTD_plus_prior_annual_minus_prior_same_YTD_annual_direct",
+      "ROE": "parent_TTM_profit_div_mean_current_and_prior_same_period_parent_equity",
+      "CFO_scope": "consolidated_CFO_over_parent_profit_proxy_not_FCF_or_parent_distributable_cash"
+    },
+    "financial_age_max_calendar_days": 210,
+    "report_clock": "reliable_public_timestamp_strictly_before_signal_close_date_only_next_exchange_session_no_latest_restatement_backfill",
+    "dividend": "signal_year_minus_1_2_3_each_positive_ordinary_implemented_ex_dated_and_paid_A_share_cash",
+    "DY3": "mean_last3_completed_fiscal_year_A_share_DPS_adjusted_to_signal_share_basis_div_signal_unadjusted_close",
+    "special_dividend": "exclude_separately_labeled_events_unknown_label_or_share_bridge_means_unknown",
+    "risk_measure": "population_std_126_exact_causal_total_return_intervals_times_sqrt252",
+    "ranking": "mean_average_tie_percentile_rank_DY3_desc_and_risk_asc_then_symbol",
+    "percentile_formula": "(average_rank_minus1)/(N_minus1)_N1_zero",
+    "review": "calendar_month_end_close_next_session_open_initial_prestart_signal",
+    "maximum_positions": 20,
+    "retention_rank": 30,
+    "stock_target_weight": 0.05,
+    "industry": "PIT_SW_level1_unknown_not_new_eligible",
+    "industry_target_cap": 0.2,
+    "industry_slots": 4,
+    "weights": "fixed5pct_seats_no_redistribution_cash_for_shortfall",
+    "selection": "retain_eligible_incumbents_rank_le30_score_order_with_industry_capacity_then_fill_from_full_ranked_pool",
+    "unfilled_exits": "occupy_actual_stock_and_industry_capacity_until_filled",
+    "regular_gross_turnover_cap_per_review_NAV": 0.4,
+    "participation_prior_ADV": 0.01,
+    "buy_lot_raw_shares": 100,
+    "intent_window_exchange_sessions": 5,
+    "sell_order": "safety_then_ineligible_then_industry_excess_then_worst_score_then_symbol",
+    "buy_order": "best_score_then_symbol_after_actual_sale_capacity_and_cash",
+    "regular_unexecuted_sell": "persist_until_filled_or_explicitly_cancelled_at_next_review",
+    "unexecuted_buy": "expire_at_execution_window_end",
+    "safety_exit": "known_public_ST_investigation_dividend_cancellation_persistent_next_tradable_time",
+    "safety_turnover_cap_exempt": true,
+    "event_taxonomy_frozen_before_run": false,
+    "price_stop": null,
+    "portfolio_drawdown_pause": null,
+    "cash_interest_fraction": 0,
+    "weight_caps_scope": "targets_actual_drift_reported_daily_monthly_corrected_no_add_to_overcap",
+    "cash_ledger": "raw_prices_real_shares_exdate_receivable_paydate_cash_lot_tax_no_adjusted_price_double_count",
+    "fees": "dated_certified_schedule_required_previous_proxy_tariffs_not_sufficient",
+    "cash_benchmark": "zero_interest_SHIBOR_only_lagged_Sharpe_diagnostic",
+    "initial_allocation_budget": "exempt_regular40pct_gross_budget_all_initial_and_alternate_starts_and_controls_same_ADV_cash_and_fill_constraints",
+    "regular_budget_clock": "accumulate_regular_fills_since_review_up_to40pct_of_that_review_NAV_reset_next_review_recompute_pending_regular_intents_safety_only_exempt"
+  },
+  "benchmarks": [
+    {
+      "id": "DIV_LOWVOL_TR",
+      "role": "sole_primary",
+      "name": "中证红利低波动100官方全收益",
+      "price_parent_code_verified": "930955",
+      "TR_series_id": null,
+      "qualified": false,
+      "index_publication_date": "2017-05-26",
+      "prelaunch_backfill_report_separately": true
+    },
+    {
+      "id": "CSI300_TR",
+      "role": "broad_market",
+      "name": "沪深300官方全收益",
+      "TR_series_id": null,
+      "qualified": false
+    },
+    {
+      "id": "DECLARED_UNIVERSE_EW",
+      "role": "same_universe_control_not_all_A",
+      "qualified": false,
+      "rules": "monthly_1overN_all_basic_eligible_industrial_names_no20position_5pctseat_or_sector_cap_no_quality_dividend_risk_rank_same_capital100share_lots_cash_ADV_budget_initial_exempt_unfillable_small_targets_cash"
+    }
+  ],
+  "variants": [
+    {
+      "id": "CORE",
+      "role": "primary",
+      "base": "CORE",
+      "changes": {}
+    },
+    {
+      "id": "NO_ROE",
+      "role": "ablation",
+      "base": "CORE",
+      "changes": {
+        "roe_min": null
+      }
+    },
+    {
+      "id": "NO_CFO",
+      "role": "ablation",
+      "base": "CORE",
+      "changes": {
+        "cfo_profit_min": null
+      }
+    },
+    {
+      "id": "NO_DEBT",
+      "role": "ablation",
+      "base": "CORE",
+      "changes": {
+        "debt_assets_max_strict": null
+      }
+    },
+    {
+      "id": "NO_QUALITY",
+      "role": "ablation",
+      "base": "CORE",
+      "changes": {
+        "all_quality_requirements": false,
+        "financial_age_max_calendar_days": null,
+        "financial_ratio_versions_and_comparators_required": false
+      }
+    },
+    {
+      "id": "NO_DIVIDEND",
+      "role": "ablation",
+      "base": "CORE",
+      "changes": {
+        "dividend_eligibility": false,
+        "ranking": "volatility_only"
+      }
+    },
+    {
+      "id": "NO_VOLATILITY",
+      "role": "ablation",
+      "base": "CORE",
+      "changes": {
+        "ranking": "DY3_only"
+      }
+    },
+    {
+      "id": "IVOL",
+      "role": "method_control",
+      "base": "CORE",
+      "changes": {
+        "risk_measure": "single_market_residual_126"
+      }
+    },
+    {
+      "id": "QUARTERLY",
+      "role": "frequency_control",
+      "base": "CORE",
+      "changes": {
+        "review": "quarter_end"
+      }
+    },
+    {
+      "id": "TREND_EXIT",
+      "role": "exit_control",
+      "base": "CORE",
+      "changes": {
+        "trend": "three_valid_closes_below_MA200_entry_requires_not_broken"
+      }
+    },
+    {
+      "id": "OLD_RULES_ANCHOR",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {}
+    },
+    {
+      "id": "OLD_NO_VOLUME",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {
+        "volume_gate": false
+      }
+    },
+    {
+      "id": "OLD_NO_BIAS60",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {
+        "bias60_gate": false
+      }
+    },
+    {
+      "id": "OLD_NO_BIAS120",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {
+        "bias120_gate": false
+      }
+    },
+    {
+      "id": "OLD_NO_RETURN60",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {
+        "return60_gate": false
+      }
+    },
+    {
+      "id": "OLD_NO_TURNOVER",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {
+        "turnover_gate": false
+      }
+    },
+    {
+      "id": "OLD_NO_TREND",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {
+        "trend_gates": false
+      }
+    },
+    {
+      "id": "OLD_NO_VOLUME_BIASES",
+      "role": "old_rule_diagnostic_not_original_protocol_reproduction",
+      "base": "parent_economic_rules_on_common_cash_engine",
+      "changes": {
+        "volume_gate": false,
+        "bias60_gate": false,
+        "bias120_gate": false
+      }
+    },
+    {
+      "id": "NEIGHBOR_ROE_0p06",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "roe_min": 0.06
+      }
+    },
+    {
+      "id": "NEIGHBOR_ROE_0p1",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "roe_min": 0.1
+      }
+    },
+    {
+      "id": "NEIGHBOR_CFO_0p6",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "cfo_profit_min": 0.6
+      }
+    },
+    {
+      "id": "NEIGHBOR_CFO_1p0",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "cfo_profit_min": 1.0
+      }
+    },
+    {
+      "id": "NEIGHBOR_DEBT_0p65",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "debt_assets_max_strict": 0.65
+      }
+    },
+    {
+      "id": "NEIGHBOR_DEBT_0p75",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "debt_assets_max_strict": 0.75
+      }
+    },
+    {
+      "id": "NEIGHBOR_WINDOW_105",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "risk_sessions": 105
+      }
+    },
+    {
+      "id": "NEIGHBOR_WINDOW_147",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "risk_sessions": 147
+      }
+    },
+    {
+      "id": "NEIGHBOR_RETENTION_25",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "retention_rank": 25
+      }
+    },
+    {
+      "id": "NEIGHBOR_RETENTION_35",
+      "role": "one_at_a_time_neighborhood_not_selection",
+      "base": "CORE",
+      "changes": {
+        "retention_rank": 35
+      }
+    }
+  ],
+  "diagnostics": {
+    "IVOL": "OLS_intercept_126_same_total_returns_vs_CSI300_TR_population_residual_std_sqrt252_zero_variance_unknown",
+    "trend": "three_consecutive_exchange_sessions_with_valid_close_below_MA200_gap_breaks_count_unknown_cannot_mean_unbroken",
+    "quarterly": "March_June_September_December_month_end_same_initial_entry",
+    "correlation": "monthly_full_jointly_measurable_eligible_pool_Spearman_and_holdings_overlap_not_current20",
+    "ablation_field_requirements": "remove_unique_removed_gate_inputs_do_not_intersect_all_variant_complete_cases",
+    "no_ROE": "remove_ROE_and_its_equity_denominator_requirement_keep_positive_profit_for_CFO_ratio",
+    "no_QUALITY": "remove_financial_ratios_210day_age_and_ratio_version_comparators_keep_industrial_identity_other_factor_evidence",
+    "old_rule_anchor": "common_cash_engine_historical_inputs_not_parent_protocol_rerun_or_parent_gate_change",
+    "neighbor_grid": false,
+    "automatic_winner_selection": false,
+    "old_rule_anchor_overrides": {
+      "preserved_parent_rules": "entry_technical_turnover_rank_10session_review_35retention_DYoverIVOL_weights_exits_and_drawdown_pause",
+      "harmonized": "PIT_identity_and_SW1_industry_raw_cash_ledger_5session_fills_regular40pct_budget_initial_exempt",
+      "rolling_DY": "last365calendar_days_paid_A_share_DPS_bridged_to_signal_shares_div_unadjusted_close_not_parent_total_mv_proxy",
+      "not_claimed": "exact_parent_protocol_replication_or_original_contract_gate_evaluation"
+    },
+    "seasonality": "monthly_qualification_loss_due_to_prior_fiscal_year_not_yet_paid_and_cash_exposure_reported_fixed_years_not_shifted"
+  },
+  "paths": {
+    "cost_cells": [
+      "base",
+      "double_cost",
+      "extra_day",
+      "double_cost_extra_day"
+    ],
+    "double_cost": "all_commission_transfer_stamp_slippage_times2_dividend_tax_unchanged",
+    "extra_day": "same_signal_earliest_execution_plus1_exchange_session_entire5session_window_shifts",
+    "designs": 28,
+    "primary_start_strategy_paths": 112,
+    "CORE_alternate_start_years": [
+      2016,
+      2019,
+      2022
+    ],
+    "alternate_start_paths": 12,
+    "total_strategy_diagnostic_paths": 124,
+    "universe_equal_weight_paths": 4,
+    "total_execution_ledgers": 128,
+    "official_benchmark_series": 2,
+    "run_once_after_execution_contract_freeze": true
+  },
+  "regimes": [
+    [
+      "2015",
+      "20150101",
+      "20151231"
+    ],
+    [
+      "2018",
+      "20180101",
+      "20181231"
+    ],
+    [
+      "2021",
+      "20210101",
+      "20211231"
+    ],
+    [
+      "2022",
+      "20220101",
+      "20221231"
+    ],
+    [
+      "post20240924",
+      "20240924",
+      "20260930"
+    ]
+  ],
+  "gates": {
+    "only_primary_CORE_can_pass": true,
+    "missing_qualification": "insufficient_do_not_run_formal_returns",
+    "base_CAGR_minus_primary_benchmark_min": 0.01,
+    "base_MDD_le_primary_benchmark": true,
+    "each_stress_CAGR_minus_primary_benchmark_min": 0,
+    "positive_or_equal_regime_excess_min_of5": 3,
+    "strict_positive_annual_excess_min_of11_complete_2015_2025": 6,
+    "all_CORE_alternate_start_base_CAGR_excess_min": 0,
+    "base_one_way_annual_turnover_max": 1.2,
+    "positive_base_neighbor_CAGR_excess_min_of10": 8,
+    "neighbor_median_excess_CAGR_min_fraction_CORE": 0.5,
+    "bootstrap_daily_net_excess_mean_lower95_strictly_positive": true,
+    "bootstrap": {
+      "method": "paired_circular_block",
+      "block_sessions": 30,
+      "replications": 2000,
+      "seed": 20261011
+    },
+    "DSR": "DSR_at_least0.95_under_all_frozen_effective_trial_scenarios_including_conservative_all_reconstructable_trial_path_count_sensitivity_complete_family_required_missing_insufficient",
+    "failure": "retain_no_parameter_rescue_no_diagnostic_winner_promotion",
+    "pass_authorizes": "research_evidence_only_not_paper_live_or_scheduler",
+    "base_one_way_annual_turnover_definition": "sum_buy_and_sell_notional_div2_div_time_weighted_mean_NAV_div_actual_years_including_initial_and_safety_fills"
+  },
+  "readiness_required": [
+    "declared_universe_daily_identity_ST_delist_PIT_SW1",
+    "historical_public_financial_versions_and_pre2015_comparators",
+    "ordinary_special_dividend_classification_DPS_share_bridges_record_ex_pay_dates",
+    "raw_prices_shares_receivables_tax_and_corporate_action_reconciliation",
+    "dated_fees_tax_exchange_limits_suspensions_open_fill_evidence",
+    "official_total_return_series_ids_currency_reinvestment_tax_and_vintages",
+    "event_taxonomy_and_deterministic_partial_fill_target_solver",
+    "fixture_validation_independent_ledger_recomputation_implementation_and_input_hashes"
+  ],
+  "source_urls": [
+    "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/20231208180204-930955_Index_Methodology_cn.pdf",
+    "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/930955factsheet.pdf",
+    "https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf"
+  ],
+  "primary_document": "docs/ashare-q-div-ivol-study-2026-10.md",
+  "report": "output/research/ashare-q-div-core-design-20261011.html",
+  "pre_execution_design_review": {
+    "prior_sha256": "2b01d133024a660abd063b4563ba04ceb49c239a81346f4e3bfed815558dcac3",
+    "prior_file": "state/research_runs/ashare_q_div_core_design_20261011/design-revision1.json",
+    "returns_or_new_screen_seen": false,
+    "reason": "Clarify initial budget, causal clock, field-removal dependencies, controls and statistical gate before execution; preserve prior design."
+  }
+}

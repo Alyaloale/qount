@@ -1,0 +1,93 @@
+{
+  "study_id": "dual_engine_features_20261005",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "data_role": "consumed_historical_discovery_pool",
+  "new_candidate_trials": 4,
+  "cumulative_local_candidate_trials": 136,
+  "planned_curves": 32,
+  "global_trial_count": null,
+  "c60": {
+    "start": "2021-01-01",
+    "end": "2026-08-31",
+    "horizons": [
+      20,
+      60,
+      90
+    ],
+    "risk_window": 60,
+    "annual_volatility_cap": 0.6,
+    "core_weight": 0.7,
+    "satellite_weight": 0.3,
+    "cost_bps": [
+      25,
+      50
+    ],
+    "delays": [
+      0,
+      1
+    ],
+    "candidates": [
+      "agreement",
+      "efficiency",
+      "downside",
+      "joint_quality"
+    ],
+    "controls": [
+      "sat_week",
+      "satellite_staged",
+      "staged_risk4",
+      "uniform75"
+    ]
+  },
+  "mechanisms": {
+    "agreement": "fraction of strictly positive 20/60/90-day close returns",
+    "efficiency": "absolute sum of last60 log returns / sum of absolute last60 log returns; flat path zero",
+    "downside_quality": "1 - sum of squared negative last60 log returns / sum of squared last60 log returns; flat path .5",
+    "sizing": "multiply positive original nominal weight by .5+.5*quality; joint uses minimum of three qualities; PAXG unchanged; no redistribution or leverage",
+    "clock": "original sat_week family clock and60-day60% covariance gate; original monthly selection and20/60/90 horizons",
+    "uniform75": "fixed .75 multiplier on same non-PAXG source nominal weights and sat_week clock; diagnostic de-risking control, not volatility matched or selection eligible",
+    "labels": "source-positive decisions; T+2 open to20 holding-day close; actual prices with50bps each side; last incomplete or missing labels censored; four equal-width bins; descriptive, overlapping and correlated",
+    "success": "all four cells: CAGR strictly higher, MaxDD no worse, closed net episode win rate strictly higher than sat_week; no automatic promotion"
+  },
+  "selection_policy": {
+    "id": "worst_cell_cash_sharpe_v1",
+    "primary": "maximize minimum cash_excess_sharpe across all four cost/delay cells",
+    "ties": "minimum CAGR, worst drawdown, lower maximum turnover, stable version ID",
+    "pareto": [
+      "minimum cash_excess_sharpe",
+      "minimum CAGR",
+      "worst max_drawdown"
+    ],
+    "data_role": "consumed_historical_discovery_pool",
+    "global_optimum_confirmed": false
+  },
+  "selection_exclusions": [
+    "dual_engine_features_20261005/c60/uniform75"
+  ],
+  "paired_bootstrap": {
+    "block_lengths": [
+      40,
+      60,
+      120
+    ],
+    "draws": 400,
+    "seed": 20261004
+  },
+  "dsr_pbo": "not calculated; global trial count unreconciled; history consumed",
+  "prior_result": {
+    "root": "/mnt/e/qount_data/qount/artifacts/dual_engine/zorder_20261005T093252Z_v2/results",
+    "manifest_sha256": "c9a2db406d4809c1516612c8bc5ffd728f9cfbc04b218cf7d4e26dbdb875fc78"
+  },
+  "stop_policy": "One frozen32-curve CPU study;4 economic candidates; no outcome-conditioned rescue, tuning, refit or future window read. Preserve all positive and negative results.",
+  "owner_instruction": "发掘市场隐藏特征，研究提高年化的同时降低回测，增加胜率，推进下一版大改研究",
+  "interpretation": "降低回测 interpreted as降低回撤",
+  "prospective_confirmation": {
+    "status": "pending_future_data",
+    "manual_only": true,
+    "scheduler_created": false
+  },
+  "g20_scope": "No new G20 candidate; pending source-exit ownership defect remains unresolved; original leaderboard retained.",
+  "data_scope": "Frozen PIT cache and crypto adjusted opens only through2026-08-31; no new sources, independent OOS, P3 outer, fit, production or service changes."
+}

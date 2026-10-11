@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "study_id": "ashare_source_evidence_20261009",
+  "phase": "source_evidence_forensics",
+  "owner_instruction": "补齐证据并推进研究；继续",
+  "owner_activation_utc": "2026-10-09T11:09:38.932992+00:00",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "holdout_role": "discovery",
+  "returns_or_rankings": false,
+  "source": {
+    "archive": "/mnt/e/qount_data/qount/datasets/equity_selection/user_stocks_20261009T073341Z_f19e592894ea/raw/stocks.zip",
+    "sha256": "f19e592894eaa96e8297b434d696a4b931b573f97a2782c90feacd5dfe9566eb",
+    "audit_root": "/mnt/e/qount_data/qount/artifacts/equity_selection/intake_20261009T073341Z",
+    "audit_manifest_sha256": "ff0b10804ecb50adf74aabec65c9ba5f3e5c3aa1a3de45d5f22526cbce9db49d"
+  },
+  "calendar_sha256": "f046aeb45f2a006b0673788c9454bb6fc9cf3fe78c23fcaa4318746f40d13bc7",
+  "examples_sha256": "15b3ff9e45ba76b33cf723db1080833eb7b6262ca5d599482b2028c95cbb18ef",
+  "original_proposal_sha256": "a7e2fa0adf14f09c73bbdb4e4f583dc45fd1e0e6afe02f2146eb027e310f6a81",
+  "prior_qualification_contract_sha256": "17f5c4226cb64256100581c2d609b4df6a48cf63763fbce4816e2abb0b5a8493",
+  "policy": {
+    "amount_over_volume_scales": [
+      0.001,
+      0.01,
+      0.1,
+      1,
+      10,
+      100,
+      1000
+    ],
+    "vwap_price_tolerance_cny": 0.011,
+    "change_tolerance_cny": 0.000101,
+    "pct_tolerance_percentage_points": 0.0051,
+    "reference_price_tolerance_cny": 0.015,
+    "maximum_mismatch_examples_per_security": 3
+  },
+  "policy_semantics": {
+    "factor_bridge": "Only consecutive reference exchange sessions: previous raw close * previous factor / current factor vs current pre_close. No future return labels.",
+    "amount_volume": "Compare amount/vol times each fixed scale to raw [low,high]; establishes a relative scale only, not absolute CNY/share units.",
+    "mismatch_policy": "Report counts and examples; no repair, interpolation, factor replacement, tolerance adaptation or financial-result-dependent sample selection.",
+    "source_gate": "Numerical matches never automatically verify original vendor, export paging or corporate actions. Preserve current source gates.",
+    "calendar_scope": "Prior independent SSE reference only; SZSE gaps preserved."
+  },
+  "automatic_restart": false,
+  "source_rows_imputed": 0,
+  "production_or_account_access": false,
+  "public_source_snapshots": {
+    "root": "/mnt/e/qount_data/qount/artifacts/equity_selection/public_sources_20261009T110851Z",
+    "manifest_sha256": "9c4a4dab91a2831fec9bf3b7d989d4eaef8b1c20161c240d11802a868ab866f7",
+    "requires_official_examples_match_snapshots_before_run": true
+  }
+}

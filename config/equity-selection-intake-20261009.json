@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "study_id": "equity_selection_intake_20261009",
+  "research_only": true,
+  "orders_authorized": false,
+  "promotion_evidence": false,
+  "holdout_role": "discovery",
+  "owner_scope": {
+    "markets": [
+      "CN_individual_equities",
+      "US_individual_equities"
+    ],
+    "strategy_direction_may_change": true,
+    "low_frequency_required": false,
+    "fixed_monthly_entry_cap": null
+  },
+  "phase": "source_intake_and_structural_audit",
+  "returns_run": false,
+  "source": {
+    "type": "user_supplied_zip",
+    "original_name": "stocks_副本.zip",
+    "sha256": "f19e592894eaa96e8297b434d696a4b931b573f97a2782c90feacd5dfe9566eb",
+    "bytes": 748976510,
+    "e_dataset_root": "/mnt/e/qount_data/qount/datasets/equity_selection/user_stocks_20261009T073341Z_f19e592894ea",
+    "vendor_verified": false
+  },
+  "audit": {
+    "cpu_workers": 4,
+    "impute_rows": false,
+    "extract_csvs_to_mac": false,
+    "return_labels": false,
+    "preserve_original_archive": true
+  },
+  "next_research_question": "Does relative trading activity add date-clustered cross-sectional information beyond a fixed price-strength baseline?",
+  "proposed_label_horizons_sessions": [
+    5,
+    20
+  ],
+  "proposed_entry": "next_session_open_after_closed_features",
+  "frequency_policy": "hypothesis_dependent_no_fixed_monthly_cap",
+  "evidence_required_for_marketwide_claim": [
+    "historical_security_master_including_delisted",
+    "verified_adjustment_semantics_and_units",
+    "corporate_actions",
+    "dated_tradability_rules_and_calendar",
+    "dated_execution_costs"
+  ],
+  "us_status": "source_gate_pending_no_us_files_in_supplied_archive"
+}

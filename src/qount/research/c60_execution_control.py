@@ -34,7 +34,7 @@ class C60ExecutionError(ValueError):
 
 
 def warm_targets(axis: pit.Axis, assets: Mapping[str, pit.Asset], *, universe: str = "pit",
-                 confirmation: int = 1) -> tuple[dict[int, dict[str, float]], dict[int, list[str]]]:
+                 confirmation: int = 1, btc_gradient: bool = False) -> tuple[dict[int, dict[str, float]], dict[int, list[str]]]:
     """Carry actual monthly selections through warmup; never reset at evaluation.
 
     ``btc`` keeps the existing daily momentum control; ``btc_monthly`` uses the
@@ -69,13 +69,37 @@ def warm_targets(axis: pit.Axis, assets: Mapping[str, pit.Asset], *, universe: s
         pre, windows = {}, {}
         for k in held:
             asset = assets[k]
-            if all(_raw_gate(asset, btc, t - offset) for offset in range(confirmation)):
-                pre[k] = 1.0 / len(held)
+            window = asset.window(t)
+            if btc_gradient:
+                if confirmation != 1:
+                    raise C60ExecutionError("gradient_confirmation_not_registered")
+                own_pass = window is not None and window[-1] > statistics.fmean(window[-20:])
+                exposure = (1.0 if asset.symbol == "PAXGUSDT" else
+                            gradient_exposure(btc_window[-1] / statistics.fmean(btc_window[-50:]) - 1.0))
+                passed = own_pass and exposure > 0.0
+            else:
+                passed = all(_raw_gate(asset, btc, t - offset) for offset in range(confirmation))
+                exposure = 1.0
+            if passed:
+                pre[k] = exposure / len(held)
                 windows[k] = asset.window(t)
         vol = _portfolio_volatility(windows, pre, window=contract.c60_volatility_window)
         scalar = 1.0 if vol == 0.0 else min(1.0, contract.c60_volatility_target / vol)
         targets[t] = {k: w * scalar for k, w in pre.items()}
     return targets, members
+
+
+def gradient_exposure(distance: float) -> float:
+    """One frozen BTC SMA50 staircase; thresholds are discovery assumptions."""
+    if not math.isfinite(distance):
+        raise C60ExecutionError("gradient_distance_invalid")
+    if distance <= -.02:
+        return 0.0
+    if distance <= 0.0:
+        return .35
+    if distance <= .02:
+        return .70
+    return 1.0
 
 
 def _validate_weights(weights: Mapping[str, float]) -> None:
@@ -127,7 +151,8 @@ def _mark(weights: Mapping[str, float], ratios: Mapping[str, float]) -> tuple[fl
 def replay_crypto_open(axis: pit.Axis, assets: Mapping[str, pit.Asset],
                        opens: Mapping[str, Mapping[str, float]], targets: Mapping[int, Mapping[str, float]], *,
                        start: str = "2021-01-01", cost_bps: float, delay: int = 0,
-                       cancel_stale: bool = False, exact_fees: bool = True) -> dict:
+                       cancel_stale: bool = False, exact_fees: bool = True,
+                       rebalance_deadband: float = 0.0) -> dict:
     """Execute a completed-close intent at the following open (plus delay).
 
     The stale filter only suppresses purchases, using yesterday's finalized
@@ -136,6 +161,8 @@ def replay_crypto_open(axis: pit.Axis, assets: Mapping[str, pit.Asset],
     """
     if delay not in (0, 1):
         raise C60ExecutionError("execution_delay_invalid")
+    if not math.isfinite(rebalance_deadband) or not 0.0 <= rebalance_deadband < 1.0:
+        raise C60ExecutionError("rebalance_deadband_invalid")
     if not math.isfinite(cost_bps) or not 0.0 <= cost_bps < 5_000.0:
         raise C60ExecutionError("fee_rate_invalid")
     first = next((t for t, d in enumerate(axis.dates) if d >= start), None)
@@ -180,6 +207,12 @@ def replay_crypto_open(axis: pit.Axis, assets: Mapping[str, pit.Asset],
             if weight > 0.0:
                 target[k] = weight
         _validate_weights(target)
+        before_deadband = dict(target)
+        suggested_turnover = sum(abs(target.get(k, 0.0) - pre_weights.get(k, 0.0))
+                                 for k in set(target) | set(pre_weights))
+        suppressed = rebalance_deadband > 0.0 and suggested_turnover <= rebalance_deadband + 1e-12
+        if suppressed:
+            target = dict(pre_weights)
         fees = solve_cost(pre_weights, target, cost_bps, exact=exact_fees)
         intraday_ratios, intraday_missing = {}, []
         for k in target:
@@ -203,6 +236,9 @@ def replay_crypto_open(axis: pit.Axis, assets: Mapping[str, pit.Asset],
                         "gross": sum(target.values()), "weights": dict(target),
                         "close_weights": dict(weights), "pretrade_weights": dict(pre_weights),
                         "requested_weights": requested, "nominal_trades": fees["nominal_trades"],
+                        "before_deadband_weights": before_deadband,
+                        "suggested_turnover": suggested_turnover,
+                        "deadband_suppressed": suppressed,
                         "post_fee_cash": fees["post_fee_cash"], "canceled_buys": canceled,
                         "no_fills": no_fills,
                         "missing_marks": overnight_missing + intraday_missing,
