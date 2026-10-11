@@ -21,6 +21,7 @@
 ## Architecture, research and records
 
 - [架构主设计](system-architecture-design.md)
+- [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 四大主机分工、配置规范、四大研究线与五大排障手册。
 - [存储与计算拓扑](storage-topology.md)
 - [验证边界](holdout.md)
 - [研究路线](research-advancement-roadmap.md)

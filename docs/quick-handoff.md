@@ -51,6 +51,7 @@
 ## 📂 核心文档与资源导航
 
 - [个人交易助手指南](personal-trading-assistant-guide.md) — 个人实战策略体系与开发指引（Vibe Coding 必读）。
+- [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 主机分工、配置规范、四大研究线与五大排障手册。
 - [项目规则](project-rules.md) — 代码组织与研究规则。
 - [主机运行手册](operations/host-runbooks.md) — 多主机环境与连接说明。
 - [配置参考](reference/configuration.md) — 配置文件与安全加载规范。
