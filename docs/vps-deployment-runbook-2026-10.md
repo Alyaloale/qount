@@ -506,7 +506,6 @@ ssh qount-vps 'backup=/etc/caddy/Caddyfile.bak-$(date +%Y%m%d%H%M%S); install -m
 ```bash
 ssh qount-vps 'python3 - << "PYEOF"
 from pathlib import Path
-import re
 p = Path("/etc/caddy/Caddyfile")
 text = p.read_text()
 start = text.find("qount.alyaloale.com {")
@@ -518,8 +517,8 @@ assert block.count("basic_auth {") == 1, "expected one Basic Auth block"
 assert block.count("header {") == 1, "expected one security header block"
 assert block.count("handle /relay-") == 1, "expected one existing relay route"
 assert block.count("reverse_proxy 127.0.0.1:16789") == 1, "existing relay upstream mismatch"
-matches = list(re.finditer(r"(?m)^([ \t]*)file_server[ \t]*$", block))
-assert len(matches) == 1, f"expected one file_server in qount site, got {len(matches)}"
+file_server_lines = [line for line in block.splitlines() if line.strip() == "file_server"]
+assert len(file_server_lines) == 1, f"expected one file_server in qount site, got {len(file_server_lines)}"
 print("qount_site_found=true")
 print("basic_auth_preserved=true")
 print("relay_route_preserved=true")
@@ -532,7 +531,6 @@ PYEOF'
 ```bash
 ssh qount-vps 'python3 - << "PYEOF"
 from pathlib import Path
-import re
 p = Path("/etc/caddy/Caddyfile")
 text = p.read_text()
 start = text.find("qount.alyaloale.com {")
@@ -543,9 +541,15 @@ block = text[start:end]
 assert block.count("basic_auth {") == 1, "expected one Basic Auth block"
 assert block.count("header {") == 1, "expected one security header block"
 assert block.count("handle /relay-") == 1, "expected one existing relay route"
-pattern = re.compile(r"(?m)^([ \t]*)file_server[ \t]*$")
-updated, count = pattern.subn(r"\1reverse_proxy 127.0.0.1:8000", block)
-assert count == 1, f"expected one replacement, got {count}"
+lines = block.splitlines(keepends=True)
+indices = [i for i, line in enumerate(lines) if line.strip() == "file_server"]
+assert len(indices) == 1, f"expected one file_server, got {len(indices)}"
+i = indices[0]
+old = lines[i]
+ending = "\r\n" if old.endswith("\r\n") else "\n" if old.endswith("\n") else ""
+indent = old[:len(old) - len(old.lstrip())]
+lines[i] = indent + "reverse_proxy 127.0.0.1:8000" + ending
+updated = "".join(lines)
 p.write_text(text[:start] + updated + text[end:])
 print("qount_reverse_proxy_configured=true")
 PYEOF'
