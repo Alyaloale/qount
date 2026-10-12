@@ -249,7 +249,7 @@ ssh qount-vps 'curl -s localhost:8001/paper/lines | python3 -m json.tool'
 | `dual_gc5` | `ACTIVE_PAPER` | 同上 |
 | `dual_d15` | `ACTIVE_PAPER` | 同上 |
 
-且**不带 `error` 字段**。
+且 `error` 为空（FastAPI 可序列化为 `null`）。
 
 **失败判据（重要）**：四条 `dual_*` 的 `status` 是 `MISSING` 且 `error` 含 `SNAPSHOT_NOT_FOUND`
 → `QOUNT_PAPER_STATE_ROOT` 没生效，或快照路径不对。排查：
@@ -632,7 +632,7 @@ ssh qount-vps 'cp /etc/caddy/Caddyfile.bak-<时间戳> /etc/caddy/Caddyfile && s
 | --- | --- | --- | --- |
 | 1 | 服务运行 | `ssh qount-vps 'systemctl is-active qount-api'` | `active` |
 | 2 | 健康 | `ssh qount-vps 'curl -s localhost:8000/health'` | `status: ok`, `paper_lines_count: 7` |
-| 3 | 四账户真实 | `ssh qount-vps 'curl -s localhost:8000/paper/lines'` | 四条 `dual_*` = `ACTIVE_PAPER`，无 `error` |
+| 3 | 四账户真实 | `ssh qount-vps 'curl -s localhost:8000/paper/lines'` | 四条 `dual_*` = `ACTIVE_PAPER`，`error` 为空或 `null` |
 | 4 | G20 数值 | `curl .../paper/lines/dual_g20` | YTD `15.26`，291 点 |
 | 5 | 真实账户 | `curl .../account/live` | `LIVE_READONLY`，`read_only: true` |
 | 6 | 域名可访问 | 浏览器 | 双屏界面正常 |

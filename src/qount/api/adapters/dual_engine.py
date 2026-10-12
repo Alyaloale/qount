@@ -152,6 +152,18 @@ def _find_benchmark_series(snapshot: Dict[str, Any]) -> Dict[str, float]:
     return series
 
 
+def _format_nav_point_time(marked_at: Any) -> str:
+    """Preserve intraday identity while keeping date-only legacy snapshots compatible.
+
+    Several authoritative paper snapshots contain distinct marks on the same calendar day.
+    Returning only the date would make SQLite's ``(line_id, date)`` key overwrite those rows.
+    """
+    raw = str(marked_at).strip()
+    if len(raw) > 10 and raw[10] in {"T", " "}:
+        return raw
+    return format_date_str(raw)
+
+
 def _build_nav_series(
     portfolio: Dict[str, Any],
     benchmark_series: Dict[str, float],
@@ -172,7 +184,8 @@ def _build_nav_series(
         executable = point.get("executable", point.get("executable_nav"))
         if marked_at is None or executable is None:
             continue
-        date = format_date_str(str(marked_at))
+        date = _format_nav_point_time(marked_at)
+        benchmark_date = format_date_str(str(marked_at))
         try:
             nav_value = float(executable)
         except (TypeError, ValueError):
@@ -186,7 +199,7 @@ def _build_nav_series(
             NavPoint(
                 date=date,
                 nav=nav_value,
-                benchmark_nav=benchmark_series.get(date, 1.0),
+                benchmark_nav=benchmark_series.get(benchmark_date, 1.0),
                 signal_nav=signal_value,
             )
         )
@@ -213,7 +226,7 @@ def _build_metrics(portfolio: Dict[str, Any], nav_series: list[NavPoint]) -> Lin
         signal_nav=nav_block.get("signal"),
         executable_nav=nav_block.get("executable"),
         cumulative_cost=nav_block.get("cumulative_cost"),
-        start_date=nav_series[0].date if nav_series else None,
+        start_date=format_date_str(nav_series[0].date) if nav_series else None,
         days=days or None,
         trade_count=None,
     )

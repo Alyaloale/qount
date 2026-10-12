@@ -235,6 +235,52 @@ class TestAdapters(unittest.TestCase):
         # made-up series.
         self.assertEqual(line.nav_series[-1].benchmark_nav, 1.0)
 
+    def test_dual_engine_preserves_distinct_marks_on_the_same_date(self) -> None:
+        """Timestamp identity prevents same-day snapshot marks from overwriting in SQLite."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            current = os.path.join(tmpdir, "current")
+            os.makedirs(current)
+            snapshot = {
+                "data_cutoff": "2026-01-02T16:00:00+00:00",
+                "portfolios": [
+                    {
+                        "portfolio_id": "dual-engine-paper-g20",
+                        "initial_capital": 10000.0,
+                        "nav": {
+                            "points": [
+                                {
+                                    "marked_at": "2026-01-02T09:00:00+00:00",
+                                    "executable": 1.0,
+                                },
+                                {
+                                    "marked_at": "2026-01-02T16:00:00+00:00",
+                                    "executable": 1.01,
+                                },
+                            ]
+                        },
+                    }
+                ],
+                "benchmarks": [],
+            }
+            with open(os.path.join(current, "paper_program_snapshot.json"), "w") as fh:
+                json.dump(snapshot, fh)
+
+            adapter = get_adapter("dual_engine")
+            line: PaperLine = adapter(
+                line_id="dual_g20",
+                name="美股轮动 (G20)",
+                config={"account": "g20", "root": tmpdir},
+            )
+
+        self.assertEqual(
+            [point.date for point in line.nav_series],
+            [
+                "2026-01-02T09:00:00+00:00",
+                "2026-01-02T16:00:00+00:00",
+            ],
+        )
+        self.assertEqual(line.metrics.start_date, "2026-01-02")
+
 
 if __name__ == "__main__":
     unittest.main()
