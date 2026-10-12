@@ -494,7 +494,7 @@ ssh qount-vps 'systemctl disable --now qount-api.service && rm /etc/systemd/syst
 ### 6.1 备份
 
 ```bash
-ssh qount-vps 'cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d%H%M%S) && ls -la /etc/caddy/Caddyfile.bak-*'
+ssh qount-vps 'backup=/etc/caddy/Caddyfile.bak-$(date +%Y%m%d%H%M%S); install -m 600 /etc/caddy/Caddyfile "$backup" && stat -c "%n|mode=%a|%s bytes" "$backup"'
 ```
 
 **记下这个备份文件名**，回退时要用。
