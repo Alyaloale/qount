@@ -1,6 +1,6 @@
 # 新前端部署执行手册（qount.alyaloale.com）
 
-> **状态**：待执行｜**执行者**：owner 逐步执行｜**最后更新**：2026-10-12
+> **状态**：阶段 1–6 已完成；阶段 7 观察期中｜**执行者**：owner 逐步执行｜**最后更新**：2026-10-12
 > **目标**：把新的只读 API + 双屏前端部署到既有域名 `https://qount.alyaloale.com/`，替换现有旧 dashboard。
 > **本文性质**：**纯操作手册**。每一步都给出可直接复制的命令、预期输出、失败判据与回退方式。
 > **默认边界**：`research_only=true / orders_authorized=false`。全程不涉及下单、不修改交易授权。
@@ -572,12 +572,13 @@ ssh qount-vps 'cp /etc/caddy/Caddyfile.bak-<时间戳> /etc/caddy/Caddyfile'
 ### 6.4 热加载
 
 ```bash
-ssh qount-vps 'systemctl reload caddy && systemctl is-active caddy'
+ssh qount-vps 'caddy reload --config /etc/caddy/Caddyfile --force'
+ssh qount-vps 'systemctl is-active caddy'
 ```
 
 **预期**：`active`。
 
-> `reload` 是热加载，**不断开现有连接**，切换在 1 秒内完成。
+此 VPS 的 `systemctl reload caddy` 会在 systemd namespace 阶段失败（`/run/systemd/unit-root/tmp` 缺失），所以用 Caddy admin API 直接热加载。若 SSH 在 reload 后断开，重新连接并检查 Caddy 状态及未认证访问仍为 `401`。
 
 ### 6.5 线上验证
 
@@ -621,7 +622,7 @@ curl -sS -o /dev/null -w "old_api_path_status=%{http_code}\n" -u qount https://q
 ### 6.6 回退（一条命令）
 
 ```bash
-ssh qount-vps 'cp /etc/caddy/Caddyfile.bak-<时间戳> /etc/caddy/Caddyfile && systemctl reload caddy'
+ssh qount-vps 'cp /etc/caddy/Caddyfile.bak-<时间戳> /etc/caddy/Caddyfile && caddy reload --config /etc/caddy/Caddyfile --force'
 ```
 
 **切换在 1 秒内完成，旧前端立即可用**（`/var/www/qount` 未被删除）。
@@ -757,7 +758,7 @@ Environment=QOUNT_KLINES_CACHE_DIR=/root/qount/state/grid_b/klines
 | 2 | `ssh qount-vps 'cd /root && tar xzf qount-backup-<时间戳>.tar.gz'` |
 | 3 | `ssh qount-vps 'cd /root/qount && ./.venv/bin/pip uninstall -y fastapi uvicorn starlette'` |
 | 5 | `ssh qount-vps 'systemctl disable --now qount-api && rm /etc/systemd/system/qount-api.service && systemctl daemon-reload'` |
-| **6** | `ssh qount-vps 'cp /etc/caddy/Caddyfile.bak-<时间戳> /etc/caddy/Caddyfile && systemctl reload caddy'` |
+| **6** | `ssh qount-vps 'cp /etc/caddy/Caddyfile.bak-<时间戳> /etc/caddy/Caddyfile && caddy reload --config /etc/caddy/Caddyfile --force'` |
 | 7.3 | `ssh qount-vps 'systemctl start qount-dashboard-publisher.timer'` |
 
 **最坏情况下，只要执行阶段 6 的回退，域名立刻回到旧前端。**
@@ -779,14 +780,25 @@ Environment=QOUNT_KLINES_CACHE_DIR=/root/qount/state/grid_b/klines
 ## 执行清单（可勾选）
 
 ```
-[ ] 阶段 1  提交代码，git status 干净
-[ ] 阶段 2  备份 VPS → dry-run → 同步 → 验证文件在
-[ ] 阶段 3  装 fastapi/uvicorn → 验证可导入
-[ ] 阶段 4  手动跑 8001 → 逐项验证 A-G 全通过 → Ctrl-C
-[ ] 阶段 5  写单元 → mkdir /var/lib/qount/api → enable --now → 验证
-[ ] 阶段 6  备份 Caddyfile → 改写 → caddy validate → reload → 域名验证
-[ ] 阶段 7  验收清单 9 项 → 观察 3-5 日 → stop publisher（保留 observer）
-[ ] 阶段 8  可选：行情接口
+[x] 阶段 1  提交代码，git status 干净
+[x] 阶段 2  备份 VPS → dry-run → 同步 → 验证文件在
+[x] 阶段 3  装 fastapi/uvicorn → 验证可导入
+[x] 阶段 4  手动跑 8001 → 逐项验证 A-G 全通过 → Ctrl-C
+[x] 阶段 5  写单元 → mkdir /var/lib/qount/api → enable --now → 验证
+[x] 阶段 6  备份 Caddyfile → 改写 → caddy validate → reload → 基础域名边界验证
+[ ] 阶段 7  完成浏览器鉴权验收并观察 3-5 日 → 再评估 stop publisher（保留 observer）
+[ ] 阶段 8  可选：行情接口（当前未启用）
 ```
 
 research_only=true / orders_authorized=false / promotion_evidence=false。
+
+## 本次执行记录（2026-10-12）
+
+- 阶段 1–6 已执行。代码提交为 `802ecd8`，同日修复同日多时点 NAV 被 SQLite 日期键覆盖的问题（`65334a2`）；执行中发现的 reload 环境差异已补入本手册。
+- VPS 代码备份：`/root/qount-backup-20261012201824.tar.gz`（4,398,317 bytes），凭据文件已排除。
+- Caddy 回退备份：`/etc/caddy/Caddyfile.bak-20261012202540`，mode `0600`。
+- API 专项 29 项通过；hygiene 与 API compile 通过。VPS API health 返回 7 条线，四条 dual 线为 `ACTIVE_PAPER`，G20 有 291 点、YTD 15.26%、最大回撤 -16.33%；真实账户端点为 `LIVE_READONLY`。
+- Caddy admin API 的活动配置确认 qount 站点代理到 `127.0.0.1:8000`，Basic Auth、响应头和 relay 路由保留；未认证 `/` 与 `/health` 均返回 `401`。API 本地 `/` 为 `200`，旧路径 `/data/v1/overview.json` 为 `404`。
+- systemd `qount-api.service` active、`NRestarts=0`、内存约 44 MB / 320 MB；进程未载入 `.env` 或交易/API 密钥。账户观察器与旧 publisher timers 保持 active，均未停止。
+- 本 VPS 的 `systemctl reload caddy` 在 systemd namespace 设置阶段失败；直接 `caddy reload --config /etc/caddy/Caddyfile --force` 已加载新配置。后续回退也使用直接 Caddy reload。
+- 阶段 7 观察期从 2026-10-12 开始；3–5 日观察及浏览器输入 Basic Auth 后的页面确认仍待完成。阶段 8 未启用，前端不调用 `/market/klines`。

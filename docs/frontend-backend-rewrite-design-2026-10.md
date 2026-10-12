@@ -1,7 +1,7 @@
 # 前后端重写设计（2026-10）
 
-> **状态**：P0–P4 已实施（25 项 API 专项测试、全仓 3,527 项通过、Hygiene 通过）；**P4.5 已完成**——`dual_engine` 适配器的硬编码假数据已移除并改为读真实快照。四账户已拆分注册。待办：持仓流水表、真实 Binance 账户、其余研究线接入、VPS 部署｜**权威**：本文记录重写设计与实施事实，当前事实仍看 [current.md](current.md)｜**最后更新**：2026-10-12
-> **TL;DR**：前端＝真实 Binance 账户＋模拟盘探索；后端＝binance 行情＋模拟盘。当前 4 条线要扩到覆盖 G20/C60/GC5/D15 四账户与其余研究方向。`dual_engine` 适配器目前输出**编造曲线**，是本次首要修复项。
+> **状态**：P0–P4 与 P4.5 已完成；VPS 部署阶段 1–6 已完成，阶段 7 的 3–5 日观察进行中。待办：持仓流水表、其余研究线接入与观察期后处置｜**权威**：本文记录重写设计与实施事实，当前事实仍看 [current.md](current.md)｜**最后更新**：2026-10-12
+> **TL;DR**：前端＝真实 Binance 账户只读快照＋模拟盘探索；后端＝行情＋模拟盘。G20/C60/GC5/D15 四账户已接入。`dual_engine` 曾输出**编造曲线**，现已改为读取 VPS 真实快照并保留全部 291 个时间点。
 > **边界**：`/account` 只读，不实现任何下单／撤单／改单；读私有账户需 owner 明确授权只读密钥；默认 `research_only=true / orders_authorized=false`。
 
 ---
@@ -210,25 +210,27 @@ GET /paper/trades?line_id=dual_g20&limit=100
 
 ### 6.1 现状（2026-10-12 实测）
 
-VPS `/root/qount`（**非 git 仓库**，靠 `scripts/sync-to-vps.sh` rsync）已运行 15 个 qount 单元 + Caddy 站点 `qount.alyaloale.com`（根 `/var/www/qount`，basic_auth 保护）。旧前端读 `/var/www/qount/data/v1 -> releases/<publication_id>`。主机 2 核 / 1.6 GB 内存。
+VPS `/root/qount`（**非 git 仓库**，靠 `scripts/sync-to-vps.sh` rsync）原有 15 个 qount 单元 + Caddy 站点 `qount.alyaloale.com`（根 `/var/www/qount`，Basic Auth 保护）。旧前端读 `/var/www/qount/data/v1 -> releases/<publication_id>`。主机 2 核 / 1.6 GB 内存。
+
+**2026-10-12 执行状态**：新 `qount-api.service` 已启用，单 worker 监听 `127.0.0.1:8000`，SQLite 写入 `/var/lib/qount/api/qount.db`；API 不加载 `.env`。Caddy 的 qount 站点已将 `file_server` 换成反代，活动配置仍保留 Basic Auth、安全响应头和 relay 路由；旧静态目录保留。API 与 Caddy 均 active，公网未认证请求仍为 `401`。VPS 的 `systemctl reload caddy` 因 systemd namespace 挂载失败，直接 Caddy admin reload 已成功加载配置，详见[执行手册](vps-deployment-runbook-2026-10.md)。阶段 7 的浏览器验收与 3–5 日观察仍在进行；publisher 与 account observer timers 暂保持运行。
 
 ### 6.2 部署阶段
 
-| 阶段 | 动作 | 回退 |
+| 阶段 | 动作 | 回退 / 状态 |
 | --- | --- | --- |
-| V1 | 提交代码（rsync 要求工作区干净）+ 备份 VPS | tar 包还原 |
-| V2 | `sync-to-vps.sh --dry-run` 再实际同步（**首次不加 `--delete`**） | tar 包还原 |
-| V3 | 装 `fastapi` + `uvicorn` | `pip uninstall` |
-| V4 | 手动跑端口 8001，逐项验证 7 个端点 | `Ctrl-C` |
-| V5 | 装 `qount-api.service`（见下） | `systemctl disable` |
-| **V6** | **Caddy 改反代（真正的切换点）** | **改回一行即恢复** |
-| V7 | 并行观察 3–5 日，再 `stop` 旧 publisher | `systemctl start` |
+| V1 | 提交代码 + 备份 VPS | 已完成；tar 回退包已留存 |
+| V2 | `sync-to-vps.sh --dry-run` 再实际同步（**首次不加 `--delete`**） | 已完成；tar 回退包已留存 |
+| V3 | 装 `fastapi` + `uvicorn` | 已完成 |
+| V4 | 手动跑端口 8001，逐项验证 7 个端点 | 已完成；临时实例已停止 |
+| V5 | 装 `qount-api.service`（见下） | 已完成；`systemctl disable --now` |
+| **V6** | **Caddy 改反代（真正的切换点）** | **已完成；Caddyfile 备份 + 直接 admin reload 回退** |
+| V7 | 并行观察 3–5 日；观察结束再评估旧 publisher | 进行中；publisher 与 account observer timers 都保持运行 |
 
 ### 6.3 三个关键设计取舍
 
-**1. 用 `reverse_proxy` 而非静态目录覆盖。** Caddy 里只需把 `file_server` 换成 `reverse_proxy 127.0.0.1:8000`，`basic_auth` 与 `header` 块原样保留。这样回退只是把那一行改回去——**切换与回退都在 1 秒内、不断开现有连接**。若改为把新前端文件覆盖到 `/var/www/qount`，回退就要恢复整目录，风险大得多。
+**1. 用 `reverse_proxy` 而非静态目录覆盖。** Caddy 里只把 `file_server` 换成 `reverse_proxy 127.0.0.1:8000`，`basic_auth`、安全响应头与 relay 路由原样保留。回退使用受限权限的 Caddyfile 备份并热加载；旧 `/var/www/qount` 静态目录保留。
 
-**2. systemd 里 `UnsetEnvironment` 显式剔除交易所密钥。** API 只需读快照文件，**不需要也不应持有 `QOUNT_BINANCE_API_KEY`／`SECRET`**。这是"web 进程永不持有密钥"的机制保障，而非口头约定。
+**2. API 进程不加载 `.env`，并用 `UnsetEnvironment` 显式剔除交易所密钥。** API 只读快照文件，**不需要也不持有 `QOUNT_BINANCE_API_KEY`／`SECRET`**；VPS `/proc` 环境检查确认 Binance、OpenAI 与通知 webhook 变量均不存在。
 
 **3. `qount-dashboard-account-observer` 必须继续运行。** 它的"写旧 release"职责被取代，但它的"读真实交易所账户"职责**正是 `/account/live` 的数据来源**（每 5 分钟写 `/var/lib/qount/blocked_runtime_observation.json`）。停掉它，真实账户读数就没了。
 
@@ -239,7 +241,7 @@ VPS `/root/qount`（**非 git 仓库**，靠 `scripts/sync-to-vps.sh` rsync）�
 
 ### 6.5 部署一致性检查
 
-手册阶段 7 给出 9 项验收清单（服务状态、健康、四账户真实数据、G1 数值、真实账户、域名可访问、basic_auth 生效、内存占用、无重启循环）。**避免"以为部署成功但跑的仍是旧代码"。**
+手册阶段 7 给出 9 项验收清单（服务状态、健康、四账户真实数据、G20 数值、真实账户、域名可访问、Basic Auth 生效、内存占用、无重启循环）。VPS 自动检查已确认 API 数据、活动 Caddy 路由、未认证 `401`、内存与重启次数；浏览器里的认证后页面确认及 3–5 日观察待完成。
 
 
 
@@ -290,13 +292,13 @@ P4.6  拆四账户注册表行（G20/C60/GC5/D15）                            �
 P4.7  加 paper_positions / paper_trades 表与两个端点                  ← 下一步
 P5-A  账户：/account/live 接真实只读账户                             ✅ 已完成
 P5-B  接入 CTA-R，再逐条接入其余研究线
-P5-C  VPS 部署                        → 见 [执行手册](vps-deployment-runbook-2026-10.md)
+P5-C  VPS 部署                        ✅ V1–V6完成；V7观察期见[执行手册](vps-deployment-runbook-2026-10.md)
 P6    确认无引用后清理旧单元与 schemas
 ```
 
 **已完成部分的验证（2026-10-12）**：
 
-- API 专项 28 项、全仓 3,530 项通过（34 跳过）、`compileall` 与 `repository_hygiene.py check` 通过。
+- 初版重构验收为 API 专项 28 项、全仓 3,530 项通过（34 跳过）、`compileall` 与 `repository_hygiene.py check` 通过；随后保留同日多个 NAV 时间点的修复通过 API 专项 29 项、compile 与 hygiene，全仓未重跑。
 - **四账户已用 VPS 真实快照验证**（291 点/账户）：G20 YTD +15.26%／MaxDD -16.33%／持仓 BIL 77.81%+ERX 21.40%，与线上界面截图完全吻合。
 - 真实账户端点读 VPS 现成的 `blocked_runtime_observation.json`，实测 **0.36 USDT**、无持仓。
 - 修正了一处**纯本地测试无法发现**的字段名陷阱（快照用 `executable`/`signal`，非 `executable_nav`/`signal_nav`），并加回归测试锁住。
