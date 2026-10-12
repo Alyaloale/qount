@@ -1,8 +1,10 @@
 # qount 策略研究与情报推进路线
 
-> **状态**：active｜**权威**：L3 研究路线｜**最后更新**：2026-07-26
+> **状态**：历史路线合同与阶段记录｜**权威**：L3 历史研究；当前事实见 [current.md](current.md)｜**最后更新**：2026-10-11
 > **本文回答**：全局实验账本、加密 family 图谱、来源矩阵、阶段门、§11 下一轮执行步骤。
 > **TL;DR**：加密优先；每 family 3 trial 强制复盘、不救援；multi_speed/breadth/residual 已关闭，liquidity 已首轮 calibration，stablecoin 三源 no-PnL G0 已通过并只允许进入新的 market-state 预登记设计。
+
+**当前读取范围**：下方版本、trial 数、加密优先与“下一轮”均保留原时点身份，不能覆盖 2026-10 的个人助手主航道、封存或停止裁决。清算有效起点为 2026-08-18，最早评估为 2027-02-14T06:31:56Z，旧 2027-01-24 日期失效。后续修补以 [计划](research-repair-and-consolidation-plan-2026-10.md)和 current 为准；旧合同预算不提供自动启动权限。
 
 版本：`v0.12`
 

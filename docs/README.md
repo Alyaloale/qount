@@ -17,25 +17,26 @@
 - [代码组织](reference/code-organization.md) — 包边界、兼容层和可读性重构规则。
 - [仓库地图](reference/repository-map.md) — 目录职责、研究模块与生成清单快照。
 - [研究线总览](research-lines.md) — 当前研究线状态、代码入口和权限边界。
+- [各研究线修补与整理计划](research-repair-and-consolidation-plan-2026-10.md) — 口径统一、逐线问题、依赖顺序与最小验收。
 
 ## Architecture, research and records
 
 - [架构主设计](system-architecture-design.md)
-- [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 四大主机分工、配置规范、四大研究线与五大排障手册。
+- [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 主机分工、配置规范、研究导航与排障。
 - [存储与计算拓扑](storage-topology.md)
 - [验证边界](holdout.md)
 - [研究路线](research-advancement-roadmap.md)
-- [跨研究线修复：Q-DIV 数据会计与 C60 梯度实验](research-remediation-plan-2026-10.md) — owner 指定计划的执行口径、数据门、独立合同与验证记录。
+- [跨研究线修复：Q-DIV 数据会计与 C60 梯度实验](research-remediation-plan-2026-10.md) — 已执行批次及阶段限制；后续工作顺序见修补整理计划。
 - [近期记录](update-log.md)
 - [美股与A股个股选择](equity-selection-study-2026-10.md) — 用户股票档案接入、复权/PIT资格与横截面信息研究；频率不设硬上限。
-- [A股Q-DIV-IVOL研究](ashare-q-div-ivol-study-2026-10.md) — 实际财报/分红、低特质波动与缩量条件的截止日筛选；历史回测未运行。
+- [A股Q-DIV-IVOL／Core研究](ashare-q-div-ivol-study-2026-10.md) — IVOL 截止日筛选与 Core 四曲线结果分开；Core 已完成并失败保留，原 20 仓不调参救援。
 - [短周期机会筛选：Binance 与 A 股](short-horizon-opportunity-study-2026-10.md) — 单一主动流假说、低频与净期望门、杠杆压力和公告/PIT来源资格。
 - [G20/C60 十七轮结果与现金流可行性](dual-engine-optimization-2026-10.md#研究总览与阅读路径) — 运行前协议、全部正负结果、归因、信息源与确认限制；[机器登记](../config/dual-engine-research-registry.json)绑定原结果，既有paper口径见[策略总集](qount_strategy_master_index.md)。
 - [ETF P2 / P3 文档入口](README-P2.md) — P2 架构与证据、原验收协议、P3 分层重构及实施计划。
 - [ETF P3 残差 pilot 结果与核验](etf-p3-research-plan-2026-10.md#24-r3残差pilot执行与结果2026-10-04) — 验证口径、增量门、对照与解释边界。
 - 事件线：`personal-200u-event-strategy.md`、`pre-event-range-strategy.md`、`fomc-trigger-study-and-v03-extension.md`
 - 主动研究：`alpha-agent-plan.md`、`l1-passive-allocation-preregistration.md`、`carry-active-basis-hypothesis.md`
-- 组合与演进：`long-run-personal-strategy-design.md`、`personal-strategy-research-directions.md`、`trading-system-evolution-plan.md`
+- 历史方向提案：[长期个人组合](long-run-personal-strategy-design.md)、[个人研究方向](personal-strategy-research-directions.md)；旧优先级不覆盖当前修补计划。控制面设计另见 [系统演进](trading-system-evolution-plan.md)。
 
 ## Historical material
 

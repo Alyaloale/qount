@@ -16,6 +16,8 @@
 
 ## 历史记录归档
 
+- [current-archive-pre-review-2026-10-11.md](current-archive-pre-review-2026-10-11.md)：本轮结论统一移出的六段策略申报；旧旗舰／高收益文字不作为当前裁决，原段落 hash 与链接重定位说明保留。
+
 - [update-log-archive.md](update-log-archive.md)：`update-log.md` 中 2026-07-20 及更早的历史证据链（含 line A / GRID-B /
   加密重启前）。当前近期记录仍在 [../update-log.md](../update-log.md)。
 - [research-reports/](research-reports/)：根目录 v4 回放、归因和基线诊断报告的历史副本；不可作为当前研究或运行依据。
@@ -52,5 +54,5 @@
 
 ## 规则
 
-历史文件不得作为 live/paper/order 的授权来源。任何生产判断先读当前入口，再用本索引中的文件追溯背景；
-历史研究结果不能覆盖当前 `MiniTrend-UM-Base-v0.2`、固定 `100 USDT`、long/cash、one-way、isolated 1x、gross<=1 合同。
+历史文件不得作为 live/paper/order 的授权来源。任何运行判断先读 current，再用本索引追溯背景；
+历史 MiniTrend 合同、账户规模或资金配比也只按其时点读取，不能覆盖当前停止／冻结状态或推定新的执行权限。

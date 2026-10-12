@@ -4,6 +4,8 @@
 > **本文回答**：多 agent 资料搜集、只读日报生产、source book、后续量化接入边界。
 > **TL;DR**：LLM 只写 research/日报，不出订单/目标权重/live 配置。
 
+**当前读取范围（2026-10-11）**：下文生产闭环、研究进度与授权描述按各自日期读取，不表示今日服务或内容质量已核验。稳定币 G0 仅为来源资格；后续研究／日报问题见 [修补整理计划](research-repair-and-consolidation-plan-2026-10.md)，最新运行及权限只看 [current.md](current.md)。
+
 状态：active research-only + 只读日报生产闭环。Owner 于 2026-07-08 授权先搭建多 agent 架构，用于搜集资料、优化方案和后续接入
 量化训练；2026-07-22已完成免费官方feed发现、详情复抓、TOP3行情、六角色中文LLM、不可覆盖归档、Dashboard和个人微信真实投递，
 并启用每日timer。手机入站/通道回发、context刷新和Qount正整数`message_id`均已验证；当前仍不写paper/live state、不arm live，LLM报告不提供策略promotion或订单权限。

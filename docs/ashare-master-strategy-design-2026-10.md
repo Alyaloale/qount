@@ -1,14 +1,19 @@
 # A 股个人量化交易系统总终方案设计与实证全景白皮书（2026-10）
 
-> **状态**：完成归档｜**权威**：L2 研究实证与总终方案交付｜**日期**：2026-10-11  
+> **状态**：历史申报／未通过准入，研究封存｜**权威**：历史设计；最新裁决见 [current.md](current.md)｜**日期**：2026-10-11
+> **TL;DR**：旧 20.71% 年化与旗舰推荐撤销；预热切片、上市日、参数邻域与置换检验问题未支持准入。下方保留初稿架构和数字，不能作为当前有效绩效、可执行收益或生产建议。
 > **代号**：Qount Master Quantitative System（麒麟集大成量化系统）  
-> **结构化收据**：[`state/research_runs/ashare_master_20261011/summary.json`](../state/research_runs/ashare_master_20261011/summary.json)  
+> **初稿结果收据（保留旧身份）**：[`state/research_runs/ashare_master_20261011/summary.json`](../state/research_runs/ashare_master_20261011/summary.json)
 > **策略模块**：[`src/qount/research/ashare_master_strategy.py`](../src/qount/research/ashare_master_strategy.py)  
 > **单测套件**：[`tests/research/test_ashare_master_strategy.py`](../tests/research/test_ashare_master_strategy.py)（全仓通过）  
 > **回测运行**：[`scripts/research/ashare_master_runner.py`](../scripts/research/ashare_master_runner.py)  
 > **边界声明**：`research_only=true`，`orders_authorized=false`，无未经授权的生产实盘下单或服务变更。
 
 ---
+
+## 历史正文的读取范围
+
+以下“总终方案”“实战赚钱”“锁定回撤”和测试通过等均为初稿申报，按当时阶段读取。当前封存及原重开条件由 current 保持；修补见[计划 R01／R02／R04](research-repair-and-consolidation-plan-2026-10.md)。各变体不能继承另一套引擎的复核数字；本轮未重跑回测或策略测试。
 
 ## 🎯 一、 总终方案设计哲学与核心定位
 

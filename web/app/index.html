@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>qount · AI 个人量化交易助手</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/echarts.min.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <!-- Top Navigation Header -->
+    <header class="navbar">
+      <div class="nav-brand">
+        <span class="logo-text">qount</span>
+        <span class="brand-tag">AI 个人量化</span>
+      </div>
+      <nav class="nav-tabs">
+        <button id="tab-account" class="tab-btn active" onclick="switchTab('account')">
+          <span class="tab-icon">💼</span> 账户概览
+        </button>
+        <button id="tab-paper" class="tab-btn" onclick="switchTab('paper')">
+          <span class="tab-icon">📊</span> 模拟盘探索
+        </button>
+      </nav>
+      <div class="nav-meta">
+        <span id="header-as-of" class="meta-badge">数据日期: --</span>
+        <button id="btn-refresh" class="btn-refresh" onclick="refreshData()" title="刷新数据">↻ 刷新</button>
+      </div>
+    </header>
+
+    <main class="content-container">
+      <!-- SCREEN 1: ACCOUNT -->
+      <section id="screen-account" class="screen-view active">
+        <div class="section-header">
+          <h2>账户</h2>
+          <span class="mode-badge mode-paper" id="account-mode-badge">双栏对照</span>
+        </div>
+
+        <div class="safety-banner">
+          <span class="warning-icon">⚠</span>
+          <span class="safety-text"><strong>安全底线</strong>: research_only=true · orders_authorized=false · 真实账户仅只读查看，不产生订单与实盘交互。</span>
+        </div>
+
+        <!-- Two accounts, deliberately never merged: the left column is money, the right is a simulation. -->
+        <div class="account-columns">
+          <!-- LEFT: real exchange account, read-only -->
+          <div class="account-column account-column-live">
+            <div class="column-header">
+              <h3>真实 Binance 账户</h3>
+              <span class="mode-badge mode-live" id="live-mode-badge">只读</span>
+            </div>
+            <div class="kpi-grid kpi-grid-compact">
+              <div class="kpi-card">
+                <div class="kpi-title">钱包余额</div>
+                <div class="kpi-value" id="live-nav">--</div>
+                <div class="kpi-sub">币种: <span id="live-currency">--</span></div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-title">可用余额</div>
+                <div class="kpi-value" id="live-cash">--</div>
+                <div class="kpi-sub" id="live-positions-note">持仓 -- </div>
+              </div>
+            </div>
+            <div id="live-error" class="inline-error hidden"></div>
+            <div class="provenance-details provenance-compact">
+              <div class="prov-row">
+                <span class="prov-label">观测时间:</span>
+                <span class="prov-val" id="live-as-of">--</span>
+              </div>
+              <div class="prov-row">
+                <span class="prov-label">读数来源:</span>
+                <code class="prov-val" id="live-source-path">--</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: research paper simulation -->
+          <div class="account-column account-column-paper">
+            <div class="column-header">
+              <h3>研究模拟盘 (PAPER)</h3>
+              <span class="mode-badge mode-paper">模拟，非真实资产</span>
+            </div>
+
+            <div class="kpi-grid kpi-grid-compact">
+              <div class="kpi-card">
+                <div class="kpi-title">模拟净值 (NAV)</div>
+                <div class="kpi-value" id="acc-nav">¥--</div>
+                <div class="kpi-sub">基准初始: ¥1,000,000.00</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-title">可用现金</div>
+                <div class="kpi-value" id="acc-cash">¥--</div>
+                <div class="kpi-sub">币种: <span id="acc-currency">CNY</span></div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-title">当前持仓标的</div>
+                <div class="kpi-value" id="acc-position-count">--</div>
+                <div class="kpi-sub" id="acc-exposure-desc">集中核心高流动性资产</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-title">快照时间</div>
+                <div class="kpi-value kpi-sm" id="acc-as-of">--</div>
+                <div class="kpi-sub" id="acc-freshness-status">新鲜度正常</div>
+              </div>
+            </div>
+
+            <div id="acc-error" class="inline-error hidden"></div>
+
+            <div class="card-section">
+              <div class="card-header">
+                <h3>当前持仓明细</h3>
+                <span class="header-note">大周期趋势择时 (MA120/MA200)，单标的集中</span>
+              </div>
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>标的代码</th>
+                      <th>持仓比例</th>
+                      <th>进场日期</th>
+                      <th>目标策略</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody id="account-positions-body">
+                    <tr><td colspan="5" class="table-empty">加载中...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card-section provenance-card">
+              <div class="card-header">
+                <h3>数据溯源与证据链</h3>
+              </div>
+              <div class="provenance-details">
+                <div class="prov-row">
+                  <span class="prov-label">来源包路径:</span>
+                  <code class="prov-val" id="acc-source-path">--</code>
+                </div>
+                <div class="prov-row">
+                  <span class="prov-label">SHA-256 哈希:</span>
+                  <code class="prov-val" id="acc-source-sha256">--</code>
+                </div>
+                <div class="prov-row">
+                  <span class="prov-label">生成时间:</span>
+                  <span class="prov-val" id="acc-source-produced">--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: PAPER SIMULATION -->
+      <section id="screen-paper" class="screen-view">
+        <div class="section-header">
+          <h2>模拟盘探索与研究线矩阵</h2>
+          <span class="lines-count-badge" id="paper-lines-count">共 -- 条研究线</span>
+        </div>
+
+        <div class="safety-banner banner-info">
+          <span class="warning-icon">ℹ</span>
+          <span class="safety-text"><strong>事实声明</strong>: 模拟盘展示的是各研究线历史回放与无订单前向模拟结果，不是实盘账户收益。失败与封存策略如实标出，坚决不隐藏失败结论。</span>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table paper-table">
+            <thead>
+              <tr>
+                <th>研究线</th>
+                <th>领域分类</th>
+                <th>运行状态</th>
+                <th>数据日期</th>
+                <th>新鲜度</th>
+                <th>自起收益 / CAGR</th>
+                <th>最大回撤</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="paper-lines-body">
+              <tr><td colspan="8" class="table-empty">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Detail Drawer / Modal for selected line -->
+        <div id="line-detail-panel" class="detail-panel hidden">
+          <div class="detail-header">
+            <div>
+              <h3 id="detail-title">研究线详情</h3>
+              <p id="detail-adjudication" class="detail-adj">--</p>
+            </div>
+            <button class="btn-close" onclick="closeDetailPanel()">✕</button>
+          </div>
+
+          <div class="detail-chart-wrapper">
+            <div class="chart-header">
+              <span class="chart-title">📈 净值曲线 (策略 NAV vs 基准 NAV，基准归一为 1.0)</span>
+              <span id="chart-range" class="chart-meta">--</span>
+            </div>
+            <div id="echarts-container" class="echarts-box"></div>
+          </div>
+
+          <div class="metrics-grid" id="detail-metrics-grid">
+            <!-- Dynamic metric cards -->
+          </div>
+
+          <div class="card-section provenance-card">
+            <div class="card-header">
+              <h4>溯源信息与不可变工件</h4>
+            </div>
+            <div class="provenance-details">
+              <div class="prov-row">
+                <span class="prov-label">工件路径:</span>
+                <code class="prov-val" id="detail-source-path">--</code>
+              </div>
+              <div class="prov-row">
+                <span class="prov-label">工件哈希:</span>
+                <code class="prov-val" id="detail-source-sha256">--</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>qount · 个人量化交易系统</span>
+      <span>边界: research_only=true · orders_authorized=false · 真实费率 · 严格单元测试</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

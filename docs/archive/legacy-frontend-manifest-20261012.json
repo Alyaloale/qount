@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0.0",
+  "frozen_at": "2026-10-12T09:30:00Z",
+  "description": "Frozen manifest of legacy frontend and systemd units prior to rewrite",
+  "web_site_files": {
+    "web/site/app.js": {
+      "sha256": "e0a10015b3b399ec950c18ca70784fdb2a236e004e2a36da7f61069c26b5cae7",
+      "size": 109670
+    },
+    "web/site/index.html": {
+      "sha256": "880e9ea4d597aca38589eb9a3dd2540381233fe7bd4490ed3a48e757c519b051",
+      "size": 5023
+    },
+    "web/site/style.css": {
+      "sha256": "9b55ce384bac23ce0ecbf917eaadb1030571ca7b7268d974c56fa59f6c066b35",
+      "size": 46244
+    },
+    "web/site/data/cta_r_paper.json": {
+      "sha256": "f98f13f28489198f3b14715dda0f40ed75da9f9406d0b1b7e50cc661d590baff",
+      "size": 10902
+    },
+    "web/site/vendor/LICENSE-echarts.txt": {
+      "sha256": "634293835b43a6dd2094fa39182a3d9a6b9ca43b7fdb9ac354e8037af2a3093a",
+      "size": 11990
+    },
+    "web/site/vendor/echarts.min.js": {
+      "sha256": "b66b25aeb4df84e33199dc21694014d336d222cbd9deb0e5a7c14bd6aa0d0fd0",
+      "size": 1121883
+    }
+  },
+  "systemd_units": {
+    "qount-daily-intelligence.service": {
+      "path": "deploy/systemd/qount-daily-intelligence.service",
+      "sha256": "b4410f9f2e0df7c634959c353d564471f43635e1a46e5498d863776e37a0e05c",
+      "size": 3216
+    },
+    "qount-daily-intelligence.timer": {
+      "path": "deploy/systemd/qount-daily-intelligence.timer",
+      "sha256": "3e9fd1de1d8cbf659c729669fcc3ff1a0eff3cfbcdf19e4e1efd0dc285f389a2",
+      "size": 253
+    },
+    "qount-dashboard-account-observer.service": {
+      "path": "deploy/systemd/qount-dashboard-account-observer.service",
+      "sha256": "dd40a1b8c7367f0c66974a0790404ad90a1b96c94e8042c3c70ef09612b21ae1",
+      "size": 1628
+    },
+    "qount-dashboard-account-observer.timer": {
+      "path": "deploy/systemd/qount-dashboard-account-observer.timer",
+      "sha256": "a890c0f996ed30585bbb51dd5838003777f0760bc44d29f334404e160354a1ee",
+      "size": 255
+    },
+    "qount-dashboard-authority.service": {
+      "path": "deploy/systemd/qount-dashboard-authority.service",
+      "sha256": "aa6ff0074e4a825d7f3eb359ed6a08df90de54d1254ae271f0f75e5cdcb2201b",
+      "size": 2210
+    },
+    "qount-dashboard-publisher.service": {
+      "path": "deploy/systemd/qount-dashboard-publisher.service",
+      "sha256": "4e0b94b24c5fa4bca65a18f1007a99429f8373e9778f5214a9ece6ad453cc923",
+      "size": 2796
+    },
+    "qount-dashboard-publisher.timer": {
+      "path": "deploy/systemd/qount-dashboard-publisher.timer",
+      "sha256": "6c807c26e55e6520de4ea8022b67753bb8503331c72a7a7dc4edf409a6f28bf8",
+      "size": 240
+    },
+    "qount-dual-engine-paper-daily.service": {
+      "path": "deploy/systemd/qount-dual-engine-paper-daily.service",
+      "sha256": "fa34a293fad7c7562123c4ad1ad07cfd7f4840328c28d3ac5bf67d630ced41f9",
+      "size": 1401
+    },
+    "qount-dual-engine-paper-daily.timer": {
+      "path": "deploy/systemd/qount-dual-engine-paper-daily.timer",
+      "sha256": "1bfdbc2af69732bf6e0fba71ce4c352fdb37a4c01ee8180bfd00e041393931e2",
+      "size": 244
+    },
+    "qount-dual-engine-paper-g20-open.service": {
+      "path": "deploy/systemd/qount-dual-engine-paper-g20-open.service",
+      "sha256": "68b92e7b82fd60745cbba51fdd4073a56018bc9780c41c0791333ef96dee8520",
+      "size": 1413
+    },
+    "qount-dual-engine-paper-g20-open.timer": {
+      "path": "deploy/systemd/qount-dual-engine-paper-g20-open.timer",
+      "sha256": "d04a377e8f5607c7308b6e8b93fe472931b0f4449912ed93330d565259134032",
+      "size": 263
+    },
+    "qount-fomc-evidence-backup.service": {
+      "path": "deploy/systemd/qount-fomc-evidence-backup.service",
+      "sha256": "43bf4ea431fa3f74ce71c63fca3d1608a81067f879d5113ca7253911677678f1",
+      "size": 1684
+    },
+    "qount-fomc-evidence-backup.timer": {
+      "path": "deploy/systemd/qount-fomc-evidence-backup.timer",
+      "sha256": "df8134236ccd8a39a0075e90733b5d2dd1b9e7b8965799b5c4bc262c7a6aa099",
+      "size": 490
+    },
+    "qount-liquidation-cascade-collector.service": {
+      "path": "deploy/systemd/qount-liquidation-cascade-collector.service",
+      "sha256": "6c1c69aba6a172c4ef27bf032f929848e96af04b39bbd9cd975b989ad52fac4e",
+      "size": 1916
+    },
+    "qount-mini-trend-live.service": {
+      "path": "deploy/systemd/qount-mini-trend-live.service",
+      "sha256": "ab9451bcb7c43ba9494ad333c86dd2a4e53683481fecc8f9674847da33e68caf",
+      "size": 2334
+    },
+    "qount-mini-trend-live.timer": {
+      "path": "deploy/systemd/qount-mini-trend-live.timer",
+      "sha256": "fdc8993bbf2c28c0a6b027161a4862b087637420429a9136a49b626c393ce8ae",
+      "size": 254
+    },
+    "qount-notification-retry.service": {
+      "path": "deploy/systemd/qount-notification-retry.service",
+      "sha256": "a38ee4246dbe42e5b7d6f06706f584a1c13ed08fb08f5a1e9302c542da72ef65",
+      "size": 2673
+    },
+    "qount-notification-retry.timer": {
+      "path": "deploy/systemd/qount-notification-retry.timer",
+      "sha256": "f3b2d034c7f85945b930b0dfb00735cec8da48e0c09e4f470ef8fc2144c81674",
+      "size": 233
+    },
+    "qount-phase-b-readonly.service": {
+      "path": "deploy/systemd/qount-phase-b-readonly.service",
+      "sha256": "4004ef1692187d42fda3afc8186995dee1aae2aecd6c244b1f5a1a822c8196c6",
+      "size": 1339
+    },
+    "qount-phase-b-readonly.timer": {
+      "path": "deploy/systemd/qount-phase-b-readonly.timer",
+      "sha256": "9fe7e06fbe39adfa367831ce02ab3fda1e3aa234f19b8d640acf02477a69f0d6",
+      "size": 241
+    },
+    "qount-research-c60-v2-paper.service": {
+      "path": "deploy/systemd/qount-research-c60-v2-paper.service",
+      "sha256": "7228b7b84e81f301626ed26b722c338b1f841434d46ddb40c12ec94e6093eb0f",
+      "size": 1464
+    },
+    "qount-research-c60-v2-paper.timer": {
+      "path": "deploy/systemd/qount-research-c60-v2-paper.timer",
+      "sha256": "d36a149d926cb6740bc5ea81a8d289d9f336c20e3ab7c38b797b3016edaab050",
+      "size": 262
+    },
+    "qount-research-cta-r-collector.service": {
+      "path": "deploy/systemd/qount-research-cta-r-collector.service",
+      "sha256": "38d0570397d8fbceaf048d5c10e13a71da1acbf2091cb47be505376bdb64aa87",
+      "size": 1435
+    },
+    "qount-research-cta-r-collector.timer": {
+      "path": "deploy/systemd/qount-research-cta-r-collector.timer",
+      "sha256": "c1dac05f9ccc192b5676f5b3c1080407c2d13605797e4b2ff6d452fb3cdda718",
+      "size": 237
+    },
+    "qount-research-cta-r-forward.service": {
+      "path": "deploy/systemd/qount-research-cta-r-forward.service",
+      "sha256": "79d5eed723c19f9af377d50818d5f83fda3d32fede22aad2c87cf88f3c83ad7f",
+      "size": 1465
+    },
+    "qount-research-cta-r-forward.timer": {
+      "path": "deploy/systemd/qount-research-cta-r-forward.timer",
+      "sha256": "a27a3f4ac5863b6dcc12c04ace44785747c283ad1a2df1011f95071b7b6b7223",
+      "size": 249
+    },
+    "qount-research-forward-collector.service": {
+      "path": "deploy/systemd/qount-research-forward-collector.service",
+      "sha256": "6082b2211471d38cd4ad911f2bb283af27677b6ca9a01f834abf623834188a47",
+      "size": 1813
+    },
+    "qount-research-forward-collector.timer": {
+      "path": "deploy/systemd/qount-research-forward-collector.timer",
+      "sha256": "997175f6ab913c6f64d5ee979896228cf37867cbd62de210113fbbeccb802573",
+      "size": 251
+    },
+    "qount-runner.service": {
+      "path": "deploy/systemd/qount-runner.service",
+      "sha256": "ff0e18c45ba4ab60514925109367d757ef4f3735c2a519880e86390fe4e8c603",
+      "size": 519
+    },
+    "qount-runner.timer": {
+      "path": "deploy/systemd/qount-runner.timer",
+      "sha256": "b5b639f2222e0868b7d3ac0ca88fb2bdfdf2b51ae5c883652aa2c0cba2538b6c",
+      "size": 422
+    }
+  }
+}

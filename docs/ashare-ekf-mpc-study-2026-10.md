@@ -1,14 +1,19 @@
 # A股 EKF-MPC 状态空间动态滤波、历史上涨特征优化与立体快速跑路风控实证研究（2026-10）
 
-> **状态**：完成归档｜**权威**：L2 研究实证｜**日期**：2026-10-11  
+> **状态**：历史申报／高收益结论撤销，研究封存｜**权威**：初稿设计与结果；最新裁决见 [current.md](current.md)｜**日期**：2026-10-11
+> **TL;DR**：20.71% 旧收益不能继续支持动态加仓、状态滤波或生产推荐。与麒麟同源的代理／时钟问题待逐变体核对，模型复杂度和初稿压力曲线不提供独立准入资格。
 > **研究定位**：结合 A 股历史大上涨微观特征、状态空间滤波（EKF）、滚动时域预测控制（MPC）与经济学规律的集大成策略  
-> **结构化收据**：[`state/research_runs/ashare_ekf_mpc_20261011/summary.json`](../state/research_runs/ashare_ekf_mpc_20261011/summary.json)  
+> **初稿结果收据（保留旧身份）**：[`state/research_runs/ashare_ekf_mpc_20261011/summary.json`](../state/research_runs/ashare_ekf_mpc_20261011/summary.json)
 > **策略模块**：[`src/qount/research/ashare_ekf_mpc.py`](../src/qount/research/ashare_ekf_mpc.py)  
 > **单测套件**：[`tests/research/test_ashare_ekf_mpc.py`](../tests/research/test_ashare_ekf_mpc.py)（8项全过）  
 > **回测脚本**：[`scripts/research/ashare_ekf_mpc_runner.py`](../scripts/research/ashare_ekf_mpc_runner.py)  
 > **边界声明**：`research_only=true`，`orders_authorized=false`，无生产订单/账户变更。
 
 ---
+
+## 历史正文的读取范围
+
+下方关于上涨规律、零风险单、生产推荐及收益提升的叙述保留为初稿推断，不作为当前已证明机制或成交保证。当前封存与[修补计划 R01／R02／R04](research-repair-and-consolidation-plan-2026-10.md)优先；本轮未重跑策略或测试。
 
 ## 一、 A 股历史大级别上涨的微观特征与规律复盘
 

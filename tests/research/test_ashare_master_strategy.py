@@ -85,6 +85,33 @@ class TestMasterStrategyModule(unittest.TestCase):
         cost_2 = abs(buy_trades[1].cash_flow)
         self.assertGreater(cost_1, cost_2 * 1.5, "Top 1 should receive ~65% while Top 2 receives ~35%")
 
+    def test_synthetic_trailing_stop_after_rally(self):
+        """Synthetic test: price rallies +40%, then pulls back 14.3% from peak (>10% trailing stop).
+        Ensures trailing stop triggers properly and is not suppressed."""
+        dates = [f"2023{i//28+1:02d}{i%28+1:02d}" for i in range(100)]
+        bench_prices = [100.0] * 100
+        # Asset flat at 10.0 for 40 days, rallies to 14.0 over 10 days, then drops to 12.0 (pullback 14.3% > 10%)
+        asset_prices = [10.0] * 40 + [10.0 + (i - 39) * 0.4 for i in range(40, 50)] + [14.0 - (i - 49) * 0.4 for i in range(50, 60)] + [10.0] * 40
+
+        bars = {
+            "000300.SH": self._make_dummy_bars(bench_prices, dates),
+            "A": self._make_dummy_bars(asset_prices, dates),
+        }
+        sim = MasterStrategySimulator(commission_bps=0.0, slippage_bps=0.0)
+        res = sim.run(
+            bars_dict=bars,
+            universe=["A"],
+            top_n=1,
+            fast_hard_stop=0.065,
+            breakeven_trigger=0.12,
+            trailing_stop_pct=0.10,
+            macro_filter=False,
+            scoring_mode="simple_momentum",
+        )
+        sells = [t for t in res.trades if t.action == "SELL"]
+        self.assertGreaterEqual(len(sells), 1)
+        self.assertEqual(sells[0].reason, "TRAILING_STOP")
+
 
 if __name__ == "__main__":
     unittest.main()

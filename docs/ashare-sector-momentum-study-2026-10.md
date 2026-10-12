@@ -1,14 +1,19 @@
 # A股行业与赛道ETF强动量突破轮动策略实证研究（2026-10）
 
-> **状态**：完成归档｜**权威**：L2 研究实证｜**日期**：2026-10-11  
-> **研究定位**：面向个人实战盈利的高收益策略突破（方案 A）  
-> **结构化收据**：[`state/research_runs/ashare_sector_momentum_20261011/summary.json`](../state/research_runs/ashare_sector_momentum_20261011/summary.json)  
+> **状态**：历史申报／高收益结论撤销，研究封存｜**权威**：初稿设计与结果；最新裁决见 [current.md](current.md)｜**日期**：2026-10-11
+> **TL;DR**：方案 A／综合 C 的旧高收益叙事不再作为有效绩效；与麒麟同源的指数代理、上市日和预热问题需逐变体核对。下方保留原申报，尚未取得各变体独立的真实 ETF 重测与准入资格。
+> **研究定位**：赛道轮动及个股卫星的历史方案
+> **初稿结果收据（保留旧身份）**：[`state/research_runs/ashare_sector_momentum_20261011/summary.json`](../state/research_runs/ashare_sector_momentum_20261011/summary.json)
 > **策略模块**：[`src/qount/research/ashare_sector_momentum.py`](../src/qount/research/ashare_sector_momentum.py)  
 > **单测套件**：[`tests/research/test_ashare_sector_momentum.py`](../tests/research/test_ashare_sector_momentum.py)（7项全过）  
 > **回测脚本**：[`scripts/research/ashare_sector_momentum_runner.py`](../scripts/research/ashare_sector_momentum_runner.py)  
 > **边界声明**：`research_only=true`，`orders_authorized=false`，无生产订单/账户变更。
 
 ---
+
+## 历史正文的读取范围
+
+下方 19.85%／22.31% 等数字及“完全免疫”“保本”等判断均为旧申报，不作为当前推荐、因果证明或实际成交保证。修补见[计划 R01–R04](research-repair-and-consolidation-plan-2026-10.md)；本轮不重测、不改原结果、不调参救援。
 
 ## 一、 研究背景与个人高收益突破动因
 

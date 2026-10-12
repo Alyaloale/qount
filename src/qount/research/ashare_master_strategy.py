@@ -432,6 +432,9 @@ class MasterStrategySimulator:
                                 )
                             )
                             del positions[sym]
+                        else:
+                            # Retain blocked exit order for next tradable bar
+                            next_pending.append((action, sym, alloc, 0, reason, atype))
                 else:
                     next_pending.append((action, sym, alloc, delay - 1, reason, atype))
 
@@ -606,6 +609,8 @@ class MasterStrategySimulator:
                             vol_mult = 1.0 + max(0.0, min(0.5, (vol_ratio - 1.0) * 0.5))
 
                             score = max(0.0, fwd_ret) * (1.0 + max(0.0, ksnr)) * accel_bonus * gap_mult * vol_mult
+                        elif scoring_mode == "simple_momentum":
+                            score = (c / h_c[-21] - 1.0) if len(h_c) >= 21 else 0.0
                         else:
                             score = max(0.0, fwd_ret) * (1.0 + max(0.0, ksnr))
 

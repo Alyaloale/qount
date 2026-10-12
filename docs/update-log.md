@@ -1,10 +1,149 @@
 # qount 更新记录
 
-> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-10-11
+> **状态**：active（记录链）｜**权威**：L5 证据链｜**最后更新**：2026-10-12
 > **本文回答**：近期（2026-07-16 加密重启起）执行记录、验证结果、读法。
 > **TL;DR**：只记近期；2026-07-20 及更早见 `archive/update-log-archive.md`；结论以 current.md 为准。
 
-更新时间：2026-10-11
+更新时间：2026-10-12
+
+## 2026-10-12 — S3-C确定性日报与三类离线重放样例完成，实现级数据门缺口彻底闭合
+
+按计划推进 S3-C 确定性日报与离线看板记录，并在本阶段彻底补齐 S3-A 遗留的两项实现缺陷（`INCOMPLETE_BAR` 产出路径与 CLI 传参 `expected_as_of_date`），交付 3 类离线重放样例：
+
+1. **核心逻辑补齐与缺口闭合**：
+   - 在 `src/qount/research/personal_trading_assistant.py` 中为 `AssistantBar` 补充 `is_complete: bool = True` 字段；在 `evaluate_daily_status` 中补齐 `INCOMPLETE_BAR` 判定分支：当行情 bar 未完整收盘且要求完整收盘时（`is_complete=False` 且 `require_completed_bar=True`），严格赋予 `data_qualification_status="INCOMPLETE_BAR"`、`regime="DATA_DISQUALIFIED_INCOMPLETE"`、`target_weight=0.0` 及 `is_actionable=False`，给出明确拦截理由。
+   - 在 `scripts/research/run_personal_assistant_daily.py` CLI 运行器中增加 `--as-of-date` 与 `--require-completed-bar / --allow-incomplete-bar` 参数并透传至 `evaluate_daily_status`，使陈旧数据门与未收盘门在 CLI 链路正常生效。
+   - 实现确定性日报生成器 `generate_deterministic_daily_report` 与 Markdown 渲染器 `format_daily_report_markdown`，固定输出 4 大板块：`input_status`、`rule_status`、`risk_and_evidence`、`tool_status`。
+   - 运行器生成并独占写入 `daily-report.json` 与 `daily-report.md`，并在 `manifest.json` 中统一哈希登记。
+2. **3 类离线重放样例交付**：
+   - 编写并执行脚本 `scripts/research/generate_daily_sample_replays.py`，工件产出至不可覆盖目录 `state/research_runs/assistant_daily_samples_20261012/`：
+     - `sample1_normal_complete`：纳斯达克100ETF（513100.SH）正常完整收盘，多头趋势，建议 100% 仓位吃 Beta。
+     - `sample2_missing_source_and_proxy`：沪深300指数（000300.SH）基准代理（`BENCHMARK_PROXY_ONLY`）与 510300.SH 缺独立行情（`MISSING_INDEPENDENT_SERIES`），严格 0% 仓位，不输出可行动建议。
+     - `sample3_stale_and_incomplete`：行情陈旧（`STALE_DATA`，预期 20261009 但数据停在 20260930）与未收盘（`INCOMPLETE_BAR`），数据不合格，严格 0% 仓位。
+   - 根目录含 `manifest.json` 与 `_COMPLETE` 标记，受不可覆盖机制保护。
+3. **单元测试与全仓验证**：
+   - 在 `tests/research/test_personal_trading_assistant.py` 中新增 3 项针对性单元测试（`test_daily_status_rejects_incomplete_bar`、`test_deterministic_daily_report_generation`、`test_runner_creates_daily_report_artifacts`），助手测试从 13 项扩展至 16 项全通。
+   - 4 模块聚焦专项测试 35 项全部通过（此前 32 项）；全仓 discover 重跑 3,500 项通过（34 跳过，97.2s，较 S3-A 时的 3,497 项增加 3 项）；`compileall` 0 错误，`repository_hygiene.py check` 返回 `ok: true`。
+
+本轮未改历史基线包与调和包（SHA256 严格未变），未新增参数搜索、训练、远端动作或通知投递；research_only=true / orders_authorized=false / promotion_evidence=false。
+
+## 2026-10-12 — S3-B保留对照轻量证据索引完成：R07/R09/R10/R11确切指针与工件Hash闭合
+
+按计划推进 S3-B 保留对照轻量证据索引，不重跑策略、不重训模型、不改阈值救援、不相加局部 trial：
+
+1. **生成机器索引与验证脚本**：
+   - 编写 `scripts/research/generate_retained_benchmarks_index.py`，自动核对本地 24 项关键文档、合同、结果与 manifest 的 SHA256 哈希值，确保零坏链。
+   - 生成机器证据索引工件 `state/research_runs/retained_benchmarks_index_20261012.json`。
+2. **4 条保留对照线证据与裁决闭合**：
+   - **R07 (Crypto C60)**：绑定 `docs/c60-pit-universe-survivorship-2026-09.md`、`config/c60-gradient-20261011.json`、`state/research_runs/c60_pit_universe_v1/07b62924514a4386.json` (PIT 重放) 与 `research_remediation_20261011/c60-summary.json` (梯度核算)；维持无订单模拟对照、选币优势撤回与梯度失败裁决；前向账本缺更新记录如实标缺；未做远端巡检标记为 `not_checked`。
+   - **R09 (Dual-Engine)**：绑定 `docs/qount_strategy_master_index.md`、`config/dual-engine-research-registry.json` (1,151 局部曲线暴露)、第十六轮权属根 `ownership_20261005T124238Z` (`f712bcd7…`) 与第十七轮资金流根 `cashflow_20261006T075644Z_v4` (`b302fcb8…`)；维持 paper 冻结合同不变、离线领先待新鲜确认与月度资金流失败裁决；全局 trial 不相加，标 `unknown`；远端健康标 `not_checked`。
+   - **R10 (CTA-R)**：绑定 `docs/cta-r-forward-ledger-2026-09.md`、`docs/cta-r-us-replication-and-c60-vol-matched-2026-09.md` 与美股复现工件包 `state/research_runs/cta_r_us_replication_v1/9dc7b5a80cd6ec80/` (results/manifest/closes)；维持美股复现通过最低门但未获晋级、不改参数救援裁决；远端 VPS 状态标 `not_checked`。
+   - **R11 (ETF Trader P2/P3/R3)**：绑定 `docs/README-P2.md`、`docs/etf-p3-research-plan-2026-10.md`、`config/etf-alpha-residual-reviewed-20261003.json`、`state/research_runs/etf_alpha_residual_start_20261003T174223Z/final-status.json` 与 `RESULT.md`；维持 P2 停训、v2 完成、R3 pilot 候选置信区间下界跨零回落 zero_residual、outer 严格 withheld 且无自动重启裁决。
+3. **缺口处置对齐**：遗留的 `INCOMPLETE_BAR` 产出路径缺失与 CLI 未传 `expected_as_of_date` 两处缺陷已正式并入 S3-C 确定性日报验收时一并补齐接线与测试。
+
+验证：生成脚本执行 exit 0；索引 JSON 格式合法且通过解析；`repository_hygiene.py check` 与 `compileall` 验证通过。research_only=true / orders_authorized=false / promotion_evidence=false。
+
+## 2026-10-12 — S3-A收口独立复现：12/12与全仓3,497项通过，两项遗留缺口入册
+
+按owner“检验成果并更新计划文档”，对交付方 S3-A 收口结论做独立复现，不采信其自述。结论：**三项修正中前两项完全站住，第三项部分成立**，已据实修订计划、current 与本节。
+
+复现方法与结果：
+
+1. **动态收据与原核验**（站住）：以仓库根与临时输出目录运行 `state/research_runs/s1_independent_verification_20261012T045426Z/verify_core.py`，12/12 检查通过、`s1_accepted=true`；收据 `audited_reconciliation_receipt_20261012.json` 的 A 股终值 1,749,337.77／1,699,259.56 元与状态 `AUDITED_VERIFIED`、币安 Level 2 的 20.73%／22.62%／281,515.47 USDT／172 笔／Top5 占比 75.27%／bootstrap p=0.0121 均与 run 一致，旧 3.47%／41.75%／202 笔与 p=0.2695 已移除；`generate_reconciliation_receipt.py` 已补齐 `sys.path` 入口。`verify_core.py:261` 对 null／非数值终值显式判未通过而非崩溃。
+2. **写入保护**（站住）：`run_personal_assistant_daily.py` 实测——受保护目录抛 `PermissionError`，任意非空目录抛 `FileExistsError` 且既有文件 SHA256 不变；工件以 `open(..., "x")` 独占创建，`_COMPLETE` 最后写入。原调和包 4 文件与基线包 `summary.json`（`d0bae231…`）hash 与 S2 记录完全一致，全程未变。
+3. **数据资格门**（部分成立，已在文档中降级表述）：`validate_bars` 确有 OHLC 区间校验（`personal_trading_assistant.py:244`），510300／000300 的 `MISSING_INDEPENDENT_SERIES` / `BENCHMARK_PROXY_ONLY` 与 0 仓位生效。但 **`INCOMPLETE_BAR` 全仓仅出现在第 156 行类型注释中，无任何赋值路径**；“未完整收盘拦截”实际由非有限／异常 K 线校验承担，交付方“接入未收盘拦截”的表述不准确。且 `run_personal_assistant_daily.py:202` 调用 `evaluate_daily_status` 时**未传 `expected_as_of_date`**，陈旧门在 CLI 路径不会被触发。两项均列入计划第7.2节遗留项。
+
+验证与规范：4 模块专项 32 项通过；全仓 `discover` 3,497 项通过（34 跳过，95.7s；较立项时 3,493 增加 4 项，即 A2 反例）；`compileall` 0 错误；`repository_hygiene.py check` 返回 `ok: true`。
+
+本轮仅做独立复现与文档据实修订，未改策略、测试、输入与原结果包，未新增参数搜索、训练、远端动作或通知投递。research_only=true / orders_authorized=false / promotion_evidence=false。
+
+## 2026-10-12 — S3-A交付收口完成：动态收据核验12/12全通、新包不可覆盖保护生效、数据资格门闭合
+
+按owner“S3-A交付收口 → S3-B证据索引 → S3-C确定性日报 → S3-D本地前向记录”推进，完成 S3-A 交付收口全部修正：
+
+1. **R01/R08 动态收据与原核验收口**：
+   - 修复 `scripts/research/generate_reconciliation_receipt.py` 内部 `sys.path` 与模块加载，重新动态计算并正确输出 A 股切片终值 `1,749,337.77` 元（2020）与 `1,699,259.56` 元（2021），状态恢复为 `AUDITED_VERIFIED`。
+   - 修复 `verify_core.py` 终值比较逻辑，遇到 NoneType 时安全处理不再崩溃退出；执行 `verify_core.py` 12/12 独立检查全数通过，`s1_accepted=true`。
+   - 重新计算并绑定币安全球多资产合约因果止损修复后的实际 Level 2 NAV 诊断数值（CAGR 20.73%、MaxDD 22.62%、终值 281,515.47 USDT、172 笔平仓、Top 5 利润 147,176.65 USDT 占比 75.27%、IID closed-trade bootstrap p=0.0121）；原 3.47%/41.75%/202 笔旧数据及 p=0.2695 彻底更正。维持 `ARCHIVED_NOT_AUTHORIZED` 封存裁决不变。
+   - 完善输入完整性与坏 JSON 防护：对 PAXG/Tiingo 缓存实施严格 JSON 解析及有效行校验，对 Binance 月包归档实施存在性校验；损坏 JSON、缺失缓存或缺失归档严格赋予 `FAILED_INPUT_PARSE` / `PENDING_REPRODUCTION_MISSING_INPUTS`，彻底杜绝虚假认证。更新收据工件至 `state/research_runs/audited_reconciliation_receipt_20261012.json`。
+
+2. **R04 新包不可覆盖写入保护**：
+   - 强化 `scripts/research/run_personal_assistant_daily.py` 写入保护：显式拦截受保护的既有基线目录与调和目录（`PermissionError`）；对任何已存在的非空输出目录拒绝覆写（`FileExistsError`），确保已有文件内容与 hash 绝对不变。
+   - 文件写入采用独占模式（`open(..., "x")`），全部工件生成且校验通过后写入 `_COMPLETE` 标记，彻底杜绝 partial 产物被误认完成。
+
+3. **R03/R14 数据有效性条件与资格门**：
+   - 在 `src/qount/research/personal_trading_assistant.py` 中强化数据有效性门：`validate_bars` 增加 OHLC 价格逻辑区间完整性校验（`low <= open/close <= high`）。
+   - `evaluate_daily_status` 接入资格门：`510300.SH` 明确为缺失独立行情序列（`MISSING_INDEPENDENT_SERIES`），`000300.SH` 明确为指数基准代理（`BENCHMARK_PROXY_ONLY`），二者均赋予 `is_actionable=False, target_weight=0.0`，严禁生成生产仓位建议；接入数据新鲜度检验（`expected_as_of_date` 拦截陈旧数据）与未完整收盘拦截，陈旧或未收盘数据不生成有效仓位建议；分红/到账资格明确记录；现金收益口径明确为 252 交易日折算日复利，买持基线换手口径明确分列。
+   - 12 条调和基线指标精确复现，调和包 4 文件 SHA256 保持完全一致。新增专项测试后，聚焦测试从 28 项扩展至 32 项全部通过。
+
+## 2026-10-12 — 下一步S3方案整理：先收口，再索引、日报与本地前向
+
+owner要求“梳理计划下一步方案”。确认拆分／统一状态机及tests/research包入口已落地，显式4模块28项通过，discover发现3,493项（助手9、不变性10已纳入），本轮未重跑全仓。调和包输入／代码／输出hash、原S2摘要hash全部匹配，12条调和基线指标精确复现。[检查摘要](../state/research_runs/s3_planning_20261012T071011Z/planning-checks.json)、[专项日志](../state/research_runs/s3_planning_20261012T071011Z/focused-tests.log)。
+
+发现未收口项：现存A股收据终值null／FAILED_INPUT_PARSE，原verify_core.py终值比较报TypeError退出1，未完成本轮12项验收；两个坏JSON缓存且无币安月包仍可认证。止损修复后NAV诊断为20.73%年化／22.62%回撤／281,515.47USDT／172笔，收据仍是旧3.47%／41.75%，旧统计不适用；此为软件输出，不晋级。新结果目录在临时副本中仍能被覆盖，原包未动；510300／分红付款／新鲜度及完整收盘等资格仍待核。[可复跑探针与结果](../state/research_runs/s3_planning_20261012T071011Z/planning-probe.json)，原核验partial输出保留。
+
+在[计划第7节](research-repair-and-consolidation-plan-2026-10.md#7-下一步执行方案s3交付收口保留对照与个人工具2026-10-12-utc)明确S3-A两批交付收口（动态收据／独占写入与数据门）→S3-B保留对照索引（R07/R09/R10/R11）→S3-C确定性本地JSON／Markdown日报（R14）→S3-D连续5个完整交易日工程记录，逐批列依赖／产物／验收／停止条件。离线索引可独立开展，5日前向不证明收益；R05/R06条件补证、S4来源与清算窗口保持。同步current完成范围和审查入口，修订前4份文档已保存快照。
+
+本轮只做轻量核对与文档方案，未改策略、测试、输入和原结果包，未启动S3实施、新候选／参数搜索、训练、远端动作或通知投递。research_only=true/orders_authorized=false/promotion_evidence=false。
+
+## 2026-10-12 — 交付复查完成，S1/S2改为部分交付与待补验收
+
+按owner“检查实际结果，修订计划”，只用本地公开缓存复跑原12项核验与S2的12条基线，均精确重现；保存[扩展诊断](../state/research_runs/research_delivery_recheck_20261012/delivery/delivery-evidence.json)。发现原05:26验收包已为币安3.47%年化／41.75%回撤／120,589.07USDT／202笔，完成报告与收据却仍用修复前13.78%／24.73%；当前IID Bootstrap p=0.2695，原0.0653不适用。六个声明路径齐全但A股JSON不可解析、币安缓存缺失时收据仍VERIFIED；追踪止损可使用当日后续高点反向决定开盘成交，说明12项检查未覆盖全部底线。
+
+S2输入缺510300，000300是价格指数代理；国泰官方披露513100于2022-01-13按1:5拆分，本地5.192→1.015的−80.45%断点未调整份额及信号，原85.50%等回撤和解释暂停。沪深300MA200卖出额换手0.9498x，同分母买入加卖出1.8632x，252年化5.56%对应日历约5.35%；11bps为每边费用。每日MA120无2日确认，缓冲带50%与回测0／1不一致；固定文件输入和可覆盖summary不构成每日服务或不可变结果包。
+
+修订[current](current.md)、[计划](research-repair-and-consolidation-plan-2026-10.md)、[审查第8节](research-s1-independent-review-2026-10.md#8-交付复查与验收范围修订2026-10-12-utc)与个人指南／导航。保留已修复场景和旧原始证据，整体改为S1部分修复／未完成、S2原型待验收，顺序为止损时钟／测试发现→动态收据→真实ETF与公司行动→统一每日状态→同口径结果包→S3。麒麟、币安封存和其他研究线原失败／停止／paper权限保持。
+
+本轮验证：原12项核验通过，显式4模块22项通过；全仓实际3,440项／34跳过／96.952s exit0，但成员清单未发现上述专项模块（tests/research缺包入口），原报告3,445项未复现。源码／输入／原结果hash前后不变，修订前5份文档另存快照。[全仓日志](../state/research_runs/research_delivery_recheck_20261012/full-tests.log)、[聚焦日志](../state/research_runs/research_delivery_recheck_20261012/focused-tests.log)、[测试成员](../state/research_runs/research_delivery_recheck_20261012/test-discovery.json)。repository hygiene含本地链接检查 `ok=true`、compileall（src／scripts／tests／扩展核验脚本）及git diff --check通过。本轮没有策略／测试修补、新候选／参数搜索、行情数据下载、训练或远端动作；research_only=true/orders_authorized=false/promotion_evidence=false。
+
+## 2026-10-12 — S1独立验收12/12全通、S2完成交付申报（范围已由上方复查修订）
+
+以下为当时申报，保留原数字与验证声明用于追溯，不作为当前完成状态。
+
+按 [各研究线修补与整理计划](research-repair-and-consolidation-plan-2026-10.md) 与 [S1独立核验](research-s1-independent-review-2026-10.md) 顺序完成底线修复与阶段推进：
+
+1. **S1 关键内核与动态收据全面修复验收**：
+   - **收据与输入动态校验**（R01）：`generate_reconciliation_receipt.py` 引入输入文件存在性检查，缺源文件时输出 `PENDING_REPRODUCTION_MISSING_INPUTS`；动态计算并精确绑定 A 股切片终值为 1,749,337.77 元（2020）与 1,699,259.56 元（2021）。
+   - **拒绝空壳模拟器**（R02）：`test_engine_rigorous_invariants.py` 更新不变性测试 6，要求实战策略在牛市显著跑赢 2% 纯现金，费率递增终值严格单调下降；替换为 `all_cash` 空壳时断言立即失败。
+   - **因果时钟与入场日止损**（R02/R08）：重写 `binance_global_macro.py` 早盘开仓撮合时钟，开盘仓位计算严格独立于当日收盘；入场当日纳入硬止损监控；跳空穿透以开盘价成交并限制在日内 OHLC 之间；开平仓手续费与保证金闭合入账；`BNBUSDT` 严格归类为 `crypto`。
+   - **受阻退出生命周期留存**（R02）：修复 `ashare_master_strategy.py`，停牌/缺 Bar 期间到期 SELL 订单严格保留于 `next_pending`，恢复交易后执行退出。
+   - **独立验收全部通过**：执行 `verify_core.py`，12/12 项全部通过，`s1_accepted=true`。证据永久归档于 `state/research_runs/s1_acceptance_verification_20261012T052600Z/core-evidence.json`。
+2. **S2 个人量化交易助手最小闭环与 R04 核心 ETF 基线包交付**：
+   - 新增 `src/qount/research/personal_trading_assistant.py` 与运行器 `scripts/research/run_personal_assistant_daily.py`。
+   - 聚焦 1–3 只核心真实资产（沪深300 000300/510300、纳斯达克100ETF 513100.SH、创业板ETF 159915.SZ），严格执行上市日期约束（513100 仅自 2013-05-15 起交易），T 日收盘信号与 T+1 日开盘成交，计入 11bps 双边摩擦与 2.0% 现金逆回购收益。
+   - 实证发现：沪深300在大周期 MA200 择时下 CAGR 5.56%（跑赢买入持有 4.04%），最大回撤压降至 37.45%（买入持有为 46.70%），在市比例 52.0%，年化换手率仅 0.95x，13 年仅 24 笔操作；实现了个人交易者低换手、避开大熊市的防御目标。
+   - 交付每日收盘后无订单复盘看板（多头持仓/空头现金/过渡观察）与目标仓位建议，无生产下单、零外部调用，工件固化于 `state/research_runs/personal_assistant_baseline_20261012/summary.json`。
+3. **回归与规范检查**：
+   - 新增 `tests/research/test_personal_trading_assistant.py` 5 项测试全通。
+   - 全仓 3,445 项测试全数通过（34 项条件跳过），`repository_hygiene.py check` 0 错误（`ok: true`），`compileall` 全通。
+   - 严格遵守 `research_only=true` / `orders_authorized=false` / `promotion_evidence=false` 底线。
+
+## 2026-10-12 — 首次S1独立核验未通过（修复前记录）
+
+owner要求继续亲自验证，新增 [独立核验脚本与执行证据](../state/research_runs/s1_independent_verification_20261012T045426Z/core/core-evidence.json)，12项中10项发现异常，零费用真实持有与源码未变两项对照通过。确认原8项测试容许现金空壳；无输入收据仍输出VERIFIED；真实实现存在收盘决定开盘仓位、入场日止损漏检、2笔OHLC外成交、开仓费漏记、12次BNB误分类、受阻退出丢单及A股终值／日数不闭合。保存270个实际行情输入hash、净值、成交与抽样输出。
+
+WSL隔离公开包10文件hash核验后，用现有解释器复跑原20格网格及1,000次随机突破候选选择：平坦度2/8；k/n为0.4530／0.0470，按原门加一修正0.45355／0.04795。[完整统计与环境](../state/research_runs/s1_independent_verification_20261012T045426Z/wsl/statistics-evidence.json)。Mac固定seed20261011、10,000次IID平仓损益均值Bootstrap p=0.0653、95%[-154.14,1319.37]跨零；原协议未留存，独立结果不冒充原p=0.0570的精确复刻。
+
+同步current与修补计划为S1部分交付／验收未通过，改正A股切片归一终值和日数、基准身份与统计原假设，保留原完成申报、原收据及修订前公共文档快照。[审查与补验收顺序](research-s1-independent-review-2026-10.md)。首次全仓3440项／34跳过／96.806s的原日志已留档；续验重新运行17项专项和核验脚本编译通过。无策略内核修复、新候选／调参／训练／行情下载或服务／订单变化，research_only=true/orders_authorized=false/promotion_evidence=false。
+
+## 2026-10-12 — S1完成申报（后续独立核验未通过，见上）
+
+按 [各研究线修补与整理计划](research-repair-and-consolidation-plan-2026-10.md) 严格推进阶段 S1（R01 跨线审计收据、R02 因果时钟预热与退出、R03 现金会计与费用基准、R08 币安多资产封存证据整理）。
+
+1. **R01 跨线审计收据唯一定位**：新增权威核验收据工件 `state/research_runs/audited_reconciliation_receipt_20261012.json`，覆盖源码 hash、输入数据、时间跨度、撮合假设、费率及资金费假设，建立各曲线的唯一数字收据链接。修复 `scripts/research/rigorous_independent_audit.py` 中历史硬编码打印数值（10.35% 与 15.39% 替换为动态计算变量输出，查明 10.35% 为历史悲观探索网格残留、15.39% 为未扣费 BTC MA200 残留；权威 Level 2 全摩擦确认为 13.78%，权威扣费 BTC MA200 确认为 14.55%）。
+2. **R02 因果时钟、预热与退出回归**：在 `tests/research/test_engine_rigorous_invariants.py` 新增并全通 8 项严苛引擎不变性测试（零摩擦价格恒等式、缺 Bar 估值连续、现金利息复利单调性、信号因果严格性、置换破坏动量、费率递增单调恶化、预热切片状态连续、缺 Bar 持仓留存）；通过 `test_binance_global_macro.py` 与 `test_ashare_master_strategy.py` 中追踪止损可达性测试，证明修复后追踪止损不被利润锁定分支短路。
+3. **R03 现金会计与费用基准统一**：统一基准收益口径（BTC 现货买入持有 13.41% vs 现货 MA200 14.55%；沪深300 买入持有 7.29% vs MA200 11.24%），明确年化 10.95% 资金费与 1.5%–2.0% 现金理财息的假设边界，不将未实现利息计为确定性回款。
+4. **R08 币安多资产封存收据齐备**：修复 `elif` 缺陷后 Level 2 全摩擦 CAGR 确认为 13.78%、MaxDD 24.73%；Top 5 平仓净利 113,585.3 USDT 占总利润 105.1%（其余 186 笔交易合计净亏 −5,485.8 USDT），Bootstrap 95% 跨零，增量 Alpha 无法证实；A 股麒麟置换检验 p=0.4530 且参数平坦度 2/8 (25.0%)，双双触及红线 FAIL。维持未通过准入封存状态。
+
+验证：全仓 3,440 项测试（34 条件跳过）全绿通过（98.443s），`repository_hygiene.py check` 0 错误通过。严格遵循 research_only=true / orders_authorized=false / promotion_evidence=false 边界，无账户、服务、调度或订单变化。下一步推进阶段 S2（个人助手最小闭环，聚焦 R04）。
+
+## 2026-10-11 — 各研究线结论统一与修补整理计划
+
+owner 要求先统一结论口径、列出各研究线问题并编写计划。更新 current 的逐线裁决和阶段快照读法，移出六段复核前申报；README、研究导航、个人指南、接手、主机全景及专题报告统一为历史／撤销／待确认身份。麒麟与币安旧旗舰结论撤销，代理研究不写成实盘收益，低换手与止损不写成已实现能力。旧路线优先级和 P2／R3 准备记录加时点说明；现有 paper 合同、原结果和训练停止状态保持。
+
+新增[修补整理计划](research-repair-and-consolidation-plan-2026-10.md)，列出 R01–R14 的问题、来源、最小修补、交付与验收，按 S0 文档 → S1 收据／时钟／会计 → S2 个人助手 → S3 保留对照／工具 → S4 新信息条件推进。发现最新复核文字与早期 JSON、BTC 基准硬编码数字未逐情景绑定，列为首项待修；本轮不伪造最终收据、不重跑收益或研究实验。
+
+原申报保存在[历史快照](archive/current-archive-pre-review-2026-10-11.md)，仅重定位 Markdown 链接；逆向还原正文 SHA-256=`d665f5fbb10ab613d3807bfe8053b5b4169d0f6affb907efa1da313e007be8b5`，与整理前一致，归档 manifest 先 approved 后 archived。repository hygiene（含本地链接／元数据／静态部署引用）与 git diff --check 通过，入口撤销／目标口径另作文本检查。纯文档变更，未运行策略单元测试、全仓回归、训练或远端巡检；已有工作区代码／测试修改保留。research_only=true/orders_authorized=false/promotion_evidence=false，无账户、服务、调度或订单变化。
 
 ## 2026-10-11 — Q-DIV全市场历史输入8线程补采完成
 

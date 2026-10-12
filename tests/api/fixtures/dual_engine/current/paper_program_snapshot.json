@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "program_id": "qount-dual-engine-paper",
+  "program_version": "1.0.0",
+  "generated_at": "2026-10-10T02:30:00Z",
+  "data_cutoff": "2026-10-09T20:00:00Z",
+  "forward_start_at": "2026-01-01T00:00:00Z",
+  "status": "active",
+  "contract_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_hashes": {
+    "tiingo": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "orders_authorized": false,
+  "private_api_used": false,
+  "exchange_mutation_attempted": false,
+  "reporting_asset": "USD_EQ",
+  "usd_usdt_parity_assumed": true,
+  "portfolios": [
+    {
+      "portfolio_id": "dual-engine-paper-g20",
+      "label": "G20",
+      "status": "paper",
+      "initial_capital": 10000.0,
+      "reporting_asset": "USD_EQ",
+      "nav": {
+        "signal": 1.157073,
+        "executable": 1.152573,
+        "portfolio_realized": null,
+        "portfolio_realized_status": "unavailable_no_real_fills",
+        "since_start_return_fraction": 0.152573,
+        "current_drawdown_fraction": -0.1211,
+        "max_drawdown_fraction": -0.1633,
+        "cumulative_cost": 62.54,
+        "cumulative_stress_cost": 62.54,
+        "points": [
+          {
+            "marked_at": "2026-01-02T15:00:30Z",
+            "current_drawdown_fraction": 0.0,
+            "cumulative_cost": 0.0,
+            "executable": 1.0,
+            "signal": 1.0,
+            "executable_equity": 10000.0,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          },
+          {
+            "marked_at": "2026-05-01T15:00:30Z",
+            "current_drawdown_fraction": 0.0,
+            "cumulative_cost": 21.4,
+            "executable": 1.0588,
+            "signal": 1.0621,
+            "executable_equity": 10588.0,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          },
+          {
+            "marked_at": "2026-10-09T15:00:30Z",
+            "current_drawdown_fraction": -0.1211,
+            "cumulative_cost": 62.54,
+            "executable": 1.152573,
+            "signal": 1.157073,
+            "executable_equity": 11525.73,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          }
+        ],
+        "performance": {}
+      },
+      "holdings": [
+        {
+          "symbol": "BIL",
+          "quantity": 98,
+          "mark_price": 91.51,
+          "market_value": 8967.98,
+          "actual_weight": 0.7781
+        },
+        {
+          "symbol": "ERX",
+          "quantity": 22,
+          "mark_price": 112.11,
+          "market_value": 2466.42,
+          "actual_weight": 0.214
+        }
+      ]
+    },
+    {
+      "portfolio_id": "dual-engine-paper-c60",
+      "label": "C60",
+      "status": "paper",
+      "initial_capital": 10000.0,
+      "reporting_asset": "USD_EQ",
+      "nav": {
+        "signal": 0.94526,
+        "executable": 0.867023,
+        "since_start_return_fraction": -0.132977,
+        "current_drawdown_fraction": -0.2265,
+        "max_drawdown_fraction": -0.2265,
+        "cumulative_cost": 835.29,
+        "cumulative_stress_cost": 1670.59,
+        "points": [
+          {
+            "marked_at": "2026-01-02T00:00:00Z",
+            "current_drawdown_fraction": 0.0,
+            "cumulative_cost": 0.0,
+            "executable": 1.0,
+            "signal": 1.0,
+            "executable_equity": 10000.0,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          },
+          {
+            "marked_at": "2026-10-09T00:00:00Z",
+            "current_drawdown_fraction": -0.2265,
+            "cumulative_cost": 835.29,
+            "executable": 0.867023,
+            "signal": 0.94526,
+            "executable_equity": 8670.23,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          }
+        ],
+        "performance": {}
+      },
+      "holdings": [
+        {
+          "symbol": "DOTUSDT",
+          "quantity": 3511.76,
+          "mark_price": 1.236,
+          "market_value": 4340.54,
+          "actual_weight": 0.5006
+        }
+      ]
+    },
+    {
+      "portfolio_id": "dual-engine-paper-gc5",
+      "label": "GC5",
+      "status": "paper",
+      "initial_capital": 10000.0,
+      "reporting_asset": "USD_EQ",
+      "nav": {
+        "signal": 1.14738,
+        "executable": 1.143157,
+        "since_start_return_fraction": 0.143157,
+        "current_drawdown_fraction": -0.1126,
+        "max_drawdown_fraction": -0.1502,
+        "cumulative_cost": 104.69,
+        "cumulative_stress_cost": 150.04,
+        "points": [
+          {
+            "marked_at": "2026-01-02T15:00:30Z",
+            "current_drawdown_fraction": 0.0,
+            "cumulative_cost": 0.0,
+            "executable": 1.0,
+            "signal": 1.0,
+            "executable_equity": 10000.0,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          },
+          {
+            "marked_at": "2026-10-09T15:00:30Z",
+            "current_drawdown_fraction": -0.1126,
+            "cumulative_cost": 104.69,
+            "executable": 1.143157,
+            "signal": 1.14738,
+            "executable_equity": 11431.57,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          }
+        ],
+        "performance": {}
+      },
+      "holdings": [
+        {
+          "symbol": "BIL",
+          "quantity": 93,
+          "mark_price": 91.51,
+          "market_value": 8510.43,
+          "actual_weight": 0.7445
+        }
+      ]
+    },
+    {
+      "portfolio_id": "dual-engine-paper-d15",
+      "label": "D15",
+      "status": "paper",
+      "initial_capital": 10000.0,
+      "reporting_asset": "USD_EQ",
+      "nav": {
+        "signal": 1.135648,
+        "executable": 1.112792,
+        "since_start_return_fraction": 0.112792,
+        "current_drawdown_fraction": -0.1378,
+        "max_drawdown_fraction": -0.1612,
+        "cumulative_cost": 126.05,
+        "cumulative_stress_cost": 191.49,
+        "points": [
+          {
+            "marked_at": "2026-01-02T15:00:30Z",
+            "current_drawdown_fraction": 0.0,
+            "cumulative_cost": 0.0,
+            "executable": 1.0,
+            "signal": 1.0,
+            "executable_equity": 10000.0,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          },
+          {
+            "marked_at": "2026-10-09T15:00:30Z",
+            "current_drawdown_fraction": -0.1378,
+            "cumulative_cost": 126.05,
+            "executable": 1.112792,
+            "signal": 1.135648,
+            "executable_equity": 11127.92,
+            "daily_return_fraction": null,
+            "daily_pnl": null
+          }
+        ],
+        "performance": {}
+      },
+      "holdings": [
+        {
+          "symbol": "BIL",
+          "quantity": 88,
+          "mark_price": 91.51,
+          "market_value": 8052.88,
+          "actual_weight": 0.7236
+        }
+      ]
+    }
+  ],
+  "benchmarks": [
+    {
+      "benchmark_id": "spy-broad-market",
+      "label": "标普 500（SPY）",
+      "symbol": "SPY",
+      "status": "available",
+      "role": "broad_market_price_return",
+      "source": "tiingo_public",
+      "price_basis": "unadjusted_daily_close",
+      "initial_capital": 10000.0,
+      "reporting_asset": "USD_EQ",
+      "nav": {
+        "value": 10410.0,
+        "points": [
+          {
+            "marked_at": "2026-01-02T15:00:30Z",
+            "value": 10000.0
+          },
+          {
+            "marked_at": "2026-10-09T15:00:30Z",
+            "value": 10410.0
+          }
+        ],
+        "performance": {}
+      }
+    }
+  ],
+  "history_reference": {},
+  "latest_decision": {},
+  "audit_last_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "audit_row_count": 272,
+  "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "market_charts": {}
+}

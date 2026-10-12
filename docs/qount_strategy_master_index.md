@@ -1,11 +1,13 @@
 # 🏛️ Qount 宏观量化交易系统 - 核心策略总集 (Master Index)
 
-> **状态**：deployed paper / 2026 YTD curves active｜**权威**：Dual-Engine 策略与模拟盘合同｜**最后更新**：2026-10-05
+> **状态**：既有无订单模拟合同与有日期复盘｜**权威**：Dual-Engine 冻结合同；运行事实只看 current｜**最后更新**：2026-10-11
 > **TL;DR**：冻结 G20/C60/GC5/D15 四个公共数据模拟账户；9 月 23 日核查每账户 272 点及完整审计链。C60 成本负担明显，D15 尚未优于 GC5；所有结果为 simulated_not_realized，不产生订单授权。当前运行事实见 current.md。
 
 **系统代号**: Qount Dual-Engine (G20 + C60 Dynamic)
 
 本文档归档双引擎研究，并冻结当前模拟盘实现口径。文中的长期 CAGR / MaxDD / Sharpe 仍仅来自既有研究脚本；本次 2026 YTD replay 只建立当前 paper 状态和曲线，不能验证那些长期数字，更不得当作收益承诺。
+
+**2026-10-11 口径统一**：下方绩效与部署按各自日期读取，不表示今日实时状态。C60 固定幸存者宇宙的长期选币优势已由 [时点宇宙诊断](c60-pit-universe-survivorship-2026-09.md)撤回；十七轮离线排名与冻结 paper 分开。后续问题与顺序见 [修补整理计划](research-repair-and-consolidation-plan-2026-10.md)，不从历史数字替换任何账户合同。
 
 ## G20 / C60 离线研究导航（research_only）
 
@@ -103,7 +105,7 @@ YTD 含部署时回放，不能称为九个月真实 forward；8 月以来也只
   - **Idiosyncratic Gate (资产级防线)**: 候选资产价格必须 **> SMA20 (20日均线)**，否则驳回买入。
   - **Systemic Gate (系统级熔断)**: BTC 价格必须 **> SMA50 (50日均线)**，否则全盘清仓，所有 Crypto 多头头寸全部转为 USDC/USDT (例外：避险资产 PAXG 不受 BTC 熔断限制)。
   - **Vol Target (波动率限制)**: 对通过闸门的组合计算过去 20 日协方差年化波动率。设置目标上限为 **60% (C60)**。若实际波动率 > 60%，按比例无情削减仓位，强制降波。**只减仓，不加杠杆**。
-* **历史研究读数 (2020.05-2026.07，尚待 canonical replay)**: CAGR ≈ 75.92%, MaxDD ≈ -23.05%, Sharpe ≈ 2.28
+* **旧研究申报读数 (2020.05-2026.07，固定幸存者宇宙；选币优势已撤回)**: CAGR ≈ 75.92%, MaxDD ≈ -23.05%, Sharpe ≈ 2.28；仅追溯旧脚本，不作为当前有效绩效。
 * **非对称属性**: 在 2021 山寨季捕获 >200% 暴利，但在 2022 / 2026 市场大崩盘期间，依靠闸门 100% 退守现金，回撤仅 -13% 级别。
 
 ---
@@ -167,7 +169,7 @@ YTD 含部署时回放，不能称为九个月真实 forward；8 月以来也只
 * **数据通道**: Tiingo EOD/IEX 和 Binance Spot 公共 REST；Tiingo 数据 token 只从仓库外环境文件读取。
 * **交易通道**: 当前不存在。服务显式移除 Binance 私钥并固定 `orders_authorized=false`。
 * **资金通道**: 没有真实资金划转；组合内跨袖套会计只在 G20 月度执行事件发生。
-* **上线状态**: program=`1.1.0`、overlay content hash=`05258e5e...a8b1` 已部署到 VPS `0.2.27` 基线；两个 paper timer 与 Dashboard 12-model release 已启用。四账户各 217 点，snapshot hash=`0a0ec01b...a063`。部署清单固定 `orders_authorized=false/private_exchange_api_used=false`。
+* **初始上线快照（非实时状态）**: program=`1.1.0`、overlay content hash=`05258e5e...a8b1` 部署到 VPS `0.2.27` 基线时，两个 paper timer 与 Dashboard 12-model release 已启用，四账户各 217 点，snapshot hash=`0a0ec01b...a063`。后续 2026-09-22 的 272 点复盘见上方；当前新鲜度需另有时点证据。部署清单固定 `orders_authorized=false/private_exchange_api_used=false`。
 * **凭据映射**: 本机私有 `.env` 使用 `QOUNT_TIINGO_API_KEY`；VPS paper service 按合同读取仓库外
   `/etc/qount/dual-engine-paper.env` 中的 `TIINGO_API_TOKEN`。两者已安全映射，远端文件为 `0600 root:root`；不得在日志、文档或 artifact 中记录值。
 * **数据状态**: Tiingo EOD、Tiingo IEX 1 分钟价和 Binance Spot 公共接口均已在 VPS 验证通过。YTD replay 使用 Tiingo 日线与 Binance 公共日线/分钟线；原始公开响应存于 0600 缓存以支持失败后续跑，不记录 token。Dashboard 已显示曲线；freshness 徽标由正常 daily 周期继续更新。

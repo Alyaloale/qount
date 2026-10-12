@@ -61,17 +61,22 @@ rsync_args=(
   --exclude='__pycache__'
   --exclude='*.pyc'
   --exclude='.DS_Store'
+  --exclude='.env'
+  --exclude='*.env'
+  --exclude='*.key'
+  --exclude='*.pem'
 )
 if [[ "$delete" == true ]]; then
   rsync_args+=(--delete)
 fi
 if [[ "$dry_run" == true ]]; then
-  rsync_args+=(--dry-run)
+  rsync_args+=(--dry-run --itemize-changes)
 fi
 
 items=(
   ./README.md
   ./pyproject.toml
+  ./config/paper-lines.json
   ./deploy
   ./docs
   ./prompts

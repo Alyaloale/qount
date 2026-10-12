@@ -1,66 +1,51 @@
-# qount: 个人量化交易助手 (Personal AI Quant Assistant)
+# qount：个人量化交易助手
 
-> **核心目标**：构建务实、简洁、以**个人实战盈利**为根本目标的个人量化交易助手。  
-> **权威事实**：[docs/current.md](docs/current.md) 是项目当前运行事实与决策的唯一来源。
+> **目标**：构建简洁、务实、服务个人实战盈利的 AI 量化交易助手。
+> **当前事实**：[docs/current.md](docs/current.md) 是运行登记、研究裁决与 owner 决策的唯一来源。
 
----
+## 当前研究定位
 
-## 🎯 项目定位与理念
+聚焦 1–3 只核心高流动性资产、低频操作、真实费用和大回撤控制。个人账户可以按规则降低仓位或转现金；趋势过滤的样本内防御价值仍需与收益损失、假突破和实际执行一起评价。
 
-`qount` **不是**公募基金式的学术仿真系统，**不是**搞 20 只股票过度分散、行业配额和繁琐理论门槛的研究所玩具，而是服务于**个人交易者（Retail/Prop Trader）**的实战量化助手。
+**麒麟与币安多资产合约的旧高收益结论已撤销，研究封存。** Q-DIV-Core 和 C60 梯度候选失败保留；ETF 神经模型尚未证明相对简单基线的增量。既有 paper 是公共数据无订单模拟，不是实盘业绩。
 
-### 个人交易者的核心优势（“船小好掉头”）
-1. **集中而非过度分散**：个人账户资金有限，不做公募基金式的 20~50 只个股切碎配置。专注于 **1~3 只核心高流动性标的**（核心 ETF、极品高股息现金牛或主流加密货币）。
-2. **极低摩擦与极低换手**：拒绝月度频繁洗牌（年换手率从 200%+ 降至 < 0.5x）。拥抱免印花税载体（ETF）与低费率工具。
-3. **大周期趋势择时（牛市吃肉，熊市保命）**：个人账户没有最低仓位限制。大盘在多头趋势（MA200/MA120 之上）时满仓吃 Beta，破位进入系统性熊市时 100% 现金空仓避险，彻底避开 2018、2022 年式的惨烈回撤。
-4. **简洁而不过分严谨**：代码模块化、注重单元测试与真实净值回报，拒绝无休止的形式主义与理论自嗨。
+年换手 <0.5x 属于设计目标，不能从交易笔数推定已达标；集中持仓、ETF 载体和止损也不保证保本。后续优先级、逐线问题与验收条件见 [修补整理计划](docs/research-repair-and-consolidation-plan-2026-10.md)。
 
----
+## 研究与产品范围
 
-## 🧭 支持的交易主战场
+| 方向 | 可验证的问题 |
+| --- | --- |
+| 少量 A 股／跨境 ETF | 趋势与现金切换能否改善个人账户回撤，真实成本如何影响收益 |
+| BTC／ETH | 简单现货基线及独立新信息是否具有扣费后的增量 |
+| 质量／红利／低波选股 | 经营、现金流、估值和趋势能否支持新鲜的研究候选 |
+| 跨资产配置 | 冻结 CTA-R 与 Dual-Engine 的实现、成本和前向一致性 |
+| AI 助手 | 因果信号、确定性风险摘要、看板和通知如何减少个人重复操作 |
 
-| 战场 | 交易载体 | 核心模式 | 个人优势 |
-|---|---|---|---|
-| **A 股 ETF** | 沪深300ETF、红利低波ETF、跨境ETF等 | 大周期均线趋势跟随 + 动量轮动 | 免印花税、无个股暴雷退市雷、门槛低（几百元起一手） |
-| **加密货币 (Crypto)** | BTC / ETH 现货与低杠杆永续 | 24h 波动突破 + 宏观事件驱动 | 无 100 股限制（精确到小数）、双向交易、高流动性 |
-| **A 股核心资产** | 2~3 只极品高股息现金牛 | 核心底仓分红 + 宏观顶部防守 | 股息再投资、穿越周期、精力消耗低 |
+每项研究单独维护来源、窗口、代码版本和停止条件；数据规模、模型容量和报告数量不等于盈利证据。
 
----
+## 开发与验证
 
-## ⚡ 开发者与 Vibe Coding 快速上手
+Mac 负责代码、Git、文档和轻量验证；WSL 负责已明确范围的 CPU／GPU 计算，完整公开数据与工件留 Windows E 盘。VPS 既有服务按自身运行合同处理。
 
-### 1. 运行环境与预检 (Mac)
 ```bash
-# 激活环境与依赖
-source .venv/bin/activate
-
-# 快速运行单元测试
 PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
-
-# 仓库规范检查
 PYTHONPATH=src ./.venv/bin/python scripts/maintenance/repository_hygiene.py check
 ```
 
-### 2. 算力与计算环境连接
-- **Mac 本机**：代码开发、策略逻辑编写、轻量验证与 Git 托管。
-- **WSL 计算节点**：CPU/GPU 深度计算与回测重跑（一键连接：`ssh qount-wsl`）。
-- **Windows E 盘**：历史数据与沉淀工件集中存储（`/mnt/e/qount_data/`）。
+## 安全与执行边界
 
----
+默认 `research_only=true / orders_authorized=false`。未经 owner 明确授权不得启用或触发生产下单、交易 timer 或 cron。完整收盘信号在收盘后生成，下一交易时点尝试执行；盘中只作预览，不假定止损价必成交。
 
-## 🛡️ 安全与风控底线 (Non-negotiable Guardrails)
+凭据不打印、不复制、不提交、不传 WSL／E 盘；Mac 私有配置保持 0600。已冻结线路不恢复，原结果与不可变工件不覆盖。
 
-- **绝不泄露凭据**：私有 Token/密钥仅保存在本地安全配置（如 `~/.config/qount/`），严禁提交 Git 或同步到不可信环境。
-- **实盘保护**：默认所有新策略与实验均为 `research_only=true` / `orders_authorized=false`，未经明确指令不得擅自调用外部实盘下单接口。
-- **真实因果时钟**：回测严禁未来函数、严禁偷看收盘价作为开盘成交、严禁虚构零成本。
+## 文档入口
 
----
-
-## 📚 核心文档导航
-
-- [当前事实与状态](docs/current.md) — 唯一当前事实源。
-- [个人交易助手开发指南](docs/personal-trading-assistant-guide.md) — 个人实战策略体系与开发指引（Vibe Coding 必读）。
-- [快速接手手册](docs/quick-handoff.md) — 5 分钟上手说明。
-- [架构设计](docs/system-architecture-design.md) — 整体系统架构与通知、执行链路。
-- [长期个人组合策略设计](docs/long-run-personal-strategy-design.md) — 148 次历史实验经验总结。
-- [主机运行手册](docs/operations/host-runbooks.md) — 多主机环境与连接说明。
+- [当前事实](docs/current.md)
+- [研究线导航](docs/research-lines.md)
+- [修补整理计划](docs/research-repair-and-consolidation-plan-2026-10.md)
+- [个人交易助手指南](docs/personal-trading-assistant-guide.md)
+- [快速接手](docs/quick-handoff.md)
+- [项目规则](docs/project-rules.md)
+- [主机手册](docs/operations/host-runbooks.md)
+- [系统架构](docs/system-architecture-design.md)
+- [历史归档](docs/archive/README.md)

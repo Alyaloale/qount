@@ -1747,3 +1747,81 @@ required_when = "never"
 default_policy = "runtime_default"
 consumers = ["src/qount/research/etf_trader/generator/native/__init__.py"]
 legacy = false
+
+[[variables]]
+name = "QOUNT_ACCOUNT_SOURCE_PATH"
+domain = "core"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ACCOUNT_TRADES_PATH"
+domain = "core"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ALLOW_LIVE_FETCH"
+domain = "core"
+type = "enum:0|1"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/routes/market.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ACCOUNT_OBSERVATION_PATH"
+domain = "core"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PAPER_STATE_ROOT"
+domain = "core"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/adapters/dual_engine.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_DB_PATH"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/db.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PAPER_LINES_REGISTRY"
+domain = "core"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/ingest.py", "src/qount/api/routes/research.py"]
+legacy = false
+

@@ -1,0 +1,78 @@
+{
+  "lines": [
+    {
+      "id": "dual_g20",
+      "adapter": "dual_engine",
+      "name": "美股轮动 (G20)",
+      "category": "equity",
+      "enabled": true,
+      "config": {
+        "account": "g20",
+        "root": "state/dual_engine"
+      }
+    },
+    {
+      "id": "dual_c60",
+      "adapter": "dual_engine",
+      "name": "加密趋势 (C60)",
+      "category": "crypto",
+      "enabled": true,
+      "config": {
+        "account": "c60",
+        "root": "state/dual_engine"
+      }
+    },
+    {
+      "id": "dual_gc5",
+      "adapter": "dual_engine",
+      "name": "固定组合 (GC5)",
+      "category": "mixed",
+      "enabled": true,
+      "config": {
+        "account": "gc5",
+        "root": "state/dual_engine"
+      }
+    },
+    {
+      "id": "dual_d15",
+      "adapter": "dual_engine",
+      "name": "动态组合 (D15)",
+      "category": "mixed",
+      "enabled": true,
+      "config": {
+        "account": "d15",
+        "root": "state/dual_engine"
+      }
+    },
+    {
+      "id": "personal_assistant",
+      "adapter": "personal_assistant",
+      "name": "个人量化交易助手",
+      "category": "assistant",
+      "enabled": true,
+      "config": {
+        "run": "state/research_runs/personal_assistant_reconciled_20261012"
+      }
+    },
+    {
+      "id": "binance_macro",
+      "adapter": "binance_macro",
+      "name": "币安全球多资产合约",
+      "category": "macro",
+      "enabled": true,
+      "config": {
+        "run": "state/research_runs/binance_global_macro_20261011"
+      }
+    },
+    {
+      "id": "ashare_master",
+      "adapter": "ashare_master",
+      "name": "A股赛道动量突破(麒麟)",
+      "category": "equity",
+      "enabled": true,
+      "config": {
+        "run": "state/research_runs/ashare_sector_momentum_20261011"
+      }
+    }
+  ]
+}

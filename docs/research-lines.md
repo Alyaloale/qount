@@ -1,48 +1,44 @@
 # 研究线总览
 
-> 状态：active navigation｜权威：`docs/current.md`、[docs/personal-trading-assistant-guide.md](personal-trading-assistant-guide.md) 与各线路合同｜最后更新：2026-10-11
-> TL;DR：当前主航道全面聚焦【个人量化交易助手与个人实战盈利】（ETF大趋势择时、极简核心资产、加密小账户）；公募基金式20仓全市场选股(Q-DIV-Core)、C60梯度等历史实验均已完成并保留失败证据归档参考，旧高频/微观套利线路永久冻结。
+> **状态**：active navigation｜**权威**：导航；当前裁决与权限只在 [current.md](current.md)｜**最后更新**：2026-10-12
+> **TL;DR**：以最终裁决导航，旧旗舰申报不再作为推荐。计划见 [修补整理计划](research-repair-and-consolidation-plan-2026-10.md)，本页不维护第二份绩效表或实时运行状态。
 
-## 状态分类
+## 线路与证据入口
 
-| 线路 | 当前状态 | 代码/脚本 | 结论边界 |
+| 线路 | 主文档／证据入口 | 实现位置 | 阅读边界 |
 | --- | --- | --- | --- |
-| 个人量化交易助手 (主航道) | active 主航道 / 个人实战盈利 | `src/qount/`；`scripts/` | 见 [个人交易助手指南](personal-trading-assistant-guide.md)；聚焦 ETF 大趋势择时、加密小账户、极简高息，低频大周期，追求绝对收益与复利 |
-| A股 ETF趋势与红利盾牌研究 | completed & archived 旗舰策略研究 | `src/qount/research/ashare_trend_etf.py`；`scripts/research/ashare_parallel_study_runner.py` | 见 [研究主文档](ashare-etf-trend-shield-study-2026-10.md)；2013-2026全样本实证确立不对称入场+红利盾牌+纳指卫星旗舰模型，CAGR 7.6%~7.8%，MaxDD 28%~30%，低换手，已归档 |
-| A股 行业与赛道ETF强动量轮动 (方案A) | completed & archived 高收益突破研究 | `src/qount/research/ashare_sector_momentum.py`；`scripts/research/ashare_sector_momentum_runner.py` | 见 [研究主文档](ashare-sector-momentum-study-2026-10.md)；2013-2026全样本实证，20日突破+MA30防守+10%止损+宏观过滤，CAGR 19.85%，MaxDD 33.28%，年换手 7.7x，13年复利11倍，已归档 |
-| A股 EKF-MPC 状态空间与快速跑路风控 | completed & archived 进阶优化研究 | `src/qount/research/ashare_ekf_mpc.py`；`scripts/research/ashare_ekf_mpc_runner.py` | 见 [研究主文档](ashare-ekf-mpc-study-2026-10.md)；状态空间滤波+历史上涨特征共振打分(Accel+Vol+Gap)+65/35非固定置信度加仓+立体三级快速跑路风控，全样本 CAGR 20.71%，MaxDD 31.01%，卡玛 0.67，13年复利12.1倍，盈亏比3.04，四标准曲线全过，已归档 |
-| A股 麒麟集大成量化系统 (总终方案) | completed & delivered 最终总方案 | `src/qount/research/ashare_master_strategy.py`；`scripts/research/ashare_master_runner.py` | 见 [总终方案白皮书](ashare-master-strategy-design-2026-10.md)；融合ETF基石+动态龙头卫星+EKF状态空间+历史大上涨动力学共振打分+MPC非固定加仓+立体四道防线风控，全样本 CAGR 20.71%，MaxDD 31.01%，卡玛 0.67，盈亏比 3.04:1，年换手 7.7x，13年复利12.1倍，正式交付 |
-| A股 Q-DIV-Core 20仓全市场选股 | completed / 门槛失败归档保留 | `src/qount/research/q_div_core.py`；`scripts/research/q_div_core_runner.py` | 2014-2026全历史四曲线回测完成；熊市抗跌但年化换手217%超标、牛市跑输Beta，门槛失败保留，不进行调参救援，正式归档 |
-| 美股 / A股个股选择 | [新方向与数据证据](equity-selection-study-2026-10.md)；当前事实只看 current | `research_data/equity_archive.py`；`scripts/research/equity_archive_audit.py` | 用户档案资格与横截面研究；不强制低频，市场/收益证据分别验证 |
-| 短周期机会：Binance / A 股 | [独立新信息协议与证据](short-horizon-opportunity-study-2026-10.md)；运行事实只看 current | `src/qount/research/opportunity_*`、`research_data/event_stats.py`；`scripts/research/opportunity_screen.py` | 固定小时标签、假设杠杆压力；A股来源门未通过不得运行收益，不继承 legacy 或其他线资格 |
-| Dual-Engine G20/C60/GC5/D15 | deployed paper / research-only | `src/qount/dual_engine/`、`scripts/operations/` | 公共行情无订单模拟；不产生订单或账户授权 |
-| C60 v2 月度候选 | research-paper sidecar；前瞻自 2026-09-30 | `src/qount/research/c60_*`、`scripts/research/c60_*` | Trial 150 规则与冻结 v1 并行比较；换手归因：闸门进出占 82%（见 `c60-turnover-attribution-diagnostic-2026-09.md`）；时点宇宙下选币优势不成立（剔除 2021 年 Sharpe 0.47，低于仅 BTC 闸门的 0.69），视为 BTC beta（见 `c60-pit-universe-survivorship-2026-09.md`）；不替代 v1，无订单权限 |
-| CTA-R ETF | data sidecar valid；规则冻结；前瞻账本自 2026-09-30 起（`cta-r-forward-ledger-2026-09.md`）；Trial 151 美股复现 `replicated`（Sharpe 0.75，未超 60/40） | `src/qount/research/cta_r_*`、`scripts/research/cta_r_*` | 只提供独立研究输入和历史侧车；不写 Dual-Engine 账本，不生成 StrategyIntent |
-| ETF Trader P2 / P3 Alpha | research-only；[证据与设计入口](README-P2.md)，[R3残差pilot结果](etf-p3-research-plan-2026-10.md#24-r3残差pilot执行与结果2026-10-04)、[v2完整结果](etf-p3-research-plan-2026-10.md#195-完整结果与回读核验2026-10-03)、[开训前复审](etf-p3-research-plan-2026-10.md#23-r3开训前复审修正与创新取舍2026-10-03)、[准备/启动方法](../deploy/wsl/alpha-residual/README.md)；运行事实仅看 current | P2：`src/qount/research/etf_trader/`、`scripts/research/etf_trader_*.py`；P3：`src/qount/research/etf_alpha/`、`scripts/research/etf_alpha_*.py` | P2 历史验收与 P3 Alpha 架构分开；工程ready不等于训练授权，历史结果不产生 paper 或订单资格 |
-| Alpha Agents | active research-only | `src/qount/alpha_agents/`、`scripts/research/alpha_agents/` | 采集、特征和角色实验；不写订单、目标权重或 live 配置 |
-| MiniTrend / liquidation cascade | public-data forward research | `src/qount/mini_trend/`、`scripts/research/mini_trend/` | 只读公开数据和健康证据；不恢复 live、arm、timer 或 cron |
-| FOMC / PreEvent / sleeves | preregistered or research-only | `src/qount/small_account/`、`src/qount/research/sleeves/` | 只做证据和模拟，必须遵守各自停止条件 |
-| GRID / RV-C / X4 / L1/L3/L4/L6 / legacy A-share | archived / frozen | `src/qount/legacy/`、`scripts/archive/research-legacy/`、`docs/archive/legacy/` | 历史证据，不恢复、不新增实验、不继承 promotion 资格 |
+| 个人量化交易助手 | [开发指南](personal-trading-assistant-guide.md)、[交付复查](research-s1-independent-review-2026-10.md#8-交付复查与验收范围修订2026-10-12-utc) | `research/personal_trading_assistant.py` | 原型待补验收；每日／回测规则一致性和数据资格未闭合 |
+| A 股 ETF 趋势／红利盾牌 | [代理研究](ashare-etf-trend-shield-study-2026-10.md)、[修订计划R04](research-repair-and-consolidation-plan-2026-10.md) | `research/ashare_trend_etf.py`、`personal_trading_assistant.py` | 指数代理单列；实际ETF、份额拆分、成本／换手与现金路径待核 |
+| A 股赛道轮动 A／综合 C | [历史申报与封存说明](ashare-sector-momentum-study-2026-10.md) | `research/ashare_sector_momentum.py` | 旧高收益结论撤销，不继续称实战旗舰 |
+| A 股 EKF-MPC／麒麟 | [EKF-MPC 历史设计](ashare-ekf-mpc-study-2026-10.md)、[麒麟封存说明](ashare-master-strategy-design-2026-10.md) | `research/ashare_ekf_mpc.py`、`ashare_master_strategy.py` | 各变体不互相继承收益或复核资格 |
+| A 股 Q-DIV-IVOL／Core | [筛选与设计协议](ashare-q-div-ivol-study-2026-10.md)、[Core 完成摘要](../state/research_runs/ashare_q_div_core_20261011/summary.json) | `research/q_div_*.py` | 截止日名单与已失败 Core 回测分开；不对原 20 仓调参救援 |
+| A 股独立选股／经营研究 | [选股研究](ashare-strategy-study-2026-10.md)、[数据接入](equity-selection-study-2026-10.md)、[登记](../config/ashare-research-registry.json) | `research/ashare_*.py`、`research_data/equity_archive.py` | 低波候选待新鲜确认，其他失败实现保持；美股个股数据未取得 |
+| 币安全球多资产合约 | [历史设计与封存说明](binance-global-macro-design-2026-10.md) | `research/binance_global_macro.py` | 旧高收益撤销，修复后的情景收据待统一 |
+| Dual-Engine G20／C60／GC5／D15 | [paper 合同与有日期复盘](qount_strategy_master_index.md)、[离线研究](dual-engine-optimization-2026-10.md) | `dual_engine/`、`scripts/operations/` | 公共数据无订单模拟；离线排名不替换 paper |
+| C60 v2／PIT／梯度 | [时点宇宙复核](c60-pit-universe-survivorship-2026-09.md)、[换手归因](c60-turnover-attribution-diagnostic-2026-09.md)、[梯度执行记录](research-remediation-plan-2026-10.md) | `research/c60_*.py` | 选币优势撤回，梯度失败；联合门归因不等于 BTC 单门可消除成本 |
+| CTA-R 独立侧车 | [跨市场复现](cta-r-us-replication-and-c60-vol-matched-2026-09.md)、[前瞻合同](cta-r-forward-ledger-2026-09.md) | `research/cta_r_*.py` | 新 research 侧车与冻结 legacy CTA-R 分开；最低门通过不等于晋级 |
+| ETF Trader P2／P3 Alpha | [统一入口](README-P2.md)、[P2 结果](p2-project-summary-20261002.md)、[P3 设计与结果](etf-p3-research-plan-2026-10.md) | `research/etf_trader/`、`research/etf_alpha/` | P2 停训、v2 完成、R3 无增量停止；旧 READY 不授予重启 |
+| 短周期机会／业绩上修 | [独立研究](short-horizon-opportunity-study-2026-10.md) | `research/opportunity_*.py` | 严格小时候选停止；公告上修数据门待补，收益未运行 |
+| 稳定币／Alpha Agents | [来源 G0 与研究角色](alpha-agent-plan.md) | `alpha_agents/`、`intelligence/` | 来源资格与预测收益分开；LLM 只输出资料、研究和审计 |
+| 清算级联 | [采集合同](research-forward-collector.md)、[当前有效窗口](current.md) | `mini_trend/` | 有效窗口从 2026-08-18 起；最早评估日期以 current 为准 |
+| FOMC／PreEvent／被动 Sleeve | [事件研究](personal-200u-event-strategy.md)、[PreEvent](pre-event-range-strategy.md)、[被动合同](l1-passive-allocation-preregistration.md) | `small_account/`、`research/sleeves/` | 独立 research 身份；不恢复取消的 FOMC live 或 L1-S2 |
+| GRID／RV／X4／旧 MiniTrend 实盘／legacy | [历史索引](archive/README.md) | `legacy/`、`scripts/archive/` | 停止或冻结，不恢复、不新增实验 |
+
+上表 `research/` 等实现路径相对 `src/qount/`；真实脚本入口查 [CLI 参考](reference/cli-and-scripts.md)。
 
 ## 研究记录规则
 
-1. 当前事实只写入 `docs/current.md`；研究结果写入对应 active 文档或 artifact 说明。
-2. 每条 active 线路必须写明 `research_only=true`、`orders_authorized=false`、数据来源、截止日期和停止条件。
-3. 历史报告放在 `docs/archive/research-reports/`，旧线路正文放在 `docs/archive/legacy/`；归档内容不可成为运行指令。
-4. 研究结论不会自动升级为 paper、promotion 或 live 资格；需要单独的 owner 决策和当前版本证据。
+1. 当前裁决只写入 current；本页和主机全景只导航，绩效数字与窗口保留在本线证据中。
+2. `research_only=true / orders_authorized=false`；来源、数据截止、代码／合同版本、样本身份和停止条件写清。
+3. 旧结果不覆盖。错误修复不把旧历史变成独立 OOS；原 JSON 字段名不是最终裁决。
+4. 交易次数、名义换手、单边／双边口径分开；价格／全收益／现金净值分开。
+5. 各线规则数、模型 fits、曲线数和历史 formal trial 不相加为全局试验数；全局核对完成前标为未知。
+6. 旧方案的优先级与启动安排按当时快照读取，不能覆盖 [修补整理计划](research-repair-and-consolidation-plan-2026-10.md)或 current 权限。
 
-## 当前导航
+## 接手导航
 
-- 运行状态与数据新鲜度：[current.md](current.md)
-- 目录和线路规则：[project-rules.md](project-rules.md)
-- Dual-Engine 口径：[qount_strategy_master_index.md](qount_strategy_master_index.md)
-- CTA-R 与优化待办：[strategy-optimization-plan-2026-09.md](strategy-optimization-plan-2026-09.md)
-- 跨线综合判断与方向设计（2026-09-29，待 owner 决策）：[research-direction-review-2026-09.md](research-direction-review-2026-09.md)
-- Alpha Agents 路线：[alpha-agent-plan.md](alpha-agent-plan.md)
-- 历史索引：[archive/README.md](archive/README.md)
-
-## A股独立选股与持仓研究
-
-owner指定A股为独立研究线，进取取向，以选股和持有规则检验盈利；[主协议](ashare-strategy-study-2026-10.md)、[研究索引](../config/ashare-research-registry.json)。行业/价格策略与企业/政策证据分层，逐项冻结候选后做成本/延迟代理回测，持仓/受阻/缺价、集中度及组合冷却单独管理。最新运行事实只看[current](current.md)；research_only=true/orders_authorized=false/promotion_evidence=false，不产生生产交易权限。
-
-新增[Q-DIV-IVOL独立协议](ashare-q-div-ivol-study-2026-10.md)，以工业企业实际财报/分红、真实换手与市场残差波动做截止日筛选；历史版本/风险事件及组合执行引擎未完成前不产生历史收益。原低波候选与已失败价格实验保留。
+- [当前事实](current.md)
+- [项目规则](project-rules.md)
+- [修补整理计划](research-repair-and-consolidation-plan-2026-10.md)
+- [主机手册](operations/host-runbooks.md)
+- [复核前申报快照](archive/current-archive-pre-review-2026-10-11.md)

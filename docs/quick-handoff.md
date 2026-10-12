@@ -1,65 +1,43 @@
 # qount 快速接手手册 (Vibe Coding Handoff)
 
-> **状态**：active｜**权威**：L4 运维导航｜**最后更新**：2026-10-11
-> **本文回答**：首次接手与 Vibe Coding 的最短路径、项目定位、实战策略方向与安全边界。
-> **TL;DR**：生产事实只看 [current.md](current.md)。本项目定位于**个人量化交易助手**，以**个人实战盈利**为根本目标，摒弃公募基金 20 仓切碎的冗余形式主义；主攻 ETF 趋势择时与加密货币小账户，保持简洁高效敏捷开发。
+> **状态**：active｜**权威**：L4 接手导航；事实以 [current.md](current.md) 为准｜**最后更新**：2026-10-11
+> **TL;DR**：先读最终裁决，再按问题修补。麒麟和币安合约旧高收益结论撤销；现有 paper 是无订单模拟，P3 残差训练已结束，旧 READY 不代表可自动重启。
 
----
+## 5 分钟阅读路径
 
-## 🚀 5 分钟上手阅读路径 (First Five Minutes)
+1. [current.md](current.md)：当前裁决、阶段快照读法、运行登记和权限。
+2. [个人交易助手指南](personal-trading-assistant-guide.md)：少量核心资产、低频目标、因果时钟与真实费用。
+3. [修补整理计划](research-repair-and-consolidation-plan-2026-10.md)：各线问题、优先级和最小验收。
+4. [项目规则](project-rules.md)和[主机手册](operations/host-runbooks.md)：代码归属与主机边界。
 
-1. 阅读 [README.md](../README.md) 与 [docs/personal-trading-assistant-guide.md](personal-trading-assistant-guide.md) 了解个人交易助手的战略定位、策略三大支柱与 Vibe Coding 规范。
-2. 阅读 [current.md](current.md) 确认当前系统状态与 owner 最新决策。
-3. 了解多主机职责分工（[host runbooks](operations/host-runbooks.md)）：
-   - **Mac**：编写代码、策略逻辑、文档与 Git 管理；
-   - **WSL 计算节点**：CPU/GPU 深度回测与重跑（一键直连：`ssh qount-wsl`）；
-   - **Windows E 盘**：历史日线、财报数据与工件存储（`/mnt/e/qount_data/`）；
-   - **VPS**：只读日常看板与个人微信通知服务。
-4. 本地环境自检与验证：
-   ```bash
-   source .venv/bin/activate
-   PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
-   PYTHONPATH=src ./.venv/bin/python scripts/maintenance/repository_hygiene.py check
-   ```
+## 接手时必须分清
 
----
+- **当前裁决与旧申报**：麒麟／币安原旗舰数字已撤销，旧正文在 [历史快照](archive/current-archive-pre-review-2026-10-11.md)；专题报告里的历史数字不覆盖 current。
+- **目标与已实现能力**：少量持仓、低于 0.5x 的年换手和回撤控制是待检验目标；止损线不保证成交或保本。
+- **代理研究与可执行账户**：指数、复权价格、原价现金与真实 ETF 交易路径分开；低波选股名单和 Q-DIV 截止日名单不是当前买入指令。
+- **历史回放与前向**：Dual-Engine YTD 含回放；CTA-R／C60 v2 前瞻从各自账本起点计，不反填为新证据。
+- **准备与训练**：R3 已以 pilot_no_increment 结束，outer withheld，单轮启动授权已消费；云端暂停状态保持。
+- **内容质量与服务健康**：日报定时运行、公开采集新鲜、研究结论成立分别检查，不能互相替代。
 
-## 🎯 核心实战策略方向
+## 本地工作与验证
 
-1. **A 股 麒麟集大成量化系统（总终方案 · 推荐实战旗舰）**：
-   - 白皮书：[总终方案白皮书](ashare-master-strategy-design-2026-10.md)；
-   - 架构：12 只高弹性赛道 ETF 基石（75%~100%）+ 动态牛市龙头卫星（0%~25%）；
-   - 核心：EKF 状态空间滤波 + 历史大上涨共振打分（Composite Master）+ 65/35 非固定动态加仓 + 立体四道防线风控（-6.5% 硬止损 / +12% 保本锁 / 10% 移动回撤 / 熊市现金）；
-   - 战绩（2013-2026 全样本）：CAGR **20.71%**，最大回撤 **31.01%**，卡玛 **0.67**，盈亏比 **3.04:1**，年换手 **7.76x**（月均 1 次），13 年复利 **12.11 倍**。
-2. **A 股 ETF 大周期趋势择时（最推荐 A 股稳健基础款）**：
-   - 标的：沪深300ETF (`510300`)、红利低波ETF (`512890`)、纳指ETF (`513100`)；
-   - 机制：MA200/MA120 趋势多头全仓吃 Beta，破位空仓 100% 现金保本；
-   - 优势：免印花税、零暴雷风险、几百元起投、超低换手率（< 0.5x/年）。
-3. **加密货币 (Crypto) 趋势突破**：
-   - 标的：BTC / ETH；
-   - 优势：无 100 股门槛、24h 交易、即时止损。
-4. **极简核心高息资产底仓**：
-   - 标的：精选 2~3 只极品高息股（如 长江电力）；
-   - 机制：平时享受 4%~6% 股息再投资，大级别见顶时择机减仓。
+Mac 负责代码、Git、文档和轻量验证。需要重计算时按既有 WSL／E 盘手册准备，不能因接手或查看计划自动启动任务。
 
----
+```bash
+PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'
+PYTHONPATH=src ./.venv/bin/python scripts/maintenance/repository_hygiene.py check
+PYTHONPATH=src ./.venv/bin/python -m compileall -q src scripts/maintenance
+```
 
-## 🛡️ 安全与风控硬边界
+纯文档整理检查本地链接、口径、hygiene 和 diff；代码变更执行相关测试，未运行的检查不得写成通过。避免覆盖既有脏工作区修改。
 
-- **绝不泄露凭据**：私密 Token 和密码仅保存在本地安全配置（Mac `0600`），严禁提交至 Git。
-- **实盘保护**：默认所有实验为 `research_only=true` / `orders_authorized=false`，未经明确指令不得擅自调用外部实盘下单。
-- **真实因果时钟**：回测严禁未来函数、严禁偷看收盘价作为开盘成交、严禁虚构零成本。
-- **简洁但不过分严谨**：代码模块化，拥有单元测试；但不要为了繁琐形式主义编写数十页理论预登记合同阻塞实战推进。
+## 权限与导航
 
----
+默认 `research_only=true / orders_authorized=false`。未经 owner 明确授权不得启用或触发生产下单、交易 timer 或 cron；旧冻结线不得复活。凭据不打印、不复制、不提交，Mac 私有配置保持 0600。
 
-## 📂 核心文档与资源导航
-
-- [个人交易助手指南](personal-trading-assistant-guide.md) — 个人实战策略体系与开发指引（Vibe Coding 必读）。
-- [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 主机分工、配置规范、四大研究线与五大排障手册。
-- [项目规则](project-rules.md) — 代码组织与研究规则。
-- [主机运行手册](operations/host-runbooks.md) — 多主机环境与连接说明。
-- [配置参考](reference/configuration.md) — 配置文件与安全加载规范。
-- [CLI 与脚本参考](reference/cli-and-scripts.md) — 常用工具与命令参考。
-- [系统架构主设计](system-architecture-design.md) — 系统整体架构设计。
-- [长期个人策略设计分析](long-run-personal-strategy-design.md) — 历史 148 次实验证伪与总结。
+- [研究线导航](research-lines.md)
+- [系统环境与研究全景](system-environment-and-research-landscape.md)
+- [配置参考](reference/configuration.md)
+- [CLI 与脚本参考](reference/cli-and-scripts.md)
+- [系统架构](system-architecture-design.md)
+- [历史归档索引](archive/README.md)
