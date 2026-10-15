@@ -70,10 +70,24 @@ def read_public_reference(root: Path, *, observed_at: str) -> dict:
 def refresh_public_reference(
     root: Path, config: DualEngineMarketConfig, *, observed_at: str,
     getter: JsonGetter = _public_json_get, environment: Mapping[str, str] | None = None,
+    reuse_if_fresh_seconds: int | None = None,
 ) -> dict:
     """Use the existing paper service's own public-data token; never export it."""
     config.validate()
     observed = aware_datetime(observed_at)
+    if reuse_if_fresh_seconds is not None:
+        if reuse_if_fresh_seconds < 0:
+            raise ValueError("public_reference_reuse_window_invalid")
+        try:
+            existing = read_public_reference(root, observed_at=observed_at)
+            generated = aware_datetime(existing["generated_at"])
+            age_seconds = (observed - generated).total_seconds()
+            if 0 <= age_seconds <= reuse_if_fresh_seconds:
+                return existing
+        except (OSError, ValueError, TypeError, KeyError):
+            # A missing, invalid, or stale cache falls through to the public
+            # fetch path; it never becomes a substitute for a fresh request.
+            pass
     token = (os.environ if environment is None else environment).get(config.tiingo_token_env, "")
     if not token:
         raise DualEngineMarketDataError("paper_tiingo_token_missing")

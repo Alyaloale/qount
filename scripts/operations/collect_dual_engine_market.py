@@ -10,11 +10,14 @@ import os
 from pathlib import Path
 import tempfile
 from typing import Any, Mapping, Sequence
+from urllib.parse import urlsplit
 
 from qount.dual_engine import DualEngineMarketConfig
 from qount.dual_engine import NoScheduledPaperEvent
 from qount.dual_engine import collect_market_cycle
 from qount.dual_engine import run_paper_cycle
+from qount.dual_engine.market_data import TIINGO_BASE_URL
+from qount.dual_engine.market_data import _public_json_get
 from qount.dual_engine.reference_data import refresh_public_reference
 
 
@@ -78,6 +81,45 @@ def _archive_cycle(root: Path, cycle: Mapping[str, Any]) -> Path:
     return path
 
 
+def _metered_getter(
+    state_root: Path,
+    *,
+    event: str,
+    observed_at: str,
+    counter: dict[str, int],
+):
+    """Count and persist each Tiingo request attempt without recording credentials."""
+
+    state_root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    ledger_path = state_root / "tiingo-request-attempts.jsonl"
+
+    def get_json(url: str, headers: Mapping[str, str], timeout_seconds: int):
+        if url.startswith(f"{TIINGO_BASE_URL}/"):
+            counter["tiingo"] += 1
+            parsed = urlsplit(url)
+            record = {
+                "event": event,
+                "observed_at": observed_at,
+                "url_path": parsed.path,
+                "query": parsed.query,
+                "attempt": counter["tiingo"],
+            }
+            raw = (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+            descriptor = os.open(
+                ledger_path,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                0o600,
+            )
+            try:
+                os.fchmod(descriptor, 0o600)
+                os.write(descriptor, raw)
+            finally:
+                os.close(descriptor)
+        return _public_json_get(url, headers, timeout_seconds)
+
+    return get_json
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -94,9 +136,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     observed_at = args.observed_at or dt.datetime.now(dt.timezone.utc).isoformat()
     config = DualEngineMarketConfig.from_dict(_read_object(args.config.resolve()))
     state_root = args.state_root.resolve()
+    request_counter = {"tiingo": 0}
+    getter = _metered_getter(
+        state_root,
+        event=args.event,
+        observed_at=observed_at,
+        counter=request_counter,
+    )
     if args.reference_only:
-        reference = refresh_public_reference(state_root, config, observed_at=observed_at)
+        reference = refresh_public_reference(
+            state_root,
+            config,
+            observed_at=observed_at,
+            getter=getter,
+        )
         print(json.dumps({"status": "public_reference_refreshed", "reference_hash": reference["reference_hash"],
+                          "tiingo_request_count": request_counter["tiingo"],
                           "orders_authorized": False}, sort_keys=True))
         return 0
     try:
@@ -104,16 +159,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             config,
             observed_at=observed_at,
             event=args.event,
+            getter=getter,
+            cache_root=state_root / "market-cache" / "tiingo-daily",
         )
     except NoScheduledPaperEvent as exc:
-        print(json.dumps({"status": "skipped", "reason": str(exc)}, sort_keys=True))
+        print(json.dumps({"status": "skipped", "reason": str(exc),
+                          "tiingo_request_count": request_counter["tiingo"]}, sort_keys=True))
         return 0
     input_path = _archive_cycle(state_root, cycle.as_dict())
     snapshot = run_paper_cycle(state_root, cycle)
     reference_status = "not_requested"
     if args.refresh_reference:
         try:
-            refresh_public_reference(state_root, config, observed_at=observed_at)
+            refresh_public_reference(
+                state_root,
+                config,
+                observed_at=observed_at,
+                getter=getter,
+                reuse_if_fresh_seconds=18 * 60 * 60 if args.event == "g20-open" else None,
+            )
             reference_status = "refreshed"
         except (OSError, ValueError, TypeError, KeyError):
             # Optional reference failure must not undo a completed accounting cycle.
@@ -129,6 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "input_path": str(input_path),
                 "orders_authorized": False,
                 "reference_status": reference_status,
+                "tiingo_request_count": request_counter["tiingo"],
             },
             sort_keys=True,
         )

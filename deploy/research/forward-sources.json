@@ -32,6 +32,8 @@
         "TLT"
       ],
       "start_date": "2010-01-01",
+      "cache_dir": "state/research_cache/tiingo_l1_passive",
+      "stale_after_calendar_days": 4,
       "api_key_env": "QOUNT_TIINGO_API_KEY",
       "role": "L1 passive SPY/TLT adjusted-close source"
     }

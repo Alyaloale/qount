@@ -6,6 +6,8 @@ import datetime as dt
 import json
 import math
 import os
+from pathlib import Path
+import tempfile
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 from urllib.parse import urlencode
@@ -204,6 +206,156 @@ def _tiingo_daily(
     return rows, payload_hash
 
 
+def _tiingo_daily_cached(
+    symbol: str,
+    *,
+    start: dt.date,
+    end: dt.date,
+    token: str,
+    config: DualEngineMarketConfig,
+    getter: JsonGetter,
+    cache_root: Path,
+    observed_at: dt.datetime,
+    cache_only: bool = False,
+    max_cache_age: dt.timedelta | None = None,
+) -> tuple[list[Mapping[str, Any]], str]:
+    """Read and atomically advance a verified per-symbol daily-bar cache.
+
+    The first request seeds the configured history window. Later requests start
+    one calendar day before the cached tail so provider corrections and a
+    just-published latest bar replace the overlapping cached row.
+    """
+
+    if cache_root.is_symlink():
+        raise DualEngineMarketDataError("paper_tiingo_cache_root_symlink")
+    cache_root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(cache_root, 0o700)
+    path = cache_root / f"tiingo_{symbol}.json"
+    cached_rows: list[Mapping[str, Any]] = []
+    cached_hash: str | None = None
+    cached_response_hash: str | None = None
+    cached_fetched_at: dt.datetime | None = None
+    request_start = start
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file():
+            raise DualEngineMarketDataError(f"paper_tiingo_cache_path_invalid:{symbol}")
+        try:
+            def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+                value: dict[str, Any] = {}
+                for key, item in pairs:
+                    if key in value:
+                        raise ValueError("duplicate_key")
+                    value[key] = item
+                return value
+
+            payload = json.loads(path.read_bytes(), object_pairs_hook=reject_duplicates)
+            if (
+                not isinstance(payload, Mapping)
+                or set(payload) != {
+                    "schema_version", "symbol", "rows", "rows_sha256",
+                    "response_sha256", "fetched_at",
+                }
+                or payload.get("schema_version") != 1
+                or payload.get("symbol") != symbol
+                or not isinstance(payload.get("rows"), list)
+                or any(not isinstance(row, Mapping) for row in payload["rows"])
+                or not isinstance(payload.get("response_sha256"), str)
+                or len(str(payload.get("response_sha256"))) != 64
+            ):
+                raise ValueError("cache_fields_invalid")
+            cached_rows = sorted(payload["rows"], key=lambda row: str(row.get("date", "")))
+            cached_hash = canonical_hash({"symbol": symbol, "rows": cached_rows})
+            if payload.get("rows_sha256") != cached_hash:
+                raise ValueError("cache_hash_invalid")
+            cached_response_hash = str(payload["response_sha256"])
+            cached_fetched_at = aware_datetime(str(payload["fetched_at"]))
+            dates = [dt.date.fromisoformat(str(row["date"])[:10]) for row in cached_rows]
+            if not dates or dates != sorted(set(dates)):
+                raise ValueError("cache_dates_invalid")
+            cached_rows = [
+                row for row, session in zip(cached_rows, dates)
+                if start <= session <= end
+            ]
+            if not cached_rows or dates[0] > start + dt.timedelta(days=7):
+                # A partial or aged-out cache cannot satisfy the rolling
+                # history contract. Re-seed it with one full request.
+                cached_rows = []
+                cached_hash = None
+            else:
+                latest = dt.date.fromisoformat(str(cached_rows[-1]["date"])[:10])
+                request_start = max(start, latest - dt.timedelta(days=1))
+                cache_age = (observed_at - cached_fetched_at).total_seconds()
+                cache_is_eligible = (
+                    cache_age >= 0
+                    and (max_cache_age is None or cache_age <= max_cache_age.total_seconds())
+                )
+                if cache_only and cache_is_eligible:
+                    return cached_rows, canonical_hash({
+                        "mode": "cache",
+                        "cached_rows_sha256": cached_hash,
+                        "response_sha256": cached_response_hash,
+                        "fetched_at": cached_fetched_at.isoformat(),
+                    })
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise DualEngineMarketDataError(f"paper_tiingo_cache_invalid:{symbol}") from exc
+
+    update_rows, update_hash = _tiingo_daily(
+        symbol,
+        start=request_start,
+        end=end,
+        token=token,
+        config=config,
+        getter=getter,
+    )
+    merged: dict[str, Mapping[str, Any]] = {
+        str(row["date"])[:10]: row for row in cached_rows
+    }
+    for row in update_rows:
+        try:
+            session = dt.date.fromisoformat(str(row["date"])[:10])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise DualEngineMarketDataError(f"paper_tiingo_bar_date_invalid:{symbol}") from exc
+        if start <= session <= end:
+            merged[session.isoformat()] = row
+    rows = [merged[key] for key in sorted(merged)]
+    if len(rows) < 64:
+        raise DualEngineMarketDataError(f"paper_tiingo_history_short:{symbol}")
+
+    rows_hash = canonical_hash({"symbol": symbol, "rows": rows})
+    cache_payload = {
+        "schema_version": 1,
+        "symbol": symbol,
+        "rows": rows,
+        "rows_sha256": rows_hash,
+        "response_sha256": update_hash,
+        "fetched_at": observed_at.isoformat(),
+    }
+    descriptor, temporary_name = tempfile.mkstemp(dir=cache_root, prefix=f".{symbol}.", suffix=".tmp")
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(cache_payload, handle, allow_nan=False, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        descriptor = -1
+        os.replace(temporary, path)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary.exists():
+            temporary.unlink()
+    return rows, canonical_hash({
+        "mode": "incremental_network" if cached_hash is not None else "full_window_network",
+        "cached_rows_sha256": cached_hash,
+        "response_sha256": update_hash,
+        "merged_rows_sha256": rows_hash,
+        "requested_start": request_start.isoformat(),
+        "requested_end": end.isoformat(),
+    })
+
+
 def _tiingo_first_intraday_price(
     symbol: str,
     *,
@@ -343,6 +495,7 @@ def collect_market_cycle(
     event: str,
     getter: JsonGetter = _public_json_get,
     environment: Mapping[str, str] | None = None,
+    cache_root: Path | None = None,
 ) -> PaperCycleInput:
     """Collect one no-order cycle; scheduled dates are explicit and fail closed."""
 
@@ -371,14 +524,36 @@ def collect_market_cycle(
     tiingo_cutoffs: list[dt.datetime] = []
     tiingo_sessions: list[dt.date] = []
     for symbol in (*G20_PROXY_SYMBOLS, *G20_EXECUTION_SYMBOLS, "BIL"):
-        rows, payload_hash = _tiingo_daily(
-            symbol,
-            start=start,
-            end=session,
-            token=token,
-            config=config,
-            getter=getter,
-        )
+        if cache_root is None:
+            rows, payload_hash = _tiingo_daily(
+                symbol,
+                start=start,
+                end=session,
+                token=token,
+                config=config,
+                getter=getter,
+            )
+        else:
+            cache_only = event == "g20-open" or (
+                symbol in G20_PROXY_SYMBOLS and not g20_signal_day
+            )
+            max_cache_age = (
+                dt.timedelta(hours=18)
+                if event == "g20-open" and symbol not in G20_PROXY_SYMBOLS
+                else None
+            )
+            rows, payload_hash = _tiingo_daily_cached(
+                symbol,
+                start=start,
+                end=session,
+                token=token,
+                config=config,
+                getter=getter,
+                cache_root=cache_root,
+                observed_at=observed,
+                cache_only=cache_only,
+                max_cache_age=max_cache_age,
+            )
         tiingo_hashes[symbol] = payload_hash
         usable_rows = [
             row

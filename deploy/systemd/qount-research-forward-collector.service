@@ -13,6 +13,7 @@ Environment=PYTHONPATH=/root/qount/src
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONNOUSERSITE=1
 EnvironmentFile=-/etc/qount/research-forward-collector.env
+Environment=QOUNT_TIINGO_CACHE_DIR=/var/lib/qount/research/forward/tiingo_l1_passive
 Environment=http_proxy=
 Environment=https_proxy=
 Environment=all_proxy=

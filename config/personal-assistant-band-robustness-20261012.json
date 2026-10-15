@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_type": "preregistration",
+  "experiment_id": "personal_assistant_ma120_band_robustness_20261012",
+  "status": "frozen_before_unseen_variants",
+  "frozen_date": "2026-10-12",
+  "question": "Does the qualitative assessment of the 513100.SH MA120 trend rule change across the pre-specified 1.0%, 1.5%, and 2.0% deadbands?",
+  "prior_exposure": {
+    "1.5_percent_control_previously_reported": true,
+    "unseen_alternative_bands_read_before_freeze": false,
+    "historical_reference_summary": "state/research_runs/personal_assistant_reconciled_20261012/summary.json",
+    "historical_reference_source_code_sha256": "4c703c6e54b7815be67dfea19a1f1ba6cccd2c10d28a82982647985540e38e5b",
+    "historical_source_differs_from_frozen_current_source": true
+  },
+  "boundary": {
+    "research_only": true,
+    "orders_authorized": false,
+    "promotion_evidence": false
+  },
+  "input_files": {
+    "dataset": {
+      "path": "data/processed/clean_indices_daily_2013_2026.json",
+      "sha256": "910b3215ddd21bceca04805b639f41cd1a3170edeea6ac469e4a85178b24f866"
+    },
+    "kernel": {
+      "path": "src/qount/research/personal_trading_assistant.py",
+      "sha256": "7d6093f125712b189ab1ccd06c350bf146b555ae4e30ead57e6b90dcd30e23f4"
+    },
+    "runner": {
+      "path": "scripts/research/run_personal_assistant_band_robustness.py",
+      "sha256": "a82cee061d91d8090142b82d3fa85462ad5dd3c09575bf2560598c9d46ac99e7"
+    },
+    "historical_reference_summary": {
+      "path": "state/research_runs/personal_assistant_reconciled_20261012/summary.json",
+      "sha256": "8e91ed7ff58b7df5b0df6fc86708ac53a9295867a78e103e6dbbd7b179825704"
+    },
+    "historical_reference_manifest": {
+      "path": "state/research_runs/personal_assistant_reconciled_20261012/manifest.json",
+      "sha256": "42cf6200663a4852cabd8e7d9b2b490b80088b087d0a3102f435ecb60eb63c37"
+    }
+  },
+  "protocol": {
+    "symbol": "513100.SH",
+    "start_date": "20130515",
+    "end_date": "20261009",
+    "ma_period": 120,
+    "confirm_days": 2,
+    "control_band_pct": 0.015,
+    "band_pct_variants": [0.01, 0.015, 0.02],
+    "initial_capital": 1000000.0,
+    "cash_apr": 0.02,
+    "fill_timing": "signal_at_close_T_execute_at_open_T_plus_1",
+    "transaction_costs": "Use frozen ETFAssetMeta commission_bps and slippage_bps on each fill; no cost parameter changes.",
+    "corporate_actions": "Use the current kernel's declared 513100.SH split handling without alteration.",
+    "controls": ["same-window pure cash at 2% APR", "same-window 513100.SH buy-and-hold"],
+    "reported_metrics": [
+      "cagr_252_pct",
+      "cagr_calendar_pct",
+      "max_drawdown_pct",
+      "calmar_ratio",
+      "total_return_pct",
+      "trade_count",
+      "exposure_pct",
+      "annual_turnover_two_sided"
+    ],
+    "qualitative_directions": {
+      "cagr_above_cash": "strategy CAGR > same-window cash CAGR",
+      "cagr_above_buy_hold": "strategy CAGR > same-window 513100.SH buy-and-hold CAGR",
+      "drawdown_below_buy_hold": "strategy maximum drawdown < same-window 513100.SH buy-and-hold maximum drawdown"
+    },
+    "robustness_criterion": "All three qualitative directions must match the 1.5% control at both alternative bands. Any direction flip means the conclusion is band-sensitive. No best-band selection is allowed."
+  },
+  "limitations": [
+    "This is one full-history descriptive sensitivity analysis, not independent out-of-sample evidence.",
+    "The historical 1.5% report was generated with a different kernel hash; the runner records the metric delta and does not treat that old package as an exact-code reproduction gate.",
+    "Results inherit the data and cost limitations of the frozen personal trading assistant kernel and dataset."
+  ],
+  "output_dir": "state/research_runs/personal_assistant_band_robustness_20261012"
+}

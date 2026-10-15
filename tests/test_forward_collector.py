@@ -5,11 +5,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
+from unittest.mock import patch
 
 from qount.research.forward_collector import CollectionContext
 from qount.research.forward_collector import LiquidationStatusPlugin
 from qount.research.forward_collector import PluginRegistry
 from qount.research.forward_collector import PluginResult
+from qount.research.forward_collector import TiingoEodSource
 from qount.research.forward_collector import default_registry
 from qount.research.forward_collector import load_source_config
 from qount.research.forward_collector import run_once
@@ -40,6 +43,91 @@ class _SecondPlugin:
 
 
 class ForwardCollectorTests(unittest.TestCase):
+    def test_tiingo_eod_fetches_once_per_day_then_uses_hashed_cache(self) -> None:
+        observed_at = dt.datetime(2026, 10, 12, 18, 0, tzinfo=dt.UTC)
+        calls: list[str] = []
+
+        def fetch(url: str) -> list[dict[str, object]]:
+            calls.append(url)
+            return [{"date": "2026-10-09T00:00:00Z", "adjClose": 100.0}]
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            "os.environ", {"QOUNT_TIINGO_API_KEY": "fixture-key", "QOUNT_TIINGO_CACHE_DIR": directory}
+        ):
+            plugin = TiingoEodSource({"symbols": ["SPY", "TLT"], "start_date": "2010-01-01"})
+            first = plugin.collect(
+                CollectionContext(observed_at, ("BTCUSDT",), fetch, config={})
+            )
+            second = plugin.collect(
+                CollectionContext(observed_at + dt.timedelta(minutes=15), ("BTCUSDT",), fetch, config={})
+            )
+            next_day = plugin.collect(
+                CollectionContext(observed_at + dt.timedelta(days=1), ("BTCUSDT",), fetch, config={})
+            )
+
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(first.status, "valid")
+        self.assertEqual(first.payload["request_count"], 2)
+        self.assertEqual(first.payload["observations"]["SPY"]["source"], "network")
+        self.assertEqual(len(first.payload["observations"]["SPY"]["cache_sha256"]), 64)
+        self.assertEqual(second.status, "valid")
+        self.assertEqual(second.payload["request_count"], 0)
+        self.assertEqual(second.payload["observations"]["SPY"]["source"], "cache")
+        self.assertEqual(next_day.payload["request_count"], 2)
+        self.assertEqual(next_day.payload["observations"]["SPY"]["fetch_start_date"], "2026-10-08")
+        self.assertFalse(next_day.payload["observations"]["SPY"]["full_history_fetch"])
+        self.assertNotIn("fixture-key", json.dumps(first.as_dict()))
+
+    def test_tiingo_429_is_recorded_and_escalates_without_same_day_retry(self) -> None:
+        observed_at = dt.datetime(2026, 10, 12, 18, 0, tzinfo=dt.UTC)
+        calls: list[str] = []
+
+        def throttle(url: str) -> None:
+            calls.append(url)
+            raise urllib.error.HTTPError(url, 429, "rate limited", {}, None)
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            "os.environ", {"QOUNT_TIINGO_API_KEY": "fixture-key", "QOUNT_TIINGO_CACHE_DIR": directory}
+        ):
+            plugin = TiingoEodSource({"symbols": ["SPY", "TLT"]})
+            results = [
+                plugin.collect(
+                    CollectionContext(
+                        observed_at + dt.timedelta(minutes=15 * round_no),
+                        ("BTCUSDT",),
+                        throttle,
+                        config={},
+                    )
+                )
+                for round_no in range(4)
+            ]
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(results[0].payload["request_count"], 2)
+        self.assertEqual(results[0].payload["errors"][0]["http_status"], 429)
+        self.assertEqual(results[-1].payload["request_count"], 0)
+        self.assertEqual(results[-1].payload["consecutive_429_rounds"], 4)
+        self.assertEqual(results[-1].payload["alert_level"], "warning")
+        self.assertNotIn("fixture-key", json.dumps(results[-1].as_dict()))
+
+    def test_tiingo_stale_cache_is_insufficient(self) -> None:
+        observed_at = dt.datetime(2026, 10, 12, 18, 0, tzinfo=dt.UTC)
+
+        def old_rows(_url: str) -> list[dict[str, object]]:
+            return [{"date": "2026-09-30T00:00:00Z", "adjClose": 100.0}]
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            "os.environ", {"QOUNT_TIINGO_API_KEY": "fixture-key", "QOUNT_TIINGO_CACHE_DIR": directory}
+        ):
+            plugin = TiingoEodSource({"symbols": ["SPY"], "stale_after_calendar_days": 4})
+            result = plugin.collect(
+                CollectionContext(observed_at, ("BTCUSDT",), old_rows, config={})
+            )
+
+        self.assertEqual(result.status, "insufficient")
+        self.assertNotIn("SPY", result.payload["observations"])
+        self.assertEqual(result.payload["errors"][0]["error"], "cached_data_stale")
+
     def test_cta_r_seed_is_research_only_and_validates_freshness(self) -> None:
         observed_at = dt.datetime(2026, 9, 27, 12, 0, tzinfo=dt.UTC)
         series = {

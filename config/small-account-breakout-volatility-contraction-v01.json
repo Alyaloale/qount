@@ -1,0 +1,18 @@
+{
+  "strategy_id": "small-account-breakout-volatility-contraction-discovery-v1",
+  "base_config": "config/small-account-breakout-v01.json",
+  "study_config": "config/small-account-breakout-v02.json",
+  "sample_role": "discovery_consumed",
+  "development_start": "2026-03-30",
+  "development_end_exclusive": "2026-10-12",
+  "baseline": "Long-Only simple breakout L",
+  "candidate": "Long-Only simple breakout filtered by pre-breakout volatility contraction",
+  "threshold": 0.85,
+  "formula": "At signal close t, C[t-1] = ATR14 at prior completed hour / mean ATR14 for the 72 completed hourly bars ending at t-1; accept only if C[t-1] < 0.85.",
+  "risk_fraction": 0.02,
+  "initial_equity_usdt": 10.0,
+  "stress_scenarios": ["double_cost", "stop_gap_1pct"],
+  "research_only": true,
+  "orders_authorized": false,
+  "independent_oos": false
+}

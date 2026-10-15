@@ -1,8 +1,10 @@
 # qount 交易系统架构优化与扩展计划
 
-> **状态**：active｜**权威**：L2/L3 控制面演进｜**最后更新**：2026-07-30
+> **状态**：reference（生产控制面设计与历史阶段记录）｜**权威**：架构参考；当前事实见 current｜**最后更新**：2026-10-12
 > **本文回答**：独立执行认证、shadow accountant、分层 HALT、venue capability provenance、多 sleeve 前置门。
-> **TL;DR**：定义生产控制面演进阶段门，不直接改任一线 promotion/live 状态。
+> **TL;DR**：保留执行认证、独立会计和恢复设计；仅在对应生产候选需要时使用，不作为离线研究的统一前置流程。
+
+**适用范围**：本页版本、账户规模、阶段状态、测试数量和具体授权保留原记录时点身份，最新事实以 [current.md](current.md) 为准。[AGENTS.md](../AGENTS.md)允许授权范围内的最小实验、仿真和离线 paper 自主推进；本页历史门槛不扩大为所有研究的开工要求，也不解除原冻结合同。当前模块与展示架构见 [主设计](system-architecture-design.md)，涉及真实账户、服务或订单的变更仍遵守明确授权。
 
 版本：`v0.3`
 
@@ -17,7 +19,7 @@ carry、short、杠杆提升或恢复legacy交易入口。
 未来多sleeve的生产架构。当前生产事实仍以[current.md](current.md)和VPS只读证据为准，基础目标架构仍以
 [system-architecture-design.md](system-architecture-design.md)为准。
 
-本文不改变以下当前事实：
+以下为原设计基线（历史身份，不是当前运行快照）：
 
 - `MiniTrend-UM-Base-v0.2`的历史生产链已停止；FOMC live 路径也已取消部署，当前没有事件绑定的自动授权；
 - Base固定`100 USDT`、TOP3日线、long/cash、one-way、isolated 1x、effective gross `<=1`；

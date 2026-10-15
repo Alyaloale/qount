@@ -1,13 +1,15 @@
 # 文档入口
 
-> **状态**：active｜**权威**：L2 documentation navigation｜**最后更新**：2026-10-11
+> **状态**：active｜**权威**：文档导航；遵循 [AGENTS.md](../AGENTS.md)｜**最后更新**：2026-10-12
 > **适用范围**：当前事实、规则、运行手册、参考资料、活跃研究和历史归档的稳定入口。
 > **TL;DR**：当前事实只在 [current.md](current.md)。本页组织导航，不复制生产状态或研究结论。
 
 ## First read
 
+先遵循 [AGENTS.md](../AGENTS.md)，再按任务读取下列资料；小改动不要求通读全部文档。项目事实与规则冲突按 `current → project-rules → runbooks/reference → 活动策略文档` 核对，历史合同只约束原实验。
+
 - [当前事实](current.md) — 运行状态、owner 决策与硬边界（唯一当前事实源）。
-- [个人交易助手指南](personal-trading-assistant-guide.md) — 个人实战策略体系与开发指引（Vibe Coding 必读）。
+- [个人交易助手指南](personal-trading-assistant-guide.md) — 盈利目标、开放策略研究、最小实验与证据方法。
 - [项目规则](project-rules.md) — 代码、研究、文档和清理规则。
 - [接手与运维](quick-handoff.md) — 现有运维入口和已知边界。
 - [本地开发](operations/local-development.md) — Mac 环境与验证。
@@ -21,11 +23,11 @@
 
 ## Architecture, research and records
 
-- [架构主设计](system-architecture-design.md)
+- [架构主设计](system-architecture-design.md) — 当前研究、只读助手与生产执行边界；[旧架构与迁移记录](archive/system-architecture-design-pre-2026-10-12.md)保留历史细节。
 - [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 主机分工、配置规范、研究导航与排障。
 - [存储与计算拓扑](storage-topology.md)
-- [验证边界](holdout.md)
-- [研究路线](research-advancement-roadmap.md)
+- [验证边界](holdout.md) — 通用样本使用原则及旧 ETH-only 冻结合同的适用范围。
+- [历史研究路线](research-advancement-roadmap.md) — 原 family、试验预算与阶段记录，不作为所有新研究的统一门槛。
 - [跨研究线修复：Q-DIV 数据会计与 C60 梯度实验](research-remediation-plan-2026-10.md) — 已执行批次及阶段限制；后续工作顺序见修补整理计划。
 - [近期记录](update-log.md)
 - [美股与A股个股选择](equity-selection-study-2026-10.md) — 用户股票档案接入、复权/PIT资格与横截面信息研究；频率不设硬上限。
@@ -40,4 +42,4 @@
 
 ## Historical material
 
-[历史归档索引](archive/README.md) 是唯一的旧正文入口。归档材料是不可恢复的历史证据；不得从根目录或归档脚本重新启用历史线路。候选移动与未追踪资产的保留记录见 [archive manifest](archive/manifest.md)。
+[历史归档索引](archive/README.md) 是旧正文入口。归档材料用于追溯，不能覆盖当前事实或授权恢复冻结线路。候选移动与未追踪资产的保留记录见 [archive manifest](archive/manifest.md)。

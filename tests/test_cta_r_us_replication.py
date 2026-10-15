@@ -1,7 +1,11 @@
 import datetime as dt
+import json
 import math
 import random
+import tempfile
 import unittest
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from qount.research import cta_r_us_replication as rep
 from qount.research.cta_r_paper import REBALANCE_DAYS, _weights
@@ -68,6 +72,45 @@ class CtaRUsReplicationTests(unittest.TestCase):
         self.assertEqual(seen["headers"]["Authorization"], "Token t0k")
         with self.assertRaises(rep.CtaRUsReplicationError):
             rep.fetch_adjusted_closes("SPY", token="", end=dt.date(2020, 1, 10), getter=getter)
+
+    def test_per_symbol_tiingo_cache_reuses_history_and_fetches_from_cached_tail(self):
+        end = dt.date(2026, 10, 10)
+        calls = []
+
+        def getter(url, headers):
+            calls.append((url, dict(headers)))
+            return [
+                {"date": "2026-10-09T00:00:00Z", "adjClose": 101.0},
+                {"date": "2026-10-10T00:00:00Z", "adjClose": 102.0},
+            ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "tiingo_SPY.json"
+            fetched, source = rep.load_or_fetch_adjusted_closes(
+                "SPY", token="fixture-key", end=end, cache_path=cache_path, getter=getter
+            )
+            cached, cached_source = rep.load_or_fetch_adjusted_closes(
+                "SPY", token="", end=end, cache_path=cache_path, getter=getter
+            )
+            later, later_source = rep.load_or_fetch_adjusted_closes(
+                "SPY",
+                token="fixture-key",
+                end=dt.date(2026, 10, 12),
+                cache_path=cache_path,
+                getter=getter,
+            )
+            stored = json.loads(cache_path.read_text())
+            cache_text = cache_path.read_text()
+
+        self.assertEqual(source, "network")
+        self.assertEqual(cached_source, "cache")
+        self.assertEqual(fetched, cached)
+        self.assertEqual(later_source, "network")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(parse_qs(urlparse(calls[1][0]).query)["startDate"], ["2026-10-09"])
+        self.assertEqual(later["2026-10-10"], 102.0)
+        self.assertNotIn("fixture-key", cache_text)
+        self.assertEqual(stored, later)
 
     def test_benchmark_monthly_rebalance_holds_weights(self):
         ret = rep.benchmark(self.dates, self.prices, {"SPY": 1.0}, first=self.dates[300], cost=0.0)

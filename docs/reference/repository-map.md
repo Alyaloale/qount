@@ -1,6 +1,6 @@
 # Repository map
 
-> **状态**：active｜**权威**：L3 repository reference｜**最后更新**：2026-10-11
+> **状态**：active｜**权威**：仓库职责参考；遵循项目规则｜**最后更新**：2026-10-12
 > **适用范围**：目录职责、公开入口、部署引用与治理检查。
 > **TL;DR**：生产控制面、活跃研究、冻结兼容、部署、文档和运行数据分层；基础清单由 `repository_hygiene.py inventory` 生成，研究职责表人工维护；不记录密钥或运行时值。
 
@@ -8,13 +8,15 @@
 
 - CLI: `qount-run` → `qount.main:main`; monitor: `qount-monitor` → `qount.mac_monitor:main`.
 - Current fact source: [`../current.md`](../current.md). Operational navigation: [`../operations/host-runbooks.md`](../operations/host-runbooks.md).
-- Main verification: `PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -p 'test*.py'` (full suite); focused governance verification is documented in [`cli-and-scripts.md`](cli-and-scripts.md).
+- Verification follows the change's scope; commands and full-suite usage are in [local development](../operations/local-development.md). Agent behavior follows [AGENTS.md](../../AGENTS.md).
 
 ## Domain ownership
 
 | Domain | Responsibility | Host / entry |
 | --- | --- | --- |
 | `src/qount/cli`, `contracts`, `execution`, `governance`, `ledger`, `risk`, `operations`, `notifications`, `persistence`, `portfolio`, `reporting`, `venue` | Public CLI composition, production control plane and shared contracts | VPS is runtime truth; Mac performs lightweight checks. |
+| `src/qount/api`, `web/app` | Artifact adapters, ingestion, SQLite query views and read-only API/frontend | Local implementation and VPS deployment are separate facts; see [architecture](../system-architecture-design.md). |
+| `src/qount/research/personal_trading_assistant.py` | Shared backtest/daily state machine, data qualification and deterministic reports | Offline research and local forward records; no order authority. |
 | `src/qount/mini_trend`, `dual_engine`, `small_account`, `alpha_agents`, `research_data`, `research/sleeves`, `research/etf_trader`, `research/etf_alpha`, `research/dual_engine_*` | Active research or no-order simulations | Mac/WSL research; owner-designated P3 cloud is temporary compute; E holds final large artifacts. |
 | `src/qount/legacy` and `scripts/archive` | Frozen compatibility and historical evidence | No new business logic or timer restoration. |
 | `deploy/systemd`, `deploy/wsl`, `deploy/dual_engine`, `deploy/research`, `deploy/cloud` | Deployment templates and host topology | Static validation only without explicit host authorization; cloud research delivery is isolated. |

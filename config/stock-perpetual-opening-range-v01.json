@@ -1,0 +1,21 @@
+{
+  "strategy_id": "stock-perpetual-60m-opening-range-breakout-discovery-v1",
+  "sample_role": "discovery_consumed_2026_selected_weeks",
+  "base_config": "config/small-account-breakout-v01.json",
+  "cache": "state/research_cache/small_account_breakout_v01_20261013",
+  "symbols": ["AMZNUSDT", "PLTRUSDT"],
+  "opening_range_local": "09:30-10:30 America/New_York, four complete 15-minute bars",
+  "entry_rule": "After 10:30, first complete 15-minute close strictly above opening-range high (long) or below opening-range low (short); at most one signal per symbol per session",
+  "stop_rule": "Structural stop at the opposite opening-range boundary",
+  "exit_rule": "15:45 America/New_York; on early-close sessions use 15 minutes before the exchange close",
+  "risk_fraction": 0.02,
+  "initial_equity_usdt_per_symbol_week": 10.0,
+  "fee_per_side": 0.0005,
+  "slippage_per_side": 0.001,
+  "funding": "Use cached realized funding only; no funding estimate uses future values",
+  "selection_status": "new_candidate_not_combined_with_crypto",
+  "limitations": ["Five disjoint development weeks only", "Historical exchange filters and contract fee tier are approximations", "No historical order book or executable fills", "Do not treat equity stock bars as these perpetual contracts"],
+  "research_only": true,
+  "orders_authorized": false,
+  "independent_oos": false
+}

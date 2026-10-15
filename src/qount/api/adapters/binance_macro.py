@@ -7,7 +7,7 @@ import os
 from typing import Any, Dict
 
 from qount.api.adapters import register_adapter
-from qount.api.adapters.utils import compute_freshness, compute_sha256
+from qount.api.adapters.utils import compute_freshness, compute_sha256, unavailable_line
 from qount.api.schemas import (
     LineMetrics,
     LineSafety,
@@ -17,68 +17,90 @@ from qount.api.schemas import (
 )
 
 
+_ADJUDICATION = (
+    "未通过准入，研究封存；修复逻辑后利润集中、成本与撮合仍需逐情景绑定收据，不继续历史调参救援"
+)
+
+
 @register_adapter("binance_macro")
 def adapt_binance_macro(line_id: str, name: str, config: Dict[str, Any]) -> PaperLine:
     run_dir = config.get("run", "state/research_runs/binance_global_macro_20261011")
     summary_path = os.path.join(run_dir, "summary.json")
 
-    as_of = "2026-06-30"
-    sha256_val = compute_sha256(summary_path)
+    if not os.path.isfile(summary_path):
+        return unavailable_line(
+            line_id,
+            name,
+            "macro",
+            summary_path,
+            "SOURCE_NOT_FOUND: Binance macro summary.json is absent; no performance figures are reported.",
+            _ADJUDICATION,
+            lifecycle_status="ARCHIVED",
+        )
 
-    metrics = LineMetrics(
-        cagr_pct=41.29,
-        max_drawdown_pct=36.63,
-        sharpe=0.90,
-        calmar=1.13,
-        trade_count=156,
-        start_date="2021-01-01",
-        days=2007,
-    )
+    try:
+        with open(summary_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        base_curve = data["strategy_curves"]["base"]
+        dataset = data["dataset"]
+        period_start, separator, period_end = str(dataset["period"]).partition(" to ")
+        yearly_breakdown = data["yearly_breakdown"]
+        initial_equity = float(yearly_breakdown[min(yearly_breakdown)]["start_equity"])
+        if not separator or not yearly_breakdown or initial_equity <= 0:
+            raise ValueError("summary does not contain a usable period and equity curve")
 
-    nav_series: list[NavPoint] = [
-        NavPoint(date="2021-01-01", nav=1.0000, benchmark_nav=1.0000),
-        NavPoint(date="2021-12-31", nav=1.0748, benchmark_nav=1.5982),
-        NavPoint(date="2022-12-31", nav=1.2830, benchmark_nav=0.5562),
-        NavPoint(date="2023-12-31", nav=3.6809, benchmark_nav=1.4241),
-        NavPoint(date="2024-12-31", nav=5.2328, benchmark_nav=2.0620),
-        NavPoint(date="2025-12-31", nav=6.5928, benchmark_nav=2.1530),
-        NavPoint(date="2026-06-30", nav=6.6798, benchmark_nav=1.9976),
-    ]
+        nav_series = []
+        for year in sorted(yearly_breakdown):
+            row = yearly_breakdown[year]
+            end_equity = float(row["end_equity"])
+            point_date = period_end if year == max(yearly_breakdown) else f"{year}-12-31"
+            nav_series.append(
+                NavPoint(
+                    date=point_date,
+                    nav=round(end_equity / initial_equity, 4),
+                )
+            )
 
-    if os.path.exists(summary_path):
-        try:
-            with open(summary_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            base_curve = data.get("strategy_curves", {}).get("base", {})
-            if base_curve:
-                metrics.cagr_pct = round(float(base_curve.get("cagr", 41.29)), 2)
-                metrics.max_drawdown_pct = round(float(base_curve.get("max_drawdown", 36.63)), 2)
-                metrics.sharpe = round(float(base_curve.get("sharpe", 0.90)), 2)
-                metrics.calmar = round(float(base_curve.get("calmar", 1.13)), 2)
-                metrics.trade_count = int(base_curve.get("trades_count", 156))
-
-            ds = data.get("dataset", {})
-            metrics.days = int(ds.get("days", 2007))
-        except Exception:
-            pass
-
-    freshness = compute_freshness(as_of)
+        metrics = LineMetrics(
+            cagr_pct=round(float(base_curve["cagr"]), 2),
+            # The source summary does not provide a dated daily NAV path here. Do not expose
+            # daily drawdown-derived metrics alongside annual observations.
+            max_drawdown_pct=None,
+            sharpe=round(float(base_curve["sharpe"]), 2),
+            calmar=None,
+            trade_count=int(base_curve["trades_count"]),
+            start_date=period_start,
+            days=int(dataset["days"]),
+        )
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        code = "SOURCE_UNREADABLE" if isinstance(exc, (OSError, json.JSONDecodeError)) else "SUMMARY_EMPTY"
+        return unavailable_line(
+            line_id,
+            name,
+            "macro",
+            summary_path,
+            f"{code}: Binance macro summary could not provide a complete base curve ({type(exc).__name__}).",
+            _ADJUDICATION,
+            lifecycle_status="ARCHIVED",
+        )
 
     return PaperLine(
         line_id=line_id,
         name=name,
         category="macro",
         status="ARCHIVED",
-        adjudication="未通过准入，研究封存；修复逻辑后利润集中、成本与撮合仍需逐情景绑定收据，不继续历史调参救援",
-        as_of=as_of,
-        freshness=freshness,
+        adjudication=_ADJUDICATION,
+        as_of=period_end,
+        freshness=compute_freshness(period_end),
+        curve_granularity="YEARLY",
         nav_series=nav_series,
         metrics=metrics,
         positions=[],
+        position_status="NOT_APPLICABLE",
         source=LineSource(
             path=summary_path,
-            sha256=sha256_val,
-            produced_at="2026-10-11T12:09:00Z",
+            sha256=compute_sha256(summary_path),
+            produced_at=None,
         ),
         safety=LineSafety(research_only=True, orders_authorized=False),
     )

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class NavPoint(BaseModel):
     date: str
     nav: float
-    benchmark_nav: float = 1.0
+    benchmark_nav: Optional[float] = None
     # Zero-cost signal NAV when the source distinguishes it from the executable NAV. The gap
     # between the two is the part of a headline return that costs and lot sizes remove, so the
     # UI shows both rather than only the flattering one.
@@ -17,6 +17,15 @@ class NavPoint(BaseModel):
 
 
 class LineMetrics(BaseModel):
+    total_return_pct: Optional[float] = None
+    cagr_basis: Optional[str] = None
+    benchmark_cagr_pct: Optional[float] = None
+    benchmark_max_drawdown_pct: Optional[float] = None
+    exposure_pct: Optional[float] = None
+    initial_equity: Optional[float] = None
+    observation_count: Optional[int] = None
+    trading_days: Optional[int] = None
+    corporate_action_count: Optional[int] = None
     ytd_return_pct: Optional[float] = None
     max_drawdown_pct: Optional[float] = None
     current_drawdown_pct: Optional[float] = None
@@ -33,10 +42,36 @@ class LineMetrics(BaseModel):
 
 class PositionItem(BaseModel):
     symbol: str
-    weight: float
+    weight: Optional[float] = None
     entry_date: Optional[str] = None
     quantity: Optional[float] = None
+    price: Optional[float] = None
     market_value: Optional[float] = None
+    side: Optional[str] = None
+
+
+class PaperPositionRecord(BaseModel):
+    line_id: str
+    date: str
+    symbol: str
+    quantity: Optional[float] = None
+    weight: Optional[float] = None
+    price: Optional[float] = None
+    market_value: Optional[float] = None
+    action: str  # OPEN | CLOSE | ADJUST | HOLD
+    record_kind: str = "simulated_not_realized"
+
+
+class PaperTradeRecord(BaseModel):
+    line_id: str
+    date: str
+    symbol: str
+    side: str  # BUY | SELL | SPLIT
+    quantity: Optional[float] = None
+    price: Optional[float] = None
+    cost: Optional[float] = None
+    note: str = ""
+    record_kind: str = "simulated_not_realized"
 
 
 class LineSource(BaseModel):
@@ -55,19 +90,30 @@ class PaperLine(BaseModel):
     name: str
     category: str = "assistant"  # equity | crypto | macro | assistant
     status: str = "ACTIVE_PAPER"  # ACTIVE_PAPER | ARCHIVED | STOPPED
+    data_status: str = "AVAILABLE"  # AVAILABLE | MISSING | ERROR
     adjudication: str = ""
     as_of: str
     freshness: str = "FRESH"  # FRESH | STALE | MISSING
+    curve_granularity: str = "OBSERVATION"  # DAILY | SNAPSHOT | YEARLY | OBSERVATION
     nav_series: List[NavPoint] = Field(default_factory=list)
     # None when the source could not be read. A missing source must never be papered over
     # with placeholder figures: an advisory line reporting a fabricated return is worse than
     # one reporting nothing, because the number is indistinguishable from a real one.
     metrics: Optional[LineMetrics] = None
     positions: List[PositionItem] = Field(default_factory=list)
+    position_status: str = "UNKNOWN"  # KNOWN | UNKNOWN | MISSING | NOT_APPLICABLE
     source: LineSource
     safety: LineSafety = Field(default_factory=LineSafety)
     # Set when the source is unreadable; the UI renders this instead of figures.
     error: Optional[str] = None
+    # Only source-backed assumptions; an empty object means coverage is unconfirmed.
+    last_attempt_at: Optional[str] = None
+    last_attempt_status: Optional[str] = None
+    last_attempt_error: Optional[str] = None
+    last_attempt_source: Optional[LineSource] = None
+    position_error: Optional[str] = None
+    cost_assumptions: dict[str, Any] = Field(default_factory=dict)
+    execution_constraints: List[str] = Field(default_factory=list)
 
 
 class PaperLineSummary(BaseModel):
@@ -75,13 +121,32 @@ class PaperLineSummary(BaseModel):
     name: str
     category: str
     status: str
+    data_status: str = "AVAILABLE"
     adjudication: str
     as_of: str
     freshness: str
+    curve_granularity: str = "OBSERVATION"
     metrics: Optional[LineMetrics] = None
     positions: List[PositionItem] = Field(default_factory=list)
+    position_status: str = "UNKNOWN"
     source: LineSource
     safety: LineSafety = Field(default_factory=LineSafety)
+    error: Optional[str] = None
+    last_attempt_at: Optional[str] = None
+    last_attempt_status: Optional[str] = None
+    last_attempt_error: Optional[str] = None
+    last_attempt_source: Optional[LineSource] = None
+    position_error: Optional[str] = None
+    cost_assumptions: dict[str, Any] = Field(default_factory=dict)
+    execution_constraints: List[str] = Field(default_factory=list)
+
+
+class PaperCurrentPositions(BaseModel):
+    line_id: str
+    status: str  # KNOWN | UNKNOWN | MISSING | NOT_APPLICABLE
+    as_of: Optional[str] = None
+    last_valid_as_of: Optional[str] = None
+    positions: List[PaperPositionRecord] = Field(default_factory=list)
     error: Optional[str] = None
 
 
@@ -92,6 +157,8 @@ class BalanceItem(BaseModel):
 
 
 class AccountSnapshot(BaseModel):
+    initial_equity: Optional[float] = None
+    observation_interval_seconds: Optional[int] = None
     as_of: str
     # PAPER: a research reconciliation package (simulation, not assets).
     # LIVE_READONLY: a real exchange balance read through a read-only key.
@@ -99,8 +166,9 @@ class AccountSnapshot(BaseModel):
     mode: str = "PAPER"
     source_kind: str = "local_snapshot"  # local_snapshot | binance_api
     nav: float
-    cash: float
+    cash: Optional[float] = None
     positions: List[PositionItem] = Field(default_factory=list)
+    positions_status: str = "UNKNOWN"  # KNOWN | UNKNOWN | MISSING | NOT_APPLICABLE
     currency: str = "CNY"
     # LIVE_READONLY only: real balances as reported by the exchange.
     balances: List[BalanceItem] = Field(default_factory=list)
@@ -141,4 +209,7 @@ class HealthResponse(BaseModel):
     db_connected: bool = True
     last_ingest_at: Optional[str] = None
     paper_lines_count: int = 0
+    ingest_status: str = "unknown"  # ok | failed | never | partial
+    stale_line_count: int = 0
+    missing_source_count: int = 0
     safety: LineSafety = Field(default_factory=LineSafety)

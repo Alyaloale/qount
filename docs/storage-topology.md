@@ -1,17 +1,15 @@
 # qount 存储与计算拓扑
 
-> **状态**：active｜**权威**：L4 拓扑｜**最后更新**：2026-10-09
+> **状态**：active｜**权威**：存储拓扑参考；遵循项目规则与主机手册｜**最后更新**：2026-10-12
 > **本文回答**：跨主机职责、权威数据位置、WSL 计算流程、外置盘/清理规则。
 > **TL;DR**：Mac 研究/git、Windows 外置盘存储真相、WSL 计算、VPS 生产；大数据只在 Win/WSL 侧落外置盘。
 
-更新时间：2026-10-09
+更新时间：2026-10-12
 
 这份文档定义跨主机职责、权威数据位置、WSL计算流程和清理规则。策略结论仍以
 [current.md](current.md)为准，生产运行仍以VPS为准。
 
-本文后续实验路径和300 USDT/旧paper artifact均为存储历史。当前VPS版本为`0.2.22`；MiniTrend Base固定100 USDT并已迁入
-`standard_production`，owner已停用live timer和旧交易 forward timer。统一 research forward collector timer为`enabled/active`，只写入
-research evidence，不继承Base arm或订单权限。FOMC仅公共行情的固定事件window timer为`enabled/active`。
+本文后续实验路径、主机版本、文件系统类型、代理配置和300 USDT/旧paper artifact均按记录日期读取，不作为新的执行许可或实时状态。现行主机边界遵循 [AGENTS.md](../AGENTS.md)，操作步骤以 [主机手册](operations/host-runbooks.md) 为准；凭据不复制或同步至 WSL／E 盘。授权预算内的离线研究直接推进；共享挂载、数据删除及生产服务变更另核对其影响和授权，旧代理或服务记录不构成恢复权限。
 2026-07-22外置`E:`已完成保护性备份、文件系统修复和修复后逐文件校验。全新备份目录
 `D:\qount_data-recovery-20260722T120000Z`含`14,214`个文件、`34,096,177,913` bytes，源/目标SHA-256
 manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功复制新文件，`FAILED=0`、`Mismatch=0`。
@@ -28,7 +26,7 @@ manifest自身hash均为`a31da6af...b9339`；`robocopy`返回码`1`表示成功�
 | Mac | `/Users/alyaloale/Code/qount` | 研究设计、代码主仓、git、文档、轻量测试和任务编排 | 全量行情、训练集、模型批次、历史artifact |
 | Windows外置盘 | `E:\qount_data`；WSL见`/mnt/e/qount_data` | 大数据、不可变输入、最终artifact、环境锁和节点备份的存储真相 | `.env`、API密钥、活跃SQLite、venv |
 | WSL | `/home/alyaloale/Code/qount`；7945HX 32线程、RTX 4060 Laptop 8GB、16 GB 内存；SSH 别名 `qount-wsl` | 大型CPU特征工程、表格模型、HMM、GPU训练和权威复跑 | 完成后的大数据副本、长期artifact、生产状态 |
-| VPS | `/root/qount` | `0.2.18`、停用的Base生产状态、FOMC order-free watcher、dashboard和最小runtime state | 研究缓存、历史训练集、批量artifact |
+| VPS | `/root/qount` | 既有采集、无订单模拟、只读账户、dashboard和最小runtime state；版本与服务状态查 current | 研究缓存、历史训练集、批量artifact |
 | 临时云GPU | disposable | 仅在4060显存或吞吐实测不足时临时训练 | 唯一数据副本、生产密钥、live state |
 
 WSL是正式计算节点，但不是实盘生产真相。Mac和WSL不要求每次全仓镜像；WSL基础计算接口变化时才显式

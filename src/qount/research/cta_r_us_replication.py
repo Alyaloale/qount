@@ -11,6 +11,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import os
+from pathlib import Path
 from statistics import fmean
 from typing import Callable, Mapping, Sequence
 from urllib.parse import urlencode
@@ -82,6 +84,62 @@ def fetch_adjusted_closes(
     if not out:
         raise CtaRUsReplicationError(f"tiingo_rows_empty:{symbol}")
     return out
+
+
+def load_or_fetch_adjusted_closes(
+    symbol: str,
+    *,
+    token: str,
+    end: dt.date,
+    cache_path: str | Path,
+    start: dt.date = dt.date(2004, 1, 1),
+    getter: Callable[[str, Mapping[str, str]], object] | None = None,
+    force_refresh: bool = False,
+) -> tuple[dict[str, float], str]:
+    """Reuse the per-symbol public Tiingo cache and fetch only dates beyond its tail."""
+    path = Path(cache_path)
+    cached: dict[str, float] = {}
+    if path.is_file() and not force_refresh:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise CtaRUsReplicationError(f"tiingo_cache_invalid:{symbol}")
+        cached = {
+            str(day): float(value)
+            for day, value in raw.items()
+            if isinstance(day, str)
+            and isinstance(value, (int, float))
+            and math.isfinite(float(value))
+            and float(value) > 0
+        }
+    cached = {day: value for day, value in cached.items() if day <= end.isoformat()}
+    latest_day = max(cached) if cached else None
+    if latest_day is not None and dt.date.fromisoformat(latest_day) >= end:
+        return cached, "cache"
+
+    fetch_start = start
+    if latest_day is not None and not force_refresh:
+        fetch_start = max(start, dt.date.fromisoformat(latest_day) - dt.timedelta(days=1))
+    fetched = fetch_adjusted_closes(
+        symbol,
+        token=token,
+        start=fetch_start,
+        end=end,
+        getter=getter,
+    )
+    merged = cached | fetched
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(merged, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="ascii",
+        )
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return merged, "network"
 
 
 def align(series: Mapping[str, Mapping[str, float]]) -> tuple[list[str], dict[str, list[float]], dict[str, object]]:

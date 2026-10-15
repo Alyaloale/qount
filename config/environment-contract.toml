@@ -1825,3 +1825,58 @@ default_policy = "runtime_default"
 consumers = ["src/qount/api/ingest.py", "src/qount/api/routes/research.py"]
 legacy = false
 
+[[variables]]
+name = "QOUNT_API_CONFIG"
+domain = "core"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "config/api.json"
+consumers = ["src/qount/api/adapters/utils.py", "src/qount/api/db.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CTA_R_STATE_ROOT"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "state/cta_r"
+consumers = ["src/qount/api/adapters/cta_r_forward.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CTA_R_FORWARD_LEDGER"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "state-root/forward-ledger.jsonl"
+consumers = ["src/qount/api/adapters/cta_r_forward.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_TIINGO_CACHE_DIR"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "source-config-or-state/research_cache/tiingo_l1_passive"
+consumers = ["src/qount/research/forward_collector.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ASSISTANT_DAILY_RUN"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "unset_reports_missing_no_sample_discovery"
+consumers = ["src/qount/api/routes/assistant.py"]
+legacy = false
+

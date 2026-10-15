@@ -1,0 +1,28 @@
+{
+  "frozen_at": "2026-10-15",
+  "strategy": "personal_trading_assistant",
+  "symbol": "513100.SH",
+  "model": "MA120_Band1.5pct",
+  "parameters": {
+    "trend_sma_days": 120,
+    "deadband_pct": 1.5,
+    "confirmation_days": 2,
+    "position_mode": "binary",
+    "universe": ["513100.SH"]
+  },
+  "evidence": {
+    "period": "2013-05-15 to 2026-10-09",
+    "cagr_pct": 12.05,
+    "mdd_pct": 28.16,
+    "calmar": 0.43,
+    "trading_days": 3256,
+    "trade_count": 37,
+    "buy_hold_cagr_pct": 21.28,
+    "note": "Strategy CAGR below buy-and-hold benchmark. Forward recording to validate whether timing mechanism adds value over passive holding."
+  },
+  "forward_recording": {
+    "status": "active",
+    "source": "state/research_runs/personal_assistant_reconciled_20261012",
+    "purpose": "Accumulate forward observations; validate timing value vs buy-and-hold"
+  }
+}

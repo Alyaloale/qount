@@ -11,7 +11,9 @@ number that is indistinguishable from a real one.
 from __future__ import annotations
 
 import json
+import math
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from qount.api.adapters import register_adapter
@@ -90,13 +92,15 @@ def _unavailable(
         line_id=line_id,
         name=name,
         category=_ACCOUNT_CATEGORY.get(account, "equity"),
-        status="MISSING",
+        status="ACTIVE_PAPER",
+        data_status="MISSING",
         adjudication=_ADJUDICATION,
         as_of=as_of,
         freshness="MISSING",
         nav_series=[],
         metrics=None,
         positions=[],
+        position_status="MISSING",
         source=LineSource(
             path=snapshot_path,
             sha256=compute_sha256(snapshot_path),
@@ -145,7 +149,7 @@ def _find_benchmark_series(snapshot: Dict[str, Any]) -> Dict[str, float]:
             if marked_at is None or value is None:
                 continue
             try:
-                series[format_date_str(str(marked_at))] = float(value) / initial
+                series[_format_nav_point_time(marked_at)] = float(value) / initial
             except (TypeError, ValueError):
                 continue
         break
@@ -185,21 +189,23 @@ def _build_nav_series(
         if marked_at is None or executable is None:
             continue
         date = _format_nav_point_time(marked_at)
-        benchmark_date = format_date_str(str(marked_at))
+        benchmark_date = date
         try:
             nav_value = float(executable)
         except (TypeError, ValueError):
             continue
         signal_raw = point.get("signal", point.get("signal_nav"))
         try:
-            signal_value = float(signal_raw) if signal_raw is not None else nav_value
+            signal_value = float(signal_raw) if signal_raw is not None else None
+            if signal_value is not None and not math.isfinite(signal_value):
+                signal_value = None
         except (TypeError, ValueError):
-            signal_value = nav_value
+            signal_value = None
         out.append(
             NavPoint(
                 date=date,
                 nav=nav_value,
-                benchmark_nav=benchmark_series.get(benchmark_date, 1.0),
+                benchmark_nav=benchmark_series.get(benchmark_date),
                 signal_nav=signal_value,
             )
         )
@@ -220,6 +226,8 @@ def _build_metrics(portfolio: Dict[str, Any], nav_series: list[NavPoint]) -> Lin
 
     days = len(nav_series)
     return LineMetrics(
+        observation_count=len(nav_series),
+        initial_equity=portfolio.get("initial_capital"),
         ytd_return_pct=_pct("since_start_return_fraction"),
         max_drawdown_pct=_pct("max_drawdown_fraction"),
         current_drawdown_pct=_pct("current_drawdown_fraction"),
@@ -240,19 +248,60 @@ def _build_positions(portfolio: Dict[str, Any]) -> list[PositionItem]:
         if not symbol:
             continue
         try:
-            weight = float(holding.get("actual_weight") or 0.0)
+            weight = float(holding["actual_weight"]) if holding.get("actual_weight") is not None else None
         except (TypeError, ValueError):
-            weight = 0.0
+            weight = None
         out.append(
             PositionItem(
                 symbol=str(symbol),
                 weight=weight,
                 quantity=holding.get("quantity"),
+                price=holding.get("mark_price"),
                 market_value=holding.get("market_value"),
             )
         )
-    out.sort(key=lambda item: item.weight, reverse=True)
+    out.sort(key=lambda item: (item.weight is not None, item.weight or 0.0), reverse=True)
     return out
+
+
+def load_rebalance_trade_events(line_id: str, snapshot_path: str) -> Optional[list[dict[str, object]]]:
+    """Read recorded simulated fills from a dual-engine snapshot, when present.
+
+    ``None`` means this snapshot format has no rebalance history and ingest should fall back to
+    consecutive position snapshots. An empty list means the source explicitly records no fills.
+    """
+    account = line_id.removeprefix("dual_").lower()
+    portfolio_id = _ACCOUNT_TO_PORTFOLIO.get(account)
+    if portfolio_id is None:
+        return None
+    try:
+        with open(snapshot_path, "r", encoding="utf-8") as handle:
+            snapshot = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    portfolio = _find_portfolio(snapshot, portfolio_id)
+    if not isinstance(portfolio, dict):
+        return None
+    rebalances = portfolio.get("rebalances")
+    if not isinstance(rebalances, dict) or not isinstance(rebalances.get("events"), list):
+        return None
+    events: list[dict[str, object]] = []
+    for rebalance in rebalances["events"]:
+        if not isinstance(rebalance, dict):
+            continue
+        observed_at = rebalance.get("observed_at")
+        for fill in rebalance.get("fills") or []:
+            if not isinstance(fill, dict):
+                continue
+            events.append({
+                "date": observed_at,
+                "symbol": fill.get("symbol"),
+                "side": fill.get("side"),
+                "quantity": fill.get("quantity"),
+                "price": fill.get("reference_price"),
+                "cost": fill.get("cost"),
+            })
+    return events
 
 
 @register_adapter("dual_engine")
@@ -261,7 +310,9 @@ def adapt_dual_engine(line_id: str, name: str, config: Dict[str, Any]) -> PaperL
     portfolio_id = _ACCOUNT_TO_PORTFOLIO.get(account)
 
     snapshot_path = _resolve_snapshot_path(config)
-    today = format_date_str(config.get("reference_date") or "2026-10-12")
+    today = format_date_str(
+        str(config.get("reference_date") or datetime.now(timezone.utc).date().isoformat())
+    )
 
     if portfolio_id is None:
         return _unavailable(
@@ -312,10 +363,12 @@ def adapt_dual_engine(line_id: str, name: str, config: Dict[str, Any]) -> PaperL
         status="ACTIVE_PAPER",
         adjudication=_ADJUDICATION,
         as_of=as_of,
-        freshness=compute_freshness(as_of, config.get("reference_date") or "2026-10-12"),
+        freshness=compute_freshness(as_of, config.get("reference_date")),
+        curve_granularity="SNAPSHOT",
         nav_series=nav_series,
         metrics=_build_metrics(portfolio, nav_series),
         positions=_build_positions(portfolio),
+        position_status="KNOWN" if isinstance(portfolio.get("holdings"), list) else "UNKNOWN",
         source=LineSource(
             path=snapshot_path,
             sha256=compute_sha256(snapshot_path),

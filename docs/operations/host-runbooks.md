@@ -1,8 +1,14 @@
 # Host runbooks
 
-> **状态**：active｜**权威**：L3 host operations reference｜**最后更新**：2026-10-04
+> **状态**：active｜**权威**：主机操作参考；遵循 [AGENTS.md](../../AGENTS.md) 与项目规则｜**最后更新**：2026-10-12
 > **适用范围**：Mac, Windows external disk, WSL and VPS ownership boundaries.
-> **TL;DR**：Mac owns code; Windows external disk owns large data/artifacts; WSL owns compute reruns; VPS owns runtime truth. No host may infer permission to turn on live, arm, orders, timers or production cron.
+> **TL;DR**：Mac owns code and light experiments; Windows E owns large data/artifacts; WSL owns compute; VPS hosts existing services. Research proceeds within authorized scope and budgets; production changes require explicit owner authorization.
+
+## Applying authority and resource limits
+
+[AGENTS.md](../../AGENTS.md) defines autonomous research and safety boundaries; [current.md](../current.md) records owner decisions, frozen lines and actual runtime facts. Existing authorization remains valid within its scope. Offline paper, simulations and small experiments do not require production promotion; deploying or changing an existing VPS service follows that service's authorization. Historical commands and a completed readiness check do not grant new permissions.
+
+Prefer local work for light tasks, reuse verified caches, and use WSL GPU only when it helps answer the experiment. Check the task's data path, budget and active resource use before large cross-host jobs. Set bounded logging, checkpoints and stopping conditions; do not remove shared data or other jobs' outputs. Consumed single-run activations and explicitly paused cloud work remain restricted as recorded below and in current.
 
 ## Handoff paths
 
@@ -11,7 +17,7 @@
 | Mac `/Users/alyaloale/Code/qount` | Code, git, docs, light verification and orchestration | Long-term full data or production execution | `qount-run config-check --profile mac --env-file .env` |
 | Windows external disk `E:\qount_data` | Datasets, immutable artifacts, locks and backup manifests | Store `.env`, active SQLite or virtual environments | Verify an artifact manifest with relative path/hash/source/command/retention before copying. |
 | WSL `/home/alyaloale/Code/qount` | CPU/GPU reruns and scratch computation | Store secrets or claim paper/live truth | `scripts/hosts/qount-wsl.sh status`, then `qount-run config-check --profile wsl --env-file deploy/wsl/qount-compute.env` |
-| VPS `/root/qount` | Existing paper/dashboard services and minimum runtime state | Research bulk storage or manual service alteration without owner approval | Static repo checks only in this task; remote inspection is read-only and separately authorized. |
+| VPS `/root/qount` | Existing collection, paper, dashboard, read-only observation and notification services | Research bulk storage or service alteration outside explicit owner authorization | Use bounded read-only inspection when relevant to the task; distinguish recorded deployment from present health. |
 
 ## WSL compute: connection entry (canonical)
 
@@ -106,7 +112,7 @@ The server's dedicated unit is `/etc/systemd/system/aliyun-relay.service`, with 
 
 ## Recovery limits
 
-Use the existing package tests and static deployment-reference check before a host-specific change. Recover only an explicitly approved service from its documented release/provenance; do not use an archived script or a historical unit as a recovery shortcut. The present governance batch does not authorize any recovery action.
+Use checks appropriate to the affected package and deployment references before a host-specific change. Recover a production service only within its explicit authorization and documented release/provenance; do not use an archived script or historical unit as a shortcut. Routine offline repairs within the task's scope can proceed directly. This reference supplies procedures, not additional recovery authority.
 
 ## SSH unavailable: bounded inspection
 

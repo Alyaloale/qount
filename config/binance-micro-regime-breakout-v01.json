@@ -1,0 +1,245 @@
+{
+  "strategy_id": "binance_micro_regime_breakout_v01",
+  "schema_version": "0.2",
+  "as_of": "2026-10-13",
+  "research_only": true,
+  "orders_authorized": false,
+  "private_api_used": false,
+  "status": "design_only",
+  "purpose": "Aggressive 10 USDT Binance USD-M candidate; new rule has no profitability evidence.",
+  "hypothesis": [
+    "A daily BTC regime gate can remove a material share of long-only breakout losses in bearish or non-trending conditions.",
+    "A 4h breakout has thicker expected move than the consumed 1h/20h candidate and can tolerate fixed fees and stop-gap reserve better.",
+    "LG pressure-budget sizing can cap adverse stop-gap loss while preserving aggressive upside when the exchange minimum is executable."
+  ],
+  "universe": [
+    "SOLUSDT",
+    "ETHUSDT",
+    "BTCUSDT"
+  ],
+  "selection": {
+    "max_concurrent_positions": 1,
+    "priority": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT"
+    ],
+    "eligible_before_priority": "completed signal, costs, filters, liquidity and all sizing caps must pass",
+    "replace_held_position_for_ranking": false,
+    "shorting": false,
+    "scale_in": false
+  },
+  "clocks": {
+    "timezone": "UTC",
+    "signal_bar": "4h completed Binance USD-M kline",
+    "regime_bar": "latest complete daily BTCUSDT bar actually available at decision",
+    "decision": "after completed signal close; earliest fill strictly later than decision",
+    "entry_delay_minutes_for_historical_replay": 1,
+    "entry_expires_seconds_after_close": 90,
+    "quote_max_age_seconds": 5,
+    "account_max_age_seconds": 5,
+    "exchange_rules_max_fetch_age_seconds": 3600,
+    "clock_offset_max_ms": 1000,
+    "missing_or_incomplete_bar": "block new entries, preserve native stop and reconcile; missing input is not a fresh zero target"
+  },
+  "regime_gate": {
+    "risk_on": "latest completed BTC daily close > SMA200 including that completed close",
+    "risk_off": "daily predicate false: cancel pending entry and reduce-only flatten; then cash",
+    "unknown": "block new risk and retain native stop while reconciling",
+    "warmup_completed_days": 200
+  },
+  "signal": {
+    "breakout_lookback_bars": 20,
+    "atr_period": 14,
+    "atr_method": "Wilder; require 100 continuous completed 4h bars to initialize",
+    "long_trigger": "C[t] > max(H[t-20:t-1]); current bar excluded from threshold",
+    "initial_stop_atr": 1.5,
+    "initial_stop": "conservative entry reference - 1.5 * ATR[t]; freeze before submission; never narrow to meet order minimum",
+    "max_entry_drift_atr": 0.3,
+    "entry_price_limit": "actual executable price <= signal close + 0.30 ATR; otherwise skip",
+    "volume_filter": false,
+    "contraction_filter": false,
+    "extra_ema_filter": false,
+    "prior_high_target_filter": false,
+    "failed_breakout_exit": false,
+    "trailing_activation_structural_r": 2.0,
+    "trailing_atr": 2.0,
+    "trailing": "completed close >= entry + 2*frozen initial stop distance activates max(previous_stop, highest post-entry completed close - 2*current ATR); effective after close; never loosen",
+    "stop_crossed_on_update": "reduce-only flatten; do not submit an invalid immediate-trigger replacement",
+    "max_hold_hours": 72,
+    "reentry_cooldown_after_exit_hours": 8,
+    "partial_take_profit": false,
+    "profit_target": false
+  },
+  "cost_model": {
+    "paper_fee_per_side": 0.0005,
+    "paper_slippage_per_side": 0.0005,
+    "live_fee": "actual user/symbol commission; unknown blocks live",
+    "adverse_funding_reserve": "maximum absolute settled regular rate available in prior 72h * ceil(remaining hold hours / point-in-time interval); conservatively compare known next-rate estimate",
+    "funding_interval": "observed fundingInfo and nextFundingTime; historical fallback to last two prior regular settlements with assumption disclosure; never backfill current interval",
+    "missing_funding": "block new entries",
+    "ordinary_friction_limit_fraction_of_stop": 0.2,
+    "stop_gap_reserve": 0.01,
+    "gap_excluded_from_ordinary_cost_gate": true,
+    "live_spread_slippage": "estimate from fresh executable depth; count fees and spread/slippage once",
+    "funding_overrun_exit": "at completed signal bar exit if sunk adverse funding + remaining reserve + ordinary round-trip friction >20% frozen initial stop distance",
+    "funding_credit": "record signed actual funding; reserve treats no future credit as income"
+  },
+  "sizing": {
+    "risk_fraction": 0.03,
+    "first_live_risk_usdt_cap": 0.3,
+    "first_live_budget": "min(0.03*effective equity,0.30 USDT,remaining account limits)",
+    "drawdown_downshift_fraction": 0.1,
+    "downshift_risk_fraction": 0.015,
+    "downshift_latched_until_review": true,
+    "risk_fraction_at_equity_ge_100_usdt": 0.02,
+    "denominator_approximation": "stop distance + ordinary friction + 1% gap",
+    "exact_long_stress_loss": "Pw=Ps*(1-g); loss/unit=(Pe-Pw)+Pe*(entry_fee+entry_slippage+funding_reserve)+Pw*(exit_fee+exit_slippage)",
+    "stop_rounding": "long stop round UP to PRICE_FILTER tick before sizing; require 0 < stop < executable price",
+    "quantity": "floor to exact decimal common grid satisfying all applicable LOT_SIZE and MARKET_LOT_SIZE filters; not min(stepSize)",
+    "notional_caps": {
+      "effective_gross": 2.0,
+      "maximum_isolated_margin_fraction": 0.4
+    },
+    "exchange_leverage": {
+      "preferred": 5,
+      "maximum": 5,
+      "reduction": "reduce to 4/3/2/1 if audited bracket-based liquidation distance <3*(structural stop distance + gap); recompute margin cap",
+      "does_not_define_exposure": true
+    },
+    "margin_cap": "N/leverage <=0.40*E; fees/funding reserve and actual free USDT also fit",
+    "min_order_failure": "skip; never inflate quantity beyond risk budget",
+    "risk_increases_from_deposit": false
+  },
+  "controls": {
+    "max_open_plus_pending_stress_fraction": 0.03,
+    "rolling_24h_net_loss_halt_fraction": 0.06,
+    "strategy_nav_drawdown_halt_fraction": 0.2,
+    "next_risk_budget": "min(active_risk_fraction*E,remaining concurrent stress risk,remaining 6% rolling-24h loss headroom,remaining 20% unit-NAV drawdown headroom in USDT); reserve pending intents before submission",
+    "loss_limit_action": "cancel entry intents; reduce-only flatten; reconcile then HALT",
+    "manual_reset_after_halt": true,
+    "auto_add_margin": false,
+    "margin_type": "ISOLATED",
+    "position_mode": "ONE_WAY",
+    "collateral": "USDT only",
+    "direction": "LONG_ONLY",
+    "max_entries_per_utc_day": 1,
+    "no_average_down": true,
+    "no_automatic_recharge": true,
+    "cash_on_risk_off": true,
+    "stop_loss_is_not_guaranteed_fill": true
+  },
+  "promotion": {
+    "engineering_before_live": [
+      "implement pure signal/risk/NAV logic",
+      "causal replay and minute-stop plus fault verification",
+      "verify current algo-stop capability and duplicate/timeout recovery in appropriate test environment",
+      "genuine public forward record; private dry-run only with later read-only credential authorization",
+      "funded preflight and exact executable canary scope"
+    ],
+    "first_live": "one explicitly owner-authorized protected round trip, <=0.30 USDT modeled stress risk at 10 USDT",
+    "regular_live": "separate explicit recurring-live scope after reconciled canary; engineering success does not establish edge",
+    "profit_evidence_review": "at least 30 independent closed opportunities plus sufficient regime coverage; elapsed time alone never grants trading or expansion",
+    "arbitrary_calendar_wait_required": false,
+    "kill": "20% unit-NAV drawdown or 6% rolling daily loss -> flatten/HALT; protection/unknown failures -> reconcile/flatten/HALT; nonpositive frozen candidate net results -> research review without automatic tuning",
+    "executor_host": "dedicated authorized 24/7 host undecided; no existing VPS/WSL service or credential migration authorized"
+  },
+  "accounting": {
+    "initial_target_funding_usdt": 10,
+    "actual_current_balance": "not_read; owner says not funded",
+    "equity_definition": "dedicated authorized USDT trading equity net of estimated exit costs; quarantined new deposits excluded",
+    "pnl": "trading realized/unrealized PnL + signed funding - fees; transfers separate",
+    "unitized_nav": "initial units=E_initial, NAV=1; deposit D issues D/NAV_pre units, withdrawal W redeems W/NAV_pre units; transfers never change NAV or its high-water mark",
+    "cashflow_example": "10->9 trading equity is NAV 0.9; deposit 10 issues 11.111111 units, equity 19, NAV remains 0.9 and drawdown remains 10%",
+    "new_capital_scope": "while flat reconcile new funds and bind approved new live scope; preserve NAV, downshift and HALT; profits may compound within the sleeve",
+    "automatic_deposit_expansion": false,
+    "journal": "decision/intent, fill/fee/funding, protective ACK and reconciliation"
+  },
+  "evidence_boundary": {
+    "consumed_evidence": [
+      "small-account-breakout-v03-next_20261013",
+      "small-account-breakout-v03-external-2025_20261013",
+      "small-account-breakout-v03-contraction_085_20261013",
+      "stock_perpetual_opening_range_v01_20261013"
+    ],
+    "permitted_claim": "candidate mechanism and execution design only",
+    "prohibited_claims": [
+      "positive expected return",
+      "cross-asset generalization",
+      "short edge",
+      "live profitability",
+      "20% CAGR guarantee",
+      "universal negative short expectancy",
+      "80% quantified beta dependence",
+      "LG guarantees against liquidation/gaps",
+      "public snapshot certifies account eligibility"
+    ],
+    "new_performance_results": false,
+    "official_sources": [
+      "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data",
+      "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade"
+    ]
+  },
+  "risk_preference": {
+    "default_risk_fraction": 0.03,
+    "default_drawdown_halt": 0.2,
+    "owner_choice_status": "default_proposed_no_reply",
+    "alternative_5pct_status": "not_selected"
+  },
+  "execution_design": {
+    "implementation_status": "not_implemented",
+    "entry": "one marketable LIMIT IOC within quote and signal caps; partial fill cancels remainder; protect actual quantity",
+    "native_stop": "current USD-M conditional algo STOP_MARKET SELL, CONTRACT_PRICE, closePosition=true; omit quantity/reduceOnly when schema requires",
+    "ordinary_exit": "reduce-only MARKET for reconciled full position",
+    "conditional_order_api": "POST /fapi/v1/algoOrder; reconcile algo and ordinary order IDs separately",
+    "price_protect": "avoid configuration delaying emergency trigger on mark/contract divergence",
+    "stop_ack_required": true,
+    "stop_failure": "resolve possible accepted order by intent ID, cancel/confirm as needed, reduce-only flatten verified exposure then HALT",
+    "stop_replacement": "retain old stop until replacement acknowledgement where venue supports coexistence; rejected replacement retains old stop; crossed proposed stop flattens",
+    "unknown_order": "deterministic ID query plus fill/position/order reconciliation; never blind resend",
+    "unexpected_account_changes": "block new risk and reconcile; do not alter unrelated holdings"
+  },
+  "research_plan": {
+    "run_status": "not_run",
+    "primary": "4h gated candidate",
+    "comparisons": [
+      "1h/20-bar long-only without daily gate",
+      "1h/20-bar long-only with daily gate",
+      "4h/20-bar long-only without daily gate",
+      "4h/20-bar long-only with daily gate (primary)"
+    ],
+    "comparison_common": "same 3% pressure sizing, 5x/2x/40% caps, costs/funding/filters, 72h hold and 8h cooldown; ATR/breakout/trailing horizons change with interval and are disclosed",
+    "capital_cases_usdt": [
+      10,
+      30,
+      100
+    ],
+    "cost_cases": [
+      "base full continuous rerun",
+      "double fee/slippage/funding full rerun",
+      "fixed base fills and quantities under double costs",
+      "1% stop-gap included in sizing and fills",
+      "2% gap beyond budget diagnostic"
+    ],
+    "controls": [
+      "cash (zero yield)",
+      "costed executable SOL spot buy-and-hold",
+      "BTC/ETH/SOL unlevered fixed basket only when actually executable, otherwise infeasible"
+    ],
+    "history_role": "2025 and 2026 development windows already consumed; all new-rule reruns are diagnostics, not independent validation; no 2025 rule selection",
+    "forward_start": null,
+    "independent_evidence": "real startup after configuration freeze; do not backdate",
+    "metrics": [
+      "net return and minute MDD",
+      "Calmar/CAGR only when duration supports",
+      "mean net structural R and stress R separately",
+      "monthly losses and worst trade",
+      "beta/exposure and same-market benchmarks",
+      "fees/slippage/funding",
+      "minimum-order rejection rate",
+      "time in cash",
+      "stress forecast versus realized loss"
+    ],
+    "success": "gate reduces bearish loss/drawdown while preserving meaningful bullish net return; net positive mean R and account PnL required for profit claim; no fills is not robustness"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "version": "v1.3",
+  "frozen_at": "2026-10-15",
+  "rationale": "v1.3 is the credible baseline after causality fix. Later versions (v1.4-v1.9) show overfitting: every iteration improved backtest performance, 3 consecutive losing years masked by gold bull market. Calmar 1.02 at 1.5% gap stress is the honest benchmark.",
+  "frozen_parameters": {
+    "symbols": ["SPY", "SMH", "IWM", "XLI", "XLB", "GLD", "CPER", "XLU", "TLT", "UUP"],
+    "mode": "1X_SPOT",
+    "causality_mode": "RIGOROUS",
+    "initial_capital": 1000.0,
+    "max_positions": 2,
+    "min_atr_pct": 0.0085,
+    "strict_golden_cross": true,
+    "breakout_quality_filter": true,
+    "dynamic_max_pos": true,
+    "orthogonal_tier_limit": true,
+    "gap_stress_pct": 0.015,
+    "er_min": 0.28,
+    "mr_require_green": true,
+    "mr_max_hold_days": 10,
+    "mr_edge_decay": true,
+    "stagnant_exit_days": 30,
+    "min_rs60": -0.03,
+    "edge_decay_exit": true,
+    "enable_cash_overlay": true,
+    "cash_rate_mode": "historical"
+  },
+  "credible_baseline": {
+    "full_period_return_pct": 26.70,
+    "full_period_mdd_pct": 26.22,
+    "calmar": 1.02,
+    "oos_return_pct": 27.14,
+    "oos_mdd_pct": 8.62,
+    "oos_calmar": 3.15,
+    "gap_stress_limit": "1.8% max tolerable daily gap; at 2.0% Calmar drops to 0.08"
+  },
+  "forward_recording": {
+    "output_dir": "state/research_runs/universal_regime_v1.3_forward",
+    "start_date": "2026-10-15",
+    "frequency": "daily",
+    "purpose": "Accumulate unseen-data forward observations to validate v1.3 baseline"
+  }
+}

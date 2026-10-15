@@ -1,0 +1,23 @@
+{
+  "strategy_id": "small-account-breakout-v0.2-mechanism-study",
+  "base_config": "config/small-account-breakout-v01.json",
+  "research_only": true,
+  "orders_authorized": false,
+  "development_start": "2026-03-30",
+  "development_end_exclusive": "2026-10-12",
+  "window_selection": "Full span from earliest to latest consumed pilot week; fixed before new results",
+  "primary_risk_fraction": 0.02,
+  "risk_sensitivity": [0.05, 0.10],
+  "capital_sensitivity_usdt": [50.0, 100.0],
+  "post_exit_window_hours": 24,
+  "event_window_hours": 24,
+  "signal_path_hours": 24,
+  "funding_interval_mode": "known_or_observed",
+  "funding_interval_fallback_hours": 8,
+  "funding_interval_assumption": "Use point-in-time fundingIntervalHours when recorded; otherwise assume last observed regular settlement gap persists; fallback 8h only if insufficient prior settlements. Never backfill current fundingInfo.",
+  "comparisons": ["A_simple", "B_direction", "C_volume", "D_original", "D_failure_exit", "D_confirm_entry"],
+  "conditional_trailing_test": "Only if at least half of losing D trades have confirmed MFE >= 1R; keep trailing distance unchanged",
+  "combination_policy": "No combined candidate unless one individual mechanism improves both continuous return and mean net R in development; any selected combination remains development-only",
+  "stocks": "Excluded from main account; reuse pilot stock signals for separate RTH/overnight volatility and cost reachability diagnosis",
+  "independent_oos": false
+}

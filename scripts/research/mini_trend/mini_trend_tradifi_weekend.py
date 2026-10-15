@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Download immutable Binance TradFi archives directly and run weekend convergence."""
+"""Download immutable Binance TradFi archives directly and run weekend convergence.
+
+Tiingo data is read from the supplied ``--spy-path`` cache; refreshing that file consumes the
+shared Tiingo quota, so check the request budget before preparing multiple research inputs.
+"""
 
 from __future__ import annotations
 

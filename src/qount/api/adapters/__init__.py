@@ -36,4 +36,6 @@ def _ensure_loaded() -> None:
         import qount.api.adapters.binance_macro
         import qount.api.adapters.ashare_master
         import qount.api.adapters.dual_engine
+        import qount.api.adapters.cta_r_forward
+        import qount.api.adapters.universal_regime
         _loaded = True

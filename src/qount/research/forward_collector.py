@@ -34,6 +34,7 @@ VALID_STATUSES = frozenset({"valid", "insufficient", "flawed", "rejected"})
 DEFAULT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT")
 DEFAULT_BINANCE_BASE_URL = "https://fapi.binance.com"
 LIQUIDATION_STATUS_STALE_AFTER_SECONDS = 180
+TIINGO_EOD_STALE_AFTER_DAYS = 4
 
 
 class ForwardCollectorConfigurationError(ValueError):
@@ -527,43 +528,255 @@ class TiingoEodSource:
         env_name = self.definition.get("api_key_env", "QOUNT_TIINGO_API_KEY")
         api_key = os.environ.get(str(env_name), "").strip()
         symbols = tuple(str(item).upper() for item in self.definition.get("symbols", []))
-        if not api_key:
+        cache_dir_value = os.environ.get("QOUNT_TIINGO_CACHE_DIR") or self.definition.get(
+            "cache_dir", "state/research_cache/tiingo_l1_passive"
+        )
+        cache_dir = Path(str(cache_dir_value)).expanduser()
+        state_path = cache_dir / "request_state.json"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        state_error = None
+        try:
+            request_state = json.loads(state_path.read_text(encoding="utf-8"))
+            if not isinstance(request_state, dict):
+                raise ValueError("request_state_shape_invalid")
+        except FileNotFoundError:
+            request_state = {}
+        except (OSError, json.JSONDecodeError, ValueError):
+            state_error = "request_state_unreadable"
+            request_state = {}
+        if state_error:
             return PluginResult(
                 "insufficient",
                 {
                     "symbols": list(symbols),
-                    "api_key_env": str(env_name),
-                    "reason": "source_credential_unavailable",
+                    "reason": state_error,
+                    "request_count": 0,
+                    "daily_request_budget": 20,
+                    "consecutive_429_rounds": 0,
+                    "alert_level": None,
+                    "api_key_used": False,
                 },
             )
-        observations: dict[str, Any] = {}
-        errors: list[dict[str, str]] = []
-        start_date = str(self.definition.get("start_date", "2020-01-01"))
-        for symbol in symbols:
-            url = (
-                f"https://api.tiingo.com/tiingo/daily/{symbol.lower()}/prices"
-                f"?startDate={start_date}&format=json&token={api_key}"
+        symbol_state = request_state.get("symbols", {})
+        if not isinstance(symbol_state, dict):
+            symbol_state = {}
+
+        today = context.observed_at.astimezone(dt.UTC).date()
+        budget_state = request_state.get("budget", {})
+        if not isinstance(budget_state, dict):
+            budget_state = {}
+        daily_counts = budget_state.get("daily_request_counts", {})
+        monthly_symbols = budget_state.get("monthly_unique_symbols", {})
+        if not isinstance(daily_counts, dict) or not isinstance(monthly_symbols, dict):
+            return PluginResult(
+                "insufficient",
+                {
+                    "symbols": list(symbols),
+                    "reason": "request_budget_state_unreadable",
+                    "request_count": 0,
+                    "daily_request_budget": 20,
+                    "monthly_unique_symbol_budget": 25,
+                    "api_key_used": False,
+                },
             )
-            try:
-                rows = context.fetch_json(url)
-                usable = [
-                    row
-                    for row in rows
-                    if isinstance(row, dict)
-                    and isinstance(row.get("date"), str)
-                    and isinstance(row.get("adjClose"), (int, float))
-                    and float(row["adjClose"]) > 0
-                ]
-                if not usable:
-                    raise ValueError("no_usable_rows")
-                latest = usable[-1]
-                observations[symbol] = {
-                    "latest_date": latest["date"][:10],
-                    "latest_adj_close": float(latest["adjClose"]),
-                    "row_count": len(usable),
+        month_key = today.strftime("%Y-%m")
+        month_symbol_list = monthly_symbols.get(month_key, [])
+        if not isinstance(month_symbol_list, list):
+            month_symbol_list = []
+        month_symbol_set = {str(item) for item in month_symbol_list}
+        daily_request_total = int(daily_counts.get(today.isoformat(), 0))
+        observations: dict[str, Any] = {}
+        errors: list[dict[str, Any]] = []
+        request_count = 0
+        start_date = str(self.definition.get("start_date", "2020-01-01"))
+        stale_after_days = int(
+            self.definition.get("stale_after_calendar_days", TIINGO_EOD_STALE_AFTER_DAYS)
+        )
+        # Import the shared L1 cache/fetch contract lazily so unrelated forward collectors do
+        # not load the larger research dependency tree.
+        from qount.legacy.l1.l1_cross_asset import fetch_cross_asset_panel
+        from qount.settings import Settings
+
+        settings = Settings.from_env()
+        for symbol in symbols:
+            cache_path = cache_dir / f"tiingo_{symbol}.json"
+            previous = symbol_state.get(symbol, {})
+            if not isinstance(previous, dict):
+                previous = {}
+            attempted_today = previous.get("attempt_date") == today.isoformat()
+            fetch_error: Exception | None = None
+            source = "cache"
+            series = []
+
+            if not attempted_today and api_key:
+                fetch_start_date = start_date
+                cached_dates: list[dt.date] = []
+                if cache_path.is_file():
+                    try:
+                        cached_rows = json.loads(cache_path.read_text(encoding="utf-8"))
+                        if isinstance(cached_rows, list):
+                            for row in cached_rows:
+                                raw_date = row.get("date") if isinstance(row, dict) else None
+                                if isinstance(raw_date, str):
+                                    try:
+                                        cached_dates.append(dt.date.fromisoformat(raw_date[:10]))
+                                    except ValueError:
+                                        continue
+                    except (OSError, json.JSONDecodeError):
+                        cached_dates = []
+                full_history_fetch = not cached_dates
+                if cached_dates:
+                    incremental_start = max(
+                        dt.date.fromisoformat(start_date), max(cached_dates) - dt.timedelta(days=1)
+                    )
+                    fetch_start_date = incremental_start.isoformat()
+                if daily_request_total >= 20:
+                    fetch_error = RuntimeError("daily_request_budget_exceeded")
+                elif symbol not in month_symbol_set and len(month_symbol_set) >= 25:
+                    fetch_error = RuntimeError("monthly_unique_symbol_budget_exceeded")
+                else:
+                    daily_request_total += 1
+                    month_symbol_set.add(symbol)
+                    daily_counts[today.isoformat()] = daily_request_total
+                    monthly_symbols[month_key] = sorted(month_symbol_set)
+                    budget_state["daily_request_counts"] = daily_counts
+                    budget_state["monthly_unique_symbols"] = monthly_symbols
+                    request_state["budget"] = budget_state
+                # Persist the attempt before opening the network request. A process restart or
+                # HTTP 429 therefore cannot cause 96 retries during the same UTC day.
+                if fetch_error is None:
+                    previous = {
+                        **previous,
+                        "attempt_date": today.isoformat(),
+                        "attempt_status": "pending",
+                        "fetch_start_date": fetch_start_date,
+                        "full_history_fetch": full_history_fetch,
+                    }
+                    symbol_state[symbol] = previous
+                    request_state["symbols"] = symbol_state
+                    _atomic_write_json(state_path, request_state)
+                    request_count += 1
+                    try:
+                        panel, sources, _point_counts = fetch_cross_asset_panel(
+                            settings=settings,
+                            tickers=[symbol],
+                            api_key=api_key,
+                            start_date=fetch_start_date,
+                            cache_dir=cache_dir,
+                            field="adjClose",
+                            fetcher=context.fetch_json,
+                            force_refresh=True,
+                        )
+                        series = panel.get(symbol, [])
+                        source = sources.get(symbol, "network")
+                        previous["attempt_status"] = "success"
+                        previous["consecutive_429_rounds"] = 0
+                        previous.pop("last_http_status", None)
+                        previous.pop("last_error_type", None)
+                    except Exception as error:  # one attempt per symbol per UTC day, with evidence
+                        fetch_error = error
+                        status_code = getattr(error, "code", None)
+                        previous["attempt_status"] = "throttled" if status_code == 429 else "error"
+                        previous["last_http_status"] = status_code
+                        previous["last_error_type"] = type(error).__name__
+                        previous["consecutive_429_rounds"] = (
+                            int(previous.get("consecutive_429_rounds", 0)) + 1
+                            if status_code == 429
+                            else 0
+                        )
+                    request_state["symbols"] = symbol_state
+                    _atomic_write_json(state_path, request_state)
+            else:
+                if attempted_today and previous.get("attempt_status") == "throttled":
+                    previous["consecutive_429_rounds"] = int(
+                        previous.get("consecutive_429_rounds", 0)
+                    ) + 1
+                    symbol_state[symbol] = previous
+                    request_state["symbols"] = symbol_state
+                    _atomic_write_json(state_path, request_state)
+                    fetch_error = urllib.error.HTTPError(
+                        "https://api.tiingo.com/", 429, "rate limited", {}, None
+                    )
+                elif attempted_today and previous.get("attempt_status") == "pending":
+                    fetch_error = RuntimeError("request_interrupted_after_attempt")
+                elif attempted_today and previous.get("attempt_status") == "error":
+                    status_code = previous.get("last_http_status")
+                    if status_code is not None:
+                        fetch_error = urllib.error.HTTPError(
+                            "https://api.tiingo.com/", int(status_code), "request failed", {}, None
+                        )
+                    else:
+                        fetch_error = RuntimeError(
+                            str(previous.get("last_error_type") or "request_failed")
+                        )
+                elif not api_key:
+                    fetch_error = RuntimeError("source_credential_unavailable")
+
+            # If no network result was produced this round, read the same shared on-disk
+            # cache used by the L1 research scripts. Old data is filtered below, never
+            # presented as a current observation.
+            if not series and cache_path.is_file():
+                try:
+                    panel, sources, _point_counts = fetch_cross_asset_panel(
+                        settings=settings,
+                        tickers=[symbol],
+                        api_key=api_key or None,
+                        start_date=start_date,
+                        cache_dir=cache_dir,
+                        field="adjClose",
+                        fetcher=context.fetch_json,
+                    )
+                    series = panel.get(symbol, [])
+                    source = sources.get(symbol, "cache")
+                except Exception:
+                    series = []
+            if series:
+                latest_point = series[-1]
+                latest_date = dt.datetime.fromtimestamp(
+                    latest_point.timestamp_ms / 1000, tz=dt.UTC
+                ).date()
+                data_age_days = (today - latest_date).days
+                cache_sha256 = hashlib.sha256(cache_path.read_bytes()).hexdigest()
+                if 0 <= data_age_days <= stale_after_days:
+                    observations[symbol] = {
+                        "latest_date": latest_date.isoformat(),
+                        "latest_adj_close": float(latest_point.value),
+                        "row_count": len(series),
+                        "source": source,
+                        "cache_sha256": cache_sha256,
+                        "data_age_calendar_days": data_age_days,
+                        "fetch_start_date": previous.get("fetch_start_date"),
+                        "full_history_fetch": previous.get("full_history_fetch", False),
+                    }
+                else:
+                    errors.append({
+                        "symbol": symbol,
+                        "error": "cached_data_stale",
+                        "latest_date": latest_date.isoformat(),
+                        "data_age_calendar_days": data_age_days,
+                    })
+            elif fetch_error is None:
+                fetch_error = RuntimeError("cache_missing_or_unusable")
+
+            if fetch_error is not None:
+                status_code = getattr(fetch_error, "code", None)
+                error: dict[str, Any] = {
+                    "symbol": symbol,
+                    "error": type(fetch_error).__name__,
                 }
-            except Exception as error:
-                errors.append({"symbol": symbol, "error": type(error).__name__})
+                if status_code is not None:
+                    error["http_status"] = int(status_code)
+                errors.append(error)
+
+        consecutive_429_rounds = max(
+            (
+                int(value.get("consecutive_429_rounds", 0))
+                for value in symbol_state.values()
+                if isinstance(value, dict)
+            ),
+            default=0,
+        )
+        alert_level = "warning" if consecutive_429_rounds >= 4 else None
         return PluginResult(
             "valid" if observations and not errors else "insufficient",
             {
@@ -571,7 +784,15 @@ class TiingoEodSource:
                 "symbols": list(symbols),
                 "observations": observations,
                 "errors": errors,
-                "api_key_used": True,
+                "request_count": request_count,
+                "daily_request_total": daily_request_total,
+                "daily_request_budget": 20,
+                "monthly_unique_symbol_count": len(month_symbol_set),
+                "monthly_unique_symbol_budget": 25,
+                "monthly_unique_symbols": sorted(month_symbol_set),
+                "consecutive_429_rounds": consecutive_429_rounds,
+                "alert_level": alert_level,
+                "api_key_used": request_count > 0,
             },
         )
 

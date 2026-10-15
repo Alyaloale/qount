@@ -78,6 +78,8 @@ The bounded P3 Stage 1 run uses [config/etf-alpha-overnight-20261003.json](../..
 
 每个环境变量在合同中声明名称、域、类型、是否敏感、允许主机、必填条件、默认策略、消费者和 legacy 状态。新增变量必须先进入合同；legacy 条目不应被用于新逻辑。
 
+Dashboard API 的阈值集中在非敏感文件 `config/api.json`；`QOUNT_API_CONFIG` 可指定替代配置文件。CTA-R 只读前瞻适配器从 `QOUNT_CTA_R_STATE_ROOT` 定位默认账本目录，也可用 `QOUNT_CTA_R_FORWARD_LEDGER` 指定单个账本。L1 Tiingo EOD 缓存目录由 `QOUNT_TIINGO_CACHE_DIR` 指定，未设置时使用来源配置中的目录。VPS 服务路径与写权限见对应部署 runbook；这些路径变量不承载凭据。
+
 ```bash
 # 只解析键名和文件权限；不会联网、创建 state 或打印任何值。
 qount-run config-check --profile mac --env-file .env

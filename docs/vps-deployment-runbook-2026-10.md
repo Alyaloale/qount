@@ -1,11 +1,29 @@
 # 新前端部署执行手册（qount.alyaloale.com）
 
-> **状态**：阶段 1–6 已完成；阶段 7 观察期中｜**执行者**：owner 逐步执行｜**最后更新**：2026-10-12
+> **状态**：已部署，前端整改已增量发布；持续观察中｜**执行者**：owner／授权 Agent｜**最后更新**：2026-10-13
 > **目标**：把新的只读 API + 双屏前端部署到既有域名 `https://qount.alyaloale.com/`，替换现有旧 dashboard。
 > **本文性质**：**纯操作手册**。每一步都给出可直接复制的命令、预期输出、失败判据与回退方式。
 > **默认边界**：`research_only=true / orders_authorized=false`。全程不涉及下单、不修改交易授权。
 
 ---
+
+## 最近一次增量发布（2026-10-13 UTC）
+
+owner 明确授权发布后，以 `frontend-20261013T045642Z` 的 15 文件白名单与 SHA-256 清单交付本轮显示整改。先核对并合并部署端已有修复，在独立候选目录、克隆数据库和 `127.0.0.1:8001` 上完成测试与浏览器回归，再同步文件、设置单一 API drop-in 并重启现有 `qount-api.service`。本地其他未提交工作保留；Caddy 配置及认证未改。
+
+- 发布工件与回退资料：`/root/qount-releases/frontend-20261013T045642Z/`，含 `manifest.json`、`code-before.tar.gz`、`database-before.db`、`backup.json`、`published.json`、`rollback.py` 与验证记录。
+- 运行数据库：`/var/lib/qount/api/candidates/frontend-20261013T045642Z.db`；原库 `/var/lib/qount/api/candidates/qount-20261012T154000Z.db` 保留。
+- 本轮配置：`/etc/systemd/system/qount-api.service.d/90-frontend-20261013T045642Z.conf`，仅指定新 API 查询库与既有 CTA-R 来源目录。
+- 验证：本地 API 52 项、窗口计算 6 项通过；VPS 候选 API 49 项通过、3 项因历史源／缓存缺失跳过；候选 1200／500／375px 浏览器回归通过；正式域名认证 Chrome 的实际 1200px 三页与全部 8 条详情通过；生产服务经 SSH 转发的 Chrome 实际 1200／500／375px 三页及 500px 全部 8 条详情通过。认证 Chrome 保留固定 1200px 视口，缩窄窗口不作为窄窗通过证据。手机真机和 3–5 日观察尚待完成。
+- 现有 6 条有源线、2 条缺源封存／停止线；`ingest_status=partial` 反映两条缺源。日报只读接口已发布，正式来源未配置时返回 `MISSING`。
+
+仅在当前仍为本轮发布且没有叠加后续变更时，回退使用：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/frontend-20261013T045642Z/rollback.py'
+```
+
+该脚本恢复本轮覆盖前的代码，移除本轮新增文件与 API drop-in，重新加载并重启 API，使其重新使用原库；不修改 Caddy 或其他服务。
 
 ## 0. 执行前必读
 
@@ -209,6 +227,7 @@ ssh qount-vps 'cd /root/qount && ./.venv/bin/pip uninstall -y fastapi uvicorn st
 ```bash
 ssh qount-vps 'cd /root/qount && \
   QOUNT_PAPER_STATE_ROOT=/var/lib/qount/paper/dual-engine \
+  QOUNT_CTA_R_STATE_ROOT=/var/lib/qount/research/cta-r-forward \
   QOUNT_ACCOUNT_OBSERVATION_PATH=/var/lib/qount/blocked_runtime_observation.json \
   QOUNT_DB_PATH=/tmp/qount-api-manual.db \
   PYTHONPATH=src ./.venv/bin/python -m uvicorn qount.api.main:app \
@@ -228,11 +247,11 @@ ssh qount-vps 'curl -s localhost:8001/health'
 **预期**：
 
 ```json
-{"status":"ok","db_connected":true,"last_ingest_at":"...","paper_lines_count":7,
+{"status":"ok","db_connected":true,"last_ingest_at":"...","paper_lines_count":8,
  "safety":{"research_only":true,"orders_authorized":false}}
 ```
 
-**失败判据**：`paper_lines_count` 不是 7 → 注册表未正确加载，检查 `config/paper-lines.json` 是否同步。
+**失败判据**：`paper_lines_count` 不是 8 → 注册表未正确加载，检查 `config/paper-lines.json` 是否同步。
 
 #### 验证 B：四账户读到真实快照（**最关键**）
 
@@ -240,7 +259,7 @@ ssh qount-vps 'curl -s localhost:8001/health'
 ssh qount-vps 'curl -s localhost:8001/paper/lines | python3 -m json.tool'
 ```
 
-**预期**：7 条线。四条 `dual_*` 应为：
+**预期**：8 条线。四条 `dual_*` 应为：
 
 | line_id | status | freshness |
 | --- | --- | --- |
@@ -250,6 +269,8 @@ ssh qount-vps 'curl -s localhost:8001/paper/lines | python3 -m json.tool'
 | `dual_d15` | `ACTIVE_PAPER` | 同上 |
 
 且 `error` 为空（FastAPI 可序列化为 `null`）。
+
+`cta_r` 应从 `/var/lib/qount/research/cta-r-forward/forward-ledger.jsonl` 读取哈希链账本，显示 `ACTIVE_PAPER` 和前瞻净值点；若账本缺失或校验失败，必须为 `MISSING` 且无业绩数字。
 
 **失败判据（重要）**：四条 `dual_*` 的 `status` 是 `MISSING` 且 `error` 含 `SNAPSHOT_NOT_FOUND`
 → `QOUNT_PAPER_STATE_ROOT` 没生效，或快照路径不对。排查：
@@ -336,7 +357,7 @@ for k, v in d[\"lines_adapter_status\"].items():
 "'
 ```
 
-**预期**：4 个 adapter（`dual_engine`、`personal_assistant`、`binance_macro`、`ashare_master`），7 条线全部 `registered: True`。
+**预期**：5 个 adapter（`dual_engine`、`cta_r_forward`、`personal_assistant`、`binance_macro`、`ashare_master`），8 条线全部 `registered: True`。
 
 ### 4.3 停止
 
@@ -367,6 +388,7 @@ WorkingDirectory=/root/qount
 Environment=PYTHONPATH=/root/qount/src
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=QOUNT_PAPER_STATE_ROOT=/var/lib/qount/paper/dual-engine
+Environment=QOUNT_CTA_R_STATE_ROOT=/var/lib/qount/research/cta-r-forward
 Environment=QOUNT_ACCOUNT_OBSERVATION_PATH=/var/lib/qount/blocked_runtime_observation.json
 Environment=QOUNT_DB_PATH=/var/lib/qount/api/qount.db
 Environment=QOUNT_LIVE_ENABLE=false
@@ -749,7 +771,7 @@ Environment=QOUNT_KLINES_CACHE_DIR=/root/qount/state/grid_b/klines
 | 服务反复重启 | 内存超限或写库权限 | `journalctl -u qount-api -n 50` |
 | `caddy reload` 后 502 | API 未运行或端口不符 | `curl -s localhost:8000/health` |
 | 域名返回 200 但无 basic_auth | `basic_auth` 块被误删 | **立即回退 Caddyfile** |
-| Tiingo 429（paper-daily 失败） | 外部限流，非本地问题 | `systemctl start qount-dual-engine-paper-daily` |
+| Tiingo 429（paper-daily 失败） | 429 是外部限流响应；反复触发的请求预算、全历史轮询与缺少缓存属于本地调用设计问题。先检查采集证据中的 HTTP 状态与当日请求预算，完成配额核算前不要盲目重跑。 | 检查 `qount-research-forward-collector` 证据与调用预算；按 [Tiingo 配额治理步骤](paper-lines-optimization-plan-2026-10.md#2-tiingo-配额治理-p0-今天已在烧) 修复后再验证 |
 
 ## 附录 B：回退总表
 

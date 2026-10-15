@@ -6,8 +6,10 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from qount.api.adapters import get_adapter, list_adapters
+from qount.api.adapters.utils import compute_freshness
 from qount.api.schemas import PaperLine
 
 FIXTURE_SNAPSHOT = os.path.join(
@@ -16,12 +18,79 @@ FIXTURE_SNAPSHOT = os.path.join(
 
 
 class TestAdapters(unittest.TestCase):
+    def test_freshness_boundary_is_relative_to_reference_date(self) -> None:
+        as_of = datetime.now(timezone.utc).date()
+        self.assertEqual(compute_freshness(as_of.isoformat()), "FRESH")
+        self.assertEqual(
+            compute_freshness(as_of.isoformat(), (as_of + timedelta(days=3)).isoformat()),
+            "FRESH",
+        )
+        self.assertEqual(
+            compute_freshness(as_of.isoformat(), (as_of + timedelta(days=5)).isoformat()),
+            "STALE",
+        )
+
     def test_adapter_discovery(self) -> None:
         adapters = list_adapters()
         self.assertIn("personal_assistant", adapters)
         self.assertIn("binance_macro", adapters)
         self.assertIn("ashare_master", adapters)
         self.assertIn("dual_engine", adapters)
+        self.assertIn("cta_r_forward", adapters)
+
+    def test_cta_r_forward_missing_ledger_reports_no_figures(self) -> None:
+        adapter = get_adapter("cta_r_forward")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original = os.environ.get("QOUNT_CTA_R_STATE_ROOT")
+            os.environ["QOUNT_CTA_R_STATE_ROOT"] = tmpdir
+            try:
+                line = adapter("cta_r", "CTA-R", {})
+            finally:
+                if original is None:
+                    os.environ.pop("QOUNT_CTA_R_STATE_ROOT", None)
+                else:
+                    os.environ["QOUNT_CTA_R_STATE_ROOT"] = original
+        self.assertEqual(line.status, "ACTIVE_PAPER")
+        self.assertEqual(line.data_status, "MISSING")
+        self.assertEqual(line.freshness, "MISSING")
+        self.assertIsNone(line.metrics)
+        self.assertEqual(line.nav_series, [])
+        self.assertIn("SOURCE_NOT_FOUND", line.error)
+
+    def test_cta_r_forward_adapter_reads_verified_append_only_ledger(self) -> None:
+        from qount.contracts import canonical_hash
+        from qount.research.cta_r_forward import CONTRACT_HASH
+
+        def seal(core: dict[str, object]) -> dict[str, object]:
+            return {**core, "record_hash": canonical_hash(core)}
+
+        genesis = seal({
+            "kind": "genesis", "date": "2026-09-29", "bar_index": 2848, "panel_index": 2848,
+            "weights_after_close": {"510300": 0.35}, "equity": 10000.0, "stress_equity": 10000.0,
+            "contract_hash": CONTRACT_HASH, "seed_sha256": "a" * 64, "previous_hash": None,
+        })
+        bar = seal({
+            "kind": "bar", "date": "2026-09-30", "bar_index": 2849, "panel_index": 2849,
+            "weights_held": {"510300": 0.35}, "asset_returns": {"510300": 0.02},
+            "gross_return": 0.007, "rebalanced": False, "turnover": 0.0,
+            "weights_after_close": {"510300": 0.35}, "equity": 10070.0, "stress_equity": 10070.0,
+            "contract_hash": CONTRACT_HASH, "seed_sha256": "b" * 64,
+            "previous_hash": genesis["record_hash"],
+        })
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger_path = os.path.join(tmpdir, "forward-ledger.jsonl")
+            with open(ledger_path, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(genesis) + "\n")
+                handle.write(json.dumps(bar) + "\n")
+            line = get_adapter("cta_r_forward")("cta_r", "CTA-R", {"ledger": ledger_path})
+
+        self.assertEqual(line.status, "ACTIVE_PAPER")
+        self.assertEqual(line.as_of, "2026-09-30")
+        self.assertEqual(len(line.nav_series), 2)
+        self.assertAlmostEqual(line.nav_series[-1].nav, 1.007)
+        self.assertAlmostEqual(line.nav_series[-1].signal_nav, 1.007)
+        self.assertEqual(line.positions[0].symbol, "510300")
+        self.assertEqual(line.safety.orders_authorized, False)
 
     def test_unknown_adapter_returns_none(self) -> None:
         self.assertIsNone(get_adapter("non_existent_adapter_name"))
@@ -39,9 +108,20 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(line.status, "ACTIVE_PAPER")
         self.assertEqual(line.category, "assistant")
         self.assertEqual(line.freshness, "FRESH")
-        self.assertGreater(len(line.nav_series), 0)
+        self.assertEqual(len(line.nav_series), 3256)
+        self.assertEqual(line.curve_granularity, "DAILY")
+        self.assertEqual(line.metrics.observation_count, 3256)
+        self.assertEqual(line.metrics.trading_days, 3256)
+        self.assertEqual(line.metrics.trade_count, 37)
+        self.assertEqual(line.metrics.corporate_action_count, 1)
+        self.assertAlmostEqual(line.metrics.benchmark_cagr_pct, 21.282094, places=5)
+        self.assertEqual(line.metrics.cagr_basis, "252 trading days")
+        self.assertAlmostEqual(line.nav_series[-1].nav, line.metrics.executable_nav, places=8)
+        self.assertAlmostEqual(line.nav_series[-1].benchmark_nav, 12.0977999, places=7)
         self.assertGreaterEqual(len(line.positions), 1)
         self.assertEqual(line.positions[0].symbol, "513100.SH")
+        self.assertGreater(line.positions[0].quantity, 0)
+        self.assertIsNone(line.positions[0].weight)
         self.assertEqual(line.safety.research_only, True)
         self.assertEqual(line.safety.orders_authorized, False)
 
@@ -58,9 +138,25 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(line.status, "ARCHIVED")
         self.assertEqual(line.category, "macro")
         self.assertEqual(line.freshness, "STALE")
-        self.assertEqual(line.metrics.cagr_pct, 41.29)
-        self.assertEqual(line.metrics.max_drawdown_pct, 36.63)
         self.assertGreater(len(line.nav_series), 0)
+        self.assertEqual(line.curve_granularity, "YEARLY")
+        self.assertTrue(all(point.benchmark_nav is None for point in line.nav_series))
+
+    def test_binance_macro_missing_source_reports_no_figures(self) -> None:
+        adapter = get_adapter("binance_macro")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            line = adapter(
+                line_id="binance_macro",
+                name="币安全球多资产合约",
+                config={"run": tmpdir},
+            )
+        self.assertIsNotNone(line.error)
+        self.assertIn("SOURCE_NOT_FOUND", line.error)
+        self.assertIsNone(line.metrics)
+        self.assertEqual(line.nav_series, [])
+        self.assertEqual(line.status, "ARCHIVED")
+        self.assertEqual(line.data_status, "MISSING")
+        self.assertEqual(line.freshness, "MISSING")
 
     def test_ashare_master_adapter(self) -> None:
         adapter = get_adapter("ashare_master")
@@ -76,6 +172,38 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(line.category, "equity")
         self.assertEqual(line.freshness, "FRESH")
         self.assertGreater(len(line.nav_series), 0)
+
+    def test_ashare_master_missing_source_reports_no_figures(self) -> None:
+        adapter = get_adapter("ashare_master")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            line = adapter(
+                line_id="ashare_master",
+                name="A股赛道动量突破(麒麟)",
+                config={"run": tmpdir},
+            )
+        self.assertIsNotNone(line.error)
+        self.assertIn("SOURCE_NOT_FOUND", line.error)
+        self.assertIsNone(line.metrics)
+        self.assertEqual(line.nav_series, [])
+        self.assertEqual(line.status, "STOPPED")
+        self.assertEqual(line.data_status, "MISSING")
+        self.assertEqual(line.freshness, "MISSING")
+
+    def test_personal_assistant_missing_source_reports_no_figures(self) -> None:
+        adapter = get_adapter("personal_assistant")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            line = adapter(
+                line_id="personal_assistant",
+                name="个人量化交易助手",
+                config={"run": tmpdir},
+            )
+        self.assertIsNotNone(line.error)
+        self.assertIn("SOURCE_NOT_FOUND", line.error)
+        self.assertIsNone(line.metrics)
+        self.assertEqual(line.nav_series, [])
+        self.assertEqual(line.status, "ACTIVE_PAPER")
+        self.assertEqual(line.data_status, "MISSING")
+        self.assertEqual(line.freshness, "MISSING")
 
     def test_dual_engine_adapter_parses_real_snapshot(self) -> None:
         """The adapter must mirror the snapshot, not invent figures."""
@@ -140,7 +268,8 @@ class TestAdapters(unittest.TestCase):
             name="美股轮动 (G20)",
             config={"account": "g20", "root": os.path.join(FIXTURE_SNAPSHOT, "does-not-exist")},
         )
-        self.assertEqual(line.status, "MISSING")
+        self.assertEqual(line.status, "ACTIVE_PAPER")
+        self.assertEqual(line.data_status, "MISSING")
         self.assertEqual(line.freshness, "MISSING")
         self.assertIsNotNone(line.error)
         self.assertIn("SNAPSHOT_NOT_FOUND", line.error)
@@ -158,7 +287,8 @@ class TestAdapters(unittest.TestCase):
                     name=bogus,
                     config={"account": bogus, "root": FIXTURE_SNAPSHOT},
                 )
-                self.assertEqual(line.status, "MISSING")
+                self.assertEqual(line.status, "ACTIVE_PAPER")
+                self.assertEqual(line.data_status, "MISSING")
                 self.assertIsNotNone(line.error)
                 self.assertIn("UNKNOWN_ACCOUNT", line.error)
                 self.assertIsNone(line.metrics)
@@ -233,7 +363,35 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(line.positions[0].symbol, "BIL")
         # No benchmark block means no benchmark line: absent, never spliced or defaulted to a
         # made-up series.
-        self.assertEqual(line.nav_series[-1].benchmark_nav, 1.0)
+        self.assertIsNone(line.nav_series[-1].benchmark_nav)
+
+    def test_dual_engine_benchmark_requires_matching_full_mark_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            current = os.path.join(tmpdir, "current")
+            os.makedirs(current)
+            snapshot = {
+                "data_cutoff": "2026-10-09T15:00:30Z",
+                "portfolios": [{
+                    "portfolio_id": "dual-engine-paper-g20",
+                    "initial_capital": 10000.0,
+                    "nav": {
+                        "signal": 1.0, "executable": 1.0,
+                        "points": [{"marked_at": "2026-10-09T15:00:30Z", "executable": 1.0, "signal": 1.0}],
+                    },
+                    "holdings": [],
+                }],
+                "benchmarks": [{
+                    "initial_capital": 10000.0,
+                    "nav": {"points": [{"marked_at": "2026-10-09T14:59:00Z", "value": 11000.0}]},
+                }],
+            }
+            with open(os.path.join(current, "paper_program_snapshot.json"), "w", encoding="utf-8") as handle:
+                json.dump(snapshot, handle)
+            line = get_adapter("dual_engine")(
+                "dual_g20", "G20", {"account": "g20", "root": tmpdir, "reference_date": "2026-10-09"}
+            )
+        self.assertIsNone(line.error)
+        self.assertIsNone(line.nav_series[0].benchmark_nav)
 
     def test_dual_engine_preserves_distinct_marks_on_the_same_date(self) -> None:
         """Timestamp identity prevents same-day snapshot marks from overwriting in SQLite."""

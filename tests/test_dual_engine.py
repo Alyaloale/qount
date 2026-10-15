@@ -7,7 +7,8 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 from qount.contracts import canonical_hash
 from qount.dual_engine import C60_SYMBOLS
@@ -24,6 +25,8 @@ from qount.dual_engine import collect_market_cycle
 from qount.dual_engine import d15_c60_budget
 from qount.dual_engine import read_paper_snapshot
 from qount.dual_engine import run_paper_cycle
+from qount.dual_engine.market_data import _tiingo_daily_cached
+from qount.dual_engine.reference_data import refresh_public_reference
 
 
 def _series(start: float, daily: float, count: int = 100) -> tuple[float, ...]:
@@ -307,6 +310,90 @@ class DualEngineMarketDataTest(unittest.TestCase):
             set(cycle.source_hashes),
             {"tiingo_public", "binance_public", "binance_exchange_rules"},
         )
+
+    def test_tiingo_daily_cache_seeds_full_window_then_requests_incrementally(self) -> None:
+        config = self._config()
+        start = dt.date(2025, 5, 10)
+        requests: list[tuple[dt.date, dt.date]] = []
+
+        def getter(url, _headers, _timeout):
+            query = parse_qs(urlparse(url).query)
+            request_start = dt.date.fromisoformat(query["startDate"][0])
+            request_end = dt.date.fromisoformat(query["endDate"][0])
+            requests.append((request_start, request_end))
+            payload = [
+                {"date": day.isoformat(), "close": 100.0}
+                for day in (
+                    request_start + dt.timedelta(days=index)
+                    for index in range((request_end - request_start).days + 1)
+                )
+            ]
+            return payload, canonical_hash(payload)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_root = Path(temporary) / "cache"
+            first_rows, _ = _tiingo_daily_cached(
+                "QQQ",
+                start=start,
+                end=dt.date(2026, 8, 3),
+                token="fixture",
+                config=config,
+                getter=getter,
+                cache_root=cache_root,
+                observed_at=dt.datetime(2026, 8, 3, 22, 30, tzinfo=dt.timezone.utc),
+            )
+            second_rows, _ = _tiingo_daily_cached(
+                "QQQ",
+                start=start,
+                end=dt.date(2026, 8, 4),
+                token="fixture",
+                config=config,
+                getter=getter,
+                cache_root=cache_root,
+                observed_at=dt.datetime(2026, 8, 4, 15, 0, tzinfo=dt.timezone.utc),
+                cache_only=True,
+                max_cache_age=dt.timedelta(hours=18),
+            )
+            third_rows, _ = _tiingo_daily_cached(
+                "QQQ",
+                start=start,
+                end=dt.date(2026, 8, 5),
+                token="fixture",
+                config=config,
+                getter=getter,
+                cache_root=cache_root,
+                observed_at=dt.datetime(2026, 8, 5, 22, 30, tzinfo=dt.timezone.utc),
+            )
+
+            self.assertEqual(requests[0], (start, dt.date(2026, 8, 3)))
+            self.assertEqual(requests[1], (dt.date(2026, 8, 2), dt.date(2026, 8, 5)))
+            self.assertEqual(len(requests), 2)
+            self.assertEqual(len(first_rows), (dt.date(2026, 8, 3) - start).days + 1)
+            self.assertEqual(second_rows, first_rows)
+            self.assertEqual(len(third_rows), len(first_rows) + 2)
+            self.assertTrue((cache_root / "tiingo_QQQ.json").is_file())
+
+    def test_g20_open_reuses_fresh_public_reference_cache(self) -> None:
+        observed_at = "2026-08-04T15:00:00+00:00"
+        cached = {"generated_at": "2026-08-03T22:30:00+00:00", "reference_hash": "fixture"}
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("a fresh benchmark cache must avoid Tiingo requests")
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "qount.dual_engine.reference_data.read_public_reference",
+            return_value=cached,
+        ):
+            result = refresh_public_reference(
+                Path(temporary),
+                self._config(),
+                observed_at=observed_at,
+                getter=forbidden,
+                environment={"TIINGO_API_TOKEN": "fixture"},
+                reuse_if_fresh_seconds=18 * 60 * 60,
+            )
+
+        self.assertEqual(result, cached)
 
 
 if __name__ == "__main__":

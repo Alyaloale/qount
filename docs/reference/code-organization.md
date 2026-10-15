@@ -1,12 +1,12 @@
 # Code organization reference
 
-> **状态**：active｜**权威**：L2 maintainability reference｜**最后更新**：2026-10-04
+> **状态**：active｜**权威**：代码组织参考；遵循项目规则｜**最后更新**：2026-10-12
 > **适用范围**：包边界、公开入口、可读性重构和兼容层。
 > **TL;DR**：按控制面、活跃研究、冻结兼容和 CLI/脚本入口阅读代码。重构优先缩小职责、保留导入路径和命令行为，不以目录整洁为由破坏兼容。
 
 ## Reading order
 
-1. 从 [`current.md`](../current.md) 确认哪些线路仍可维护；历史事实不从代码或归档推断。
+1. 遵循 [AGENTS.md](../../AGENTS.md)，从 [`current.md`](../current.md) 确认任务、冻结状态与权限；源码和工件用于核对实现，发现事实冲突时记录证据并修正，不能只依据代码存在推定运行状态。
 2. 从 [`project-rules.md`](../project-rules.md) 确定模块所属域与运行边界。
 3. 对公开命令先看 [`cli-and-scripts.md`](cli-and-scripts.md) 和 `src/qount/main.py`。
 4. 对业务实现从对应域的 `contracts`、`models` 或纯函数开始，再读适配器、存储和入口。
@@ -18,6 +18,7 @@
 | Public CLI | `main.py`, `cli/registry.py`, `cli/legacy_research.py` | 业务计算、网络客户端和状态写入。 |
 | Production control plane | `contracts/`, `execution/`, `governance/`, `ledger/`, `risk/`, `operations/`, `reporting/`, `venue/` | `scripts/research` 和 optional research-only dependencies. |
 | Active research / simulation | `mini_trend/`, `dual_engine/`, `small_account/`, `alpha_agents/`, `research_data/`, `research/sleeves/`, `research/etf_trader/`, `research/etf_alpha/` | 生产授权、账户写入和订单路径。 |
+| Personal assistant / API | `research/personal_trading_assistant.py`, `api/`, `web/app/` | 研究状态机与展示适配各负其责；API 不启动训练或下单，不从无来源数据生成业绩。 |
 | Frozen compatibility | `legacy/` 和 `scripts/archive/` | 新业务逻辑、自动化重启和“顺手修复”式功能扩张。 |
 | Thin adapters | `scripts/operations/`、`scripts/research/` | 核心策略逻辑、隐藏配置规则和跨域状态。 |
 
@@ -29,10 +30,11 @@
 - 共享计算逻辑进入已有的公共域或 `research_data/`；不要在多个策略线复制公式、序列化或路径处理。
 - 对超过单一职责的模块，先抽取无副作用的协作者并保留原文件为协调层。不要在没有测试覆盖时重写大型运行时模块。
 - 路径、artifact 和环境变量通过合同、模型对象或显式函数参数传递；不要将它们藏在脚本全局变量中。
+- 探索原型先验证假设，出现复用或形成候选时再提取边界；重构应解决正确性、效率或维护问题。验证随改动范围选择，不为小修复默认启动全仓回归或拆成大量阶段。
 
-## Current maintainability queue
+## 按需维护与已完成提取
 
-当前最大的模块优先按风险分批处理，而不是一次性改写：`small_account/fomc_live.py`、`reporting/read_models.py`、`mini_trend/stablecoin_chain_events_remediation.py`、`risk_engine.py` 和 `mini_trend/pilot_dispatcher.py`。它们分别关联事件运行时、Dashboard read model、历史研究和风险/调度行为；后续拆分必须先锁定单元测试和公开/部署引用。
+既有维护候选包括 `small_account/fomc_live.py`、`reporting/read_models.py`、`mini_trend/stablecoin_chain_events_remediation.py`、`risk_engine.py` 和 `mini_trend/pilot_dispatcher.py`。仅在当前任务遇到相关问题时，按职责与风险做局部提取并验证公开／部署引用；不把这份历史列表当作必须先完成的重构排期。
 
 本批已将 `qount-run` 的 parser 注册从执行门面中分离，并把冻结 L1/L3/L4/L6 命令集中到独立注册表。行为、命令名称和处理器仍由原入口兼容地提供。
 

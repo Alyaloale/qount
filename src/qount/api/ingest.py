@@ -6,10 +6,11 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from qount.api.adapters import get_adapter
-from qount.api.db import init_db, log_ingest, save_paper_line
+from qount.api.db import init_db, log_ingest, log_ingest_run, mark_line_data_error, prune_unregistered_paper_lines, save_paper_line
 from qount.api.schemas import PaperLine
 
 DEFAULT_REGISTRY_PATH = "config/paper-lines.json"
@@ -34,8 +35,21 @@ def run_ingest(
     lines_config: List[Dict[str, Any]] = registry_data.get("lines", [])
     results: Dict[str, Any] = {}
     init_db(db_path)
+    registered_line_ids = {
+        str(entry["id"])
+        for entry in lines_config
+        if (
+            isinstance(entry, dict)
+            and isinstance(entry.get("id"), str)
+            and entry["id"]
+            and entry.get("enabled", True) is not False
+        )
+    }
+    if registered_line_ids:
+        prune_unregistered_paper_lines(registered_line_ids, db_path=db_path)
 
     processed_count = 0
+    failed_lines: list[str] = []
     for entry in lines_config:
         line_id = entry.get("id")
         adapter_name = entry.get("adapter")
@@ -52,26 +66,54 @@ def run_ingest(
             msg = f"Adapter '{adapter_name}' not found for line '{line_id}'"
             log_ingest(line_id, ok=False, message=msg, db_path=db_path)
             results[line_id] = {"status": "ERROR", "message": msg}
+            failed_lines.append(str(line_id))
             continue
 
         try:
             line_obj: PaperLine = adapter(line_id, name, config)
-            save_paper_line(line_obj, db_path=db_path)
-            log_ingest(line_id, ok=True, message="Ingested successfully", db_path=db_path)
+            trade_events = None
+            if adapter_name == "dual_engine":
+                from qount.api.adapters.dual_engine import load_rebalance_trade_events
+
+                if line_obj.source.path:
+                    trade_events = load_rebalance_trade_events(line_id, line_obj.source.path)
+            elif adapter_name == "personal_assistant":
+                from qount.api.adapters.personal_assistant import load_personal_assistant_trade_events
+
+                try:
+                    trade_events = load_personal_assistant_trade_events(config)
+                except FileNotFoundError:
+                    trade_events = None
+            save_paper_line(line_obj, db_path=db_path, trade_events=trade_events)
+            unavailable = bool(line_obj.error) or line_obj.data_status == "MISSING"
+            message = line_obj.error or "Source unavailable"
+            log_ingest(line_id, ok=not unavailable, message=message if unavailable else "Ingested successfully", db_path=db_path)
             results[line_id] = {
-                "status": "OK",
+                "status": "MISSING" if unavailable else "OK",
                 "as_of": line_obj.as_of,
                 "freshness": line_obj.freshness,
                 "nav_points_count": len(line_obj.nav_series),
+                "message": line_obj.error,
             }
-            processed_count += 1
+            if not unavailable:
+                processed_count += 1
+            else:
+                failed_lines.append(str(line_id))
         except Exception as e:
             err_msg = f"Failed to adapt line '{line_id}': {str(e)}"
+            mark_line_data_error(line_id, f"ADAPTER_FAILED: {type(e).__name__}", db_path)
             log_ingest(line_id, ok=False, message=err_msg, db_path=db_path)
             results[line_id] = {"status": "ERROR", "message": err_msg}
+            failed_lines.append(str(line_id))
 
+    run_status = "ok" if not failed_lines else ("partial" if processed_count else "failed")
+    run_at = datetime.now(timezone.utc).isoformat()
+    log_ingest_run(run_status, failed_lines, db_path=db_path, ran_at=run_at)
     return {
-        "ok": True,
+        "ok": run_status == "ok",
+        "status": run_status,
+        "failed_lines": sorted(set(failed_lines)),
+        "ran_at": run_at,
         "processed": processed_count,
         "results": results,
     }

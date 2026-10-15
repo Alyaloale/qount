@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from datetime import datetime, timezone
 from typing import Optional
+
+from qount.api.schemas import LineSafety, LineSource, PaperLine
 
 
 def compute_sha256(path: str) -> Optional[str]:
@@ -28,18 +31,70 @@ def format_date_str(val: str) -> str:
     return val
 
 
-def compute_freshness(as_of: Optional[str], reference_date: Optional[str] = "2026-10-12") -> str:
-    """Compute FRESH | STALE | MISSING based on as_of and reference date."""
+def _stale_after_calendar_days() -> int:
+    config_path = os.environ.get("QOUNT_API_CONFIG", "config/api.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as handle:
+            value = json.load(handle)["freshness"]["stale_after_calendar_days"]
+        days = int(value)
+        return days if days >= 0 else 4
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return 4
+
+
+def compute_freshness(
+    as_of: Optional[str],
+    reference_date: Optional[str] = None,
+    stale_after_days: Optional[int] = None,
+) -> str:
+    """Compute FRESH | STALE | MISSING from current UTC date and configured age limit."""
     if not as_of:
         return "MISSING"
     norm_as_of = format_date_str(as_of)
     try:
         dt_as_of = datetime.strptime(norm_as_of, "%Y-%m-%d").date()
-        ref_dt = datetime.strptime(reference_date or "2026-10-12", "%Y-%m-%d").date()
+        ref_dt = (
+            datetime.strptime(reference_date, "%Y-%m-%d").date()
+            if reference_date
+            else datetime.now(timezone.utc).date()
+        )
         days_diff = (ref_dt - dt_as_of).days
-        # Fresh if within 4 calendar days (e.g. Friday 10-09 to Monday 10-12 is 3 days)
-        if 0 <= days_diff <= 4:
+        max_age = _stale_after_calendar_days() if stale_after_days is None else stale_after_days
+        if 0 <= days_diff <= max_age:
             return "FRESH"
         return "STALE"
     except Exception:
         return "STALE"
+
+
+def unavailable_line(
+    line_id: str,
+    name: str,
+    category: str,
+    source_path: str,
+    error: str,
+    adjudication: str = "",
+    lifecycle_status: str = "ACTIVE_PAPER",
+) -> PaperLine:
+    """Create a missing-source row that contains no performance or position figures."""
+    try:
+        sha256_val = compute_sha256(source_path)
+    except OSError:
+        sha256_val = None
+    return PaperLine(
+        line_id=line_id,
+        name=name,
+        category=category,
+        status=lifecycle_status,
+        data_status="MISSING",
+        adjudication=adjudication,
+        as_of="unknown",
+        freshness="MISSING",
+        nav_series=[],
+        metrics=None,
+        positions=[],
+        position_status="MISSING" if lifecycle_status == "ACTIVE_PAPER" else "NOT_APPLICABLE",
+        source=LineSource(path=source_path, sha256=sha256_val, produced_at=None),
+        safety=LineSafety(research_only=True, orders_authorized=False),
+        error=error,
+    )

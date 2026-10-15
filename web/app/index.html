@@ -1,237 +1,493 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>qount · AI 个人量化交易助手</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="vendor/echarts.min.js"></script>
-</head>
-<body>
-  <div class="layout">
-    <!-- Top Navigation Header -->
-    <header class="navbar">
-      <div class="nav-brand">
-        <span class="logo-text">qount</span>
-        <span class="brand-tag">AI 个人量化</span>
-      </div>
-      <nav class="nav-tabs">
-        <button id="tab-account" class="tab-btn active" onclick="switchTab('account')">
-          <span class="tab-icon">💼</span> 账户概览
-        </button>
-        <button id="tab-paper" class="tab-btn" onclick="switchTab('paper')">
-          <span class="tab-icon">📊</span> 模拟盘探索
-        </button>
-      </nav>
-      <div class="nav-meta">
-        <span id="header-as-of" class="meta-badge">数据日期: --</span>
-        <button id="btn-refresh" class="btn-refresh" onclick="refreshData()" title="刷新数据">↻ 刷新</button>
-      </div>
-    </header>
-
-    <main class="content-container">
-      <!-- SCREEN 1: ACCOUNT -->
-      <section id="screen-account" class="screen-view active">
-        <div class="section-header">
-          <h2>账户</h2>
-          <span class="mode-badge mode-paper" id="account-mode-badge">双栏对照</span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>qount · AI 个人量化交易助手</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="vendor/echarts.min.js"></script>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <span class="logo-text">qount</span>
+          <span class="brand-tag">AI 个人量化</span>
         </div>
-
-        <div class="safety-banner">
-          <span class="warning-icon">⚠</span>
-          <span class="safety-text"><strong>安全底线</strong>: research_only=true · orders_authorized=false · 真实账户仅只读查看，不产生订单与实盘交互。</span>
+        <nav class="sidebar-nav" aria-label="主要导航">
+          <button
+            id="tab-account"
+            class="nav-item active"
+            onclick="switchTab('account')"
+          >
+            <span class="nav-icon">&#9670;</span>
+            <span class="nav-label">今日助手与账户</span>
+          </button>
+          <button id="tab-paper" class="nav-item" onclick="switchTab('paper')">
+            <span class="nav-icon">&#9671;</span>
+            <span class="nav-label">研究对比</span>
+          </button>
+          <button
+            id="tab-positions"
+            class="nav-item"
+            onclick="switchTab('positions')"
+          >
+            <span class="nav-icon">&#9672;</span>
+            <span class="nav-label">持仓流水</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="btn-refresh" class="btn-refresh" onclick="refreshData()">
+            ↻ 刷新读取
+          </button>
+          <span id="header-as-of" class="meta-badge">页面尚未读取</span>
         </div>
-
-        <!-- Two accounts, deliberately never merged: the left column is money, the right is a simulation. -->
-        <div class="account-columns">
-          <!-- LEFT: real exchange account, read-only -->
-          <div class="account-column account-column-live">
-            <div class="column-header">
-              <h3>真实 Binance 账户</h3>
-              <span class="mode-badge mode-live" id="live-mode-badge">只读</span>
-            </div>
-            <div class="kpi-grid kpi-grid-compact">
-              <div class="kpi-card">
-                <div class="kpi-title">钱包余额</div>
-                <div class="kpi-value" id="live-nav">--</div>
-                <div class="kpi-sub">币种: <span id="live-currency">--</span></div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-title">可用余额</div>
-                <div class="kpi-value" id="live-cash">--</div>
-                <div class="kpi-sub" id="live-positions-note">持仓 -- </div>
-              </div>
-            </div>
-            <div id="live-error" class="inline-error hidden"></div>
-            <div class="provenance-details provenance-compact">
-              <div class="prov-row">
-                <span class="prov-label">观测时间:</span>
-                <span class="prov-val" id="live-as-of">--</span>
-              </div>
-              <div class="prov-row">
-                <span class="prov-label">读数来源:</span>
-                <code class="prov-val" id="live-source-path">--</code>
-              </div>
-            </div>
+      </aside>
+      <div class="main-wrapper">
+        <header class="topbar">
+          <h1 id="topbar-title" class="topbar-title">今日助手与账户</h1>
+          <div class="topbar-meta">
+            <span id="topbar-permission" class="permission-badge">权限状态读取中</span>
           </div>
-
-          <!-- RIGHT: research paper simulation -->
-          <div class="account-column account-column-paper">
-            <div class="column-header">
-              <h3>研究模拟盘 (PAPER)</h3>
-              <span class="mode-badge mode-paper">模拟，非真实资产</span>
+        </header>
+        <main class="content-container">
+          <section id="screen-account" class="screen-view active">
+            <div class="section-header">
+              <h2>今日助手与账户</h2>
+              <span id="account-mode-badge" class="mode-badge mode-paper"
+                >读取权限中</span
+              >
             </div>
-
-            <div class="kpi-grid kpi-grid-compact">
-              <div class="kpi-card">
-                <div class="kpi-title">模拟净值 (NAV)</div>
-                <div class="kpi-value" id="acc-nav">¥--</div>
-                <div class="kpi-sub">基准初始: ¥1,000,000.00</div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-title">可用现金</div>
-                <div class="kpi-value" id="acc-cash">¥--</div>
-                <div class="kpi-sub">币种: <span id="acc-currency">CNY</span></div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-title">当前持仓标的</div>
-                <div class="kpi-value" id="acc-position-count">--</div>
-                <div class="kpi-sub" id="acc-exposure-desc">集中核心高流动性资产</div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-title">快照时间</div>
-                <div class="kpi-value kpi-sm" id="acc-as-of">--</div>
-                <div class="kpi-sub" id="acc-freshness-status">新鲜度正常</div>
-              </div>
-            </div>
-
-            <div id="acc-error" class="inline-error hidden"></div>
-
-            <div class="card-section">
+            <p id="permission-status" class="safety-banner">
+              正在读取账户与研究权限状态
+            </p>
+            <section class="card-section" aria-labelledby="daily-heading">
               <div class="card-header">
-                <h3>当前持仓明细</h3>
-                <span class="header-note">大周期趋势择时 (MA120/MA200)，单标的集中</span>
+                <h3 id="daily-heading">个人助手状态</h3>
+                <span id="daily-date" class="header-note">--</span>
+              </div>
+              <div id="daily-status" aria-live="polite">读取日报中…</div>
+              <p class="header-note">
+                日报资格、数据新鲜度与账户交易权限分别展示。规则状态只用于研究解释。
+              </p>
+            </section>
+            <div class="account-columns">
+              <div class="account-column account-column-live">
+                <div class="column-header">
+                  <h3>真实 Binance 账户</h3>
+                  <span id="live-mode-badge" class="mode-badge">权限待核</span>
+                </div>
+                <div class="kpi-grid kpi-grid-compact">
+                  <div class="kpi-card">
+                    <div class="kpi-title">钱包余额</div>
+                    <div id="live-nav" class="kpi-value">--</div>
+                    <div id="live-currency" class="kpi-sub">--</div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-title">可用余额</div>
+                    <div id="live-cash" class="kpi-value">--</div>
+                    <div id="live-positions-note" class="kpi-sub">持仓待核</div>
+                  </div>
+                </div>
+                <div class="observation-clock">
+                  <strong id="live-age">观测时间未知</strong
+                  ><span id="live-as-of">观测时间 --</span
+                  ><span id="live-read-at">页面读取 --</span
+                  ><span class="header-note"
+                    >页面可见时按约 5 分钟采集节奏读取已有快照</span
+                  >
+                </div>
+                <div
+                  id="live-error"
+                  class="inline-error hidden"
+                  role="status"
+                ></div>
+                <div class="card-section">
+                  <div class="card-header"><h3>真实账户持仓</h3></div>
+                  <div class="table-container">
+                    <table class="data-table">
+                      <thead>
+                        <tr>
+                          <th>标的</th>
+                          <th>方向</th>
+                          <th class="numeric">数量</th>
+                          <th class="numeric">名义金额</th>
+                        </tr>
+                      </thead>
+                      <tbody id="live-positions-body">
+                        <tr>
+                          <td colspan="4" class="table-empty">读取中…</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <details class="provenance-card">
+                  <summary>观测来源</summary>
+                  <code id="live-source-path">--</code>
+                </details>
+              </div>
+              <div class="account-column account-column-paper">
+                <div class="column-header">
+                  <h3>个人助手历史回放末态</h3>
+                  <span class="mode-badge mode-paper">研究模拟</span>
+                </div>
+                <div class="kpi-grid kpi-grid-compact">
+                  <div class="kpi-card">
+                    <div class="kpi-title">历史回放期末资产</div>
+                    <div id="acc-nav" class="kpi-value">--</div>
+                    <div id="acc-initial" class="kpi-sub">初始模拟资金 --</div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-title">回放数据截止日</div>
+                    <div id="acc-as-of" class="kpi-value kpi-sm">--</div>
+                    <div id="acc-freshness-status" class="kpi-sub">历史回放</div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-title">回放期末现金</div>
+                    <div id="acc-cash" class="kpi-value">--</div>
+                    <div class="kpi-sub">
+                      币种 <span id="acc-currency">--</span>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-title">回放期末持仓</div>
+                    <div id="acc-position-count" class="kpi-value kpi-sm">--</div>
+                    <div class="kpi-sub">按来源账本，不代表今日仓位</div>
+                  </div>
+                </div>
+                <div
+                  id="acc-error"
+                  class="inline-error hidden"
+                  role="status"
+                ></div>
+                <div class="card-section">
+                  <div class="card-header">
+                    <h3>回放持仓末态</h3>
+                    <span class="header-note">MA120 Band 1.5%</span>
+                  </div>
+                  <div class="table-container">
+                    <table class="data-table">
+                      <thead>
+                        <tr>
+                          <th>标的</th>
+                          <th class="numeric">模型份额</th>
+                          <th class="numeric">权重</th>
+                          <th>进场日期</th>
+                        </tr>
+                      </thead>
+                      <tbody id="account-positions-body">
+                        <tr>
+                          <td colspan="4" class="table-empty">读取中…</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <details class="provenance-card">
+                  <summary>来源与计算口径</summary>
+                  <p>
+                    历史回放资金与真实账户分别展示。小数模型份额、成本缺项及资格限制见研究详情。
+                  </p>
+                  <div class="provenance-details">
+                    <div class="prov-row">
+                      <span class="prov-label">来源包</span
+                      ><code id="acc-source-path" class="prov-val">--</code>
+                    </div>
+                    <div class="prov-row">
+                      <span class="prov-label">完整 SHA-256</span
+                      ><code id="acc-source-sha256" class="prov-val">--</code>
+                    </div>
+                    <div class="prov-row">
+                      <span class="prov-label">包生成时间</span
+                      ><span id="acc-source-produced" class="prov-val">--</span>
+                    </div>
+                  </div>
+                  <button
+                    class="btn-action"
+                    onclick="
+                      switchTab('paper');
+                      showLineDetail('personal_assistant');
+                    "
+                  >
+                    查看助手研究与基准
+                  </button>
+                </details>
+              </div>
+            </div>
+          </section>
+          <section id="screen-paper" class="screen-view">
+            <div class="section-header">
+              <h2>研究对比</h2>
+              <span id="paper-lines-count" class="lines-count-badge"
+                >研究线读取中</span
+              >
+            </div>
+            <p class="safety-banner banner-info">
+              按各线完整样本展示，起止日期不同，不能直接按收益排名。历史回放与前向模拟均有各自证据边界。
+            </p>
+            <div id="paper-lines-body" class="research-list" aria-live="polite">
+              读取中…
+            </div>
+            <details id="archived-lines" class="archived-section">
+              <summary id="archived-count">封存／停止线</summary>
+              <div id="archived-lines-body" class="research-list"></div>
+            </details>
+            <article
+              id="line-detail-panel"
+              class="detail-panel hidden"
+              aria-live="polite"
+            >
+              <div class="detail-header">
+                <div>
+                  <h3 id="detail-title">研究线详情</h3>
+                  <p id="detail-identity" class="header-note"></p>
+                </div>
+                <button
+                  class="btn-close"
+                  onclick="closeDetailPanel()"
+                  aria-label="关闭详情"
+                >
+                  ✕
+                </button>
+              </div>
+              <div
+                id="detail-source-error"
+                class="inline-error hidden"
+                role="status"
+              ></div>
+              <section class="research-verdict">
+                <h4>当前研究结论</h4>
+                <p id="detail-adjudication">--</p>
+                <p id="detail-next-question" class="header-note"></p>
+              </section>
+              <div id="detail-current-content">
+                <div class="card-header">
+                  <h4 id="detail-metrics-title">收益与风险 · 全部历史</h4>
+                  <label class="range-picker"
+                    >比较窗口
+                    <select id="chart-time-range" onchange="changeChartRange()">
+                      <option value="all">全部历史</option>
+                      <option value="1y">近一年</option>
+                      <option value="3m">近三个月</option>
+                      <option value="ytd">年初至今</option>
+                    </select></label
+                  >
+                </div>
+                <div id="detail-metrics-grid" class="metrics-grid"></div>
+                <p id="detail-window-note" class="header-note"></p>
+                <details class="provenance-card">
+                  <summary>独立的全样本摘要与来源指标</summary>
+                  <div id="detail-full-metrics" class="metrics-grid"></div>
+                </details>
+              </div>
+              <details
+                id="detail-retained-history"
+                class="provenance-card hidden"
+              >
+                <summary id="retained-history-label">最后保留历史</summary>
+                <p id="retained-verification" class="header-note"></p>
+                <div id="retained-history-metrics" class="metrics-grid"></div>
+              </details>
+              <div class="detail-chart-wrapper">
+                <div class="chart-header">
+                  <span class="chart-title">策略／基准曲线</span
+                  ><span id="chart-range" class="chart-meta">--</span>
+                </div>
+                <div class="chart-controls">
+                  <label
+                    ><input
+                      id="chart-show-executable"
+                      type="checkbox"
+                      checked
+                      onchange="rerenderCurrentChart()"
+                    />
+                    模拟执行净值</label
+                  ><label
+                    ><input
+                      id="chart-show-signal"
+                      type="checkbox"
+                      onchange="rerenderCurrentChart()"
+                    />
+                    信号净值</label
+                  ><label
+                    ><input
+                      id="chart-show-benchmark"
+                      type="checkbox"
+                      checked
+                      onchange="rerenderCurrentChart()"
+                    />
+                    基准</label
+                  ><label
+                    ><input
+                      id="chart-show-drawdown"
+                      type="checkbox"
+                      onchange="rerenderCurrentChart()"
+                    />
+                    回撤（完整历史峰值）</label
+                  >
+                </div>
+                <div id="echarts-container" class="echarts-box"></div>
+                <p class="header-note">
+                  曲线保留原始归一口径；窗口收益按窗口首末观测值计算。拖动图表范围同步更新主要指标。
+                </p>
+              </div>
+              <section class="card-section">
+                <div class="card-header">
+                  <h4>持仓与执行差异</h4>
+                  <button
+                    id="detail-ledger-link"
+                    class="btn-action"
+                    onclick="openCurrentLedger()"
+                  >
+                    查看该线流水
+                  </button>
+                </div>
+                <p id="detail-position-as-of" class="header-note">--</p>
+                <div class="table-container">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>标的</th>
+                        <th class="numeric">数量／模型份额</th>
+                        <th class="numeric">权重</th>
+                        <th class="numeric">参考价</th>
+                        <th class="numeric">市值</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody id="detail-current-positions">
+                      <tr>
+                        <td colspan="6" class="table-empty">读取中…</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p id="detail-execution-gap" class="header-note"></p>
+              </section>
+              <details class="provenance-card">
+                <summary>来源与研究记录、成本及执行口径</summary>
+                <p id="detail-cost-coverage"></p>
+                <ul id="detail-constraints"></ul>
+                <div class="provenance-details">
+                  <div class="prov-row">
+                    <span class="prov-label">来源路径</span
+                    ><code id="detail-source-path" class="prov-val">--</code>
+                  </div>
+                  <div class="prov-row">
+                    <span class="prov-label">完整 SHA-256</span
+                    ><code id="detail-source-sha256" class="prov-val">--</code>
+                  </div>
+                </div>
+              </details>
+            </article>
+          </section>
+          <section id="screen-positions" class="screen-view">
+            <div class="section-header">
+              <h2>持仓流水复盘</h2>
+              <label class="position-line-picker"
+                >研究线
+                <select
+                  id="positions-line-select"
+                  onchange="loadPaperPositions()"
+                ></select
+              ></label>
+            </div>
+            <p class="safety-banner banner-info">
+              模拟持仓与模拟调仓记录。模型份额不等于真实账户成交数量；缺少的价格、成本与原因明确留空。
+            </p>
+            <div class="ledger-filters">
+              <label
+                >开始日期
+                <input
+                  id="ledger-start"
+                  type="date"
+                  onchange="loadPaperPositions()" /></label
+              ><label
+                >结束日期
+                <input
+                  id="ledger-end"
+                  type="date"
+                  onchange="loadPaperPositions()" /></label
+              ><button class="btn-action" onclick="clearLedgerRange()">
+                全部记录</button
+              ><span id="ledger-context" class="header-note"></span>
+            </div>
+            <section class="card-section">
+              <div class="card-header">
+                <h3>最新持仓快照</h3>
+                <span id="positions-as-of" class="header-note">--</span>
+              </div>
+              <p class="header-note">
+                最新持仓独立展示；日期筛选应用于下方流水。
+              </p>
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>标的</th>
+                      <th class="numeric">数量／模型份额</th>
+                      <th class="numeric">权重</th>
+                      <th class="numeric">参考价</th>
+                      <th class="numeric">市值</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody id="paper-current-positions-body"></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="card-section">
+              <div class="card-header">
+                <h3>买卖与调仓</h3>
+                <span id="trade-count" class="header-note">--</span>
               </div>
               <div class="table-container">
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th>标的代码</th>
-                      <th>持仓比例</th>
-                      <th>进场日期</th>
-                      <th>目标策略</th>
-                      <th>状态</th>
+                      <th>日期</th>
+                      <th>标的</th>
+                      <th>方向</th>
+                      <th class="numeric">数量／模型份额</th>
+                      <th class="numeric">参考价</th>
+                      <th class="numeric">模拟成本</th>
+                      <th>来源详情</th>
                     </tr>
                   </thead>
-                  <tbody id="account-positions-body">
-                    <tr><td colspan="5" class="table-empty">加载中...</td></tr>
-                  </tbody>
+                  <tbody id="paper-trades-body"></tbody>
                 </table>
               </div>
-            </div>
-
-            <div class="card-section provenance-card">
+            </section>
+            <section class="card-section">
               <div class="card-header">
-                <h3>数据溯源与证据链</h3>
+                <h3>公司行动</h3>
+                <span id="action-count" class="header-note">--</span>
               </div>
-              <div class="provenance-details">
-                <div class="prov-row">
-                  <span class="prov-label">来源包路径:</span>
-                  <code class="prov-val" id="acc-source-path">--</code>
-                </div>
-                <div class="prov-row">
-                  <span class="prov-label">SHA-256 哈希:</span>
-                  <code class="prov-val" id="acc-source-sha256">--</code>
-                </div>
-                <div class="prov-row">
-                  <span class="prov-label">生成时间:</span>
-                  <span class="prov-val" id="acc-source-produced">--</span>
-                </div>
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>日期</th>
+                      <th>标的</th>
+                      <th>行动</th>
+                      <th>比例与说明</th>
+                    </tr>
+                  </thead>
+                  <tbody id="paper-actions-body"></tbody>
+                </table>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- SCREEN 2: PAPER SIMULATION -->
-      <section id="screen-paper" class="screen-view">
-        <div class="section-header">
-          <h2>模拟盘探索与研究线矩阵</h2>
-          <span class="lines-count-badge" id="paper-lines-count">共 -- 条研究线</span>
-        </div>
-
-        <div class="safety-banner banner-info">
-          <span class="warning-icon">ℹ</span>
-          <span class="safety-text"><strong>事实声明</strong>: 模拟盘展示的是各研究线历史回放与无订单前向模拟结果，不是实盘账户收益。失败与封存策略如实标出，坚决不隐藏失败结论。</span>
-        </div>
-
-        <div class="table-container">
-          <table class="data-table paper-table">
-            <thead>
-              <tr>
-                <th>研究线</th>
-                <th>领域分类</th>
-                <th>运行状态</th>
-                <th>数据日期</th>
-                <th>新鲜度</th>
-                <th>自起收益 / CAGR</th>
-                <th>最大回撤</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="paper-lines-body">
-              <tr><td colspan="8" class="table-empty">加载中...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Detail Drawer / Modal for selected line -->
-        <div id="line-detail-panel" class="detail-panel hidden">
-          <div class="detail-header">
-            <div>
-              <h3 id="detail-title">研究线详情</h3>
-              <p id="detail-adjudication" class="detail-adj">--</p>
-            </div>
-            <button class="btn-close" onclick="closeDetailPanel()">✕</button>
-          </div>
-
-          <div class="detail-chart-wrapper">
-            <div class="chart-header">
-              <span class="chart-title">📈 净值曲线 (策略 NAV vs 基准 NAV，基准归一为 1.0)</span>
-              <span id="chart-range" class="chart-meta">--</span>
-            </div>
-            <div id="echarts-container" class="echarts-box"></div>
-          </div>
-
-          <div class="metrics-grid" id="detail-metrics-grid">
-            <!-- Dynamic metric cards -->
-          </div>
-
-          <div class="card-section provenance-card">
-            <div class="card-header">
-              <h4>溯源信息与不可变工件</h4>
-            </div>
-            <div class="provenance-details">
-              <div class="prov-row">
-                <span class="prov-label">工件路径:</span>
-                <code class="prov-val" id="detail-source-path">--</code>
-              </div>
-              <div class="prov-row">
-                <span class="prov-label">工件哈希:</span>
-                <code class="prov-val" id="detail-source-sha256">--</code>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <span>qount · 个人量化交易系统</span>
-      <span>边界: research_only=true · orders_authorized=false · 真实费率 · 严格单元测试</span>
-    </footer>
-  </div>
-
-  <script src="app.js"></script>
-</body>
+            </section>
+          </section>
+        </main>
+        <footer class="site-footer">
+          <span>qount · 个人量化交易助手</span
+          ><span id="footer-permission">权限状态读取中</span
+          ><span>成本与执行约束按各线来源展示</span>
+        </footer>
+      </div>
+    </div>
+    <script src="metrics.js"></script>
+    <script src="app.js"></script>
+  </body>
 </html>

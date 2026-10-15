@@ -1,94 +1,93 @@
 # qount 项目规则
 
-> **状态**：active｜**权威**：L1 项目规则｜**最后更新**：2026-10-10
-> **本文回答**：代码放哪里、文档怎么分、研究线如何隔离、什么可以直接删。
-> **TL;DR**：生产代码、活跃研究、历史研究三层分开；脚本按线路归目录；规则以快速验证和及时删除为优先。
+> **状态**：active｜**权威**：项目工程与研究规则；遵循 [AGENTS.md](../AGENTS.md)｜**最后更新**：2026-10-13
+> **本文回答**：任务如何推进、代码与证据放哪里、验证做到什么程度、何时需要授权。
+> **TL;DR**：以净收益、回撤和样本外证据驱动研究；先做最小有效实验，按影响范围验证，研究、工程和生产分开。
 
-当前事实只看 [`current.md`](current.md)。本文件只管结构和工作方式，不重复生产版本、余额、订单或实验结果。
+## 1. 规则与事实的分工
 
-## 1. 目录地图
+[AGENTS.md](../AGENTS.md)定义 Agent 行为、研究方法与权限底线。[current.md](current.md)是当前运行状态、owner 决策和硬边界的唯一当前事实源。本文落实工程规则，不维护第二份策略状态表。
 
-```text
-src/qount/
-  contracts/ execution/ governance/ halt/ ledger/ notifications/
-  operations/ persistence/ portfolio/ reporting/ risk/ shadow_accounting/ venue/
-      生产控制面和公共合同
-  small_account/                         FOMC 与 PreEvent 事件线
-  mini_trend/                            加密趋势研究与公共前向采集
-  dual_engine/                           G20/C60 无订单模拟盘合同、行情与会计
-  alpha_agents/                          主动 research-only 多智能体线
-  research_data/                         共享市场数据、指标和研究统计
-  research/sleeves/                      主动 Sleeve 研究合同
-  research/etf_trader/                   P2 ETF 生成世界训练与历史探索性模拟
-  research/etf_alpha/                    P3 证据冻结、公开数据来源/分类、标签/切分与无订单会计
-  legacy/{grid_b,rv_c,line_a,l1,l3,l4,l6,ashare_etf,x4}/ 已冻结线路实现
+项目文档发生冲突时按 `current.md → project-rules.md → runbooks/reference → 活动策略文档` 处理；这些文档均不得突破 AGENTS 的权限底线。历史实验合同约束其原实验，不自动变成所有新研究的门槛。发现文档与代码、日志或工件冲突时，核实证据、记录差异并修正技术问题；涉及变更 owner 决定时再请求确认。
 
-scripts/
-  operations/                            生产/运维薄入口
-  desktop/                               当前 MiniTrend 运维入口
-  research/{alpha_agents,mini_trend,sleeves,small_account,governance}/
-                                          活跃研究薄入口
-  archive/research-legacy/{grid-b,rv-c,x4,line-a,l6,ashare-etf}/
-                                          冻结线路脚本，不参与当前研究导航
+## 2. 任务范围与自主执行
 
-docs/
-  current.md project-rules.md quick-handoff.md storage-topology.md holdout.md
-                                          当前事实、规则、运维和验证边界
-  *-plan.md / *-study.md                 活跃研究或分析文档
-  archive/                               历史正文和旧记录
-```
+| 范围 | 可以直接推进的工作 | 边界 |
+| --- | --- | --- |
+| Research | 已授权范围内的数据分析、最小实验、回测、仿真、模型训练、消融、离线纸面交易与执行测试 | 默认 `research_only=true / orders_authorized=false`；隔离输出，不污染冻结数据或生产状态 |
+| Engineering | 局部修复、数据管线与性能改进、必要测试、实验工具与文档维护 | 保持兼容；跨主机大规模计算、显著资源消耗和共享状态变更遵守已有预算与主机边界 |
+| Production | 既有授权覆盖的服务维护或发布 | 实盘下单、交易定时器、账户权限、真实资金配置及生产服务变更须有 owner 明确授权 |
 
-代码的真实实现必须放在线路目录；顶层旧模块只允许是兼容转发，不得新增业务逻辑。
+任务和预算已明确时直接实施，不因实现方案尚不确定反复请示。离线 paper 是研究；把候选接入或替换 VPS 既有 paper、通知、看板或定时服务是运行变更，按该服务的授权处理。文件、脚本、历史 arm 或测试通过本身不授予运行权限。
 
-## 2. 线路状态
+冻结线、不可变工件、单轮训练授权和暂停中的云计算仍按 current 的具体决定处理。一次失败应先分析原因；新机制可以在授权范围内另建实验，但不得改写失败结果或绕过明确冻结。
 
-| 线路 | 状态 | 实现目录 | 脚本目录 | 权限 |
-| --- | --- | --- | --- | --- |
-| FOMC / PreEvent | 研究/历史事件线 | `src/qount/small_account/` | `scripts/operations/` | 当前无交易执行授权；由 `current.md` 的事实状态决定 |
-| MiniTrend | 已停止的历史生产链 + research | `src/qount/mini_trend/` | `scripts/research/mini_trend/` | 不因研究结果恢复 live |
-| Alpha Agents | active research-only | `src/qount/alpha_agents/` | `scripts/research/alpha_agents/` | 不写订单、目标权重或 live 配置 |
-| Sleeve 1 被动配置 | preregistered research-only | `src/qount/research/sleeves/` | `scripts/research/sleeves/` | 不产生 StrategyIntent 或 scheduler |
-| Liquidation cascade | public-data-only forward collection | `src/qount/mini_trend/` | `scripts/research/mini_trend/` | 不读私有账户，不下单 |
-| Dual-Engine G20/C60 | deployed paper / 2026 YTD curves active | `src/qount/dual_engine/` | `scripts/operations/` | 四个独立模拟账户；YTD 曲线只代表公开行情模拟；禁止账户、订单和 broker API |
-| 美股 / A股个股选择 | 独立 research-only；数据资格与方向见 current | `src/qount/research_data/equity_archive.py`（接入）、`src/qount/research/ashare_selection.py`（资格/信息原语）、`src/qount/research/ashare_evidence.py`（口径证据）、`src/qount/research/ashare_supplement.py`（公开补采）、`src/qount/research/ashare_statistics.py`（纯统计原语）、`ashare_tushare.py`（Mac内存认证补采）、`ashare_source_reconcile.py`（限定资格）、`ashare_information*.py`（信息原语/WSL runner） | `scripts/research/equity_archive_audit.py`、`scripts/research/ashare_selection.py`、`scripts/research/ashare_evidence.py`、`scripts/research/ashare_supplement.py`、`scripts/research/ashare_tushare.py`、`scripts/research/ashare_information.py` | 不强制低频；补采不拼两家因子，不认证PIT/成交；收益须先过来源语义门，不产生订单 |
-| 短周期机会新线 | 独立 research-only；新信息与数据资格，见 current | `src/qount/research/opportunity_*`、`src/qount/research_data/event_stats.py` | `scripts/research/opportunity_screen.py` | 标签与假设杠杆压力；A股缺数据不运行收益，不写订单/目标/调度 |
-| GRID / RV / X4 / legacy CTA-R / L1/L3/L4/L6 / legacy A 股 ETF | archived / frozen | `src/qount/legacy/{grid_b,rv_c,x4,line_a,l1,l3,l4,l6,ashare_etf}/` | `scripts/archive/research-legacy/` | 不恢复，不新增实验；独立 `research/cta_r_*` 侧车按 current 自身合同处理 |
+## 3. 代码与目录归属
 
-## 3. 硬规则
+| 目录 | 职责 |
+| --- | --- |
+| `src/qount/contracts/`、`persistence/`、`research_data/` | 现有公共合同、工件读写、共享数据与纯计算 |
+| `src/qount/research/`、`mini_trend/`、`small_account/`、`alpha_agents/` | 分线研究、模型与实验实现；模块存在不代表线路仍活跃 |
+| `src/qount/dual_engine/` | 既有无订单模拟的合同、行情与会计 |
+| `src/qount/api/`、`web/app/` | 研究工件适配、SQLite 查询视图、只读 API 与前端 |
+| `src/qount/governance/`、`portfolio/`、`risk/`、`execution/`、`ledger/`、`venue/` | 策略准入、组合、风控、执行与对账；生产权限独立 |
+| `src/qount/operations/`、`reporting/`、`notifications/` | 运维、报告、既有发布与通知能力 |
+| `scripts/research/`、`scripts/operations/`、`scripts/maintenance/` | 参数解析、依赖装配、调用与退出码等薄入口 |
+| `src/qount/legacy/`、`scripts/archive/`、`docs/archive/` | 冻结实现、兼容入口和历史证据 |
+| `config/`、`deploy/` | 非密配置、实验合同和部署模板；不自动授权执行 |
+| `state/research_runs/`、`output/research/` | Mac 轻量收据与报告；完整数据、模型和大工件按主机手册保存到 E 盘 |
 
-1. `current.md` 是当前事实唯一来源；README、CLAUDE 和研究文档只做导航。
-2. 生产控制面不得依赖 `scripts/research`、optional research extra 或 legacy 实现。
-3. 共享纯函数放 `research_data/` 或已有公共域；不要从一条策略目录复制一份。
-4. 研究脚本只解析参数、调用可测试代码、写 artifact；复杂逻辑放 `src/qount/`。
-5. 每条研究线独立保存代码、配置、数据、artifact 和结论；只复用方法，不复用 promotion 资格。
-6. 新研究先写一句问题、停止条件和最小验证；没有明确问题就不新建目录或文档。
-7. 研究默认 `research_only=true`、`orders_authorized=false`；任何生产权限必须在 `current.md` 明确写出。
-8. 发现决定性问题后，写简短弃用原因，停止拉取、回放和自动化；旧材料移入 archive，不为弃用线造防误用系统。
-9. 改代码先跑最窄相关测试；改结构再跑导入扫描、架构边界和全量回归（能跑就跑）。
-10. 不确定是否还需要的代码先做引用审计；无引用、无 artifact 依赖、无当前文档价值的文件直接删除。
+新逻辑按职责进入已有包；需要独立边界时再建模块。探索脚本允许临时原型，复用或形成候选时再提取可测试逻辑，不预建空壳框架。现有兼容转发不新增业务逻辑，不为统一目录一次性重写已验证模块。
 
-## 4. 研究最小标准
+生产控制面不得依赖研究脚本、legacy 交易实现或可选训练依赖。只读展示适配器可以消费研究产物，但不因此启动训练或获得交易权限。共享纯函数放已有公共域，避免复制多套成本、时钟或会计公式。源码入口见 [仓库地图](reference/repository-map.md)和[代码组织](reference/code-organization.md)。
 
-- 时间序列实验不能使用未来数据；重叠标签使用 purged split / embargo 或等价方法。
-- 参数搜索记录 trial 数；结果至少报告成本、OOS fold、DSR/PBO 或明确说明未做。
-- 横截面研究报告有效广度，不把标的数量当独立样本数。
-- 公开数据采集不得携带私钥；collector 不得混入订单或账户路径。
-- 结果不自动升级策略；promotion、paper、live 都需要单独 owner 决策。
+## 4. 最小研究循环与正确性
 
-## 5. 文档规则
+以“假设 → 最小实验 → 结果 → 原因 → 下一实验”推进。开始时明确问题、对照、主要指标、停止条件和资源范围；可以直接写在配置或简短实验记录中，不要求每次新建正式文档。
 
-- 当前只维护：`current.md`、`project-rules.md`、`quick-handoff.md`、`storage-topology.md`、`holdout.md`、架构主设计、活跃研究文档和近期 `update-log.md`。
-- 历史计划、旧运行手册、失败实验和完整记录放 `docs/archive/`；不为兼容旧链接保留大量正文副本。
-- 活跃文档 H1 后必须有状态、权威、更新时间和一句 TL;DR；研究结果变更才更新研究文档，当前事实变更才更新 `current.md`。
-- 记录文档只记录“做了什么、验证了什么、结论是什么”，不重新维护第二份状态表。
-- 新文档先放现有分类；同一主题只有一个主文档，重复草稿直接合并或删除。
+**研究产出优先于工程留痕。** 单次离线策略实验默认不新建研究登记、预注册合同、阶段计划、证据索引、manifest、完成标记、独立验证器、日报、前向台账、服务、定时器或看板；有现成脚本和数据就直接实验。只保留复核该结论所必需的配置、结果和简短说明。只有具体复现风险、共享状态风险、结论复用需求或 owner 明确要求，才增加额外工程记录，并写明它解决什么问题。不得把阶段完成、记录连续天数或工件数量当作策略研究进度。
 
-## 6. 清理流程
+**不得自动把记录变成下一阶段。** 连续前向记录、定期观察、证据索引、日报和工程收口均不是策略实验的默认前置或后续步骤。每项都必须对应明确的研究问题和预期信息增益；否则不做。已有计划若只剩工程记录而没有待验证的策略假设，应暂停该计划，把资源用于当前最有价值的策略实验。
 
-```text
-rg 引用 -> 判断生产/活跃/历史 -> 移到线路目录或 archive -> 删除无价值文件
-         -> 更新 current / docs index -> 导入扫描 + 相关测试 + git diff --check
-```
+- 目标优先看净 CAGR、MDD、Calmar、样本外稳定性、执行可行性和资源效率。20% 年化等数字是研究目标，不是结果保证。
+- 不统一规定资产数量、行业配额、交易频率、仓位集中度或算法。趋势、轮动、因子、Transformer、RL、集成和混合策略都按可检验假设比较；现有冻结实验参数保持。
+- 明确 `信息可用时间 → 决策时间 → 订单提交时间 → 可能成交时间`。收盘信号只能在其后的可交易时点执行；禁止未来成分、数据泄漏和未处理的幸存者偏差。
+- 成本按市场纳入适用的佣金、税费、价差、滑点、冲击、成交单位、流动性、交易限制和融资成本；早期近似需标明假设。
+- 模型按时间切分；预处理只用训练信息。适用时采用 walk-forward、重叠标签隔离、消融、参数敏感性和随机种子复验。用过的测试集不得再次宣称独立；具体方法见 [验证边界](holdout.md)。
+- 记录实际搜索范围及失败结果。DSR/PBO、有效广度等在适用时用于回答多重试验或相关性问题，不设为所有实验的统一开工门。
+- 重要结果说明时间范围、标的、初始资金或规模、净收益与回撤、基准、成本、样本属性和执行限制；披露不利窗口与未知项，不只报最优曲线。
 
-删除生产入口前必须保留 fail-closed guard；删除纯研究旧代码不需要保留空壳。`qount.main` 和
-`qount-monitor` 是公开入口，除非重新确认替代入口，否则不删除。
+## 5. 按影响范围验证
+
+| 变更 | 必要验证 |
+| --- | --- |
+| 文档 | 相关链接、事实与权限一致性、Markdown 结构和 diff |
+| 局部代码 | 受影响模块的针对性测试；有行为外溢再补相关回归 |
+| 核心交易逻辑 | 时钟、成本、会计、执行约束、重复订单与故障恢复等相关测试 |
+| 模型／研究代码 | 数据维度、切分、训练流程、指标定义和关键实验；候选结论再做适用的样本外复核 |
+| 包结构／生产候选 | 导入与部署引用、相关回归、仓库检查；按实际影响扩大覆盖 |
+
+全仓测试不作为每次编辑的固定步骤。测试通过只支持覆盖的实现与场景；报告明确区分 Planned、Implemented、Executed、Verified、Delivered，不把实现或局部测试当作策略盈利。命令统一见 [本地开发](operations/local-development.md)。
+
+## 6. 数据、主机与凭据
+
+Mac 保存代码、Git、文档与轻量验证；WSL 承担重计算；Windows `E:\qount_data` 保存大数据与不可变工件；VPS 保存既有服务运行状态。连接和操作细节见 [主机手册](operations/host-runbooks.md)。跨主机只同步必要非密代码与公开输入，复用可信缓存；长任务设置日志、检查点与终止条件，不清理共享数据或正在使用的产物。
+
+凭据不得打印、复制、提交、导出或同步；Mac 私有配置保持 `0600`，WSL／E 盘不存凭据。需要新的敏感权限时说明用途并等待明确授权。
+
+**既有 Tiingo 共享预算保留**：EOD 日频消费者记录请求数并复用带来源与哈希的缓存；禁止在 15 分钟周期重复请求全历史。所有入口合计预算为每日不超过 20 次、每月唯一标的不超过 25 个。新增消费者或调整频率、起始日期前先核对预算余量；这是项目预算，不是对供应商当前套餐的说明。
+
+## 7. 文档与清理
+
+| 内容 | 维护位置 |
+| --- | --- |
+| Agent 行为与权限底线 | [AGENTS.md](../AGENTS.md) |
+| 当前运行事实、owner 决定与硬边界 | [current.md](current.md) |
+| 个人策略研究方法 | [个人交易助手指南](personal-trading-assistant-guide.md) |
+| 工程规则／架构 | 本页、[架构主设计](system-architecture-design.md) |
+| 主机操作／快速接手 | [主机手册](operations/host-runbooks.md)、[快速接手](quick-handoff.md) |
+| 逐线协议与结果／历史正文 | [研究线导航](research-lines.md)、[历史归档](archive/README.md) |
+
+主文档保持状态、适用范围、更新时间和简短摘要，便于识别事实与历史。只沉淀重要发现、可复现实验、技术决定和实质运行变化；Git、测试或工件已能追溯的细节不重复铺入 current。
+
+清理前用 `rg` 检查引用、公共 CLI、部署引用和工件依赖；在任务范围内合并重复文档或移入 archive。保留失败证据、冻结版本及用户未提交工作；不擅自删除共享数据。删除旧生产入口须保留必要的拒绝执行保护，`qount.main` 和 `qount-monitor` 等公开入口先核对替代路径与兼容性。

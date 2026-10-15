@@ -1,6 +1,8 @@
 """Run Trial 151: frozen CTA-R rule on the class-matched US ETF universe.
 
 research_only=true / orders_authorized=false. Public Tiingo daily prices only.
+This script consumes the shared Tiingo quota when a symbol cache is missing or behind; do not
+run it in a batch before checking the daily/monthly request budget.
 The token is read from QOUNT_TIINGO_API_KEY (environment first, else the single line in --env-file);
 it is used only as an HTTP header and never printed or written to the bundle.
 Preregistration: docs/cta-r-us-replication-and-c60-vol-matched-2026-09.md
@@ -15,7 +17,7 @@ import os
 from pathlib import Path
 
 from qount.contracts import canonical_hash
-from qount.research.cta_r_us_replication import UNIVERSE, evaluate, fetch_adjusted_closes
+from qount.research.cta_r_us_replication import UNIVERSE, evaluate, load_or_fetch_adjusted_closes
 
 KEY = "QOUNT_TIINGO_API_KEY"
 
@@ -40,6 +42,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
     parser.add_argument("--cache", type=Path, default=None, help="reuse a closes JSON instead of fetching")
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=Path("state/research_cache/tiingo_cta_r_us_replication"),
+        help="per-symbol Tiingo cache used to avoid refetching history",
+    )
+    parser.add_argument("--refresh-cache", action="store_true", help="refetch full history for each symbol")
     parser.add_argument("--out-root", type=Path, default=Path("state/research_runs/cta_r_us_replication_v1"))
     args = parser.parse_args(argv)
 
@@ -49,7 +58,16 @@ def main(argv: list[str] | None = None) -> int:
     else:
         token = _token(args.env_file)
         end = observed.date() - dt.timedelta(days=1)
-        series = {s: fetch_adjusted_closes(s, token=token, end=end) for s in sorted(UNIVERSE)}
+        series = {
+            symbol: load_or_fetch_adjusted_closes(
+                symbol,
+                token=token,
+                end=end,
+                cache_path=args.cache_dir / f"tiingo_{symbol}.json",
+                force_refresh=args.refresh_cache,
+            )[0]
+            for symbol in sorted(UNIVERSE)
+        }
         del token
     result = evaluate(series) | {"observed_at": observed.isoformat()}
     bundle = args.out_root / canonical_hash({"data": result["data"]["data_hash"],

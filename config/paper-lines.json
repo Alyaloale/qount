@@ -45,6 +45,16 @@
       }
     },
     {
+      "id": "cta_r",
+      "adapter": "cta_r_forward",
+      "name": "CTA-R 前瞻研究账本",
+      "category": "equity",
+      "enabled": true,
+      "config": {
+        "root": "state/cta_r"
+      }
+    },
+    {
       "id": "personal_assistant",
       "adapter": "personal_assistant",
       "name": "个人量化交易助手",
@@ -72,6 +82,16 @@
       "enabled": true,
       "config": {
         "run": "state/research_runs/ashare_sector_momentum_20261011"
+      }
+    },
+    {
+      "id": "universal_regime",
+      "adapter": "universal_regime_forward",
+      "name": "通用状态期望 v1.3 (冻结前向)",
+      "category": "macro",
+      "enabled": true,
+      "config": {
+        "root": "state/research_runs/universal_regime_v1.3_forward"
       }
     }
   ]

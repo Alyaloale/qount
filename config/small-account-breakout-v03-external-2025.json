@@ -1,0 +1,20 @@
+{
+  "strategy_id": "small-account-breakout-v0.3-frozen-external-2025",
+  "experiment_scope": "frozen_external_long_only",
+  "frozen_candidate": "L_long_only",
+  "frozen_control": "A_simple",
+  "holdout_role": "validation_v1",
+  "validation_start": "2025-01-06",
+  "validation_end_exclusive": "2026-01-05",
+  "base_config": "config/small-account-breakout-v01.json",
+  "risk_fraction": 0.02,
+  "initial_equity_usdt": 10.0,
+  "comparisons": ["A_simple", "L_long_only"],
+  "stress_scenarios": ["double_cost", "stop_gap_1pct"],
+  "rule_freeze": "The signal, direction, sizing, exit, funding, and execution assumptions are copied from the completed v0.3 discovery contract. No parameter search or selection is allowed on this interval.",
+  "source_policy": "Use checksum-verified official 1h archives for signal features and 1m archives for execution/liquidity; record isolated 1m-to-1h OHLCV inconsistencies rather than silently substituting one source.",
+  "history_usage": "No 2025 data was found in the small-account breakout caches or prior v0.1/v0.2 run bundles inspected before this validation.",
+  "limitations": ["Current exchange filters are only a proxy for 2025 historical contract rules", "No historical order book or fills", "Historical funding interval changes are modeled from observed settlement gaps", "Validation data is historical and is not forward evidence"],
+  "research_only": true,
+  "orders_authorized": false
+}

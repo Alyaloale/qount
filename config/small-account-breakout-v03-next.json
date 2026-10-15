@@ -1,0 +1,21 @@
+{
+  "strategy_id": "small-account-breakout-v0.3-long-only-trailing-tail-sizing",
+  "base_config": "config/small-account-breakout-v01.json",
+  "source_development_contract": "config/small-account-breakout-v02.json",
+  "research_only": true,
+  "orders_authorized": false,
+  "development_start": "2026-03-30",
+  "development_end_exclusive": "2026-10-12",
+  "comparisons": ["A_simple", "L_long_only", "LT_long_only_trailing_1atr", "LG_long_only_stress_budget", "L_long_only_risk_1_3pct"],
+  "risk_fraction": 0.02,
+  "trailing_activation_r": 2.0,
+  "baseline_trailing_atr": 2.0,
+  "candidate_trailing_atr": 1.0,
+  "extra_stress_slippage_fraction": 0.01,
+  "ordinary_downsize_comparison_risk_fraction": 0.013,
+  "benchmark": "cash and equal-weight unlevered BTC/ETH/SOL buy-and-hold; report each asset and an ex-post volatility-matched equal-weight basket as descriptive context only",
+  "selection_status": "development_only_all_196_days_consumed",
+  "next_stage": "freeze_candidate_then_external_historical_validation_if_unused_else_new_forward_data",
+  "deferred": ["pre-breakout volatility contraction C[t-1]<0.85", "stock perpetual opening-range candidate"],
+  "independent_oos": false
+}

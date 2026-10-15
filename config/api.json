@@ -1,0 +1,9 @@
+{
+  "freshness": {
+    "stale_after_calendar_days": 4
+  },
+  "paper_trade_cost_bps": {
+    "dual_g20": 20,
+    "dual_c60": 25
+  }
+}
