@@ -773,7 +773,7 @@ Tiingo key 仅在进程内作为 header 使用，未打印、未写入 bundle。
 ### 加密趋势前提诊断（描述性，非 trial）
 
 预登记 [crypto-trend-premise-diagnostic-2026-09.md](crypto-trend-premise-diagnostic-2026-09.md)；新增 `src/qount/research/crypto_trend_premise.py`、
-`scripts/research/crypto_trend_premise.py`、`tests/test_crypto_trend_premise.py`，离线复用成本研究数据。趋势前提没有整体消失
+`scripts/archive/research-legacy/crypto-trend-v1/crypto_trend_premise.py`、`tests/test_crypto_trend_premise.py`，离线复用成本研究数据。趋势前提没有整体消失
 （效率比稳定，IC 在 2022–2025 为正，择时 5/6 年为正），但 C60 的历史高收益集中在 2021 山寨季和 SOL，宇宙存在事后幸存偏差；
 2022 起非 BTC 币种连续跑输 BTC、离散度收缩，而成本每年固定 5–13%。根因是"间歇性收益 vs 固定成本"，不是参数。
 

@@ -10,7 +10,7 @@ Owner 2026-09-29 指令：加密优先，开始执行。
 ## 1. 动机（已知事实，非本研究结果）
 
 - 前向模拟盘 C60 YTD：Signal NAV `1.0596`，Executable NAV `0.9906`，基础成本 656 USD_EQ（本金 6.56%）。
-- 研究原版（`scripts/research/crypto_trend_v1_phase_a3_final.py:get_c60_returns`）**每月末**选 90 日动量 Top2 候选，
+- 研究原版（`scripts/archive/research-legacy/crypto-trend-v1/crypto_trend_v1_phase_a3_final.py:get_c60_returns`）**每月末**选 90 日动量 Top2 候选，
   月内只每日跑 SMA20/BTC SMA50 闸门与 vol cap；冻结实现（`src/qount/dual_engine/strategy.py:build_c60_decision`）
   **每日**重排候选。主索引“每日 UTC 收盘后取 Top2”的描述与研究原版不符。这是研究→合同的规格漂移。
 - 历史读数 CAGR≈75.9% 来自 0 bps、研究原版月度候选、yfinance 数据，不能代表冻结合同。

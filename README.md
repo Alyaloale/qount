@@ -1,4 +1,4 @@
-# qount：个人量化交易助手
+# QOUNT：个人资产管理交易系统
 
 > **目标**：提高个人账户长期实盘风险调整后财富增长，以实验和可重复证据推动迭代。
 > **开发指引**：[AGENTS.md](AGENTS.md) 定义自主研究、工程执行和权限底线。
@@ -6,11 +6,13 @@
 
 ## 当前研究定位
 
+QOUNT 覆盖个人资产分析、策略研究、组合配置、风险管理与授权交易执行。资产分析当前面向 Binance：钱包汇总、合约未实现盈亏与真实观测历史分列展示，线上采集状态以 current 为准。ETF 均线择时研究（`personal_assistant`）作为普通研究线，与其他策略按独立证据比较。
+
 优先评价净 CAGR、最大回撤、Calmar、样本外稳定性、实际可执行性和资源效率。允许研究趋势、轮动、多因子、Transformer、强化学习和混合策略；资产数量、集中度、持有现金与交易频率由实验比较决定。
 
 **麒麟与币安多资产合约的旧高收益结论已撤销，研究封存。** Q-DIV-Core 和 C60 梯度候选失败保留；ETF 神经模型尚未证明相对简单基线的增量。既有 paper 是公共数据无订单模拟，不是实盘业绩。
 
-1–3 只核心资产与年换手 <0.5x 是既有助手方案的目标，不是全项目限制；20% 年化等目标也不代表已实现收益。当前任务、冻结决定与下一步看 current；逐线问题与历史修补顺序见 [修补整理计划](docs/research-repair-and-consolidation-plan-2026-10.md)。
+1–3 只核心资产与年换手 <0.5x 是既有 ETF 择时方案的目标，不是全项目限制；20% 年化等目标也不代表已实现收益。当前任务、冻结决定与下一步看 current；逐线问题与历史修补顺序见 [修补整理计划](docs/research-repair-and-consolidation-plan-2026-10.md)。
 
 ## 研究与产品范围
 
@@ -43,7 +45,7 @@ Mac 负责代码、Git、文档和轻量验证；WSL 负责已明确范围的 CP
 - [当前事实](docs/current.md)
 - [研究线导航](docs/research-lines.md)
 - [修补整理计划](docs/research-repair-and-consolidation-plan-2026-10.md)
-- [个人交易助手指南](docs/personal-trading-assistant-guide.md)
+- [个人资产管理交易系统研究指南](docs/personal-trading-assistant-guide.md)
 - [快速接手](docs/quick-handoff.md)
 - [项目规则](docs/project-rules.md)
 - [主机手册](docs/operations/host-runbooks.md)

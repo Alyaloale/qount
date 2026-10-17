@@ -1,18 +1,20 @@
-# qount 个人量化交易系统架构设计
+# QOUNT 个人资产管理交易系统架构设计
 
-> **状态**：active｜**权威**：架构主设计；遵循 [AGENTS.md](../AGENTS.md) 与 [项目规则](project-rules.md)｜**最后更新**：2026-10-12
+> **状态**：active｜**权威**：架构主设计；遵循 [AGENTS.md](../AGENTS.md) 与 [项目规则](project-rules.md)｜**最后更新**：2026-10-16
 > **本文回答**：研究、助手展示与生产执行如何分工，现有模块如何连接，何时值得扩展架构。
 > **TL;DR**：研究循环围绕净收益、回撤与可信证据；只读助手消费有来源的工件；真实交易经独立风控、执行与授权路径。
 
+2026-10-16本地整理：账户观察独立于策略交易池，研究查询与前向模拟分开，新增共享回测组件与分线结果复用；四个主页面为资产、实盘、记录、研究。实际结构与剩余限制见[个人系统结构](personal-system-consolidation-plan.md)。以下通用控制面是既有能力，不是每条离线研究的必经流程；旧部署描述以current为准。
+
 ## 1. 目标、范围与证据状态
 
-架构服务于长期实盘风险调整后财富增长。先让一个研究问题获得可重复证据，再为复用、性能或执行可靠性增加结构；不以模块数、门禁数或迁移阶段替代研究进展。
+架构覆盖个人资产分析、策略研究、组合配置、风险管理与授权交易执行，服务于长期实盘风险调整后财富增长。ETF 均线择时研究是一条普通研究线；首页资产分析目前只统计已接入的 Binance 账户。先让一个研究问题获得可重复证据，再为复用、性能或执行可靠性增加结构；不以模块数、门禁数或迁移阶段替代研究进展。
 
 本文描述当前仓库可见实现和设计边界。[current.md](current.md)集中维护 owner 决定、部署登记与冻结状态；源码存在不证明已部署，历史部署也不证明今天健康。2026-10-12 本轮仅做本地源码与文档核对，未远端巡检。
 
 | 层面 | 可核对的实现／登记 | 不能由此推定的能力 |
 | --- | --- | --- |
-| 离线个人助手 | `research/personal_trading_assistant.py` 的规则状态机、数据检查与确定性日报；current 记录 S1/S2、S3-A/B/C 交付 | S3-D 五日工程连续性、真实 ETF 账户资格或长期盈利 |
+| ETF 均线择时研究 | `research/personal_trading_assistant.py` 的规则状态机、数据检查与确定性日报；current 记录 S1/S2、S3-A/B/C 交付 | S3-D 五日工程连续性、真实 ETF 账户资格或长期盈利 |
 | 展示后端与前端 | `api/`、`web/app/`；current 记录初版 FastAPI 服务部署 | 工作区后续修复已经同步到 VPS |
 | 本地后续修复 | 缺源处理、动态新鲜度、持仓／流水表、CTA-R 适配与 Tiingo 缓存等在工作区可见 | 完整线上流水验收、48 小时配额观察或全部数据边界已闭合 |
 | 既有运行产物 | Dual-Engine、CTA-R 侧车、公开采集、只读账户与通知的登记见 current | paper 曲线等于真实账户，或旧交易链可以恢复 |
@@ -49,8 +51,9 @@ flowchart TD
 | --- | --- | --- |
 | 公共数据与计算 | `research_data/`，各线数据模块 | 处理来源、时钟、公司行动、指标与统计；不含订单授权 |
 | 策略和模型研究 | `research/`、`mini_trend/`、`small_account/` | 传统规则、Transformer、RL、配置与混合方法按任务实验；线路状态查 current |
-| 个人助手 | `research/personal_trading_assistant.py`、`scripts/research/run_personal_assistant_daily.py` | 回测与每日状态复用规则；报告数据资格、信号、风险与未知项 |
+| ETF 均线择时研究 | `research/personal_trading_assistant.py`、`scripts/research/run_personal_assistant_daily.py` | 普通研究线，回测与每日状态复用规则；报告数据资格、信号、风险与未知项 |
 | 既有 paper | `dual_engine/`、独立 `research/cta_r_*` | 维护各自模拟会计、费用与来源，不继承其他线的证据身份 |
+| Binance 资产分析 | `operations/account_assets.py`、`scripts/operations/refresh_dashboard_account_observation.py`、`api/routes/account.py` | 官方钱包汇总、合约浮盈亏与真实观测历史；独立旁路文件，API 不接触凭据或采集交易所 |
 | 查询与展示 | `api/adapters/`、`api/ingest.py`、`api/db.py`、`api/routes/`、`web/app/` | 读工件形成查询视图，不训练模型或向交易所发送订单 |
 | 通用控制面 | `contracts/`、`persistence/`、`governance/`、`portfolio/`、`risk/`、`execution/`、`ledger/`、`venue/` | 有版本的目标、风控、执行和对账；调用受运行模式与授权限制 |
 | 运行与解释 | `operations/`、`reporting/`、`notifications/`、`intelligence/`、`alpha_agents/` | 健康、发布、确定性报告和解释；投递／服务变更按既有授权 |
@@ -83,7 +86,7 @@ flowchart TD
   → web/app：原生 JS + ECharts
 ```
 
-API 数据库本地默认 `state/qount.db`，VPS 部署登记使用 `/var/lib/qount/api/qount.db`。它是派生查询存储，原研究工件和运行账本仍保有各自证据职责。`/account` 的 PAPER 与 `/account/live` 的真实账户只读展示必须分开；后者读取授权账户快照，不能从模拟余额推算。
+API 数据库本地默认 `state/qount.db`，VPS 部署登记使用 `/var/lib/qount/api/qount.db`。它是派生查询存储，原研究工件和运行账本仍保有各自证据职责。`/account` 与 `/account/live` 均读取真实账户只读快照，不从模拟余额推算。历史研究使用 `/research/*`，前向模拟使用 `/paper/*`。
 
 本地实现已包含 `paper_positions`／`paper_trades` 与相应查询；来源明确的模拟调仓和快照差异推断须保留标识。首次观测不推断历史成交，权重变化不等于交易所实际成交。缺完整流水时明确覆盖范围，不声称重建了全部交易。
 

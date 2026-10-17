@@ -66,7 +66,7 @@ lr ∈ {1e-4, 3e-4, 1e-3}  # Stage B only
 
 ### 4. 测试脚本
 
-**文件**：`scripts/research/test_p2_infrastructure.py`
+**文件**：`scripts/archive/research-legacy/p2-tools/test_p2_infrastructure.py`
 
 验证所有 P2 训练组件可以正常导入和运行的冒烟测试。
 

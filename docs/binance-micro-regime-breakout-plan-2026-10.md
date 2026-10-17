@@ -129,7 +129,7 @@ Mac 负责开发与轻量验证，WSL 仅计算。全天执行主机尚未确定
 
 ## 8. 四臂离线实施与历史诊断（2026-10-13）
 
-新增纯研究模块 `src/qount/research/binance_micro_breakout.py`，统一一分钟 `PaperEngine.step`、单位化账本、信号/风险计算与可恢复状态。重放入口为 `scripts/research/run_binance_micro_breakout.py`；离线 JSONL paper 入口为 `scripts/research/paper_binance_micro_breakout.py`（`--help` 提供输入协议）。paper 仅接受外部公共行情，不含网络、账户或下单方法；历史五分钟样例已执行分段与 checkpoint 续接，成交时钟与 replay 一致。不把这个历史样例登记为真实前向记录。
+新增纯研究模块 `src/qount/research/binance_micro_breakout.py`，统一一分钟 `PaperEngine.step`、单位化账本、信号/风险计算与可恢复状态。历史重放入口已归档至 `scripts/archive/research-legacy/small-account-breakout/run_binance_micro_breakout.py`；离线 JSONL paper 入口为 `scripts/archive/research-legacy/small-account-breakout/paper_binance_micro_breakout.py`。paper 仅接受外部公共行情，不含网络、账户或下单方法；历史五分钟样例已执行分段与 checkpoint 续接，成交时钟与 replay 一致。不把这个历史样例登记为真实前向记录。
 
 固定完成 96 组：2025-01-06 至 2026-01-05、2026-03-30 至 2026-10-12（末日不含），四臂 × 10/30/100 USDT × 基础/双倍成本/止损额外越价1%/2%。两段历史均已消费，全部是诊断；本轮未调参、未选择晋级规则。基础费用和普通滑点各每边5bp，按历史实际结算资金费记账；基础 sizing 预留1%越价但不强加到普通止损成交，压力场景另加1%/2%。历史 filters 使用设计日快照近似，维持保证金1%加公开清算费作为研究代理，不能认证实际账户档位、盘口IOC成交或原生止损可靠性。
 

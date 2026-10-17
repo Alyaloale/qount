@@ -29,7 +29,7 @@
 ### 修改文件
 - `scripts/research/etf_trader_parallel_search.py` — 持久化进程池 + 实时日志
 - `src/qount/research/etf_trader/train.py` — 添加 checkpoint
-- `scripts/research/monitor_training_progress.py` — 新增监控脚本
+- `scripts/archive/research-legacy/p2-tools/monitor_training_progress.py` — 新增监控脚本
 
 ### 使用方法
 ```bash
@@ -42,7 +42,7 @@ nohup python scripts/research/etf_trader_parallel_search.py \
   > train.log 2>&1 &
 
 # 实时监控
-python scripts/research/monitor_training_progress.py experiments/p2_us_20261002
+python scripts/archive/research-legacy/p2-tools/monitor_training_progress.py experiments/p2_us_20261002
 
 # 查看单个训练
 tail -f experiments/p2_us_20261002/stage_a/phi16_h16_L1_lr3e-04/seed20260930/train.log
@@ -151,7 +151,7 @@ cat experiments/.../history.json | jq '.[].ann_log_return'
 # 添加所有改动
 git add scripts/research/etf_trader_parallel_search.py
 git add src/qount/research/etf_trader/train.py
-git add scripts/research/monitor_training_progress.py
+git add scripts/archive/research-legacy/p2-tools/monitor_training_progress.py
 git add docs/p2-monitoring-improvements.md
 git add docs/p2-execution-guide.md
 git add docs/current.md

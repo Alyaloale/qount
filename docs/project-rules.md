@@ -83,7 +83,7 @@ Mac 保存代码、Git、文档与轻量验证；WSL 承担重计算；Windows `
 | --- | --- |
 | Agent 行为与权限底线 | [AGENTS.md](../AGENTS.md) |
 | 当前运行事实、owner 决定与硬边界 | [current.md](current.md) |
-| 个人策略研究方法 | [个人交易助手指南](personal-trading-assistant-guide.md) |
+| 个人策略研究方法 | [个人资产管理交易系统研究指南](personal-trading-assistant-guide.md) |
 | 工程规则／架构 | 本页、[架构主设计](system-architecture-design.md) |
 | 主机操作／快速接手 | [主机手册](operations/host-runbooks.md)、[快速接手](quick-handoff.md) |
 | 逐线协议与结果／历史正文 | [研究线导航](research-lines.md)、[历史归档](archive/README.md) |

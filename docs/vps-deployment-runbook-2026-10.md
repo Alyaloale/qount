@@ -1,11 +1,148 @@
 # 新前端部署执行手册（qount.alyaloale.com）
 
-> **状态**：已部署，前端整改已增量发布；持续观察中｜**执行者**：owner／授权 Agent｜**最后更新**：2026-10-13
+> **状态**：资产、实盘收益、账户记录与十一线研究目录已部署｜**执行者**：owner／授权 Agent｜**最后更新**：2026-10-17 UTC
 > **目标**：把新的只读 API + 双屏前端部署到既有域名 `https://qount.alyaloale.com/`，替换现有旧 dashboard。
 > **本文性质**：**纯操作手册**。每一步都给出可直接复制的命令、预期输出、失败判据与回退方式。
 > **默认边界**：`research_only=true / orders_authorized=false`。全程不涉及下单、不修改交易授权。
 
 ---
+
+## 个人系统、真实收益与研究查询发布（2026-10-16/17 UTC）
+
+owner明确要求发布并更新计划。发布目录`/root/qount-releases/personal-system-20261016T153000Z/`。2026-10-16 15:35 UTC切换24个账户/查询/前端文件，含随后补丁共主动重启API两次。沿用实际查询库`/var/lib/qount/api/candidates/assets-20261015T105250Z.db`及原注册表环境路径；不更改Caddy、交易配置、权限或调度。源文件、注册表、查询库备份在`before/`，交付与保护文件哈希在`delivery.json`，发布收据在`published.json`。
+
+- 研究目录11条，10条历史来源可读；宏观和简化1ATR分别展示，按run切换/对照/查询成交。通用状态前向来源仍缺失，严格前向模拟0条；历史来源可读不等于新鲜前向或实盘授权。
+- 采集修复兼容历史缺少派生字段，保留原始payload；真实数值冲突仍拒绝覆盖。既有observer手动只读刷新并继续原定时器，成交和income成功持久化。
+- `/account/performance`读取真实USDT权益和income，链式Modified Dietz调整划转；含手动及旧策略交易，未知区间断开，不冒充当前策略独立收益。
+- 2026-10-17约03:10 UTC补3文件修正：极小额BNB保证金不再抑制USDT权益，其他保证金保留未估值；前端明确USDT口径。补丁直接GET真实资产验证，3文件的初版备份位于`hotfix-before/`；`delivery.initial.json`保留初版哈希，`delivery.json`为当前哈希。账户/文案补丁无需重启API；随后修正快照微秒与income毫秒边界时重启只读API一次，交易服务未重启。
+- 2026-10-17 03:15 UTC复核：API active/running、NRestarts=0，成交11/income27采集成功；收益467点、2段且覆盖最新观测，136个旧权益缺项保留。正式浏览器回归通过，源站四路径及Mac公网匿名首页401；HTTP/磁盘与交易保护文件哈希一致。
+- 首次发布后权益采集的缺口（10月16日15:36起至17日03:10前）保留，恢复后新段独立起算；不删除或补造历史。候选使用实时资产GET的检查已补上，防止仅验证历史快照遗漏当前资产范围。
+
+完整回退仅恢复本轮代码、注册表和派生查询缓存，**不恢复或删除真实资产历史、账户成交、策略执行账本，不停交易定时器**。先检查当前文件仍匹配本发布哈希，遇后续版本拒绝覆盖：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/personal-system-20261016T153000Z/publish.py rollback'
+```
+
+本轮只读发布授权不扩大当前宏观策略的交易范围。后续研究优先事项与已完成事项见[更新计划](personal-system-consolidation-plan.md)，当前运行事实见[current](current.md)。
+
+## 宏观实盘实现修正与旧仓交接（2026-10-16 13:46 UTC）
+
+owner要求修正实盘，并选择“保留原保护单，旧仓结束后由新策略接管”。当前执行ID为 `rolling7_risk_no_chase_mr_signal_gap_1atr`；不再使用简化SMA120入口。8个ETF宏观信号、禁止追涨、均值回归信号至入场1ATR跳空门、50%资金压力预算、20倍名义上限／50倍设置上限、实际清算距离与成本容量约束均沿用选定研究。趋势持有至多7天，均值回归至多21天、每7天资金费复核，失败全平；2R后按已完成小时收盘更新2ATR移动止损。
+
+- `qount-1atr-auto.timer` 改为 `*-*-* *:00:05 UTC`，无随机延迟、无Persistent补单；仅纽约交易日10:00允许入场，90秒过期拒绝补单。旧plan timer仍disabled。API保持只读，新旧策略成交分开归属。
+- 新执行 `scripts/operations/run_macro_1atr.py --execute`；`--check`只读核对；`--warm-inputs`仅更新公开行情。状态／SQLite／公开缓存位于 `/var/lib/qount/1atr/`。新仓使用Algo接口、CONTRACT_PRICE、reduce-only STOP_MARKET；原CL的MARK_PRICE单保持不动。重启查询原client ID，不重复创建未知订单；限价IOC按实际成交数量保护，替换止损先确认新单再撤旧单。
+- 122项相关Python与9项JS测试通过；基础成本7笔、双成本1笔的原研究完整回放精确复现，实盘入场函数在8个历史入场点的排序、数量、止损、杠杆、预算一致。候选公共输入已更新至10月15日ETF收盘，并续接8个原生合约小时缓存；只是代码与历史一致性验证，尚无新策略真实成交验证。
+- 发布后服务success，收据13:46:29Z为 `HOLD_LEGACY_POSITION`。交易所发布前后均为CL多头0.15、均价96.10，原保护单 `q1atr-stop-9486bf417a70f630 / NEW / 90.06 / MARK_PRICE`，普通订单0；未提交新订单、撤旧保护或修改旧仓设置。
+- 本次只部署22个运行／规则文件、窄改账户状态函数和实盘HTML／JS，共25个文件；不发布整体导航整理、不改Caddy、凭据、账户observer/publisher的服务配置或其他策略。备份 `/var/lib/qount/1atr/releases/20261016T134622Z-macro-fix/`。回退恢复代码与只读页面，**停用自动timer并保留实际成交数据库和运行状态**，不自动恢复错误的旧策略交易。
+
+```bash
+ssh qount-vps 'python3 /var/lib/qount/1atr/releases/20261016T134622Z-macro-fix/rollback.py'
+```
+
+本节是owner明确授权的生产修正，其余历史只读发布的默认边界不扩大。当前事实以 [current.md](current.md) 为准。
+
+## 账户真实成交与资金流水发布（2026-10-16 UTC）
+
+owner要求增加真实交易记录，发布目录 `/root/qount-releases/account-records-20261016/`。六文件：新增 `src/qount/operations/account_trades.py`，更新只读observer、账户API路由、`index.html`／`app.js`／`live.js`。仅调用币安GET `/fapi/v1/userTrades` 与 `/fapi/v1/income`；Agent未读取、传输或修改凭据文件，既有采集服务按原配置使用凭据。查询近7天、持久保留，先收入查询再扩展成交合约范围；账户记录不自动归属1ATR。页头“下单未启用”描述实际运行状态，不以“未授权”否定owner已经提出的请求。
+
+- 新数据：`/var/lib/qount/account-trades.sqlite3`，0600；既有资产库、查询库及严格legacy observation不改结构。首次8笔成交、22条资金流水，9个合约采集成功，包括收入流水发现的XRPUSDT，无错误。新只读端点 `/account/trades?limit=100`，上限500。
+- 19项账户、52项API、16项前端检查通过；VPS候选独立路由测试无私有请求；候选／正式五页六宽度无JS错误或溢出，真实8／22条渲染一致。记录分页预算、缺口、不可用、去重与冲突都有明确状态，不以空列表伪装查询失败。
+- 六文件磁盘及三静态HTTP哈希匹配，API为新路由重启一次后PID299959、NRestarts=0、active、health正常。既有 `qount-dashboard-account-observer.service` 手动运行一次成功，未增加／修改定时器；Caddy哈希与认证不变，源站匿名新接口401。没有启用交易服务、划转、撤单或下单。
+- 代码备份 `before/`，交付清单 `delivery.json`，收据 `published.json`。回退保留真实交易数据库，仅恢复代码并重启只读API；存在后续版本时拒绝覆盖。
+
+```bash
+ssh qount-vps 'python3 /root/qount-releases/account-records-20261016/publish.py rollback'
+```
+
+接口依据：[币安成交查询](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Account-Trade-List)、[收入流水查询](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/Get-Income-History)。当前官方文档限制单次成交时间窗7天且fromId不能与时间范围混用；实现使用时间分割，明确不承诺账户全生命周期历史覆盖。
+
+## 实盘只读页发布（2026-10-16 UTC）
+
+按owner要求增加“实盘”前端入口，发布 `live-view-20261016T034500Z`，仅 `web/app/index.html`、`app.js`、`style.css` 与新增 `live.js` 四文件。页面展示1ATR宏观杠杆候选、变化中的USDⓈ-M USDT权益／可用余额、模型压力预算参考及账户持仓；读既有 `/account/assets`，不新增账户请求服务。显式标记自动交易未启用、实时策略信号／实盘账本未接入，收益不使用回测代替。资产来源失败清空，过期暂停预算参考，手机导航使用短标签容纳第五页。
+
+- 147项相关Python、15项前端测试通过；候选与正式SSH转发的Chrome五页×六宽度（320／375／500／768／1200／1440px）无溢出或JS错误，动态80／60／40、失败及过期场景通过。截图位于Mac `/tmp/qount-live-view-20261016/`。未测手机真机或认证域名浏览器。
+- 发布前核对与线上原三文件逐字差异，备份位于 `/root/qount-releases/live-view-20261016T034500Z/before/`，交付清单 `delivery.json`、发布收据 `published.json`。四文件磁盘与HTTP哈希一致，API PID278518、NRestarts=0、active、health正常；不重启API，不改数据库、服务单元、Caddy、密钥、observer或publisher。
+- Caddy哈希保持不变；源站匿名 `/`、`/live.js`、`/account/assets` 均401，Mac公网匿名首页401。VPS自身通过公网域名探测曾403，与源站401分别记录，不将403当作登录验证。
+- 离线动态资金改动留在Mac研究内核，不部署至交易服务；原先15.3049911USDT的审阅仅为起始本金测试。页面没有划转、撤单、开仓或启用交易控件。
+
+仅回退本轮四个静态文件（先检查当前与备份哈希，遇后续版本拒绝覆盖；无需重启）：
+
+```bash
+ssh qount-vps 'python3 /root/qount-releases/live-view-20261016T034500Z/publish.py rollback'
+```
+
+## 气泡堆叠上下文修复发布（2026-10-15 14:31 UTC）
+
+owner 反馈“气泡框被遮挡了”，随后授权“发布”。根因是 14:16 那轮未真正解决的一处堆叠上下文问题：`#mascot-bubble` 位于 `.asset-hero` 子树内，而 `.asset-hero { isolation: isolate }` 创建了独立堆叠上下文，把气泡的 `z-index:60` 困在 hero 内部；`isolation` 不改变 fixed 定位的包含块，故 `overflow:hidden` 并未裁剪它，真正问题是其 z-index 无法与根上下文里 `z-index:50` 的粘性 `.topbar` 竞争，气泡永远压在顶栏之下。`isolation:isolate` 是 hero 内 `z-index:-1` 装饰伪元素可见的前提，不能移除。
+
+修复只改 `web/app/app.js` 的 `mascotSay`：显示时把气泡幂等地迁移到 `document.body`，让其 `position:fixed; z-index:60` 在根堆叠上下文中解析并稳定高于顶栏；同时在 `.mascot-stage` 未布局（尺寸为 0，例如账户屏隐藏时跨标签 `fetchAlerts` 触发）时保持气泡隐藏、不再误定位。
+
+- 发布目录：`/root/qount-releases/bubble-20261015T143131Z/`，含 `static-before/app.js`（原 `200f5685…`）、`app.js.new`（`0f56190…`）、`manifest.json`、`backup.json`、`published.json`、`rollback-static.py`。`StaticFiles` 按请求读盘，**未重启服务**。
+- 本地：`node --check` 通过、12 项前端测试全绿、hygiene `ok:true`；浏览器几何验证气泡上线后 `parentElement===body`、`closest('.asset-hero')` 为 false、与顶栏交叠处 `elementFromPoint` 命中气泡本身、隐藏标签守卫使气泡保持 `hidden`。
+- 唯一变更文件核对：本地 `style.css`／`research.js`／`index.html` SHA-256 与线上逐字相符，仅 `app.js` 变化；发布前与 `static-before` 备份哈希相符后才原子 `mv` 覆盖。
+- VPS：暂存／磁盘／HTTP（经 `localhost:8000`，不含凭据）三处 `app.js` SHA-256 均为 `0f56190…`；`qount-api.service` MainPID `278518` 未变、`NRestarts=0`、`active`；health `ok`、9 条线、`research_only=true / orders_authorized=false`；公网未认证 `/`、`/app.js`、`/account/assets` 均 `401`，Caddy 认证与路由逐字未改。未改 API 代码、数据库、systemd、凭据或 timers。
+- 诚实边界：浏览器验证以 `evaluate_script` 几何与 DOM 关系取证，未取像素截图；应用内浏览器文档处于隐藏态会暂停 CSS 动画，故透明度类读数不可信，改以堆叠链／命中测试为准。认证域名浏览器与手机真机仍未验收；3–5 日观察期继续。
+
+仅回退本轮（脚本先核对线上 `app.js` 仍属本轮或原版，否则拒绝覆盖）：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/bubble-20261015T143131Z/rollback-static.py'
+```
+
+恢复 `static-before/app.js`（`200f5685…`，即 14:16 那版），无需重启；不要用上一轮三文件整包回退替代这一步。
+
+## 交互、曲线与气泡修复发布（2026-10-15 14:16 UTC）
+
+owner 要求把本轮前端修复部署到 VPS。纯静态三文件增量：`web/app/app.js`、`index.html`、`style.css`；`research.js` 与 `assets/` 未改，沿用上一发布。内容为曲线开关修复（`setOption` notMerge + datazoom 监听只绑一次 + `chartRowCount` 闭包）、曲线 emphasis／面积／初始线／最大回撤标注、可点击猫猫人偶与状态气泡、气泡被 hero 裁剪／尾巴朝向／越界钳制修复、人偶定位级联修复、以及研究卡片 `source.label` 的 XSS 转义。
+
+- 发布目录：`/root/qount-releases/20261015T141617Z/`，含 `static-before/`（原三文件）、`new/`、`manifest.json`、`published.json`、`rollback-static.py`。`StaticFiles` 按请求读盘，未重启服务。
+- 本地：`node --check` 通过、12 项前端测试全绿、hygiene `ok:true`、逐条 XSS 审计（仅 `source.label` 一处原始 innerHTML 注入，已修）；人偶与气泡经浏览器 DOM 几何测量（591px 窄窗四档滚动，`inViewport` 全 true、尾巴翻转与越界钳制确认）。
+- VPS：暂存／上线／HTTP（经 SSH `localhost:8000`，不含凭据）三处 SHA-256 与清单逐一相符；`research.js` 哈希未变；health `ok`、9 条线、`research_only=true / orders_authorized=false`；`qount-api.service` active、`NRestarts=0`；未改 API 代码、数据库、systemd、Caddy、凭据或 timers。
+- 诚实边界：公网 `https://qount.alyaloale.com/` 输入 Basic Auth 后的浏览器验收、手机真机、以及 >600px 宽屏实测均未执行（宽屏以 CSS 级联推断与改版前一致）；3–5 日观察期继续。
+
+仅回退本轮静态界面（脚本会先核对线上三文件仍属本轮，否则拒绝覆盖）：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/20261015T141617Z/rollback-static.py'
+```
+
+## 动画、文字与九线目录发布（2026-10-15 12:12 UTC 复验）
+
+按 owner 继续部署及“先整理已接入的 9 条”要求，发布 `ui-20261015T115414Z`。仅更新 `web/app/index.html`、`app.js`、`style.css` 和新增 `research.js`，统一九线名称、分类、结论与数据状态，加入筛选、封存区、页面／卡片／角色动效、刷新反馈及减少动画支持。
+
+- 发布目录：`/root/qount-releases/ui-20261015T115414Z/`，含交付清单、`static-before/` 原三文件、`backup.json`、`published.json` 和 `rollback-static.py`。原文件从上一发布交付件恢复备份并与本轮发布前哈希逐一核对。
+- 本地 12 项前端、52 项 API 检查通过；候选及正式服务经 SSH 转发的 Chrome 四页、9 条详情回归通过，视口覆盖 320／375／500／600／768／900／1024／1200／1440px。筛选与搜索、刷新保留条件、减少动画、键盘焦点、延迟／失败／乱序、可见性轮询检查通过，无横向溢出或 JS 错误。未声称手机真机或认证域名浏览器验收。
+- 四文件磁盘及 HTTP SHA-256 均匹配清单。既有 API PID `278518` 未变、`NRestarts=0`、health 为 `ok`；真实资产接口 10 钱包、只读且无下单授权。来源仍为 5 条陈旧、3 条缺失，`ingest_status=partial`。
+- 未改 API 代码、数据库、服务配置、Caddy 或凭据；observer／publisher timers 均保持 active，公网匿名 `/` 与 `/account/assets` 均返回 401。独立候选验证完成后关闭临时 API 与 SSH 转发。
+
+仅回退本轮静态界面，先核对所有线上文件仍属于本轮，并核对备份哈希；发现后续修改即拒绝覆盖：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/ui-20261015T115414Z/rollback-static.py'
+```
+
+脚本恢复原三文件并移除新 `research.js`，无需重启。不要用上一轮资产发布的整包回退替代这一步，以免同时回退 API 和查询库。
+
+## 资产分析发布（2026-10-15 11:30 UTC）
+
+owner 明确要求“优化字标，最后检查修复并上线”，随后要求查找原对话继续部署。本轮续接已准备的候选发布 `assets-20261015T105250Z`，发布 13 个前端、只读账户 API、研究线命名及 observer 文件。真实账户只读采集取得 10 个钱包，合约权益／未实现盈亏完整，正式资产历史从本轮采集开始积累。
+
+- 发布与回退目录：`/root/qount-releases/assets-20261015T105250Z/`，含原代码、`database-before.db`、`backup.json`、`delivery/manifest.json`、`published.json`、`rollback.py`。
+- 当前查询库：`/var/lib/qount/api/candidates/assets-20261015T105250Z.db`；旧库保留，未重新摄取或覆盖旧库。
+- API 增量配置：`/etc/systemd/system/qount-api.service.d/95-assets-20261015T105250Z.conf`；指定新查询库、真实资产文件和本轮 `registry-vps.json`。该 VPS 注册表使用真实 Dual-Engine／CTA-R 路径和已部署 ETF 工件，避免用 Mac 默认路径摄取后误报缺源。
+- 9 条线中 6 条有源，3 条缺源；4 条 Dual-Engine 与 ETF 回放截至 10 月 9 日，明确显示陈旧，CTA-R 截至 10 月 15 日。正式日报仍未配置；不据此生成今日研究状态。
+- 本地 61 项 Python、9 项前端检查通过；VPS 候选 56 项通过，5 项因测试硬编码 Mac 路径／历史工件或行情缓存缺失跳过。候选已按 1440／1200／500／375px 检查四页和 500px 的 9 条详情，并核对 ETF 37 笔买卖／1 次拆分。
+- 发布后经只读 SSH 转发对正式 `127.0.0.1:8000` 完成同样的四种宽度／四页及 9 条详情复验，无横向溢出或 JavaScript 错误；这是桌面 Chrome 的手机宽度检查，未声称手机真机或认证域名浏览器已验收。正式资产接口为 `AVAILABLE`，首次正式观测 `2026-10-15T11:30:04Z`，历史 1 点；API 为 active、`NRestarts=0`，内存约 55 MB，observer 成功且既有 observer／publisher timer 为 active。公网匿名 `/` 与 `/account/assets` 均为 401。
+- Caddy 配置逐字未改，保留认证与既有 relay 路由。observer 复用既有服务与 timer，未新增定时器或交易权限。API／采集 `orders_authorized=false`。
+
+仅在没有后续叠加修改时回退本轮：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/assets-20261015T105250Z/rollback.py'
+```
+
+脚本先核对当前文件属于本轮或原版，恢复原代码、移除本轮 API drop-in 并重启既有 API，使其使用原查询库；不改 Caddy、凭据、其他服务或已积累的真实资产历史。若后续代码已改变，脚本拒绝覆盖。
 
 ## 最近一次增量发布（2026-10-13 UTC）
 

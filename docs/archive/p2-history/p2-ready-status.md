@@ -46,7 +46,7 @@
 - 命令行接口，调用 `train.py` 核心循环
 - 配置参数化（结构、学习率、种子）
 
-**测试脚本**：`scripts/research/test_p2_infrastructure.py`
+**测试脚本**：`scripts/archive/research-legacy/p2-tools/test_p2_infrastructure.py`
 - 验证所有模块可导入和运行
 
 ### 3. 文档（已完成）
@@ -105,7 +105,7 @@ cd ~/Code/qount
 source p2_train_venv/bin/activate
 
 # 运行测试
-python3 scripts/research/test_p2_infrastructure.py
+python3 scripts/archive/research-legacy/p2-tools/test_p2_infrastructure.py
 
 # 检查 GPU
 nvidia-smi

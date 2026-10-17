@@ -29,7 +29,7 @@
    - 验证 GPU 利用率
 
 **预计完成时间**：40-60 分钟
-**测试脚本**：`scripts/research/test_optimizations.py`
+**测试脚本**：`scripts/archive/research-legacy/p2-tools/test_optimizations.py`
 
 ### 2. 代码优化（准备中）
 

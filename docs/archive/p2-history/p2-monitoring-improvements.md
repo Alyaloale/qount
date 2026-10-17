@@ -183,7 +183,7 @@ def train(cfg, out_dir, *, log_every=1, checkpoint_every=10, ...):
 
 ### 4. 监控脚本
 
-**新增**: `scripts/research/monitor_training_progress.py`
+**新增**: `scripts/archive/research-legacy/p2-tools/monitor_training_progress.py`
 
 ```python
 def monitor_training(root_dir: Path):
@@ -219,7 +219,7 @@ def monitor_training(root_dir: Path):
 ```bash
 # 服务器上运行
 cd /root/autodl-tmp
-python scripts/research/monitor_training_progress.py experiments/p2_us_final_20261002_monitored
+python scripts/archive/research-legacy/p2-tools/monitor_training_progress.py experiments/p2_us_final_20261002_monitored
 ```
 
 **输出示例**:
@@ -311,7 +311,7 @@ nohup python scripts/research/etf_trader_parallel_search.py \
 ### 2. 实时监控（推荐）
 ```bash
 # 方法 1: 使用监控脚本（汇总所有训练）
-python scripts/research/monitor_training_progress.py \
+python scripts/archive/research-legacy/p2-tools/monitor_training_progress.py \
   experiments/p2_us_final_20261002_monitored
 
 # 方法 2: 查看单个训练

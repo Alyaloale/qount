@@ -52,7 +52,7 @@ echo $! > train.pid
 
 ```bash
 # 方法 1: 汇总监控（推荐）
-python scripts/research/monitor_training_progress.py experiments/p2_us_20261002
+python scripts/archive/research-legacy/p2-tools/monitor_training_progress.py experiments/p2_us_20261002
 
 # 方法 2: 查看单个训练
 tail -f experiments/p2_us_20261002/stage_a/phi16_h16_L1_lr3e-04/seed20260930/train.log

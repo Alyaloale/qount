@@ -45,7 +45,7 @@ Mac及WSL新11专项通过；Mac全仓3,248（3,214通过/34条件跳过）101.8
 
 ## 2026-10-10 选股与历史验证按用途补数据
 
-owner要求执行选股策略，指出继续补完整历史档案会阻塞目标。此前把“历史回测完整性”和“当前名单生成”共用一套前置要求，范围过宽；现按[current](current.md#a股选股推进范围修正2026-10-10)修正。research_only=true/orders_authorized=false/promotion_evidence=false。本轮只调整研究顺序，未生成新名单、收益或下单。
+owner要求执行选股策略，指出继续补完整历史档案会阻塞目标。此前把“历史回测完整性”和“当前名单生成”共用一套前置要求，范围过宽；现按[current](archive/current-before-personal-consolidation-20261016.md#a股选股推进范围修正2026-10-10)修正。research_only=true/orders_authorized=false/promotion_evidence=false。本轮只调整研究顺序，未生成新名单、收益或下单。
 
 | 数据/证据 | 当前选股与无订单前向记录 | 历史评价或持仓结算 |
 | --- | --- | --- |
@@ -60,7 +60,7 @@ owner要求执行选股策略，指出继续补完整历史档案会阻塞目标
 
 ## 2026-10-10 同源价格代理资格与首轮信息检验
 
-本节是后续进展；下方原设计、无令牌补采及未运行状态保留为各时点快照。research_only=true / orders_authorized=false / promotion_evidence=false。当前授权和运行状态只看[current](current.md#a股同源资格与首轮信息检验完成2026-10-10)。
+本节是后续进展；下方原设计、无令牌补采及未运行状态保留为各时点快照。research_only=true / orders_authorized=false / promotion_evidence=false。当前授权和运行状态只看[current](archive/current-before-personal-consolidation-20261016.md#a股同源资格与首轮信息检验完成2026-10-10)。
 
 ### 已补齐的同源证据
 

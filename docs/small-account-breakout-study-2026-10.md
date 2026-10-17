@@ -96,9 +96,9 @@ BTC数量步长0.001枚与价格结合也造成小本金限制；设置杠杆只
 
 交付入口：
 
-- [运行器](../scripts/research/run_small_account_breakout.py)和[数据采集](../src/qount/research/small_account_breakout_data.py)，只访问公开接口，不读取私有账户或凭据。
+- [运行器](../scripts/archive/research-legacy/small-account-breakout/run_small_account_breakout.py)和[数据采集](../src/qount/research/small_account_breakout_data.py)，只访问公开接口，不读取私有账户或凭据。
 - [65组摘要、逐笔记录、分钟权益与输入/源码哈希](../state/research_runs/small_account_breakout_v01_20261013_verified/summary.json)，[自动生成报告](../state/research_runs/small_account_breakout_v01_20261013_verified/report.md)。已有完成包拒绝覆盖；修正入场首小时跟踪高低点的时间处理后，同一数据重跑65组结果的收益与回撤均未改变，前一版工件保留。
-- [复核程序](../scripts/research/verify_small_account_breakout.py)与[复核回执](../state/research_runs/small_account_breakout_v01_20261013_verified_verification.json)：65组、120条账本记录及655,200点净值重算一致；120条包含同一历史交易在不同配置下的重复，**主版本只有10笔交易**。五周各截去后四天未来行情后，共280个较早信号与全量输入生成的前缀一致。
+- [复核程序](../scripts/archive/research-legacy/small-account-breakout/verify_small_account_breakout.py)与[复核回执](../state/research_runs/small_account_breakout_v01_20261013_verified_verification.json)：65组、120条账本记录及655,200点净值重算一致；120条包含同一历史交易在不同配置下的重复，**主版本只有10笔交易**。五周各截去后四天未来行情后，共280个较早信号与全量输入生成的前缀一致。
 - [19项新专项测试](../tests/test_small_account_breakout.py)通过，覆盖资金费因果性、信号前缀、入场分钟止损、首小时跟踪高低点只取入场后分钟、跳价、暂停、保证金/风险/数量限制、纽约日历、股票日内退出、盈利复投及降档锁存。既有小账户风险25项和组合治理14项回归通过。
 
 算术与时点复核不是独立重取全部市场数据，也不是历史盘口撮合认证。当前规则快照、费率与维持保证金假设仍是实盘执行证据缺口。五周属于已消费的开发/探索历史，后续不能再次宣称独立OOS。样本短且不连续，不计算CAGR/Calmar或达到1,000 USDT的概率。
@@ -106,9 +106,9 @@ BTC数量步长0.001枚与价格结合也造成小本金限制；设置杠杆只
 复现使用新输出目录：
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/research/run_small_account_breakout.py \
+PYTHONPATH=src .venv/bin/python scripts/archive/research-legacy/small-account-breakout/run_small_account_breakout.py \
   --download --output state/research_runs/small_account_breakout_v01_reproduction
-PYTHONPATH=src .venv/bin/python scripts/research/verify_small_account_breakout.py \
+PYTHONPATH=src .venv/bin/python scripts/archive/research-legacy/small-account-breakout/verify_small_account_breakout.py \
   --bundle state/research_runs/small_account_breakout_v01_reproduction \
   --receipt state/research_runs/small_account_breakout_v01_reproduction_verification.json
 ```
@@ -197,9 +197,9 @@ A版也不能直接晋级：45个成交事件组的前三组占正事件利润44
 
 ### 工件、验证与裁决
 
-- [固定实验配置](../config/small-account-breakout-v02.json)、[连续运行器](../scripts/research/run_small_account_breakout_study.py)、[诊断实现](../src/qount/research/small_account_breakout_study.py)。
+- [固定实验配置](../config/small-account-breakout-v02.json)、[连续运行器](../scripts/archive/research-legacy/small-account-breakout/run_small_account_breakout_study.py)、[诊断实现](../src/qount/research/small_account_breakout_study.py)。
 - [20组完整摘要](../state/research_runs/small_account_breakout_v02_20261013_verified/summary.json)、[结果表](../state/research_runs/small_account_breakout_v02_20261013_verified/report.md)、[固定入场退出配对](../state/research_runs/small_account_breakout_v02_20261013_verified/matched-exit-comparison.json)、[原10笔路径](../state/research_runs/small_account_breakout_v02_20261013_verified/pilot-trade-diagnostics.json)、[数量离散化诊断](../state/research_runs/small_account_breakout_v02_20261013_execution_diagnostic.json)。
-- [独立复核程序](../scripts/research/verify_small_account_breakout_study.py)与[回执](../state/research_runs/small_account_breakout_v02_20261013_verified_verification.json)：20组、607条含重复情景的逐笔记录、5,644,800点分钟净值的现金／实际资金费／标记权益／回撤／R及失败退出时钟复算通过，截断未来后553个原始信号前缀一致。**607条不是607个独立交易样本**。
+- [独立复核程序](../scripts/archive/research-legacy/small-account-breakout/verify_small_account_breakout_study.py)与[回执](../state/research_runs/small_account_breakout_v02_20261013_verified_verification.json)：20组、607条含重复情景的逐笔记录、5,644,800点分钟净值的现金／实际资金费／标记权益／回撤／R及失败退出时钟复算通过，截断未来后553个原始信号前缀一致。**607条不是607个独立交易样本**。
 - 31项相关单元测试通过，覆盖保护止损优先、延迟、缺失确认、开盘强平、资金费间隔因果性、跨周持仓与冷却、退出分钟MFE边界、数量上限及固定交易成本重估。v0.1另重跑65组，除描述性年化说明外全部原摘要字段一致，见[兼容回执](../state/research_runs/small_account_breakout_v01_20261013_compat_v02_verification.json)。Python编译与仓库规范检查通过。
 
 本轮裁决：**不采用本次失败退出和延后一小时确认；不以提高风险、放宽止损或叠加规则救援。** 简单突破保留为最有价值的研究对照，但其阶段依赖、尾部执行压力及10 USDT下退化为SOL单标的的问题尚未解决。整个196日区间已消费为开发样本；未运行独立验证、未创建生产候选、未启动前向服务。后续如投入，应先冻结简单基线及其执行假设，在未参与选择的区间或新的前向数据验证，避免继续用本段历史选规则。
@@ -207,9 +207,9 @@ A版也不能直接晋级：45个成交事件组的前三组占正事件利润44
 复现时必须使用新的输出与回执路径：
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/research/run_small_account_breakout_study.py \
+PYTHONPATH=src .venv/bin/python scripts/archive/research-legacy/small-account-breakout/run_small_account_breakout_study.py \
   --download --output state/research_runs/small_account_breakout_v02_reproduction
-PYTHONPATH=src .venv/bin/python scripts/research/verify_small_account_breakout_study.py \
+PYTHONPATH=src .venv/bin/python scripts/archive/research-legacy/small-account-breakout/verify_small_account_breakout_study.py \
   --bundle state/research_runs/small_account_breakout_v02_reproduction \
   --receipt state/research_runs/small_account_breakout_v02_reproduction_verification.json
 PYTHONPATH=src .venv/bin/python scripts/research/analyze_small_account_breakout_execution.py \
@@ -255,7 +255,7 @@ LG实际平均初始止损风险约占入场前权益1.23%，恒定1.3%风险L�
 
 L曾作为冻结的历史验证候选，A作原对照。LT不并入主候选，因固定交易退出变化为负，连续增量太小且来自改变后的交易集合。LG仍是独立风险控制诊断，不能与LT叠加。后续外部结果没有支持L的正净期望，因此不进入前向或纸面晋级；2025窗口现已消费。`C[t-1]<0.85`按第二批单独验证；股票永续开盘区间保持独立研究，不与加密模块组合。
 
-- [固定配置](../config/small-account-breakout-v03-next.json)、[运行器](../scripts/research/run_small_account_breakout_next.py)和[完整报告](../state/research_runs/small_account_breakout_v03_next_20261013/report.md)。
+- [固定配置](../config/small-account-breakout-v03-next.json)、[运行器](../scripts/archive/research-legacy/small-account-breakout/run_small_account_breakout_next.py)和[完整报告](../state/research_runs/small_account_breakout_v03_next_20261013/report.md)。
 - [连续账户摘要](../state/research_runs/small_account_breakout_v03_next_20261013/summary.json)、[LT固定入场配对](../state/research_runs/small_account_breakout_v03_next_20261013/LT_fixed_entries.json)、[持币／现金基准](../state/research_runs/small_account_breakout_v03_next_20261013/benchmark-controls.json)。逐笔成交、分钟权益、双倍成本固定成交重估、完整压力重跑和逐文件hash均在同一完成包中；`_COMPLETE`匹配manifest。运行内账本净盈亏与分钟NAV回撤复算一致，固定入场配对核对了成交价与数量。
 
 本节开发结果为`research_only=true / orders_authorized=false`；未访问账户或连接生产。冻结历史验证、波动收缩和独立股票候选分别见下节。
@@ -275,7 +275,7 @@ L比A少亏24.65个百分点、回撤低21.62个百分点，说明方向非对�
 
 行情分钟与标记线各524,160根/资产、小时预热9,576根/资产、资金费1,101条/资产，时间戳覆盖完整。官方小时档与每日分钟档仍有10个“资产×小时”OHLCV不一致（BTC 4、ETH 3、SOL 3，集中在1月14日和1月29日）。信号特征固定使用通过官方校验的小时归档，成交和流动性用分钟归档；这些不一致已记录在[数据质量工件](../state/research_runs/small_account_breakout_v03_external_2025_20261013/data-quality.json)。A、L成交决策均不落在异常小时后的20小时内，但ATR递推会逐渐消退异常影响，故仍披露为数据限制。历史最低名义、步长、费率等级与盘口没有完整认证；所有结果仅表示冻结研究实现的历史模拟。
 
-- [冻结合同](../config/small-account-breakout-v03-external-2025.json)、[运行器](../scripts/research/run_small_account_breakout_external.py)、[结果表](../state/research_runs/small_account_breakout_v03_external_2025_20261013/report.md)、[连续摘要](../state/research_runs/small_account_breakout_v03_external_2025_20261013/summary.json)。公共归档在独立缓存中逐项SHA-256／ZIP CRC核验；账本、分钟净值回撤和`_COMPLETE` manifest hash已单独复算。此历史验证窗口现在是已消费样本。
+- [冻结合同](../config/small-account-breakout-v03-external-2025.json)、[运行器](../scripts/archive/research-legacy/small-account-breakout/run_small_account_breakout_external.py)、[结果表](../state/research_runs/small_account_breakout_v03_external_2025_20261013/report.md)、[连续摘要](../state/research_runs/small_account_breakout_v03_external_2025_20261013/summary.json)。公共归档在独立缓存中逐项SHA-256／ZIP CRC核验；账本、分钟净值回撤和`_COMPLETE` manifest hash已单独复算。此历史验证窗口现在是已消费样本。
 
 ## 10. 波动率收缩第二批假设
 
@@ -287,7 +287,7 @@ C_{t-1}=\frac{ATR_{14,t-1}}{\operatorname{mean}(ATR_{14,t-72},\ldots,ATR_{14,t-1
 
 使用突破前72个完整小时，没有用突破小时或未来数据。592个可计算多头信号中183个（30.9%）通过。连续账户L为+28.23%／11.57%回撤／31笔；加入过滤后5.30%／5.16%／5笔。过滤版均值净R +0.732，但只有5个成交事件，不能把较高的每R均值当作可重复优势。双倍成本时没有成交；止损额外1%时为+2.24%／7.20%回撤／5笔。该单阈值过滤大幅降低机会，在本开发段没有提高账户净收益；保留为有条件风险压缩假设，不晋级，也不再回看已消费的2025验证段。
 
-工件为[固定定义](../config/small-account-breakout-volatility-contraction-v01.json)、[运行器](../scripts/research/run_small_account_breakout_contraction.py)、[摘要](../state/research_runs/small_account_breakout_v03_contraction_085_20261013/summary.json)和[报告](../state/research_runs/small_account_breakout_v03_contraction_085_20261013/report.md)。
+工件为[固定定义](../config/small-account-breakout-volatility-contraction-v01.json)、[运行器](../scripts/archive/research-legacy/small-account-breakout/run_small_account_breakout_contraction.py)、[摘要](../state/research_runs/small_account_breakout_v03_contraction_085_20261013/summary.json)和[报告](../state/research_runs/small_account_breakout_v03_contraction_085_20261013/report.md)。
 
 ## 11. 股票永续独立开盘区间候选
 

@@ -821,8 +821,8 @@ $$\text{Score}(S, t) = S_{\text{base}} + \Delta_{\text{eff}} + S_{\text{funding}
 | 工件类型 | 文件路径 | 职责与哈希校验 |
 | :--- | :--- | :--- |
 | **策略核心引擎** | [src/qount/research/universal_regime_expectancy.py](../src/qount/research/universal_regime_expectancy.py) | 严格因果时序判定、ER 0.28 门禁、正交配额、双轨衰竭退出与小资金 DYNAMIC_BULL_2_5X 动态杠杆 |
-| **可复现审计执行器** | [scripts/research/run_universal_regime_expectancy_audit.py](../scripts/research/run_universal_regime_expectancy_audit.py) | 一键复现全周期与样本外 5 大模式性能矩阵（含小资金动态 2.5X） |
-| **综合校验与压力套件** | [scripts/research/verify_universal_regime_strategy.py](../scripts/research/verify_universal_regime_strategy.py) | 7 大维度全面压力测试（敏感性、跳空穿仓、留一法消融、IS/OOS 与 $100 专项回放） |
+| **可复现审计执行器** | [scripts/research/run_universal_regime_expectancy_audit.py](../scripts/archive/research-legacy/universal-regime/run_universal_regime_expectancy_audit.py) | 一键复现全周期与样本外 5 大模式性能矩阵（含小资金动态 2.5X） |
+| **综合校验与压力套件** | [scripts/research/verify_universal_regime_strategy.py](../scripts/archive/research-legacy/universal-regime/verify_universal_regime_strategy.py) | 7 大维度全面压力测试（敏感性、跳空穿仓、留一法消融、IS/OOS 与 $100 专项回放） |
 | **自动化回归测试套件** | [tests/test_universal_regime_expectancy.py](../tests/test_universal_regime_expectancy.py) | 9 项完整单元测试覆盖因果时序、止损优先、融资扣息、正交配额、右侧收阳门禁、衰竭退出与动态牛市杠杆 |
 | **当前事实权威源** | [docs/current.md](current.md) | 同步固化 v1.8 最新研究事实与边界记录 |
 
@@ -1083,7 +1083,7 @@ is_mr = (
 
 ### 14.1 独立代码复现与因果时序闭环验证 (Reproduction & Causality Verification)
 
-通过执行自动化审计套件 [scripts/research/run_universal_regime_expectancy_audit.py](../scripts/research/run_universal_regime_expectancy_audit.py) 与单元测试 [tests/test_universal_regime_expectancy.py](../tests/test_universal_regime_expectancy.py)，对核心引擎 [src/qount/research/universal_regime_expectancy.py](../src/qount/research/universal_regime_expectancy.py) 进行了全周期（2020-01-01 至 2026-07-30）逐笔因果审计：
+通过执行自动化审计套件 [scripts/research/run_universal_regime_expectancy_audit.py](../scripts/archive/research-legacy/universal-regime/run_universal_regime_expectancy_audit.py) 与单元测试 [tests/test_universal_regime_expectancy.py](../tests/test_universal_regime_expectancy.py)，对核心引擎 [src/qount/research/universal_regime_expectancy.py](../src/qount/research/universal_regime_expectancy.py) 进行了全周期（2020-01-01 至 2026-07-30）逐笔因果审计：
 
 1. **时序因果律核查通过**：
    - Day $T$ 16:00 美股收盘固化计算指标与候选评分；
@@ -1189,7 +1189,7 @@ is_mr = (
 
 ### 14.6 深度机构级统计检验、Bootstrap 重抽样与蒙特卡洛置换审计 (Institutional Statistical Moments & Monte Carlo Permutation)
 
-通过运行专业级量化统计检验套件 [`scripts/research/deep_statistical_analysis_universal_regime.py`](../scripts/research/deep_statistical_analysis_universal_regime.py) 与单元测试 [`tests/test_deep_statistical_analysis.py`](../tests/test_deep_statistical_analysis.py)，对 1X 现货稳健版与小资金动态牛市 2.5X 版进行了全生命周期（1,651 个交易日）的深度机构级统计穿透：
+通过运行专业级量化统计检验套件 [`scripts/research/deep_statistical_analysis_universal_regime.py`](../scripts/archive/research-legacy/universal-regime/deep_statistical_analysis_universal_regime.py) 与单元测试 [`tests/test_deep_statistical_analysis.py`](../tests/test_deep_statistical_analysis.py)，对 1X 现货稳健版与小资金动态牛市 2.5X 版进行了全生命周期（1,651 个交易日）的深度机构级统计穿透：
 
 #### 1. 时间序列分布矩与风险调整后比率对照
 | 统计指标维度 | 方案 A：大资金 1X 现货稳健版 | 方案 B：小资金动态牛市 2.5X 版 | 机构统计学金融含义与评价 |

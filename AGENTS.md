@@ -1,7 +1,7 @@
-# QOUNT — AI 个人量化交易助手 Agent 开发指引
+# QOUNT — 个人资产管理交易系统 Agent 开发指引
 
 > **Status:** Active Repository Guidance
-> **Project:** QOUNT — Personal AI Quantitative Trading System
+> **Project:** QOUNT — Personal Asset Management and Trading System
 > **Primary Objective:** 长期实盘风险调整后财富增长
 > **Source of Truth:** `docs/current.md`
 > **Philosophy:** Profit-Oriented · Research-Driven · Experiment-First · Evidence-Based · Minimal Bureaucracy
@@ -42,7 +42,9 @@
 
 ## 1. 根本目标：个人实战盈利
 
-QOUNT 是为个人账户服务的 AI 量化交易助手，而不是公募基金产品、论文复现仓库或纯粹的机器学习 Benchmark。
+QOUNT 是为个人账户服务的个人资产管理交易系统，覆盖资产分析、策略研究、组合配置、风险管理与授权交易执行。AI 是研究和解释工具；各策略按独立证据评价。
+
+ETF 均线择时研究（兼容标识 `personal_assistant`）是一条普通研究线，与其他研究线平等比较，按研究问题和证据决定资源投入。
 
 ### 1.1 优化目标
 
@@ -775,7 +777,7 @@ QOUNT 的目标不是构建一个在流程上无懈可击、却缺乏研究进�
 
 QOUNT 的目标是构建一个：
 
-**具有真实交易潜力、持续进化能力、科学可信性和工程执行力的个人 AI 量化交易助手。**
+**具有真实交易潜力、持续进化能力、科学可信性和工程执行力的个人资产管理交易系统。**
 
 你应当：
 

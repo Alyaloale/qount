@@ -9,7 +9,7 @@
 先遵循 [AGENTS.md](../AGENTS.md)，再按任务读取下列资料；小改动不要求通读全部文档。项目事实与规则冲突按 `current → project-rules → runbooks/reference → 活动策略文档` 核对，历史合同只约束原实验。
 
 - [当前事实](current.md) — 运行状态、owner 决策与硬边界（唯一当前事实源）。
-- [个人交易助手指南](personal-trading-assistant-guide.md) — 盈利目标、开放策略研究、最小实验与证据方法。
+- [个人资产管理交易系统研究指南](personal-trading-assistant-guide.md) — 盈利目标、开放策略研究、最小实验与证据方法。
 - [项目规则](project-rules.md) — 代码、研究、文档和清理规则。
 - [接手与运维](quick-handoff.md) — 现有运维入口和已知边界。
 - [本地开发](operations/local-development.md) — Mac 环境与验证。
@@ -23,6 +23,7 @@
 
 ## Architecture, research and records
 
+- [个人交易系统收敛方案](personal-system-consolidation-plan.md) — 个人项目的最小结构、数据复用、研究线分类和前后端职责。
 - [架构主设计](system-architecture-design.md) — 当前研究、只读助手与生产执行边界；[旧架构与迁移记录](archive/system-architecture-design-pre-2026-10-12.md)保留历史细节。
 - [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 主机分工、配置规范、研究导航与排障。
 - [存储与计算拓扑](storage-topology.md)
