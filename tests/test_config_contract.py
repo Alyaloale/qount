@@ -21,7 +21,8 @@ class EnvironmentContractTests(unittest.TestCase):
             self.assertTrue(variable.value_type)
             self.assertTrue(variable.allowed_hosts)
             self.assertTrue(variable.default_policy)
-            self.assertTrue(variable.consumers)
+            # Retired variables remain documented without inventing a consumer.
+            self.assertTrue(variable.consumers or variable.legacy, variable.name)
 
     def test_value_free_report_never_echoes_secret(self) -> None:
         secret = "not-for-output-7c9854"

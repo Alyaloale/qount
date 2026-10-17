@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qount"
 version = "0.2.29"
-description = "AI decision trading system with a risk executor for Binance spot."
+description = "Personal asset management and trading system with quantitative research and risk-controlled execution."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

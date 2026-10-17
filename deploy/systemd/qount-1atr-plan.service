@@ -1,0 +1,22 @@
+[Unit]
+Description=Qount 1ATR Binance USD-M plan cycle (order-free until separately armed)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/root/qount/scripts/operations/run_1atr_live.py
+ConditionPathExists=!/root/qount/state/1atr/HALT
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+EnvironmentFile=-/root/qount/.env
+Environment=PYTHONPATH=/root/qount/src
+Environment=QOUNT_BINANCE_ASSETS_PATH=/root/qount/config/binance-assets.json
+Environment=QOUNT_1ATR_EXECUTION_MODE=plan_only
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_1atr_live.py --output /var/lib/qount/1atr/latest-plan.json
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/1atr
+TimeoutStartSec=10m

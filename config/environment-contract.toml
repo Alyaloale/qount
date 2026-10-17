@@ -205,6 +205,182 @@ consumers = ["src/qount/settings.py"]
 legacy = false
 
 [[variables]]
+name = "QOUNT_BINANCE_ASSETS_PATH"
+domain = "core"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "config/binance-assets.json"
+consumers = ["src/qount/binance_assets.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CODEX_REFACTOR_LOG_ROOT"
+domain = "development"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "state/codex_refactor"
+consumers = ["scripts/maintenance/codex_binance_refactor_loop.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CODEX_REFACTOR_ROUNDS"
+domain = "development"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "8"
+consumers = ["scripts/maintenance/codex_binance_refactor_loop.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CODEX_REFACTOR_START_ROUND"
+domain = "development"
+type = "integer"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "1"
+consumers = ["scripts/maintenance/codex_binance_refactor_loop.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CODEX_REFACTOR_MODEL"
+domain = "development"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "gpt-6.1-sol"
+consumers = ["scripts/maintenance/codex_binance_refactor_loop.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CODEX_REFACTOR_REASONING"
+domain = "development"
+type = "string"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "high"
+consumers = ["scripts/maintenance/codex_binance_refactor_loop.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CODEX_REFACTOR_PAUSE"
+domain = "development"
+type = "boolean"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "false"
+consumers = ["scripts/maintenance/codex_binance_refactor_loop.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_CODEX_CORRECTION_FILE"
+domain = "development"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "unset"
+consumers = ["scripts/maintenance/codex_binance_refactor_loop.sh"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_1ATR_EXECUTION_MODE"
+domain = "venue"
+type = "enum:plan_only|live"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "plan_only"
+consumers = ["deploy/systemd/qount-1atr-plan.service", "scripts/operations/run_1atr_live.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_1ATR_EXECUTION_STORE"
+domain = "venue"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "state/1atr/execution.sqlite3"
+consumers = ["scripts/operations/run_macro_1atr.py", "src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_1ATR_ORDER_QUANTITY"
+domain = "venue"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "retired_ignored_by_selected_macro_strategy"
+consumers = []
+legacy = true
+
+[[variables]]
+name = "QOUNT_1ATR_HALT_PATH"
+domain = "venue"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "state/1atr/HALT"
+consumers = ["scripts/operations/run_macro_1atr.py", "src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_1ATR_ARM_PATH"
+domain = "venue"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "state/1atr/arm.json"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_1ATR_RESULT_PATH"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "state/1atr/live-result.json"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_PRIMARY_STRATEGY"
+domain = "safety"
+type = "string"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "one_atr_macro_v0_1"
+consumers = ["src/qount/execution/binance_usdm.py", "scripts/operations/run_macro_1atr.py", "deploy/systemd"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_1ATR_AUTO_ALLOC_FRACTION"
+domain = "venue"
+type = "number"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "retired_ignored_by_selected_macro_strategy"
+consumers = []
+legacy = true
+
+[[variables]]
 name = "QOUNT_TIMEFRAME"
 domain = "core"
 type = "string"
@@ -1540,6 +1716,17 @@ consumers = ["scripts/archive/research-legacy/ashare-etf"]
 legacy = true
 
 [[variables]]
+name = "FUYAO_API_KEY"
+domain = "market_data"
+type = "secret"
+sensitive = true
+allowed_hosts = ["mac"]
+required_when = "never"
+default_policy = "local_0600_only_in_~/.config/qount/fuyao.env"
+consumers = ["src/qount/local_credentials.py", "src/qount/research_data/fuyao.py", "scripts/research/fuyao.py"]
+legacy = false
+
+[[variables]]
 name = "QOUNT_X4_LIVE_ENABLE"
 domain = "legacy"
 type = "boolean"
@@ -1749,28 +1936,6 @@ consumers = ["src/qount/research/etf_trader/generator/native/__init__.py"]
 legacy = false
 
 [[variables]]
-name = "QOUNT_ACCOUNT_SOURCE_PATH"
-domain = "core"
-type = "path"
-sensitive = false
-allowed_hosts = ["mac", "wsl", "vps"]
-required_when = "never"
-default_policy = "runtime_default"
-consumers = ["src/qount/api/routes/account.py"]
-legacy = false
-
-[[variables]]
-name = "QOUNT_ACCOUNT_TRADES_PATH"
-domain = "core"
-type = "path"
-sensitive = false
-allowed_hosts = ["mac", "wsl", "vps"]
-required_when = "never"
-default_policy = "runtime_default"
-consumers = ["src/qount/api/routes/account.py"]
-legacy = false
-
-[[variables]]
 name = "QOUNT_ALLOW_LIVE_FETCH"
 domain = "core"
 type = "enum:0|1"
@@ -1790,6 +1955,39 @@ allowed_hosts = ["mac", "wsl", "vps"]
 required_when = "never"
 default_policy = "runtime_default"
 consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ACCOUNT_ASSETS_PATH"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_ACCOUNT_HISTORY_PATH"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_UNIVERSAL_REGIME_FORWARD_ROOT"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "wsl", "vps"]
+required_when = "never"
+default_policy = "runtime_default"
+consumers = ["src/qount/api/adapters/universal_regime.py"]
 legacy = false
 
 [[variables]]
@@ -1880,3 +2078,14 @@ default_policy = "unset_reports_missing_no_sample_discovery"
 consumers = ["src/qount/api/routes/assistant.py"]
 legacy = false
 
+
+[[variables]]
+name = "QOUNT_ACCOUNT_TRADES_PATH"
+domain = "runtime_state"
+type = "path"
+sensitive = false
+allowed_hosts = ["mac", "vps"]
+required_when = "never"
+default_policy = "sibling-of-account-observation/account-trades.sqlite3"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false

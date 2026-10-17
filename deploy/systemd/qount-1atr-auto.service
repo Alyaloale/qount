@@ -1,0 +1,24 @@
+[Unit]
+Description=Qount selected macro 1ATR strategy and legacy-position handover
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/root/qount/scripts/operations/run_1atr_auto.py
+ConditionPathExists=!/var/lib/qount/1atr/HALT
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+EnvironmentFile=-/root/qount/.env
+Environment=PYTHONPATH=/root/qount/src
+Environment=QOUNT_BINANCE_ASSETS_PATH=/root/qount/config/binance-assets.json
+Environment=QOUNT_LIVE_ENABLE=true
+Environment=QOUNT_PRIMARY_STRATEGY=rolling7_risk_no_chase_mr_signal_gap_1atr
+Environment=QOUNT_1ATR_EXECUTION_MODE=live
+ExecStart=/usr/bin/env QOUNT_LIVE_ENABLE=true QOUNT_PRIMARY_STRATEGY=rolling7_risk_no_chase_mr_signal_gap_1atr /root/qount/.venv/bin/python -m scripts.operations.run_macro_1atr --execute --output /var/lib/qount/1atr/live-result.json
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/1atr
+TimeoutStartSec=4m

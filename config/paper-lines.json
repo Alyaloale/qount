@@ -5,10 +5,21 @@
       "adapter": "dual_engine",
       "name": "美股轮动 (G20)",
       "category": "equity",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "account": "g20",
         "root": "state/dual_engine"
+      },
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "美股轮动 · G20",
+        "category": "美股",
+        "family": "Dual-Engine",
+        "sample": "历史回放＋模拟",
+        "method": "在美股资产间轮动，比较信号与模拟执行的差异。",
+        "note": "包含历史回放；离线改进尚待新数据验证。"
       }
     },
     {
@@ -16,10 +27,21 @@
       "adapter": "dual_engine",
       "name": "加密趋势 (C60)",
       "category": "crypto",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "account": "c60",
         "root": "state/dual_engine"
+      },
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "加密趋势 · C60",
+        "category": "加密资产",
+        "family": "Dual-Engine",
+        "sample": "历史回放＋模拟",
+        "method": "跟踪加密资产趋势，保留原有模拟盘作为对照。",
+        "note": "稳定选币优势已撤回；保留模拟记录，不视为已验证 Alpha。"
       }
     },
     {
@@ -27,10 +49,21 @@
       "adapter": "dual_engine",
       "name": "固定组合 (GC5)",
       "category": "mixed",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "account": "gc5",
         "root": "state/dual_engine"
+      },
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "固定组合 · GC5",
+        "category": "多资产",
+        "family": "Dual-Engine",
+        "sample": "历史回放＋模拟",
+        "method": "以固定资产配置作为轮动与动态配置的比较基线。",
+        "note": "历史回放与前向模拟混合，不能当作实盘收益。"
       }
     },
     {
@@ -38,10 +71,21 @@
       "adapter": "dual_engine",
       "name": "动态组合 (D15)",
       "category": "mixed",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "account": "d15",
         "root": "state/dual_engine"
+      },
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "动态组合 · D15",
+        "category": "多资产",
+        "family": "Dual-Engine",
+        "sample": "历史回放＋模拟",
+        "method": "动态调整资产配置，与固定组合在同一窗口比较。",
+        "note": "离线领先尚待新数据确认；不外推为预期收益。"
       }
     },
     {
@@ -49,19 +93,41 @@
       "adapter": "cta_r_forward",
       "name": "CTA-R 前瞻研究账本",
       "category": "equity",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "root": "state/cta_r"
+      },
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "CTA-R 趋势研究",
+        "category": "美股",
+        "family": "独立研究",
+        "sample": "早期前向观测",
+        "method": "按冻结规则积累独立趋势策略的前向模拟记录。",
+        "note": "样本仍短，不年化；成本与可交易性尚待确认。"
       }
     },
     {
       "id": "personal_assistant",
       "adapter": "personal_assistant",
-      "name": "个人量化交易助手",
-      "category": "assistant",
-      "enabled": true,
+      "name": "ETF 均线择时研究",
+      "category": "equity",
+      "enabled": false,
       "config": {
         "run": "state/research_runs/personal_assistant_reconciled_20261012"
+      },
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "ETF 均线择时研究",
+        "category": "ETF",
+        "family": "独立研究",
+        "sample": "历史回放",
+        "method": "研究 MA120＋1.5% 带宽对纳指 ETF 的择时效果。",
+        "note": "已有回放年化低于同标的买持，重点检验回撤与暴露改善。"
       }
     },
     {
@@ -69,9 +135,20 @@
       "adapter": "binance_macro",
       "name": "币安全球多资产合约",
       "category": "macro",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "run": "state/research_runs/binance_global_macro_20261011"
+      },
+      "display": true,
+      "research_status": "archived",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "币安全球多资产合约",
+        "category": "合约",
+        "family": "封存研究",
+        "sample": "历史研究",
+        "method": "跨资产合约配置研究，保留历史工件供复核。",
+        "note": "未通过准入，旧高收益结论已撤销。"
       }
     },
     {
@@ -79,9 +156,20 @@
       "adapter": "ashare_master",
       "name": "A股赛道动量突破(麒麟)",
       "category": "equity",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "run": "state/research_runs/ashare_sector_momentum_20261011"
+      },
+      "display": true,
+      "research_status": "archived",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "A 股赛道动量 · 麒麟",
+        "category": "A 股",
+        "family": "封存研究",
+        "sample": "历史研究",
+        "method": "A 股赛道动量与突破研究，保留失败结论。",
+        "note": "旧高收益结论已撤销，不作为生产推荐。"
       }
     },
     {
@@ -89,9 +177,66 @@
       "adapter": "universal_regime_forward",
       "name": "通用状态期望 v1.3 (冻结前向)",
       "category": "macro",
-      "enabled": true,
+      "enabled": false,
       "config": {
         "root": "state/research_runs/universal_regime_v1.3_forward"
+      },
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "presentation": {
+        "name": "通用状态期望 · v1.3",
+        "category": "多资产",
+        "family": "独立研究",
+        "sample": "前向来源待接入",
+        "method": "以 v1.3 为基准，检验市场状态与动态配置的前向表现。",
+        "note": "旧 Calmar 口径错误，不能用于排名；后续版本存在高过拟合风险，保留历史结论。"
+      }
+    },
+    {
+      "id": "one_atr",
+      "adapter": "experiment",
+      "name": "简化1ATR历史对照",
+      "category": "macro",
+      "enabled": false,
+      "display": true,
+      "research_status": "paused",
+      "sample_kind": "historical",
+      "config": {
+        "root": "state/research_runs/one_atr",
+        "category": "macro",
+        "run_id": "a5979f5055f2f1669476"
+      },
+      "presentation": {
+        "name": "简化1ATR历史对照",
+        "category": "合约",
+        "family": "独立研究",
+        "sample": "已消费历史探索",
+        "method": "已退役SMA120／20日动量／1ATR门的独立历史对照，使用原生合约与资金费。",
+        "note": "与当前宏观1ATR规则不同；保留失败结果，不继承当前实盘执行资格。"
+      }
+    },
+    {
+      "id": "macro_1atr",
+      "adapter": "experiment",
+      "name": "宏观1ATR原生合约研究",
+      "category": "macro",
+      "enabled": false,
+      "display": true,
+      "research_status": "research",
+      "sample_kind": "historical",
+      "config": {
+        "root": "state/research_runs/macro_1atr",
+        "run_id": "1f01a9af9a80396377bd",
+        "category": "macro"
+      },
+      "presentation": {
+        "name": "宏观1ATR原生合约研究",
+        "category": "合约",
+        "family": "独立研究",
+        "sample": "已消费历史回放",
+        "method": "复用当前宏观规则与原生缓存，比较基础成本、双成本及真实执行限制。",
+        "note": "历史基础成本+29.42%，双成本−6.13%；不代表实盘盈利或独立样本外。"
       }
     }
   ]

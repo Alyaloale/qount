@@ -13,7 +13,7 @@ from qount.api.schemas import LineMetrics, LineSafety, LineSource, NavPoint, Pap
 
 _ADJUDICATION = (
     "通用状态期望 v1.3 冻结参数前向记录；参数已冻结不再迭代，"
-    "逐日累积未见数据观测以验证可信基准（Calmar 1.02 @ 1.5% 跳空）。"
+    "保留独立观测；历史 Calmar 1.02 实为累计收益/回撤，不能当作标准 Calmar。"
     "短样本期间不报告年化或 Sharpe。"
 )
 
@@ -123,7 +123,7 @@ def adapt_universal_regime(line_id: str, name: str, config: Dict[str, Any]) -> P
         execution_constraints=[
             "v1.3 参数已冻结，不再迭代；前向记录用于验证可信基准。",
             "1X 现货模式，RIGOROUS 因果律（止损优先于止盈）。",
-            "1.5% 隔夜跳空惩罚已纳入；2.0% 跳空下 Calmar 降至 0.08。",
+            "历史跳空压力结果使用旧收益/回撤口径，不作为标准 Calmar 或实盘资格。",
             "2020-2022 连续三年亏损约 -26.5%，全部正收益来自 2023-2026 商品牛市。",
         ],
         source=LineSource(

@@ -1,4 +1,4 @@
-"""Adapter for the personal trading assistant research line."""
+"""Adapter for the ETF moving-average timing research line (legacy ID preserved)."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from qount.api.schemas import (
 from qount.api.ledger import parse_personal_assistant_position_ledger
 
 _ADJUDICATION = (
+    "普通 ETF 研究线，研究 MA120 与 1.5% 带宽的择时效果。"
     "历史回放已调和，同标的收益与回撤对照见下方；择时机制的增量价值尚待验证。"
     "确定性日报已完成，前向记录待积累；账户资格尚未认证，无实盘下单授权。"
 )
@@ -63,7 +64,7 @@ def adapt_personal_assistant(line_id: str, name: str, config: Dict[str, Any]) ->
         return unavailable_line(
             line_id,
             name,
-            "assistant",
+            "equity",
             summary_path,
             "SOURCE_NOT_FOUND: personal assistant summary.json is absent; no performance figures are reported.",
             _ADJUDICATION,
@@ -72,7 +73,7 @@ def adapt_personal_assistant(line_id: str, name: str, config: Dict[str, Any]) ->
         return unavailable_line(
             line_id,
             name,
-            "assistant",
+            "equity",
             replay_path,
             "SOURCE_NOT_FOUND: personal assistant baseline-replay.json is absent; no performance figures are reported.",
             _ADJUDICATION,
@@ -172,7 +173,7 @@ def adapt_personal_assistant(line_id: str, name: str, config: Dict[str, Any]) ->
         return unavailable_line(
             line_id,
             name,
-            "assistant",
+            "equity",
             summary_path,
             f"{code}: personal assistant source package could not provide a complete baseline ({type(exc).__name__}).",
             _ADJUDICATION,
@@ -181,7 +182,7 @@ def adapt_personal_assistant(line_id: str, name: str, config: Dict[str, Any]) ->
     return PaperLine(
         line_id=line_id,
         name=name,
-        category="assistant",
+        category="equity",
         status="ACTIVE_PAPER",
         adjudication=_ADJUDICATION,
         as_of=as_of,

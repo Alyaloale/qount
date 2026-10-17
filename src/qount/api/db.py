@@ -20,6 +20,7 @@ from qount.api.schemas import (
     LineSource,
     LineSafety,
 )
+from qount.api.paper_filter import is_forward_binance_line, normalize_paper_line
 
 DEFAULT_DB_PATH = "state/qount.db"
 
@@ -336,6 +337,7 @@ def _save_source_trade_events(
             price=price,
             cost=cost,
             note="; ".join(notes.get((observed_at, symbol, side), [])) or "simulated_not_realized; source paper rebalance event",
+            record_kind="historical_backtest" if line.run_id else "simulated_not_realized",
         )
 
 
@@ -345,6 +347,28 @@ def save_paper_line(
     ingested_at: Optional[str] = None,
     trade_events: Optional[list[dict[str, object]]] = None,
 ) -> None:
+    # Historical/non-forward rows remain available to the ingestion archive;
+    # the API boundary filters them out. Forward rows must pass the shared
+    # Binance identity map before they can be persisted as current research.
+    # Filename conventions are not provenance.  Normalize positions and source
+    # trade events whenever the structured input identifies a Binance line;
+    # generic or legacy rows remain archived and are filtered at read time.
+    if line.source.venue == "binance_usdm" or line.source.instrument_type == "USD-M":
+        line = normalize_paper_line(line)
+    if trade_events and (line.source.venue == "binance_usdm" or line.source.instrument_type == "USD-M"):
+        from qount.binance_assets import asset_by_execution_symbol, asset_by_signal_symbol, load_binance_assets
+        candidates = load_binance_assets()
+        normalized_events: list[dict[str, object]] = []
+        for raw_event in trade_events:
+            event = dict(raw_event)
+            symbol = str(event.get("symbol") or "").strip()
+            if symbol:
+                asset = asset_by_execution_symbol(symbol, assets=candidates) or asset_by_signal_symbol(symbol, assets=candidates)
+                if asset is None or asset.status != "active":
+                    raise ValueError(f"unknown_binance_asset:{symbol}")
+                event["symbol"] = asset.execution_symbol
+            normalized_events.append(event)
+        trade_events = normalized_events
     path = db_path or get_db_path()
     now_str = ingested_at or datetime.now(timezone.utc).isoformat()
     init_db(path)
@@ -371,11 +395,16 @@ def save_paper_line(
     with sqlite3.connect(path) as conn:
         cursor = conn.cursor()
         old_row = cursor.execute("SELECT payload FROM paper_lines WHERE line_id = ?", (line.line_id,)).fetchone()
+        if line.run_id and line.data_status == "AVAILABLE" and trade_events is not None:
+            # This SQLite view holds the explicitly selected experiment only.
+            # Full histories remain in immutable <line>/<run_id> directories.
+            cursor.execute("DELETE FROM paper_trades WHERE line_id=?", (line.line_id,))
+            cursor.execute("DELETE FROM paper_positions WHERE line_id=?", (line.line_id,))
         if line.data_status in {"MISSING", "ERROR"} and not nav_series and old_row:
             attempt_source = line_dict.get("source")
             old_payload = json.loads(old_row[0])
             # Retain the last valid curve and the provenance that belongs to it.
-            for key in ("as_of", "freshness", "curve_granularity", "source", "nav_series", "metrics"):
+            for key in ("run_id", "as_of", "freshness", "curve_granularity", "source", "nav_series", "metrics"):
                 if key in old_payload:
                     line_dict[key] = old_payload[key]
             line_dict["last_attempt_at"] = now_str
@@ -479,10 +508,12 @@ def save_paper_line(
                     _save_snapshot_trades(cursor, line, observed_at, previous_positions, current_positions)
             else:
                 _save_source_trade_events(cursor, line, trade_events)
+        elif trade_events is not None:
+            _save_source_trade_events(cursor, line, trade_events)
         conn.commit()
 
 
-def get_paper_lines_summary(db_path: Optional[str] = None) -> List[PaperLineSummary]:
+def get_paper_lines_summary(db_path: Optional[str] = None, *, forward_only: bool = True) -> List[PaperLineSummary]:
     path = db_path or get_db_path()
     if not os.path.exists(path) and path != ":memory:":
         return []
@@ -500,13 +531,18 @@ def get_paper_lines_summary(db_path: Optional[str] = None) -> List[PaperLineSumm
                     "MISSING" if data.get("data_status") == "MISSING"
                     else compute_freshness(data.get("as_of"))
                 )
-                summaries.append(PaperLineSummary(**data))
+                line = PaperLine(**data)
+                if forward_only:
+                    line = normalize_paper_line(line)
+                if forward_only and not is_forward_binance_line(line):
+                    continue
+                summaries.append(PaperLineSummary(**line.model_dump(exclude={"nav_series"})))
             except Exception:
                 continue
     return summaries
 
 
-def get_paper_line(line_id: str, db_path: Optional[str] = None) -> Optional[PaperLine]:
+def get_paper_line(line_id: str, db_path: Optional[str] = None, *, forward_only: bool = True) -> Optional[PaperLine]:
     path = db_path or get_db_path()
     if not os.path.exists(path) and path != ":memory:":
         return None
@@ -516,30 +552,40 @@ def get_paper_line(line_id: str, db_path: Optional[str] = None) -> Optional[Pape
         row = cursor.fetchone()
         if not row:
             return None
-        data = json.loads(row[0])
-        from qount.api.adapters.utils import compute_freshness
-        data["freshness"] = (
-            "MISSING" if data.get("data_status") == "MISSING"
-            else compute_freshness(data.get("as_of"))
-        )
-
-        cursor.execute(
-            "SELECT date, nav, benchmark_nav, signal_nav FROM paper_nav WHERE line_id = ?;",
-            (line_id,),
-        )
-        nav_rows = cursor.fetchall()
-        nav_rows.sort(
-            key=lambda row: (
-                _nav_timestamp(row[0]) is None,
-                _nav_timestamp(row[0]) or datetime.max.replace(tzinfo=timezone.utc),
-                row[0],
+        try:
+            data = json.loads(row[0])
+            from qount.api.adapters.utils import compute_freshness
+            data["freshness"] = (
+                "MISSING" if data.get("data_status") == "MISSING"
+                else compute_freshness(data.get("as_of"))
             )
-        )
-        data["nav_series"] = [
-            {"date": r[0], "nav": r[1], "benchmark_nav": r[2], "signal_nav": r[3]}
-            for r in nav_rows
-        ]
-        return PaperLine(**data)
+
+            cursor.execute(
+                "SELECT date, nav, benchmark_nav, signal_nav FROM paper_nav WHERE line_id = ?;",
+                (line_id,),
+            )
+            nav_rows = cursor.fetchall()
+            nav_rows.sort(
+                key=lambda row: (
+                    _nav_timestamp(row[0]) is None,
+                    _nav_timestamp(row[0]) or datetime.max.replace(tzinfo=timezone.utc),
+                    row[0],
+                )
+            )
+            data["nav_series"] = [
+                {"date": r[0], "nav": r[1], "benchmark_nav": r[2], "signal_nav": r[3]}
+                for r in nav_rows
+            ]
+            line = PaperLine(**data)
+            if forward_only:
+                line = normalize_paper_line(line)
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            # Unknown/stale positions are hidden at the read boundary rather
+            # than leaking adapter errors through detail or history endpoints.
+            return None
+        if forward_only and not is_forward_binance_line(line):
+            return None
+        return line
 
 
 def _range_boundary(value: Optional[str], *, end: bool = False) -> Optional[datetime]:
@@ -568,9 +614,12 @@ def get_paper_positions(
     start: Optional[str] = None,
     end: Optional[str] = None,
     db_path: Optional[str] = None,
+    *, forward_only: bool = True,
 ) -> List[PaperPositionRecord]:
     path = db_path or get_db_path()
     if not os.path.exists(path) and path != ":memory:":
+        return []
+    if get_paper_line(line_id, path, forward_only=forward_only) is None:
         return []
     start_time = _range_boundary(start)
     end_time = _range_boundary(end, end=True)
@@ -595,10 +644,12 @@ def get_paper_positions(
     return records
 
 
-def get_current_paper_positions(line_id: str, db_path: Optional[str] = None) -> List[PaperPositionRecord]:
+def get_current_paper_positions(line_id: str, db_path: Optional[str] = None, *, forward_only: bool = True) -> List[PaperPositionRecord]:
     """Return only the latest recorded position snapshot for a line."""
     path = db_path or get_db_path()
     if not os.path.exists(path) and path != ":memory:":
+        return []
+    if get_paper_line(line_id, path, forward_only=forward_only) is None:
         return []
     with sqlite3.connect(path) as conn:
         latest = conn.execute(
@@ -617,29 +668,29 @@ def get_current_paper_positions(line_id: str, db_path: Optional[str] = None) -> 
     ) for row in rows]
 
 
-def get_current_paper_position_snapshot(line_id: str, db_path: Optional[str] = None) -> dict[str, object]:
+def get_current_paper_position_snapshot(line_id: str, db_path: Optional[str] = None, *, forward_only: bool = True) -> dict[str, object]:
     """Return current validity and the last stored position rows as a single read."""
     path = db_path or get_db_path()
     if not os.path.exists(path) and path != ":memory:":
         return {"line_id": line_id, "status": "MISSING", "positions": [], "error": "database_missing"}
-    with sqlite3.connect(path) as conn:
-        row = conn.execute("SELECT payload FROM paper_lines WHERE line_id = ?", (line_id,)).fetchone()
-        if not row:
-            return {"line_id": line_id, "status": "MISSING", "positions": [], "error": "line_missing"}
-        payload = json.loads(row[0])
-    positions = get_current_paper_positions(line_id, path)
-    status = payload.get("position_status", "UNKNOWN")
-    data_status = payload.get("data_status", "AVAILABLE")
+    # Do not expose retained rows after a line becomes stale, archived, failed,
+    # or otherwise loses Binance forward eligibility.
+    visible_line = get_paper_line(line_id, path, forward_only=forward_only)
+    if visible_line is None:
+        return {"line_id": line_id, "status": "MISSING", "positions": [], "error": "line_missing_or_hidden"}
+    positions = get_current_paper_positions(line_id, path, forward_only=forward_only)
+    status = visible_line.position_status
+    data_status = visible_line.data_status
     if data_status in {"ERROR", "MISSING"} and status == "KNOWN":
         status = "UNKNOWN"
-    latest = positions[0].date if positions else payload.get("as_of")
+    latest = positions[0].date if positions else visible_line.as_of
     return {
         "line_id": line_id,
         "status": status,
         "as_of": latest if status == "KNOWN" else None,
         "last_valid_as_of": latest,
         "positions": positions,
-        "error": payload.get("error"),
+        "error": visible_line.error,
     }
 
 
@@ -649,9 +700,12 @@ def get_paper_trades(
     db_path: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    *, forward_only: bool = True,
 ) -> List[PaperTradeRecord]:
     path = db_path or get_db_path()
     if not os.path.exists(path) and path != ":memory:":
+        return []
+    if get_paper_line(line_id, path, forward_only=forward_only) is None:
         return []
     safe_limit = max(1, min(int(limit), 1000))
     with sqlite3.connect(path) as conn:
@@ -745,8 +799,8 @@ def get_ingest_health(db_path: Optional[str] = None) -> tuple[str, int, int]:
         else:
             row = conn.execute("SELECT ok FROM ingest_log ORDER BY id DESC LIMIT 1;").fetchone()
             ingest_status = "never" if row is None else ("ok" if row[0] else "failed")
-    summaries = get_paper_lines_summary(path)
-    stale = sum(1 for line in summaries if line.freshness == "STALE")
+    summaries = get_paper_lines_summary(path, forward_only=False)
+    stale = sum(1 for line in summaries if line.paper_enabled and line.freshness == "STALE")
     missing = sum(1 for line in summaries if line.data_status in {"MISSING", "ERROR"} or line.freshness == "MISSING")
     if ingest_status == "ok" and missing:
         ingest_status = "partial"

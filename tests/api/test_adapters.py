@@ -100,14 +100,15 @@ class TestAdapters(unittest.TestCase):
         self.assertIsNotNone(adapter)
         line: PaperLine = adapter(
             line_id="personal_assistant",
-            name="个人量化交易助手",
+            name="ETF 均线择时研究",
             config={"run": "state/research_runs/personal_assistant_reconciled_20261012"},
         )
         self.assertIsInstance(line, PaperLine)
         self.assertEqual(line.line_id, "personal_assistant")
         self.assertEqual(line.status, "ACTIVE_PAPER")
-        self.assertEqual(line.category, "assistant")
-        self.assertEqual(line.freshness, "FRESH")
+        self.assertEqual(line.name, "ETF 均线择时研究")
+        self.assertEqual(line.category, "equity")
+        self.assertEqual(line.freshness, compute_freshness(line.as_of))
         self.assertEqual(len(line.nav_series), 3256)
         self.assertEqual(line.curve_granularity, "DAILY")
         self.assertEqual(line.metrics.observation_count, 3256)
@@ -170,7 +171,7 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(line.line_id, "ashare_master")
         self.assertEqual(line.status, "STOPPED")
         self.assertEqual(line.category, "equity")
-        self.assertEqual(line.freshness, "FRESH")
+        self.assertEqual(line.freshness, compute_freshness(line.as_of))
         self.assertGreater(len(line.nav_series), 0)
 
     def test_ashare_master_missing_source_reports_no_figures(self) -> None:

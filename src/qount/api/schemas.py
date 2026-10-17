@@ -42,6 +42,10 @@ class LineMetrics(BaseModel):
 
 class PositionItem(BaseModel):
     symbol: str
+    asset_id: Optional[str] = None
+    signal_symbol: Optional[str] = None
+    execution_symbol: Optional[str] = None
+    venue: Optional[str] = None
     weight: Optional[float] = None
     entry_date: Optional[str] = None
     quantity: Optional[float] = None
@@ -78,6 +82,13 @@ class LineSource(BaseModel):
     path: str
     sha256: Optional[str] = None
     produced_at: Optional[str] = None
+    # Forward paper inputs must identify the venue and contract family explicitly.
+    # A filename or a relabeled spot/proxy NAV is not provenance.
+    venue: Optional[str] = None
+    instrument_type: Optional[str] = None
+    price_source: Optional[str] = None
+    observation_kind: Optional[str] = None
+    execution_symbols: List[str] = Field(default_factory=list)
 
 
 class LineSafety(BaseModel):
@@ -87,7 +98,12 @@ class LineSafety(BaseModel):
 
 class PaperLine(BaseModel):
     line_id: str
+    run_id: Optional[str] = None
     name: str
+    research_status: str = "research"
+    paper_enabled: bool = True
+    sample_kind: str = "historical"
+    presentation: dict[str, str] = Field(default_factory=dict)
     category: str = "assistant"  # equity | crypto | macro | assistant
     status: str = "ACTIVE_PAPER"  # ACTIVE_PAPER | ARCHIVED | STOPPED
     data_status: str = "AVAILABLE"  # AVAILABLE | MISSING | ERROR
@@ -118,7 +134,12 @@ class PaperLine(BaseModel):
 
 class PaperLineSummary(BaseModel):
     line_id: str
+    run_id: Optional[str] = None
     name: str
+    research_status: str = "research"
+    paper_enabled: bool = True
+    sample_kind: str = "historical"
+    presentation: dict[str, str] = Field(default_factory=dict)
     category: str
     status: str
     data_status: str = "AVAILABLE"
@@ -209,6 +230,7 @@ class HealthResponse(BaseModel):
     db_connected: bool = True
     last_ingest_at: Optional[str] = None
     paper_lines_count: int = 0
+    research_lines_count: int = 0
     ingest_status: str = "unknown"  # ok | failed | never | partial
     stale_line_count: int = 0
     missing_source_count: int = 0

@@ -42,11 +42,10 @@ def run_ingest(
             isinstance(entry, dict)
             and isinstance(entry.get("id"), str)
             and entry["id"]
-            and entry.get("enabled", True) is not False
+            and entry.get("display", True) is not False
         )
     }
-    if registered_line_ids:
-        prune_unregistered_paper_lines(registered_line_ids, db_path=db_path)
+    prune_unregistered_paper_lines(registered_line_ids, db_path=db_path)
 
     processed_count = 0
     failed_lines: list[str] = []
@@ -57,8 +56,8 @@ def run_ingest(
         enabled = entry.get("enabled", True)
         config = entry.get("config", {})
 
-        if not enabled:
-            results[line_id] = {"status": "SKIPPED_DISABLED"}
+        if entry.get("display", True) is False:
+            results[line_id] = {"status": "SKIPPED_HIDDEN"}
             continue
 
         adapter = get_adapter(adapter_name)
@@ -67,12 +66,22 @@ def run_ingest(
             log_ingest(line_id, ok=False, message=msg, db_path=db_path)
             results[line_id] = {"status": "ERROR", "message": msg}
             failed_lines.append(str(line_id))
+            mark_line_data_error(line_id, "ADAPTER_NOT_FOUND", db_path)
             continue
 
         try:
             line_obj: PaperLine = adapter(line_id, name, config)
+            line_obj = line_obj.model_copy(update={
+                "paper_enabled": bool(enabled),
+                "research_status": entry.get("research_status", "archived" if line_obj.status in {"ARCHIVED", "STOPPED"} else "research"),
+                "sample_kind": entry.get("sample_kind", "historical"),
+                "presentation": entry.get("presentation", {}),
+            })
             trade_events = None
-            if adapter_name == "dual_engine":
+            if adapter_name == "experiment" and line_obj.data_status == "AVAILABLE":
+                from qount.api.adapters.experiment import experiment_trade_events
+                trade_events = experiment_trade_events(line_id, config)
+            elif adapter_name == "dual_engine":
                 from qount.api.adapters.dual_engine import load_rebalance_trade_events
 
                 if line_obj.source.path:

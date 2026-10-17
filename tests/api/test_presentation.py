@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -19,6 +20,17 @@ from qount.api.schemas import LineSource, PaperLine
 
 
 class TestPresentation(unittest.TestCase):
+    @staticmethod
+    def binance_source(path="forward.json", symbols=None):
+        return LineSource(
+            path=path,
+            venue="binance_usdm",
+            instrument_type="USD-M",
+            price_source="binance_um_klines",
+            observation_kind="forward",
+            execution_symbols=symbols or ["BTCUSDT"],
+        )
+
     def daily_package(self, root, as_of=None):
         as_of = as_of or datetime.now(timezone.utc).date().isoformat()
         boundary = {"research_only": True, "orders_authorized": False}
@@ -161,32 +173,32 @@ class TestPresentation(unittest.TestCase):
             line = PaperLine(
                 line_id="test",
                 name="Test",
-                as_of="2026-10-12",
-                source=LineSource(path="test"),
+                as_of="2026-10-16",
+                source=self.binance_source("test"),
                 position_status="KNOWN",
             )
             events = [
                 {
                     "date": day,
-                    "symbol": "ETF",
+                    "symbol": "BTCUSDT",
                     "side": "BUY",
                     "quantity": 1,
                     "price": 10,
                 }
                 for day in [
-                    "2026-10-09T23:59:00Z",
-                    "2026-10-10T12:00:00Z",
-                    "2026-10-12T00:00:00Z",
+                    "2026-10-15T23:59:00Z",
+                    "2026-10-16T12:00:00Z",
+                    "2026-10-17T00:00:00Z",
                 ]
             ]
             save_paper_line(line, db_path=path, trade_events=events)
             rows = get_paper_trades(
-                "test", db_path=path, start="2026-10-09", end="2026-10-09"
+                "test", db_path=path, start="2026-10-16", end="2026-10-16"
             )
             self.assertEqual(len(rows), 1)
             with patch.dict(os.environ, {"QOUNT_DB_PATH": path}):
                 response = TestClient(app).get(
-                    "/paper/trades?line_id=test&start=2026-10-09&end=2026-10-09"
+                    "/paper/trades?line_id=test&start=2026-10-16&end=2026-10-16"
                 )
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(len(response.json()), 1)
@@ -197,8 +209,8 @@ class TestPresentation(unittest.TestCase):
             line = PaperLine(
                 line_id="test",
                 name="Test",
-                as_of="2026-10-12",
-                source=LineSource(path="test"),
+                as_of="2026-10-16",
+                source=self.binance_source("test"),
                 position_status="KNOWN",
             )
             save_paper_line(
@@ -206,8 +218,8 @@ class TestPresentation(unittest.TestCase):
                 db_path=path,
                 trade_events=[
                     {
-                        "date": "2026-10-09",
-                        "symbol": "ETF",
+                        "date": "2026-10-16",
+                        "symbol": "BTCUSDT",
                         "side": "BUY",
                         "quantity": 1,
                         "price": 10,
@@ -225,18 +237,19 @@ class TestPresentation(unittest.TestCase):
         from qount.api.schemas import NavPoint, LineMetrics, PositionItem
         with tempfile.TemporaryDirectory() as folder:
             db=str(Path(folder)/'retention.db')
-            original=PaperLine(line_id='retained',name='Retained',as_of='2026-10-09',source=LineSource(path='original',sha256='a'*64),position_status='KNOWN',positions=[PositionItem(symbol='ETF',quantity=10)],nav_series=[NavPoint(date='2026-10-09',nav=1.2)],metrics=LineMetrics(cagr_pct=5))
+            original=PaperLine(line_id='retained',name='Retained',as_of='2026-10-16',source=self.binance_source('original',['BTCUSDT']),position_status='KNOWN',positions=[PositionItem(symbol='BTCUSDT',quantity=10)],nav_series=[NavPoint(date='2026-10-16',nav=1.2)],metrics=LineMetrics(cagr_pct=5))
             save_paper_line(original,db_path=db)
             missing=original.model_copy(update={'as_of':'unknown','source':LineSource(path='missing'),'data_status':'MISSING','error':'source_missing','position_status':'UNKNOWN','nav_series':[],'metrics':None})
             save_paper_line(missing,db_path=db)
-            retained=get_paper_line('retained',db_path=db)
-            self.assertEqual(retained.as_of,'2026-10-09')
-            self.assertEqual(retained.source.path,'original')
-            self.assertEqual(retained.metrics.cagr_pct,5)
-            self.assertEqual(retained.nav_series[0].nav,1.2)
+            self.assertIsNone(get_paper_line('retained',db_path=db))
+            with sqlite3.connect(db) as conn:
+                payload=json.loads(conn.execute('SELECT payload FROM paper_lines WHERE line_id=?',('retained',)).fetchone()[0])
+            self.assertEqual(payload['as_of'],'2026-10-16')
+            self.assertEqual(payload['source']['path'],'original')
+            self.assertEqual(payload['metrics']['cagr_pct'],5)
             snapshot=get_current_paper_position_snapshot('retained',db_path=db)
-            self.assertEqual(snapshot['status'],'UNKNOWN')
-            self.assertIsNone(snapshot['as_of'])
+            self.assertEqual(snapshot['status'],'MISSING')
+            self.assertIsNone(snapshot.get('as_of'))
 
     def test_deployed_unknown_quantities_cannot_create_a_trade(self):
         from qount.api.schemas import PositionItem

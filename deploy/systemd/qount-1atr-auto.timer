@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Qount 1ATR automatic Binance USD-M cycle
+
+[Timer]
+OnCalendar=*-*-* *:00:05 UTC
+Persistent=false
+RandomizedDelaySec=0
+AccuracySec=1s
+Unit=qount-1atr-auto.service
+
+[Install]
+WantedBy=timers.target

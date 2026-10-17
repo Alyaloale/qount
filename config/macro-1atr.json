@@ -1,0 +1,11 @@
+{
+  "strategy_id": "rolling7_risk_no_chase_mr_signal_gap_1atr",
+  "handover": {
+    "policy": "preserve_until_flat",
+    "symbol": "CLUSDT",
+    "quantity": 0.15,
+    "entry_client_id": "q1atr-entry-c147e1a0aeceeb14",
+    "stop_client_id": "q1atr-stop-9486bf417a70f630",
+    "original_stop": 90.06347624126741
+  }
+}

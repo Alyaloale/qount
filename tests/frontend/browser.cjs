@@ -22,20 +22,20 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       viewport: { width: 1200, height: 900 },
     });
     const page = await context.newPage();
-    await page.clock.install();
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(base);
     await page.waitForFunction(
-      () => document.querySelectorAll(".research-card").length === 8,
+      () => document.querySelectorAll(".research-card").length === 10,
     );
     await page.waitForFunction(() =>
-      document.querySelector("#acc-nav").textContent.includes("4,349,345"),
+      document.querySelector("#live-nav").textContent !== "--",
     );
-    for (const width of [1200, 500, 375]) {
+    for (const width of [1440, 1200, 500, 375]) {
       await page.setViewportSize({ width, height: 900 });
-      for (const tab of ["account", "paper", "positions"]) {
+      for (const tab of ["account", "live", "paper", "records"]) {
         await page.evaluate((tab) => switchTab(tab), tab);
+        await page.waitForTimeout(450);
         assert.equal(
           await page.evaluate(() => document.documentElement.scrollWidth),
           width,
@@ -44,9 +44,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         if (tab === "account") {
           const fits = await page.evaluate(() => {
             const nav = document
-              .querySelector(".navbar")
+              .querySelector(".sidebar")
               .getBoundingClientRect();
-            return [...document.querySelectorAll(".tab-btn")].every(
+            return [...document.querySelectorAll(".nav-item")].every(
               (button) => {
                 const rect = button.getBoundingClientRect();
                 return rect.bottom <= nav.bottom && rect.top >= nav.top;
@@ -61,7 +61,34 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         });
       }
     }
-    console.log("PASS layout: 1200 / 500 / 375px, three screens");
+    console.log("PASS layout: 1440 / 1200 / 500 / 375px, four screens");
+    await page.evaluate(() => switchTab("paper"));
+    await page.locator('[data-research-filter="waiting"]').click();
+    assert.ok(await page.locator(".research-card").count() >= 1);
+    assert.match(await page.locator("#paper-lines-body").textContent(), /通用状态/);
+    await page.locator('[data-research-filter="all"]').click();
+    await page.selectOption("#research-category", "美股");
+    assert.equal(await page.locator(".research-card").count(), 2);
+    await page.fill("#research-search", "G20");
+    assert.equal(await page.locator(".research-card").count(), 1);
+    await page.evaluate(() => refreshData());
+    assert.equal(await page.locator("#research-search").inputValue(), "G20");
+    assert.equal(await page.locator("#research-category").inputValue(), "美股");
+    assert.equal(await page.locator(".research-card").count(), 1);
+    await page.fill("#research-search", "不存在的研究");
+    assert.equal(await page.locator(".research-empty").count(), 1);
+    await page.getByRole("button", { name: "清除筛选" }).click();
+    assert.equal(await page.locator(".research-card").count(), 10);
+    await page.fill("#research-search", "麒麟");
+    assert.equal(await page.locator("#archived-lines").getAttribute("open"), "");
+    assert.equal(await page.locator(".research-card").count(), 1);
+    assert.equal(await page.locator(".research-facts").count(), 0, "withdrawn returns stay out of research cards");
+    await page.evaluate(() => resetResearchFilters());
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await page.locator(".navigator-art").evaluate(node => getComputedStyle(node).animationName), "none");
+    assert.equal(await page.locator(".research-card").first().evaluate(node => getComputedStyle(node).animationName), "none");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    console.log("PASS research filters, search, refresh preservation and reduced motion");
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.evaluate(async () => {
       switchTab("paper");
@@ -153,7 +180,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       path: `${output}/assistant-detail-500.png`,
       fullPage: true,
     });
-    console.log("PASS all eight detail panels at 500px");
+    console.log("PASS all research detail panels at 500px");
     // Delayed B holdings must clear A immediately. C wins when B later returns.
     const synthetic = (id) => ({
       line_id: id,
@@ -171,12 +198,12 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         { date: "2026-10-09", nav: 1.1 },
       ],
     });
-    await page.route("**/paper/lines/RACE_*", (route) =>
+    await page.route("**/research/lines/RACE_*", (route) =>
       route.fulfill({
         json: synthetic(route.request().url().split("/").at(-1)),
       }),
     );
-    await page.route("**/paper/lines/cta_r", (route) =>
+    await page.route("**/research/lines/cta_r", (route) =>
       route.fulfill({
         json: {
           ...synthetic("cta_r"),
@@ -203,7 +230,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       /样本不足，不年化/,
     );
     await page.route(
-      "**/paper/positions/current?line_id=RACE_*",
+      "**/research/positions/current?line_id=RACE_*",
       async (route) => {
         const id = new URL(route.request().url()).searchParams.get("line_id");
         if (id === "RACE_B") await sleep(500);
@@ -248,7 +275,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       await page.locator("#detail-full-metrics").textContent(),
       /自起年化/,
     );
-    await page.route("**/paper/lines/FAIL", (route) =>
+    await page.route("**/research/lines/FAIL", (route) =>
       route.fulfill({ status: 500, json: { error: "test" } }),
     );
     await page.evaluate(() => showLineDetail("FAIL", false));
@@ -257,7 +284,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       /POSITION_RACE/,
     );
     assert.equal(await page.locator("#detail-source-error").isVisible(), true);
-    await page.route("**/paper/lines/ARCHIVE", (route) =>
+    await page.route("**/research/lines/ARCHIVE", (route) =>
       route.fulfill({
         json: {
           ...synthetic("ARCHIVE"),
@@ -290,14 +317,19 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       "PASS delayed, out-of-order, failure and archived history presentation",
     );
     // Exercise clock updates and visible-only polling using a controlled source and clock.
+    await page.clock.install();
+    await page.evaluate(() => switchTab("account"));
     let reads = 0;
-    await page.route("**/account/live", (route) => {
+    await page.route("**/account/assets", (route) => {
       reads++;
       return route.fulfill({
         json: {
-          as_of: new Date().toISOString(),
-          nav: 100,
-          cash: 100,
+          status: "AVAILABLE",
+          observed_at: new Date().toISOString(),
+          reported_total_usdt: 100,
+          wallets: [],
+          futures_positions: [],
+          futures_positions_complete: true,
           currency: "USDT",
           positions: [],
           read_only: true,
@@ -307,7 +339,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         },
       });
     });
-    await page.evaluate(() => fetchLiveAccountData());
+    await page.reload();
+    await page.waitForFunction(() => !liveFetchPending && liveObservedAt != null);
     const initialAge = await page.locator("#live-age").textContent();
     await page.clock.fastForward(65000);
     assert.notEqual(await page.locator("#live-age").textContent(), initialAge);

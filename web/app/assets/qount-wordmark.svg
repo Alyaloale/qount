@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 66" fill="none">
+  <title>QOUNT</title>
+  <g stroke="#1a1a1a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="30" cy="29" r="22" fill="#fffef5"/>
+    <path d="m42 43 13 13"/>
+    <circle cx="84" cy="29" r="22"/>
+    <path d="M122 7v28c0 22 33 22 33 0V7m20 44V7l31 44V7m17 0h22m-11 0v44"/>
+  </g>
+  <path d="m19 34 8-10 7 5 7-9" stroke="#4d96ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,21 +1,34 @@
-"""Order-free planning contracts and migration adapters."""
+"""Public compatibility exports loaded only when requested."""
+from importlib import import_module
 
-from qount.execution.legacy_dispatch import order_plan_from_legacy_dry_plan
-from qount.execution.planner import build_portfolio_order_plan
-from qount.execution.parity import compare_legacy_dispatch_plan
-from qount.execution.recovery import recover_unknown_orders
-from qount.execution.state_machine import ExchangeOrderObservation
-from qount.execution.state_machine import OrderRecoveryQuery
-from qount.execution.state_machine import OrderRecoveryReport
-from qount.execution.state_machine import validate_order_transition
+_EXPORTS = {
+    'BinanceExecutionStore': ('qount.execution.binance_usdm', 'BinanceExecutionStore'),
+    'BinanceUsdMExecution': ('qount.execution.binance_usdm', 'BinanceUsdMExecution'),
+    'ExchangeRuleLookupError': ('qount.execution.binance_usdm', 'ExchangeRuleLookupError'),
+    'ExecutionContractError': ('qount.execution.binance_usdm', 'ExecutionContractError'),
+    'OrdersNotAuthorized': ('qount.execution.binance_usdm', 'OrdersNotAuthorized'),
+    'SymbolRule': ('qount.execution.binance_usdm', 'SymbolRule'),
+    'lookup_usdm_rule': ('qount.execution.binance_usdm', 'lookup_usdm_rule'),
+    'ExchangeOrderObservation': ('qount.execution.state_machine', 'ExchangeOrderObservation'),
+    'OrderRecoveryQuery': ('qount.execution.state_machine', 'OrderRecoveryQuery'),
+    'OrderRecoveryReport': ('qount.execution.state_machine', 'OrderRecoveryReport'),
+    'compare_legacy_dispatch_plan': ('qount.execution.parity', 'compare_legacy_dispatch_plan'),
+    'build_portfolio_order_plan': ('qount.execution.planner', 'build_portfolio_order_plan'),
+    'order_plan_from_legacy_dry_plan': ('qount.execution.legacy_dispatch', 'order_plan_from_legacy_dry_plan'),
+    'recover_unknown_orders': ('qount.execution.recovery', 'recover_unknown_orders'),
+    'validate_order_transition': ('qount.execution.state_machine', 'validate_order_transition'),
+}
+__all__ = list(_EXPORTS)
 
-__all__ = [
-    "ExchangeOrderObservation",
-    "OrderRecoveryQuery",
-    "OrderRecoveryReport",
-    "compare_legacy_dispatch_plan",
-    "build_portfolio_order_plan",
-    "order_plan_from_legacy_dry_plan",
-    "recover_unknown_orders",
-    "validate_order_transition",
-]
+
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+    module, symbol = _EXPORTS[name]
+    value = getattr(import_module(module), symbol)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))

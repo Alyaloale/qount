@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from qount.api.db import get_ingest_health, get_last_ingest_time, get_paper_lines_count, init_db
+from qount.api.db import get_ingest_health, get_last_ingest_time, get_paper_lines_count, get_paper_lines_summary, init_db
 from qount.api.ingest import run_ingest
 from qount.api.routes.account import router as account_router
 from qount.api.routes.assistant import router as assistant_router
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="qount API",
-    description="Simplified Personal Trading Assistant API",
+    description="QOUNT Personal Asset Management and Trading System API",
     version="0.3.0",
     lifespan=lifespan,
 )
@@ -54,7 +54,8 @@ def health() -> HealthResponse:
         status="ok",
         db_connected=True,
         last_ingest_at=last_ingest,
-        paper_lines_count=lines_count,
+        paper_lines_count=len(get_paper_lines_summary()),
+        research_lines_count=lines_count,
         ingest_status=ingest_status,
         stale_line_count=stale_count,
         missing_source_count=missing_count,

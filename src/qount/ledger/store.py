@@ -397,6 +397,9 @@ class RuntimeLedger:
                     average_price REAL,
                     last_transition_at TEXT NOT NULL,
                     last_observation_hash TEXT NOT NULL,
+                    signal_id TEXT,
+                    order_intent_id TEXT,
+                    account_record_id TEXT,
                     UNIQUE(batch_id, sequence)
                 );
                 CREATE TABLE IF NOT EXISTS order_events (
@@ -423,6 +426,9 @@ class RuntimeLedger:
                     occurred_at TEXT NOT NULL,
                     source_hash TEXT NOT NULL,
                     fill_hash TEXT NOT NULL UNIQUE,
+                    signal_id TEXT,
+                    order_intent_id TEXT,
+                    account_record_id TEXT,
                     UNIQUE(client_order_id, exchange_trade_id)
                 );
                 CREATE TABLE IF NOT EXISTS cash_events (
@@ -436,7 +442,10 @@ class RuntimeLedger:
                     symbol TEXT,
                     occurred_at TEXT NOT NULL,
                     source_hash TEXT NOT NULL,
-                    event_hash TEXT NOT NULL UNIQUE
+                    event_hash TEXT NOT NULL UNIQUE,
+                    signal_id TEXT,
+                    order_intent_id TEXT,
+                    account_record_id TEXT
                 );
                 CREATE TABLE IF NOT EXISTS positions (
                     symbol TEXT PRIMARY KEY,
@@ -524,6 +533,11 @@ class RuntimeLedger:
                 COMMIT;
                 """
             )
+            for table in ("orders", "fills", "cash_events"):
+                columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                for column in ("signal_id", "order_intent_id", "account_record_id"):
+                    if column not in columns:
+                        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
             schema_version = connection.execute(
                 "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
             ).fetchone()[0]
@@ -756,8 +770,9 @@ class RuntimeLedger:
                         "INSERT INTO orders(client_order_id,batch_id,symbol,side,"
                         "planned_quantity,reduce_only,phase,sequence,order_type,"
                         "close_position,limit_price,stop_price,plan_spec_hash,status,"
-                        "executed_quantity,last_transition_at,last_observation_hash) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'PLANNED',0,?,?)",
+                        "executed_quantity,last_transition_at,last_observation_hash,"
+                        "signal_id,order_intent_id,account_record_id) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'PLANNED',0,?,?,?,?,?)",
                         (
                             order.client_order_id,
                             batch.plan.batch_id,
@@ -774,6 +789,9 @@ class RuntimeLedger:
                             spec_hash,
                             recorded_at,
                             spec_hash,
+                            None,
+                            None,
+                            None,
                         ),
                     )
                 self._queue_outbox(
@@ -824,6 +842,27 @@ class RuntimeLedger:
                 (client_order_id,),
             ).fetchall()
         return tuple(dict(row) for row in rows)
+
+    def bind_execution_trace(self, client_order_id: str, *, signal_id: str,
+                             order_intent_id: str, account_record_id: str) -> None:
+        """Attach an explicit signal link to an existing order; never infer ownership."""
+        if not all((signal_id, order_intent_id, account_record_id)):
+            raise RuntimeLedgerError("execution_trace_incomplete")
+        trace = dict(signal_id=signal_id, order_intent_id=order_intent_id,
+                     account_record_id=account_record_id)
+        with self._transaction() as connection:
+            order = connection.execute("SELECT * FROM orders WHERE client_order_id=?", (client_order_id,)).fetchone()
+            if order is None:
+                raise KeyError(client_order_id)
+            if all(order[key] == value for key, value in trace.items()):
+                return
+            if any(order[key] is not None and order[key] != value for key, value in trace.items()):
+                raise RuntimeLedgerConflictError("execution_trace_conflict")
+            connection.execute("UPDATE orders SET signal_id=?,order_intent_id=?,account_record_id=? WHERE client_order_id=?",
+                               (signal_id, order_intent_id, account_record_id, client_order_id))
+            self._queue_outbox(connection, event_type="execution_trace_bound", entity_type="order",
+                               entity_id=client_order_id, occurred_at=str(order["last_transition_at"]), payload=trace)
+        self._after_commit()
 
     def transition_order(
         self,
@@ -1252,8 +1291,9 @@ class RuntimeLedger:
             position_hash = canonical_hash(position_core)
             connection.execute(
                 "INSERT INTO fills(fill_id,client_order_id,exchange_trade_id,quantity,"
-                "price,fee,fee_asset,occurred_at,source_hash,fill_hash) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "price,fee,fee_asset,occurred_at,source_hash,fill_hash,"
+                "signal_id,order_intent_id,account_record_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     fill_id,
                     client_order_id,
@@ -1265,6 +1305,9 @@ class RuntimeLedger:
                     occurred_at,
                     source_hash,
                     fill_hash,
+                    order["signal_id"],
+                    order["order_intent_id"],
+                    f"fill:{order['symbol']}:{exchange_trade_id}",
                 ),
             )
             connection.execute(
@@ -1330,6 +1373,9 @@ class RuntimeLedger:
         occurred_at: str,
         source_hash: str,
         symbol: str | None = None,
+        signal_id: str | None = None,
+        order_intent_id: str | None = None,
+        account_record_id: str | None = None,
     ) -> str:
         if not event_key or not asset:
             raise RuntimeLedgerError("cash_event_identity_invalid")
@@ -1369,7 +1415,7 @@ class RuntimeLedger:
                     raise RuntimeLedgerConflictError("cash_event_conflict")
                 return cash_event_id
             connection.execute(
-                "INSERT INTO cash_events VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO cash_events(cash_event_id,event_key,event_type,amount,asset,symbol,occurred_at,source_hash,event_hash,signal_id,order_intent_id,account_record_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     cash_event_id,
                     event_key,
@@ -1380,6 +1426,9 @@ class RuntimeLedger:
                     occurred_at,
                     source_hash,
                     event_hash,
+                    signal_id,
+                    order_intent_id,
+                    account_record_id,
                 ),
             )
             self._queue_outbox(

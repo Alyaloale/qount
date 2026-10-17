@@ -1,6 +1,14 @@
 /* Native, read-only presentation of source-backed account and research data. */
 let activeTab = "account";
 let chartInstance = null;
+let allocationChartInstance = null;
+let assetHistoryChartInstance = null;
+let assetHistoryRequestVersion = 0;
+let performanceChartInstance = null;
+let performanceRequestVersion = 0;
+let performanceData = null;
+let researchRuns = [];
+let researchComparisonVersion = 0;
 let currentLineDetail = null;
 let currentLineId = null;
 let detailRequestVersion = 0;
@@ -8,6 +16,7 @@ let positionRequestVersion = 0;
 let paperLines = new Map();
 let chartStart = 0;
 let chartEnd = 0;
+let chartRowCount = 0;
 let liveObservedAt = null;
 let liveReadAt = null;
 let liveAttemptAt = null;
@@ -16,10 +25,20 @@ let liveFetchPending = false;
 let refreshPending = false;
 let accountSafety = null;
 let liveReadOnly = null;
+let researchFilter = "all";
+let researchQuery = "";
+let researchCategory = "all";
 const API_BASE = "";
 const $ = (id) => document.getElementById(id);
 const setText = (id, text) => {
-  if ($(id)) $(id).textContent = text;
+  const node = $(id);
+  if (!node || node.textContent === String(text)) return;
+  const previous = node.textContent;
+  node.textContent = text;
+  if (previous && previous !== "--" && node.classList.contains("kpi-value") &&
+      !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    node.animate?.([{ opacity: 0.45 }, { opacity: 1 }], { duration: 280 });
+  }
 };
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -28,6 +47,8 @@ const escapeHtml = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+const researchName = (line) => QountResearch.profile(line).name;
+const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 const fmt = (value, digits = 2) =>
   QountMetrics.number(value) == null
     ? "--"
@@ -39,18 +60,30 @@ const pct = (value) =>
   QountMetrics.number(value) == null
     ? "--"
     : `${Number(value) > 0 ? "+" : ""}${fmt(value)}%`;
+function assetAmount(value) {
+  const amount = QountMetrics.number(value);
+  if (amount == null) return "--";
+  const size = Math.abs(amount);
+  if (size > 0 && size < 1e-8) return `${amount < 0 ? "−" : ""}<0.00000001`;
+  return fmt(amount, size > 0 && size < 0.01 ? Math.min(8, -Math.floor(Math.log10(size)) + 2) : 2);
+}
+function walletName(name) {
+  return ({ Spot: "现货钱包", Funding: "资金钱包", "Cross Margin": "全仓杠杆", "Isolated Margin": "逐仓杠杆",
+    "USDⓈ-M Futures": "U 本位合约", "COIN-M Futures": "币本位合约", Earn: "理财钱包", Options: "期权钱包",
+    "Trading Bots": "交易机器人", "Copy Trading": "跟单钱包" })[name] || name;
+}
 const signClass = (value) =>
   value == null ? "" : value > 0 ? "positive" : value < 0 ? "negative" : "";
 const formatDate = (value) => {
   const text = String(value || "");
   return /^\d{8}$/.test(text)
     ? `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6)}`
-    : text.slice(0, 10) || "--";
+    : /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : "--";
 };
 function formatTime(value) {
   const timestamp = QountMetrics.timestamp(value);
   return Number.isFinite(timestamp)
-    ? `${new Date(timestamp).toISOString().replace("T", " ").slice(0, 19)} UTC`
+    ? `${new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Singapore", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(timestamp).replaceAll("/", "-")} UTC+8`
     : "--";
 }
 function ledgerDate(value) {
@@ -93,9 +126,9 @@ function statusText(value) {
       ACTIVE_PAPER: "研究模拟",
       ARCHIVED: "封存",
       STOPPED: "停止",
-      FRESH: "来源时点正常",
-      STALE: "来源待更新",
-      MISSING: "来源缺失",
+      FRESH: "来源已更新",
+      STALE: "数据待更新",
+      MISSING: "数据缺失",
     }[value] ||
     value ||
     "--"
@@ -112,19 +145,15 @@ function historicalOnly(line) {
 function identity(line) {
   if (line.status === "ARCHIVED") return "研究封存";
   if (line.status === "STOPPED") return "停止／失败";
-  if (line.line_id === "personal_assistant") return "历史回放·参数已冻结";
-  if (line.line_id === "universal_regime") return "前向记录·参数已冻结";
-  if (line.line_id === "cta_r") return "早期前向记录";
-  if (line.line_id.startsWith("dual_")) return "历史回放＋前向模拟";
-  return "研究模拟（样本属性待核）";
+  return QountResearch.profile(line).sample;
 }
 function nextQuestion(line) {
   if (["ARCHIVED", "STOPPED"].includes(line.status))
     return "保留失败结论与资料；不根据旧指标推定策略已获准恢复。";
   if (line.line_id === "personal_assistant")
-    return "待验证：相对同标的买入持有，MA120 Band 1.5% 择时机制在净收益、回撤与暴露上提供了什么价值？参数已冻结，前向记录累积中。";
+    return "待验证：MA120＋1.5% 带宽相对同标的买持，在净收益、回撤与暴露上提供多少增量？已有历史回放；前向来源未接入时不显示为正在积累。";
   if (line.line_id === "universal_regime")
-    return "待验证：v1.3 冻结参数（Calmar 1.02 基准）在未见数据上的前向表现能否复现回测指标？短样本期间不报告年化。";
+    return "待验证：v1.3 冻结参数（旧 Calmar 字段已更正）在未见数据上的前向表现能否复现回测指标？短样本期间不报告年化。";
   if (line.line_id === "cta_r")
     return "待验证：前向记录是否连续、持仓与成本是否一致？短样本暂不报告年化与 Sharpe。";
   return "待验证：信号与模拟执行差异能否由来源中的费用、交易单位和执行约束解释？";
@@ -147,21 +176,54 @@ function costsText(line) {
     : "费率及完整成本覆盖：来源未提供。累计成本有值仅说明存在成本记录，不能据此认定已覆盖价差、冲击、税费或融资成本。";
 }
 function renderPermissions() {
-  const research =
-    accountSafety?.research_only === true ? "研究模拟" : "研究权限待核";
-  const orders =
-    accountSafety?.orders_authorized === false ? "未授权下单" : "下单权限待核";
-  const live = liveReadOnly === true ? "真实账户只读" : "真实账户权限待核";
-  setText("permission-status", `${live} · ${research} · ${orders}`);
-  setText("footer-permission", `${live} · ${research} · ${orders}`);
-  setText("topbar-permission", `${live} · ${research} · ${orders}`);
-  setText("account-mode-badge", "真实账户与回放分别展示");
+  const live = liveReadOnly === true ? "账户只读采集" : "账户采集状态待核";
+  setText("permission-status", `${live} · 页面不提交订单；后台策略运行状态见实盘`);
+  setText("footer-permission", `${live} · 页面不提交订单`);
+  setText("topbar-permission", `${liveReadOnly === true ? "页面只读" : "采集状态待核"}`);
+  setText("account-mode-badge", "真实账户");
   setText("live-mode-badge", liveReadOnly === true ? "只读" : "权限待核");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  setupMotion();
+  document.querySelectorAll(".nav-item").forEach(button => {
+    button.tabIndex = button.classList.contains("active") ? 0 : -1;
+  });
+  $("research-category")?.addEventListener("change", (event) => {
+    researchCategory = event.target.value;
+    renderPaperLines([...paperLines.values()]);
+  });
+  $("research-search")?.addEventListener("input", (event) => {
+    researchQuery = event.target.value;
+    renderPaperLines([...paperLines.values()]);
+  });
+  $("research-filters")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-research-filter]");
+    if (!button) return;
+    researchFilter = button.dataset.researchFilter;
+    renderPaperLines([...paperLines.values()]);
+  });
+  document.querySelector(".sidebar-nav")?.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll(".nav-item")];
+    const current = tabs.indexOf(document.activeElement);
+    const index = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+      (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[index].focus();
+    switchTab(tabs[index].id.replace("tab-", ""));
+  });
+  $("asset-history-days")?.addEventListener("change", fetchAssetHistory);
+  $("performance-days")?.addEventListener("change", fetchLivePerformance);
+  $("performance-measure")?.addEventListener("change", renderLivePerformance);
+  $("research-run-select")?.addEventListener("change", () => showLineDetail(currentLineId, false, false, $("research-run-select").value));
+  $("research-compare-select")?.addEventListener("change", compareResearchRun);
+  $("mascot-btn")?.addEventListener("click", () => {
+    mascotReact("is-excited");
+    mascotSay(MASCOT_TIPS[Math.floor(Math.random() * MASCOT_TIPS.length)]);
+  });
   initApp();
-  setInterval(updateObservationAge, 1000);
+  setInterval(() => { if (activeTab === "account") updateObservationAge(); }, 5000);
   setInterval(() => {
     if (
       !document.hidden &&
@@ -173,8 +235,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, 15000);
 });
-window.addEventListener("resize", () => chartInstance?.resize());
+window.addEventListener("resize", () => {
+  chartInstance?.resize();
+  allocationChartInstance?.resize();
+  assetHistoryChartInstance?.resize();
+  performanceChartInstance?.resize();
+  fitAssetValues();
+});
 document.addEventListener("visibilitychange", () => {
+  document.documentElement.classList.toggle("page-hidden", document.hidden);
   if (!document.hidden) {
     updateObservationAge();
     if (!liveAttemptAt || Date.now() - liveAttemptAt >= liveIntervalMs) {
@@ -183,30 +252,64 @@ document.addEventListener("visibilitychange", () => {
     }
   }
 });
-async function initApp() {
+function setupMotion() {
+  const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (preference.matches || !("IntersectionObserver" in window)) return;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.remove("reveal-pending");
+      observer.unobserve(entry.target);
+    });
+  }, { threshold: 0.06 });
+  document.querySelectorAll(".asset-dashboard .card-section").forEach((node) => {
+    node.classList.add("reveal-pending");
+    observer.observe(node);
+  });
+}
+function showLoadingBar() {
+  document.body.classList.add("is-loading");
+  ["btn-refresh", "btn-refresh-mobile"].forEach(id => $(id)?.setAttribute("aria-busy", "true"));
+  const bar = $("loading-bar");
+  if (bar) bar.classList.add("active");
+}
+function hideLoadingBar() {
+  document.body.classList.remove("is-loading");
+  ["btn-refresh", "btn-refresh-mobile"].forEach(id => $(id)?.setAttribute("aria-busy", "false"));
+  const bar = $("loading-bar");
+  if (bar) bar.classList.remove("active");
+}
+async function initApp(manageLoading = true) {
+  if (manageLoading) showLoadingBar();
   await Promise.allSettled([
-    fetchAccountData(),
     fetchLiveAccountData(),
     fetchPaperLines(),
     fetchDailyReport(),
   ]);
+  if (manageLoading) hideLoadingBar();
   setText(
     "header-as-of",
-    `读取 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`,
+    `读取 ${new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Singapore", hour12: false })} UTC+8`,
   );
 }
 const TAB_TITLES = {
-  account: "今日助手与账户",
-  paper: "研究对比",
-  positions: "持仓流水",
+  account: "资产分析",
+  live: "实盘",
+  paper: "策略研究",
+  positions: "模拟流水",
+  records: "账户记录",
 };
 function switchTab(name) {
   activeTab = name;
   document
     .querySelectorAll(".nav-item")
-    .forEach((button) =>
-      button.classList.toggle("active", button.id === `tab-${name}`),
-    );
+    .forEach((button) => {
+      const isActive = button.id === `tab-${name === "positions" ? "paper" : name}`;
+      button.classList.toggle("active", isActive);
+      if (button.hasAttribute("aria-selected"))
+        button.setAttribute("aria-selected", String(isActive));
+      button.tabIndex = isActive ? 0 : -1;
+    });
   document
     .querySelectorAll(".screen-view")
     .forEach((view) =>
@@ -215,149 +318,237 @@ function switchTab(name) {
   const topbarTitle = document.getElementById("topbar-title");
   if (topbarTitle && TAB_TITLES[name]) topbarTitle.textContent = TAB_TITLES[name];
   if (name === "paper") requestAnimationFrame(() => chartInstance?.resize());
+  if (name === "live") requestAnimationFrame(() => performanceChartInstance?.resize());
+  if (name === "account") requestAnimationFrame(() => { allocationChartInstance?.resize(); assetHistoryChartInstance?.resize(); fitAssetValues(); });
+
+}
+const MASCOT_TIPS = [
+  "各线样本不同，不能直接按收益排名。",
+  "回测漂亮不等于实盘盈利，前向验证才是证据。",
+  "封存线的旧高收益已撤销，别信它。",
+  "数据缺源时我只会说不知道，不会编数字。",
+  "这里可以看账户与研究；页面不会提交订单。",
+];
+let mascotTimer = null;
+function mascotSay(text, holdMs = 4200) {
+  const bubble = $("mascot-bubble");
+  if (!bubble) return;
+  const stage = document.querySelector(".mascot-stage");
+  const r = stage ? stage.getBoundingClientRect() : null;
+  // The mascot lives inside .asset-hero (isolation:isolate), a stacking context that
+  // caps the bubble's z-index below the sticky topbar. Show it from <body> instead so
+  // its fixed z-index resolves in the root context, and skip it when the mascot is
+  // not laid out (e.g. the account tab is hidden), which would misplace the bubble.
+  if (!r || (r.width === 0 && r.height === 0)) {
+    bubble.classList.add("hidden");
+    return;
+  }
+  if (bubble.parentElement !== document.body) document.body.appendChild(bubble);
+  bubble.textContent = text;
+  bubble.classList.remove("hidden");
+  {
+    const bw = bubble.offsetWidth;
+    const bh = bubble.offsetHeight;
+    let left = r.left + r.width / 2 - bw / 2;
+    left = Math.max(10, Math.min(left, window.innerWidth - bw - 10));
+    let top = r.top - bh - 14;
+    if (top < 10) {
+      top = Math.max(10, Math.min(r.bottom + 14, window.innerHeight - bh - 10));
+      bubble.classList.add("below");
+    } else {
+      bubble.classList.remove("below");
+    }
+    bubble.style.left = `${Math.round(left)}px`;
+    bubble.style.top = `${Math.round(top)}px`;
+  }
+  clearTimeout(mascotTimer);
+  if (holdMs) mascotTimer = setTimeout(() => bubble.classList.add("hidden"), holdMs);
+}
+function mascotReact(state) {
+  const stage = document.querySelector(".mascot-stage");
+  if (!stage) return;
+  stage.classList.remove("is-excited", "is-worried", "is-thinking");
+  if (!state) return;
+  void stage.offsetWidth;
+  stage.classList.add(state);
+  if (state === "is-excited" || state === "is-worried")
+    setTimeout(() => stage.classList.remove(state), 760);
 }
 async function refreshData() {
   if (refreshPending) return;
   refreshPending = true;
   $("btn-refresh").disabled = true;
-  setText("btn-refresh", "读取中…");
+  $("btn-refresh-mobile").disabled = true;
+  $("btn-refresh").innerHTML = '<span class="refresh-icon" aria-hidden="true">↻</span> 读取中…';
+  showLoadingBar();
+  mascotReact("is-thinking");
+  mascotSay("正在读取最新快照，稍等…", 0);
   try {
-    await initApp();
+    await initApp(false);
     if (currentLineId) await showLineDetail(currentLineId, false, true);
   } finally {
     refreshPending = false;
     $("btn-refresh").disabled = false;
-    setText("btn-refresh", "↻ 刷新读取");
+    $("btn-refresh-mobile").disabled = false;
+    hideLoadingBar();
+    $("btn-refresh").innerHTML = '<span class="refresh-icon" aria-hidden="true">↻</span> 刷新数据';
+    mascotReact("is-excited");
+    mascotSay("刷新完成，数字已更新。");
   }
-}
-async function fetchAccountData() {
-  try {
-    renderAccount(await readJSON("/account"));
-  } catch (error) {
-    [
-      "acc-nav",
-      "acc-cash",
-      "acc-position-count",
-      "acc-as-of",
-      "acc-initial",
-    ].forEach((id) => setText(id, "--"));
-    tableMessage("account-positions-body", 4, "历史回放读取失败");
-    showError("acc-error", "历史回放读取失败，请刷新重试");
-    accountSafety = null;
-    renderPermissions();
-  }
-}
-function renderAccount(data) {
-  accountSafety = data.safety;
-  renderPermissions();
-  setText(
-    "acc-nav",
-    data.error ? "--" : `${data.currency === "CNY" ? "¥" : ""}${fmt(data.nav)}`,
-  );
-  setText(
-    "acc-cash",
-    data.error || data.cash == null ? "来源未提供" : fmt(data.cash),
-  );
-  setText("acc-currency", data.currency || "--");
-  setText(
-    "acc-initial",
-    data.error || data.initial_equity == null
-      ? "初始模拟资金：来源未提供"
-      : `初始模拟资金 ${data.currency === "CNY" ? "¥" : ""}${fmt(data.initial_equity)}`,
-  );
-  setText("acc-as-of", data.error ? "--" : formatDate(data.as_of));
-  setText(
-    "acc-position-count",
-    data.error || data.positions_status !== "KNOWN"
-      ? "持仓未确认"
-      : `${data.positions.length} 项`,
-  );
-  setText("acc-freshness-status", "历史回放截止日，不代表今日状态");
-  showError(
-    "acc-error",
-    data.error ? `回放来源不可用：${data.error.split(":")[0]}` : "",
-  );
-  setText("acc-source-path", data.source?.path || "--");
-  setText("acc-source-sha256", data.source?.sha256 || "来源未提供");
-  setText("acc-source-produced", formatTime(data.source?.produced_at));
-  if (data.error || data.positions_status !== "KNOWN") {
-    tableMessage("account-positions-body", 4, "回放持仓来源不足，无法确认");
-    return;
-  }
-  if (!data.positions.length) {
-    tableMessage("account-positions-body", 4, "账本确认回放期末空仓");
-    return;
-  }
-  $("account-positions-body").innerHTML = data.positions
-    .map(
-      (pos) =>
-        `<tr><td>${escapeHtml(pos.symbol)}</td><td class="numeric" title="来源模型份额">${fmt(pos.quantity, 4)}</td><td class="numeric">${pos.weight == null ? "权重未知" : pct(pos.weight * 100)}</td><td class="date">${escapeHtml(formatDate(pos.entry_date))}</td></tr>`,
-    )
-    .join("");
 }
 async function fetchLiveAccountData() {
   if (liveFetchPending) return;
   liveFetchPending = true;
   liveAttemptAt = Date.now();
+  const historyRequest = fetchAssetHistory();
+  const recordsRequest = fetchLiveTradeRecords();
+  const strategyRequest = fetchOneAtrStatus();
+  const performanceRequest = fetchLivePerformance();
   try {
-    const data = await readJSON("/account/live");
+    const data = await readJSON("/account/assets");
+    window.QountLive?.render(data);
     liveReadAt = Date.now();
-    setText(
-      "live-read-at",
-      `页面读取 ${formatTime(new Date(liveReadAt).toISOString())}`,
-    );
+    setText("live-read-at", `页面读取 ${formatTime(new Date(liveReadAt).toISOString())}`);
     liveReadOnly = data.read_only;
+    accountSafety = data.safety;
     renderPermissions();
-    liveIntervalMs = Math.max(
-      60000,
-      (data.observation_interval_seconds || 300) * 1000,
-    );
-    if (data.error) throw new Error(`读数不可用：${data.error.split(":")[0]}`);
-    liveObservedAt = data.as_of;
-    setText("live-as-of", `账户观测 ${formatTime(data.as_of)}`);
-    setText("live-source-path", data.source?.path || "--");
-    setText("live-nav", fmt(data.nav));
-    setText("live-cash", fmt(data.cash));
-    setText("live-currency", data.currency || "--");
-    setText(
-      "live-positions-note",
-      `${data.positions.length} 项持仓 · ${data.currency}`,
-    );
-    showError("live-error", "");
+    if (!["AVAILABLE", "PARTIAL"].includes(data.status) || data.reported_total_usdt == null)
+      throw new Error(data.error || "钱包汇总尚未采集");
+    setText("asset-connection-badge", "Binance · 快照可读");
+    liveObservedAt = data.observed_at;
+    setText("live-as-of", `采集时间 ${formatTime(data.observed_at)}`);
+    setText("live-source-path", (data.source_endpoints || []).join(" · ") || "币安只读账户快照");
+    setText("live-nav", fmt(data.reported_total_usdt));
+    setText("live-cash", fmt(data.usdm_available_balance_usdt));
+    setText("live-equity", fmt(data.futures_equity_usdt));
+    setText("live-pnl", fmt(data.futures_unrealized_pnl_usdt));
+    $("live-pnl").className = `kpi-value ${signClass(data.futures_unrealized_pnl_usdt)}`;
+    setText("live-currency", data.currency || "USDT");
+    const available = QountMetrics.number(data.usdm_available_balance_usdt);
+    const equity = QountMetrics.number(data.usdm_margin_balance_usdt);
+    setText("live-unavailable", available == null || equity == null ? "--" : fmt(Math.max(0, equity - available)));
+    const positions = data.futures_positions || [];
+    const complete = data.futures_positions_complete === true;
+    const notionals = positions.map((pos) => QountMetrics.number(pos.notional_usdt));
+    setText("live-exposure", complete && notionals.every((v) => v != null) ? fmt(notionals.reduce((sum, v) => sum + Math.abs(v), 0)) : "--");
+    setText("live-position-count", `${complete ? "" : "已读取 "}${positions.length} 项持仓`);
+    setText("live-positions-note", complete ? "Binance USDⓈ-M · USDT" : "合约覆盖尚不完整");
+    setText("wallet-count", `${data.wallets.length} 个钱包`);
+    const unvalued = data.unvalued_collateral_assets || [];
+    setText("asset-coverage", `${data.wallets.length} 个钱包 · USDT合约浮盈亏${complete ? "已读取" : "尚有缺项"}。${unvalued.length ? `非USDT保证金未估值：${unvalued.join("、")}。` : ""}不含现货成本法、COIN-M 与期权浮盈亏。`);
+    const errors = Object.entries(data.errors || {}).map(([key, value]) => `${key}: ${value}`).join("；");
+    setText("asset-source-errors", errors ? `来源缺项：${errors}` : "钱包余额按 Binance 全钱包汇总，合约权益按 USDⓈ-M USDT 口径；各接口存在采集时间差。");
+    showError("live-error", data.status === "PARTIAL" ? "部分账户数据未取得，缺项显示为 --；钱包余额不与合约权益重复相加。" : "");
+    $("wallets-body").innerHTML = data.wallets.map((wallet) => `<tr><td>${escapeHtml(walletName(wallet.name))}<small class="wallet-original">${escapeHtml(wallet.name)}</small></td><td><span class="wallet-state">${wallet.active ? "已启用" : "未启用"}</span></td><td class="numeric">${assetAmount(wallet.balance_usdt)}</td><td class="numeric ${signClass(wallet.unrealized_pnl_usdt)}">${wallet.market ? assetAmount(wallet.unrealized_pnl_usdt) : "不适用"}</td><td class="numeric">${wallet.market ? assetAmount(wallet.equity_usdt) : "不适用"}</td></tr>`).join("");
+    renderWalletAllocation(data.wallets);
+    if (!positions.length) tableMessage("live-positions-body", 5, complete ? "该次观测确认 USDⓈ-M 已采集范围无持仓" : "持仓来源不完整，尚不能确认空仓");
+    else $("live-positions-body").innerHTML = positions.map((pos) => `<tr><td><small class="header-note">USDⓈ-M</small><br>${escapeHtml(pos.signal_symbol && pos.signal_symbol !== pos.symbol ? `${pos.signal_symbol} · ${pos.symbol}` : pos.symbol)}</td><td>${escapeHtml(statusText(pos.side))}</td><td class="numeric">${fmt(pos.quantity, 4)}</td><td class="numeric">${fmt(pos.notional_usdt)}</td><td class="numeric ${signClass(pos.unrealized_pnl_usdt)}">${fmt(pos.unrealized_pnl_usdt)}</td></tr>`).join("");
     updateObservationAge();
-    if (!data.positions.length)
-      tableMessage("live-positions-body", 4, "该次观测确认无持仓");
-    else
-      $("live-positions-body").innerHTML = data.positions
-        .map(
-          (pos) =>
-            `<tr><td>${escapeHtml(pos.symbol)}</td><td>${escapeHtml(statusText(pos.side))}</td><td class="numeric" title="${escapeHtml(pos.quantity)}">${fmt(pos.quantity, 4)}</td><td class="numeric">${fmt(pos.market_value)}</td></tr>`,
-        )
-        .join("");
+    fitAssetValues();
   } catch (error) {
-    setText("live-nav", "--");
-    setText("live-cash", "--");
-    setText("live-positions-note", "持仓未确认");
-    tableMessage(
-      "live-positions-body",
-      4,
-      "真实账户读数读取失败，无法确认当前持仓",
-    );
-    showError(
-      "live-error",
-      `真实账户读数获取失败：${error.message || "读取失败"}。页面读取成功不代表账户重新观测。`,
-    );
-    // Keep the last observation's clock running, never replace its time with this request's time.
+    window.QountLive?.render(null);
+    ["live-nav", "live-cash", "live-unavailable", "live-exposure", "live-equity", "live-pnl"].forEach((id) => setText(id, "--"));
+    setText("live-position-count", "持仓待确认");
+    setText("live-positions-note", "合约覆盖待确认");
+    setText("wallet-count", "尚未接入");
+    setText("asset-connection-badge", "Binance · 数据待接入");
+    setText("asset-coverage", "完整钱包汇总尚未取得，不能据此确认总资产或空仓。");
+    setText("live-source-path", "本次读取不可用");
+    setText("asset-source-errors", "");
+    tableMessage("wallets-body", 5, "完整钱包数据尚未取得");
+    tableMessage("live-positions-body", 5, "账户来源不可用，无法确认当前持仓");
+    renderWalletAllocation([]);
+    showError("live-error", `资产读数不可用：${error.message || "读取失败"}。需由持有只读凭据的采集主机生成新版快照。`);
     updateObservationAge();
   } finally {
+    await Promise.allSettled([historyRequest, recordsRequest, strategyRequest, performanceRequest]);
     liveFetchPending = false;
+  }
+}
+async function fetchOneAtrStatus() {
+  try { window.QountLive?.renderOneAtr(await readJSON('/account/one-atr')); }
+  catch (_) { window.QountLive?.renderOneAtr(null); }
+}
+async function fetchLiveTradeRecords() {
+  try { window.QountLive?.renderRecords(await readJSON('/account/trades?limit=100')); }
+  catch (_) { window.QountLive?.renderRecords(null); }
+}
+function fitAssetValues() {
+  document.querySelectorAll(".asset-kpi-grid .kpi-value").forEach((node) => {
+    node.style.fontSize = "";
+    node.title = node.textContent;
+    if (!node.clientWidth) return;
+    let size = parseFloat(getComputedStyle(node).fontSize);
+    while (node.scrollWidth > node.clientWidth && size > 12) node.style.fontSize = `${--size}px`;
+  });
+}
+const WALLET_COLORS = ["#ffd93d", "#4d96ff", "#6bcb77", "#ff9f43", "#00b8bd", "#ff6b6b", "#8c9b4a", "#2d2d2d"];
+function renderWalletAllocation(wallets) {
+  const funded = wallets.filter((w) => w.balance_usdt > 0);
+  const total = funded.reduce((sum, w) => sum + w.balance_usdt, 0);
+  const empty = $("asset-chart-empty");
+  empty.classList.toggle("hidden", total > 0 && !!window.echarts);
+  setText("asset-chart-empty", wallets.length ? total > 0 ? "图表暂不可用" : "暂无正余额钱包" : "钱包数据待确认");
+  $("wallet-chart-legend").innerHTML = funded.map((w, i) => `<span><i class="legend-dot" style="background:${WALLET_COLORS[i % WALLET_COLORS.length]}"></i>${escapeHtml(walletName(w.name))} <b>${fmt(w.balance_usdt / total * 100, 1)}%</b></span>`).join("");
+  if (!total || !window.echarts) { allocationChartInstance?.clear(); return; }
+  if (!allocationChartInstance) allocationChartInstance = echarts.init($("asset-allocation-chart"));
+  allocationChartInstance.setOption({
+    animation: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    color: WALLET_COLORS,
+    tooltip: { trigger: "item", formatter: (item) => `${escapeHtml(walletName(item.name))}：${assetAmount(item.value)} USDT (${fmt(item.percent, 1)}%)` },
+    title: { text: `${funded.length}`, subtext: "有余额的钱包", left: "center", top: "35%", textStyle: { color: "#1a1a1a", fontSize: 28, fontWeight: 800 }, subtextStyle: { color: "#666666", fontSize: 12 } },
+    series: [{ type: "pie", radius: ["67%", "84%"], center: ["50%", "48%"], label: { show: false }, itemStyle: { borderColor: "#fff", borderWidth: 4, borderRadius: 7 }, data: funded.map((w) => ({ name: w.name, value: w.balance_usdt })) }],
+  }, true);
+}
+async function fetchAssetHistory() {
+  const version = ++assetHistoryRequestVersion;
+  const days = $("asset-history-days")?.value || "30";
+  try {
+    const data = await readJSON(`/account/history?days=${encodeURIComponent(days)}`);
+    if (version !== assetHistoryRequestVersion) return;
+    if (data.status === "ERROR") throw new Error("历史记录不可读");
+    const points = data.points || [];
+    const valued = points.filter((p) => p.reported_total_usdt != null);
+    const ready = valued.length > 0 && !!window.echarts;
+    $("asset-history-empty").classList.toggle("hidden", ready);
+    setText("asset-history-empty", points.length ? "该区间暂无有效资产读数" : "真实资产历史待积累");
+    setText("asset-history-note", points.length ? `${points.length} 次真实观测 · ${formatTime(points[0].observed_at)} 至 ${formatTime(points[points.length - 1].observed_at)}。余额变化包含充值、提现与估值变化，不作为收益率。钱包覆盖变化处断线。` : "尚无历史记录；采集主机启用新版只读采集后开始积累，不回填模拟值。");
+    if (!ready) { assetHistoryChartInstance?.clear(); return; }
+    if (!assetHistoryChartInstance) assetHistoryChartInstance = echarts.init($("asset-history-chart"));
+    const seriesData = (key) => {
+      let previousScope = null;
+      const rows = [];
+      for (const point of points) {
+        const stamp = QountMetrics.timestamp(point.observed_at);
+        const scope = JSON.stringify(point.wallet_scope || []);
+        if (previousScope != null && scope !== previousScope) rows.push([stamp - 1, null]);
+        rows.push([stamp, point[key] ?? null]); previousScope = scope;
+      }
+      return rows;
+    };
+    assetHistoryChartInstance.setOption({
+      animation: false, color: ["#e0a800", "#4d96ff", "#6bcb77"],
+      tooltip: { trigger: "axis", valueFormatter: (v) => v == null ? "未提供" : `${fmt(v)} USDT` },
+      legend: { bottom: 0, textStyle: { color: "#555555", fontSize: 11 } },
+      grid: { left: 65, right: 18, top: 20, bottom: 65 },
+      xAxis: { type: "time", axisLine: { lineStyle: { color: "#2d2d2d" } }, axisLabel: { color: "#666666", hideOverlap: true } },
+      yAxis: { type: "value", scale: true, axisLabel: { color: "#666666", fontSize: 10 }, splitLine: { lineStyle: { color: "#eeeeee", type: "dashed" } } },
+      dataZoom: [{ type: "inside" }],
+      series: [["钱包折合总额", "reported_total_usdt"], ["合约保证金权益", "futures_equity_usdt"], ["合约未实现盈亏", "futures_unrealized_pnl_usdt"]].map(([name, key]) => ({ name, type: "line", showSymbol: valued.length < 3, symbolSize: 7, connectNulls: false, data: seriesData(key), lineStyle: { width: 2 } })),
+    }, true);
+  } catch (error) {
+    if (version !== assetHistoryRequestVersion) return;
+    assetHistoryChartInstance?.clear();
+    $("asset-history-empty")?.classList.remove("hidden");
+    setText("asset-history-empty", "资产历史读取失败");
+    setText("asset-history-note", "历史数据暂不可用，请刷新重试。");
   }
 }
 function updateObservationAge() {
   const age = QountMetrics.age(liveObservedAt);
   setText(
     "live-age",
-    `${liveObservedAt ? "最近成功观测：" : ""}${age.text}${age.stale && liveObservedAt ? " · 超过两个采集周期，待更新" : ""}`,
+    `${liveObservedAt ? "数据采集于 " : ""}${age.text}${age.stale && liveObservedAt ? " · 等待更新" : ""}`,
   );
   $("live-age")?.classList.toggle("fresh-stale", age.stale);
 }
@@ -398,22 +589,22 @@ async function fetchDailyReport() {
 
 async function fetchPaperLines() {
   try {
-    const lines = await readJSON("/paper/lines");
-    const rank = (line) =>
-      line.line_id === "personal_assistant"
-        ? 0
-        : line.line_id === "universal_regime"
-          ? 1
-          : line.line_id.startsWith("dual_")
-            ? 2
-            : line.line_id === "cta_r"
-              ? 3
-              : 4;
+    const lines = await readJSON("/research/lines");
     lines.sort(
-      (a, b) => rank(a) - rank(b) || a.line_id.localeCompare(b.line_id),
+      (a, b) => researchName(a).localeCompare(researchName(b), "zh-CN") || a.line_id.localeCompare(b.line_id),
     );
     paperLines = new Map(lines.map((line) => [line.line_id, line]));
+    $("research-category").replaceChildren(...["all", ...new Set(lines.map(line => QountResearch.profile(line).category))].map(category => {
+      const option = document.createElement("option");
+      option.value = category;
+      option.textContent = category === "all" ? "全部市场" : category;
+      return option;
+    }));
+    if ([...$("research-category").options].some(option => option.value === researchCategory))
+      $("research-category").value = researchCategory;
+    else researchCategory = "all";
     renderPaperLines(lines);
+
     await populatePositionLineSelect(lines);
   } catch (error) {
     setText("paper-lines-body", "研究线列表读取失败，请刷新重试");
@@ -431,39 +622,70 @@ function sourceReturn(metrics) {
   return ["收益", null];
 }
 function renderPaperLines(lines) {
-  const archived = lines.filter((line) =>
-    ["ARCHIVED", "STOPPED"].includes(line.status),
-  );
-  const active = lines.filter((line) => !archived.includes(line));
-  setText(
-    "paper-lines-count",
-    `共 ${lines.length} 条 · 持续研究 ${active.length} · 封存／停止 ${archived.length}`,
-  );
-  setText(
-    "archived-count",
-    `封存／停止线 ${archived.length} 条 · 保留结论与详情`,
-  );
-  function card(line) {
+  const counts = QountResearch.summary(lines);
+  const selected = QountResearch.select(lines, researchFilter, researchQuery, researchCategory);
+  const groups = Object.fromEntries(["available", "waiting", "archived"].map(key =>
+    [key, selected.filter(line => QountResearch.group(line) === key)]));
+  setText("paper-lines-count", `${counts.all} 条已接入`);
+  $("research-summary").innerHTML = [
+    ["可查看结果", counts.available, "历史或前向记录", "available"],
+    ["等待数据", counts.waiting, "尚无可展示结果", "waiting"],
+    ["封存与停止", counts.archived, "保留结论供复核", "archived"],
+  ].map(([label, count, note, key]) => `<div class="research-stat ${key}"><span>${label}</span><strong>${count}<small> 条</small></strong><p>${note}</p></div>`).join("");
+  document.querySelectorAll("[data-research-filter]").forEach(button => {
+    const key = button.dataset.researchFilter;
+    const labels = { all: "全部", available: "可查看结果", waiting: "等待数据", archived: "封存与停止" };
+    button.textContent = `${labels[key]} ${counts[key]}`;
+    button.classList.toggle("active", researchFilter === key);
+    button.setAttribute("aria-pressed", String(researchFilter === key));
+  });
+  setText("research-match-count", researchQuery.trim() || researchFilter !== "all" || researchCategory !== "all"
+    ? `找到 ${selected.length} 条研究线`
+    : `${counts.stale} 条数据待更新 · ${counts.missing} 条缺源（含封存线）`);
+  function card(line, index) {
     const m = line.metrics || {};
+    const profile = QountResearch.profile(line);
+    const source = QountResearch.dataState(line);
     const unavailable = historicalOnly(line);
     const [returnLabel, returnValue] = sourceReturn(m);
-    const next = nextQuestion(line);
+    const period = !QountResearch.available(line) && !m.start_date ? [] : [m.start_date, line.as_of].filter(date => date && date !== "unknown").map(formatDate);
     const facts = unavailable
-      ? '<p class="fresh-stale">当前绩效不可确认；历史资料在详情中单独保留。</p>'
-      : `<dl class="research-facts"><div><dt>${returnLabel}${m.cagr_basis ? `（${escapeHtml(m.cagr_basis === "252 trading days" ? "252交易日" : m.cagr_basis)}）` : ""}</dt><dd class="${signClass(returnValue)}">${pct(returnValue)}</dd></div><div><dt>来源最大回撤</dt><dd class="negative">${pct(m.max_drawdown_pct == null ? null : -Math.abs(m.max_drawdown_pct))}</dd></div><div><dt>当前回撤</dt><dd class="negative">${pct(m.current_drawdown_pct == null ? null : -Math.abs(m.current_drawdown_pct))}</dd></div>${m.benchmark_cagr_pct == null ? "" : `<div><dt>同标的基准年化（252交易日）</dt><dd>${pct(m.benchmark_cagr_pct)}</dd></div>`}</dl>`;
-    return `<article class="research-card ${line.line_id === "personal_assistant" ? "primary-line" : ""}" data-line-id="${escapeHtml(line.line_id)}"><div class="card-header"><div><h3>${escapeHtml(line.name)}</h3><span class="research-id">${escapeHtml(line.line_id)}</span></div><span class="status-badge">${escapeHtml(identity(line))}</span></div><p class="header-note">完整样本 ${formatDate(m.start_date)} 至 ${formatDate(line.as_of)} · ${escapeHtml(statusText(line.freshness))}${line.data_status !== "AVAILABLE" ? " · 数据不可用" : ""}</p>${facts}<p>${escapeHtml(line.adjudication || "来源未提供裁决")}</p><p class="header-note">${escapeHtml(costsText(line))}</p><details><summary class="header-note">下一项问题与样本说明</summary><p class="header-note">${escapeHtml(next)} ${m.observation_count == null ? "" : `来源观测 ${m.observation_count} 点。`}</p></details><button class="btn-action" data-open-line="${escapeHtml(line.line_id)}">查看研究详情</button></article>`;
+      ? `<div class="research-unavailable"><span aria-hidden="true">${QountResearch.archived(line) ? "▤" : "◷"}</span><p>${QountResearch.archived(line) ? "历史工件与最终结论在详情中保留。" : "来源尚未接入，暂不展示收益与持仓。"}</p></div>`
+      : `<dl class="research-facts"><div><dt>${returnLabel}</dt><dd class="${signClass(returnValue)}">${pct(returnValue)}</dd></div><div><dt>历史最大回撤</dt><dd class="negative">${pct(m.max_drawdown_pct == null ? null : -Math.abs(m.max_drawdown_pct))}</dd></div><div><dt>${m.benchmark_cagr_pct == null ? "当前回撤" : "同标的买持年化"}</dt><dd>${m.benchmark_cagr_pct == null ? pct(m.current_drawdown_pct == null ? null : -Math.abs(m.current_drawdown_pct)) : pct(m.benchmark_cagr_pct)}</dd></div></dl>`;
+    const lifecycle = QountResearch.archived(line) ? (line.status === "STOPPED" ? "已停止" : "已封存") : line.research_status === "paused" ? "暂停研究" : "研究中";
+    const footnote = m.cagr_basis === "252 trading days" ? "年化按 252 交易日计算" : profile.sample;
+    return `<article class="research-card" data-line-id="${escapeHtml(line.line_id)}" style="--enter-index:${index % 6}">
+      <div class="research-card-top"><span class="research-category">${escapeHtml(profile.category)} <span>／ ${escapeHtml(profile.family)}</span></span><span class="research-lifecycle">${lifecycle}</span></div>
+      <h3>${escapeHtml(profile.name)}</h3><p class="research-method">${escapeHtml(profile.method)}</p>
+      <div class="research-source-row"><span class="source-chip ${source.tone}"><i aria-hidden="true"></i>${escapeHtml(source.label)}</span><span class="sample-chip">${escapeHtml(profile.sample)}</span></div>
+      ${facts}<p class="research-card-period">${period.length > 1 ? "样本 " + period.join(" — ") : period.length ? "数据截至 " + period[0] : "数据日期尚未确认"}${unavailable ? "" : " · " + escapeHtml(footnote)}</p>
+      <p class="research-takeaway"><strong>研究判断</strong>${escapeHtml(profile.note)}</p>
+      <div class="research-card-bottom"><span class="research-id">${escapeHtml(line.line_id)}</span><button class="btn-action" data-open-line="${escapeHtml(line.line_id)}">${QountResearch.archived(line) ? "复核历史" : "查看详情"}<span aria-hidden="true"> ↗</span></button></div>
+    </article>`;
   }
-  $("paper-lines-body").innerHTML =
-    active.map(card).join("") || "<p>暂无持续研究线</p>";
-  $("archived-lines-body").innerHTML =
-    archived.map(card).join("") || "<p>暂无封存线</p>";
-  document
-    .querySelectorAll("[data-open-line]")
-    .forEach((button) =>
-      button.addEventListener("click", () =>
-        showLineDetail(button.dataset.openLine),
-      ),
-    );
+  let offset = 0;
+  $("paper-lines-body").innerHTML = [
+    ["available", "可查看的研究结果", "包含历史回放与前向模拟，按各自样本范围解读。"],
+    ["waiting", "等待数据的研究线", "保留研究方向与当前判断，接入来源后再展示结果。"],
+  ].filter(([key]) => groups[key].length).map(([key, title, note]) => {
+    const cards = groups[key].map(line => card(line, offset++)).join("");
+    return `<section class="research-group"><div class="research-group-heading"><h3>${title}<span>${groups[key].length}</span></h3><p>${note}</p></div><div class="research-list">${cards}</div></section>`;
+  }).join("");
+  if (!selected.length) $("paper-lines-body").innerHTML = '<div class="research-empty"><span aria-hidden="true">⌕</span><h3>没有找到匹配的研究线</h3><p>试试市场、名称或 G20、ETF 等编号。</p><button class="btn-action" onclick="resetResearchFilters()">清除筛选</button></div>';
+  $("archived-lines").classList.toggle("hidden", !groups.archived.length);
+  if (researchFilter === "archived" || researchQuery.trim() || researchCategory !== "all") $("archived-lines").open = true;
+  setText("archived-count", `封存与停止 · ${groups.archived.length} 条`);
+  $("archived-lines-body").innerHTML = groups.archived.map((line, index) => card(line, index)).join("");
+  document.querySelectorAll("[data-open-line]").forEach(button =>
+    button.addEventListener("click", () => showLineDetail(button.dataset.openLine)));
+}
+function resetResearchFilters() {
+  researchFilter = "all";
+  researchQuery = "";
+  researchCategory = "all";
+  $("research-category").value = "all";
+  $("research-search").value = "";
+  renderPaperLines([...paperLines.values()]);
 }
 function populatePositionLineSelect(lines) {
   const select = $("positions-line-select");
@@ -472,16 +694,17 @@ function populatePositionLineSelect(lines) {
     ...lines.map((line) => {
       const option = document.createElement("option");
       option.value = line.line_id;
-      option.textContent = line.name;
+      option.textContent = QountResearch.profile(line).name;
       return option;
     }),
   );
   if (lines.some((line) => line.line_id === previous)) select.value = previous;
-  else if (paperLines.has("personal_assistant"))
-    select.value = "personal_assistant";
   if (select.value) return loadPaperPositions();
 }
-async function showLineDetail(lineId, scroll = true, preserveRange = false) {
+async function showLineDetail(lineId, scroll = true, preserveRange = false, runId = null) {
+  ++researchComparisonVersion;
+  $("research-run-controls")?.classList.add("hidden");
+  setText("research-run-note", "");
   const previousRange = preserveRange ? $("chart-time-range").value : "all";
   const previousWindow =
     preserveRange && currentLineDetail ? selectedStats().selected : [];
@@ -491,9 +714,10 @@ async function showLineDetail(lineId, scroll = true, preserveRange = false) {
   const panel = $("line-detail-panel");
   panel.classList.remove("hidden");
   panel.dataset.lineId = lineId;
+  $("line-daily-panel")?.classList.toggle("hidden", lineId !== "personal_assistant");
   setText(
     "detail-title",
-    `${paperLines.get(lineId)?.name || lineId} · 读取中…`,
+    `${paperLines.has(lineId) ? researchName(paperLines.get(lineId)) : lineId} · 读取中…`,
   );
   [
     "detail-adjudication",
@@ -522,15 +746,21 @@ async function showLineDetail(lineId, scroll = true, preserveRange = false) {
   chartInstance?.dispose();
   chartInstance = null;
   setText("echarts-container", "研究曲线读取中…");
-  $("chart-time-range").value =
-    previousRange === "custom" ? "all" : previousRange;
-  if (scroll) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  const rangeSelect = $("chart-time-range");
+  const customOption = rangeSelect.querySelector("[value=custom]");
+  if (customOption) customOption.remove();
+  rangeSelect.value = previousRange === "custom" ? "all" : previousRange;
+  if (scroll) {
+    $("detail-title").focus({ preventScroll: true });
+    panel.scrollIntoView({ behavior: reduceMotion() ? "instant" : "smooth", block: "start" });
+  }
   try {
-    const data = await readJSON(`/paper/lines/${encodeURIComponent(lineId)}`);
+    const data = await readJSON(`/research/lines/${encodeURIComponent(lineId)}${runId ? `?run_id=${encodeURIComponent(runId)}` : ""}`);
     if (requestVersion !== detailRequestVersion || currentLineId !== lineId)
       return;
     currentLineDetail = data;
     renderLineDetail(data);
+    if (data.run_id) loadResearchRuns(data, requestVersion);
     if (
       previousRange === "custom" &&
       previousWindow.length &&
@@ -557,7 +787,7 @@ async function showLineDetail(lineId, scroll = true, preserveRange = false) {
       return;
     setText(
       "detail-title",
-      `${paperLines.get(lineId)?.name || lineId} · 读取失败`,
+      `${paperLines.has(lineId) ? researchName(paperLines.get(lineId)) : lineId} · 读取失败`,
     );
     showError("detail-source-error", "该研究线详情读取失败，请重新选择或刷新");
     setText("echarts-container", "曲线读取失败");
@@ -569,12 +799,14 @@ async function showLineDetail(lineId, scroll = true, preserveRange = false) {
   }
 }
 function closeDetailPanel() {
+  const opener = [...document.querySelectorAll("[data-open-line]")].find(button => button.dataset.openLine === currentLineId);
   $("line-detail-panel").classList.add("hidden");
   currentLineId = null;
   currentLineDetail = null;
   detailRequestVersion++;
   chartInstance?.dispose();
   chartInstance = null;
+  opener?.focus({ preventScroll: true });
 }
 function fullMetricItems(line) {
   const m = line.metrics || {};
@@ -632,10 +864,10 @@ function pills(id, items) {
 function renderLineDetail(line) {
   const rows = line.nav_series || [];
   const unavailable = historicalOnly(line);
-  setText("detail-title", `${line.name} (${line.line_id})`);
+  setText("detail-title", QountResearch.profile(line).name);
   setText(
     "detail-identity",
-    `${identity(line)} · 来源截止 ${formatDate(line.as_of)}`,
+    `${identity(line)} · ${QountResearch.dataState(line).label} · 数据截至 ${!QountResearch.available(line) && !rows.length ? "未知" : formatDate(line.as_of)} · ${line.line_id}`,
   );
   setText("detail-adjudication", line.adjudication || "来源未提供裁决");
   setText("detail-next-question", nextQuestion(line));
@@ -687,7 +919,7 @@ function updateWindowMetrics() {
   const range = first
     ? `${formatDate(first)} 至 ${formatDate(last)}`
     : "无净值观测";
-  setText("detail-metrics-title", `${line.name} · 所选窗口收益与风险`);
+  setText("detail-metrics-title", "所选窗口 · 收益与风险");
   pills("detail-metrics-grid", [
     [
       "策略窗口收益",
@@ -771,82 +1003,148 @@ function rerenderCurrentChart() {
 function renderNavChart() {
   const line = currentLineDetail;
   const rows = line.nav_series || [];
+  chartRowCount = rows.length;
   const dom = $("echarts-container");
-  chartInstance?.dispose();
-  chartInstance = null;
-  dom.replaceChildren();
   if (!rows.length) {
+    chartInstance?.dispose();
+    chartInstance = null;
+    dom.replaceChildren();
     dom.textContent = "无可复核净值观测";
     return;
   }
-  chartInstance = echarts.init(dom, null, { renderer: "canvas" });
+  if (!chartInstance) {
+    dom.replaceChildren();
+    chartInstance = echarts.init(dom, null, { renderer: "canvas" });
+  }
   const checked = (id) => $(id).checked;
-  const makeSeries = (name, key, color) => ({
+  const makeSeries = (name, key, color, fill) => ({
     name,
     type: "line",
     data: rows.map((row) => row[key]),
-    smooth: false,
+    smooth: 0.3,
     showSymbol: rows.length === 1,
     connectNulls: false,
-    lineStyle: { width: 1.8, color },
+    lineStyle: { width: 2.5, color },
     itemStyle: { color },
+    symbolSize: 6,
+    emphasis: { focus: "series" },
+    areaStyle: fill
+      ? {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: "rgba(107,203,119,0.22)" },
+              { offset: 1, color: "rgba(107,203,119,0)" },
+            ],
+          },
+        }
+      : undefined,
+    markLine: fill
+      ? {
+          silent: true,
+          symbol: "none",
+          data: [{ yAxis: 1 }],
+          lineStyle: { color: "#bbbbbb", type: "dashed", width: 1 },
+          label: { formatter: "初始 1.0", color: "#999999", fontWeight: 700 },
+        }
+      : undefined,
   });
   const series = [];
   if (checked("chart-show-executable"))
-    series.push(makeSeries("模拟执行净值", "nav", "#16803d"));
+    series.push(makeSeries("模拟执行净值", "nav", "#6bcb77", true));
   if (
     checked("chart-show-signal") &&
     rows.some((row) => row.signal_nav != null)
   )
-    series.push(makeSeries("信号净值", "signal_nav", "#7c3aed"));
+    series.push(makeSeries("信号净值", "signal_nav", "#4d96ff"));
   if (
     checked("chart-show-benchmark") &&
     rows.some((row) => row.benchmark_nav != null)
   )
-    series.push(makeSeries("基准净值", "benchmark_nav", "#6b7280"));
+    series.push(makeSeries("基准净值", "benchmark_nav", "#666666"));
   if (checked("chart-show-drawdown"))
     series.push({
       name: "回撤（完整历史峰值，%）",
       type: "line",
       data: QountMetrics.drawdowns(rows),
       yAxisIndex: 1,
+      smooth: 0.3,
       showSymbol: false,
-      lineStyle: { color: "#be3a3a", width: 1.4 },
+      emphasis: { focus: "series" },
+      lineStyle: { color: "#ff6b6b", width: 1.8 },
+      markPoint: {
+        symbol: "pin",
+        symbolSize: 36,
+        itemStyle: { color: "#ff6b6b", borderColor: "#2d2d2d", borderWidth: 1.5 },
+        label: {
+          color: "#ffffff",
+          fontWeight: 800,
+          fontSize: 10,
+          formatter: (p) => `${Math.round(Number(p.value))}%`,
+        },
+        data: [{ type: "min", name: "最大回撤" }],
+      },
     });
   chartInstance.setOption({
     backgroundColor: "#ffffff",
-    animation: false,
+    animation: !reduceMotion(),
+    animationDuration: 600,
+    animationDurationUpdate: 320,
+    animationEasingUpdate: "cubicOut",
     tooltip: {
       trigger: "axis",
       confine: true,
       backgroundColor: "rgba(255,255,255,0.96)",
-      borderColor: "#e2e5ea",
-      textStyle: { color: "#1a1d23", fontSize: 12 },
-      valueFormatter: (value) => (value == null ? "未提供" : fmt(value, 4)),
+      borderColor: "#2d2d2d",
+      borderWidth: 2,
+      textStyle: { color: "#1a1a1a", fontSize: 13, fontWeight: 600 },
+      axisPointer: {
+        type: "cross",
+        snap: true,
+        lineStyle: { color: "#9b59b6", width: 1.5, type: "dashed" },
+        crossStyle: { color: "#9b59b6", width: 1, type: "dashed" },
+        label: { backgroundColor: "#2d2d2d", fontWeight: 700 },
+      },
+      formatter: (params) => {
+        if (!params || !params.length) return "";
+        const head = `<b>${formatDate(params[0].axisValue)}</b>`;
+        const body = params
+          .map(
+            (p) =>
+              `<div style="display:flex;align-items:center;gap:6px;margin-top:4px">${p.marker}<span>${p.seriesName}</span><b style="margin-left:auto;font-family:var(--font-mono)">${p.value == null ? "未提供" : fmt(p.value, 4)}</b></div>`,
+          )
+          .join("");
+        return `<div style="min-width:190px">${head}${body}</div>`;
+      },
     },
-    legend: { top: 0, textStyle: { color: "#6b7280" }, type: "scroll" },
+    legend: { top: 0, type: "scroll", selectedMode: false, textStyle: { color: "#666666", fontWeight: 700 } },
     grid: { left: 8, right: 8, top: 45, bottom: 60, containLabel: true },
     xAxis: {
       type: "category",
       data: rows.map((row) => row.date),
       axisLabel: {
-        color: "#6b7280",
+        color: "#666666",
+        fontWeight: 600,
         hideOverlap: true,
         formatter: (value) => formatDate(value),
       },
-      axisLine: { lineStyle: { color: "#e2e5ea" } },
+      axisLine: { lineStyle: { color: "#2d2d2d", width: 2 } },
     },
     yAxis: [
       {
         type: "value",
         scale: true,
-        axisLabel: { color: "#6b7280" },
-        splitLine: { lineStyle: { color: "#f0f2f5" } },
+        axisLabel: { color: "#666666", fontWeight: 600 },
+        splitLine: { lineStyle: { color: "#eee", type: "dashed" } },
       },
       {
         type: "value",
         show: checked("chart-show-drawdown"),
-        axisLabel: { formatter: "{value}%", color: "#be3a3a" },
+        axisLabel: { formatter: "{value}%", color: "#ff6b6b", fontWeight: 600 },
         splitLine: { show: false },
       },
     ],
@@ -864,27 +1162,30 @@ function renderNavChart() {
         startValue: chartStart,
         endValue: chartEnd,
         filterMode: "none",
-        borderColor: "#e2e5ea",
-        backgroundColor: "#f8f9fb",
-        fillerColor: "rgba(37,99,235,0.1)",
-        handleStyle: { color: "#2563eb" },
-        textStyle: { color: "#6b7280" },
+        borderColor: "#2d2d2d",
+        borderWidth: 2,
+        backgroundColor: "#f8f8f8",
+        fillerColor: "rgba(77,150,255,0.15)",
+        handleStyle: { color: "#4d96ff", borderColor: "#2d2d2d", borderWidth: 2 },
+        textStyle: { color: "#666666", fontWeight: 600 },
       },
     ],
     series,
-  });
+  }, true);
+  if (chartInstance._zoomBound) return;
+  chartInstance._zoomBound = true;
   chartInstance.on("datazoom", (event) => {
     const zoom = (event.batch || [event])[0];
     chartStart =
       zoom.startValue == null
-        ? Math.round(((zoom.start || 0) / 100) * (rows.length - 1))
+        ? Math.round(((zoom.start || 0) / 100) * (chartRowCount - 1))
         : Number(zoom.startValue);
     chartEnd =
       zoom.endValue == null
-        ? Math.round(((zoom.end ?? 100) / 100) * (rows.length - 1))
+        ? Math.round(((zoom.end ?? 100) / 100) * (chartRowCount - 1))
         : Number(zoom.endValue);
-    chartStart = Math.max(0, Math.min(rows.length - 1, chartStart));
-    chartEnd = Math.max(chartStart, Math.min(rows.length - 1, chartEnd));
+    chartStart = Math.max(0, Math.min(chartRowCount - 1, chartStart));
+    chartEnd = Math.max(chartStart, Math.min(chartRowCount - 1, chartEnd));
     if (!$("chart-time-range").querySelector("[value=custom]")) {
       const option = document.createElement("option");
       option.value = "custom";
@@ -897,10 +1198,10 @@ function renderNavChart() {
 }
 async function loadLineCurrentPositions(line, version) {
   const lineId = line.line_id;
-  tableMessage("detail-current-positions", 6, `${line.name} 持仓读取中…`);
+  tableMessage("detail-current-positions", 6, `${researchName(line)} 持仓读取中…`);
   setText(
     "detail-position-as-of",
-    `${line.name} · 来源截止 ${formatDate(line.as_of)}`,
+    `${researchName(line)} · 来源截止 ${formatDate(line.as_of)}`,
   );
   if (line.position_status !== "KNOWN" || historicalOnly(line)) {
     tableMessage(
@@ -916,19 +1217,19 @@ async function loadLineCurrentPositions(line, version) {
   try {
     const rows = currentPositionRows(
       await readJSON(
-        `/paper/positions/current?line_id=${encodeURIComponent(lineId)}`,
+        `/research/positions/current?line_id=${encodeURIComponent(lineId)}`,
       ),
     );
     if (version !== detailRequestVersion || currentLineId !== lineId) return;
     setText(
       "detail-position-as-of",
-      `${line.name} · 最新快照 ${rows[0] ? ledgerDate(rows[0].date) : formatDate(line.as_of)}`,
+      `${researchName(line)} · 最新快照 ${rows[0] ? ledgerDate(rows[0].date) : formatDate(line.as_of)}`,
     );
     renderHoldingRows("detail-current-positions", rows, line);
   } catch (error) {
     if (version !== detailRequestVersion || currentLineId !== lineId) return;
-    tableMessage("detail-current-positions", 6, `${line.name} 持仓读取失败`);
-    setText("detail-position-as-of", `${line.name} · 快照读取失败`);
+    tableMessage("detail-current-positions", 6, `${researchName(line)} 持仓读取失败`);
+    setText("detail-position-as-of", `${researchName(line)} · 快照读取失败`);
   }
 }
 function renderHoldingRows(id, rows, line) {
@@ -996,14 +1297,14 @@ async function loadPaperPositions() {
     "paper-trades-body",
     "paper-actions-body",
   ].forEach((body, i) =>
-    tableMessage(body, [6, 7, 4][i], `${line.name || id} 读取中…`),
+    tableMessage(body, [6, 7, 4][i], `${researchName(line) || id} 读取中…`),
   );
-  setText("positions-as-of", `${line.name || id} · 快照读取中…`);
+  setText("positions-as-of", `${researchName(line) || id} · 快照读取中…`);
   setText("trade-count", "读取中…");
   setText("action-count", "读取中…");
   setText(
     "ledger-context",
-    `${line.name || id} · ${start || "最早"} 至 ${end || "最新"}`,
+    `${researchName(line) || id} · ${start || "最早"} 至 ${end || "最新"}`,
   );
   if (start && end && start > end) {
     tableMessage("paper-trades-body", 7, "开始日期不能晚于结束日期");
@@ -1014,11 +1315,13 @@ async function loadPaperPositions() {
   const query = new URLSearchParams({ line_id: id, limit: "1000" });
   if (start) query.set("start", start);
   if (end) query.set("end", end);
+  const selectedRun = currentLineDetail?.line_id === id ? currentLineDetail.run_id : paperLines.get(id)?.run_id;
+  if (selectedRun) query.set("run_id", selectedRun);
   const [positions, trades] = await Promise.allSettled([
-    readJSON(`/paper/positions/current?line_id=${encodeURIComponent(id)}`).then(
+    readJSON(`/research/positions/current?line_id=${encodeURIComponent(id)}`).then(
       currentPositionRows,
     ),
-    readJSON(`/paper/trades?${query}`),
+    readJSON(`/research/trades?${query}`),
   ]);
   if (
     version !== positionRequestVersion ||
@@ -1037,7 +1340,7 @@ async function loadPaperPositions() {
     renderHoldingRows("paper-current-positions-body", positions.value, line);
     setText(
       "positions-as-of",
-      `${line.name || id} · ${ledgerDate(positions.value[0]?.date)}`,
+      `${researchName(line) || id} · ${ledgerDate(positions.value[0]?.date)}`,
     );
   }
   if (trades.status === "rejected") {
@@ -1060,7 +1363,7 @@ async function loadPaperPositions() {
     $("paper-trades-body").innerHTML = fills
       .map(
         (row) =>
-          `<tr><td class="date">${escapeHtml(ledgerDate(row.date))}</td><td>${escapeHtml(row.symbol)}</td><td title="${escapeHtml(row.side)}">${escapeHtml(statusText(row.side))}</td><td class="numeric">${fmt(row.quantity, 4)}${id === "personal_assistant" ? "<small> 模型份额</small>" : ""}</td><td class="numeric">${fmt(row.price, 4)}</td><td class="numeric">${row.cost == null ? "来源未提供" : fmt(row.cost)}</td><td><details><summary>原因与原值</summary><p>调仓原因：${escapeHtml(sourceReason(row.note))}</p><p>原始说明：${escapeHtml(row.note || "来源未提供")}</p><code>${escapeHtml(JSON.stringify(row))}</code></details></td></tr>`,
+          `<tr><td class="date">${escapeHtml(ledgerDate(row.date))}</td><td>${escapeHtml(row.symbol)}</td><td title="${escapeHtml(row.side)}">${escapeHtml(statusText(row.side))}</td><td class="numeric">${fmt(row.quantity, 4)}${id === "personal_assistant" ? "<small> 模型份额</small>" : ""}</td><td class="numeric">${fmt(row.price, 4)}</td><td class="numeric">${row.cost == null ? "来源未提供" : fmt(row.cost)}</td><td><details><summary>调仓原因</summary><p>${escapeHtml(sourceReason(row.note))}</p></details></td></tr>`,
       )
       .join("");
   if (!actions.length)
@@ -1071,7 +1374,7 @@ async function loadPaperPositions() {
         const ratio =
           String(row.note || "").match(/split_ratio=([\d.]+)/)?.[1] ||
           String(row.note || "").match(/1\s*[:：]\s*([\d.]+)\s*拆分/)?.[1];
-        return `<tr><td class="date">${escapeHtml(ledgerDate(row.date))}</td><td>${escapeHtml(row.symbol)}</td><td>份额拆分</td><td>${ratio ? `1 : ${escapeHtml(ratio)}` : "比例来源未提供"}<details><summary>来源说明与原值</summary><p>${escapeHtml(row.note || "来源未提供")}</p><code>${escapeHtml(JSON.stringify(row))}</code></details></td></tr>`;
+        return `<tr><td class="date">${escapeHtml(ledgerDate(row.date))}</td><td>${escapeHtml(row.symbol)}</td><td>份额拆分</td><td>${ratio ? `1 : ${escapeHtml(ratio)}` : "比例来源未提供"}<details><summary>来源说明</summary><p>${escapeHtml(row.note || "来源未提供")}</p></details></td></tr>`;
       })
       .join("");
 }
@@ -1085,4 +1388,98 @@ function sourceReason(note) {
   )
     return "来源未提供";
   return text;
+}
+
+async function fetchLivePerformance() {
+  const version=++performanceRequestVersion;
+  const days=$("performance-days")?.value || "30";
+  try {
+    const data=await readJSON(`/account/performance?days=${encodeURIComponent(days)}`);
+    if(version!==performanceRequestVersion)return;
+    performanceData=data;
+  } catch(_) {
+    if(version!==performanceRequestVersion)return;
+    performanceData=null;
+  }
+  renderLivePerformance();
+}
+function renderLivePerformance() {
+  const data=window.QountLive?.performanceView(performanceData);
+  const summary=data?.summary;
+  setText("performance-return",pct(summary?.return_pct));
+  setText("performance-pnl",fmt(summary?.net_pnl_usdt,4));
+  setText("performance-flow",fmt(summary?.net_external_flow_usdt,4));
+  setText("performance-drawdown",summary?.max_drawdown_pct == null ? "--" : `${fmt(summary.max_drawdown_pct)}%`);
+  setText("performance-status",!data ? "收益待核算" : data.stale ? "历史观测已过期" : data.status==="PARTIAL" ? "部分区间可核算" : "资金流已核对");
+  setText("performance-window",summary ? `${formatTime(summary.start)} 至 ${formatTime(summary.end)}` : "从可核对的真实观测开始");
+  setText("performance-note",data ? `${data.observation_count}次观测，${data.segment_count}个连续区间。各段从零独立起算，卡片显示最近连续区间。${summary?.includes_latest_observation===false ? "最新观测尚未核对，以上为较早区间。" : ""}${data.stale ? "采集已过期。" : ""}` : "权益观测或资金流水尚不足以核算收益；不使用余额涨幅或回测替代。");
+  const reasons={income_coverage_missing:"资金流水覆盖不足",wallet_income_mismatch:"钱包变化与流水未对齐",
+    observation_gap:"观测间隔过长",income_during_observation:"采集期间发生资金变动",unsupported_income_type:"存在未支持的流水类型",
+    return_capital_unavailable:"收益本金口径不可用",usdm_observation_unavailable:"合约权益观测不可用"};
+  const counts={};
+  for(const gap of performanceData?.gaps || [])counts[gap.reason]=(counts[gap.reason]||0)+1;
+  setText("performance-gaps",Object.entries(counts).map(([reason,count])=>`${reasons[reason] || "待核对"}：${count}个区间`).join("；") || (data ? "所示区间未发现资金流水缺口。" : "等待完整观测与流水覆盖。"));
+  const ready=!!data && !!window.echarts;
+  $("performance-empty")?.classList.toggle("hidden",ready);
+  setText("performance-empty",data ? "图表暂不可用" : "真实收益历史待核算");
+  if(!ready){performanceChartInstance?.clear();return;}
+  const measure=$("performance-measure")?.value || "return_pct";
+  const suffix=measure==="return_pct" ? "%" : " USDT";
+  const rows=[];
+  let segment=null;
+  for(const point of data.points) {
+    const time=Date.parse(point.observed_at);
+    if(segment!=null && segment!==point.segment_id)rows.push([time-1,null]);
+    rows.push([time,point[measure]]);segment=point.segment_id;
+  }
+  if(!performanceChartInstance)performanceChartInstance=echarts.init($("performance-chart"));
+  performanceChartInstance.setOption({
+    animation:!reduceMotion(),
+    tooltip:{trigger:"axis",confine:true,valueFormatter:value=>value==null?"缺口":`${fmt(value,4)}${suffix}`},
+    grid:{left:12,right:20,top:20,bottom:55,containLabel:true},
+    xAxis:{type:"time",axisLabel:{hideOverlap:true}},
+    yAxis:{type:"value",scale:true,axisLabel:{formatter:value=>`${value}${suffix}`},splitLine:{lineStyle:{type:"dashed",color:"#ddd"}}},
+    dataZoom:[{type:"inside"},{type:"slider",height:20,bottom:8}],
+    series:[{name:measure==="return_pct"?"资金流调整收益":"资金流调整净损益",type:"line",smooth:false,
+      connectNulls:false,showSymbol:false,lineStyle:{color:"#237b62",width:3},data:rows}]
+  },true);
+}
+async function loadResearchRuns(line, version) {
+  try {
+    const data=await readJSON(`/research/lines/${encodeURIComponent(line.line_id)}/runs`);
+    if(version!==detailRequestVersion || currentLineId!==line.line_id)return;
+    researchRuns=data.runs || [];
+    const options=researchRuns.map(run=>{
+      const id=run.run_id, label=`${run.parameters?.scenario || "实验"} · ${id.slice(0,8)} · ${pct(run.total_return_pct)}`;
+      return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+    }).join("");
+    $("research-run-select").innerHTML=options;
+    $("research-run-select").value=line.run_id;
+    $("research-compare-select").innerHTML='<option value="">不添加</option>'+options;
+    $("research-run-controls").classList.toggle("hidden",!options);
+    setText("research-run-note",`正在查看实验 ${line.run_id.slice(0,12)}；更换实验不改变默认配置或实盘规则。`);
+  } catch(_) {
+    if(version===detailRequestVersion)$("research-run-controls")?.classList.add("hidden");
+  }
+}
+async function compareResearchRun() {
+  const reference=$("research-compare-select").value;
+  const line=currentLineDetail;
+  if(!line)return;
+  const version=++researchComparisonVersion;
+  if(!reference) {
+    line.nav_series=line.nav_series.map(row=>({...row,benchmark_nav:null}));
+    renderNavChart();return;
+  }
+  try {
+    const data=await readJSON(`/research/lines/${encodeURIComponent(line.line_id)}?run_id=${encodeURIComponent(reference)}`);
+    if(version!==researchComparisonVersion || currentLineDetail!==line)return;
+    const lookup=new Map(data.nav_series.map(row=>[row.date,row.nav]));
+    line.nav_series=line.nav_series.map(row=>({...row,benchmark_nav:lookup.get(row.date) ?? null}));
+    $("chart-show-benchmark").checked=true;
+    setText("research-run-note",`实验 ${line.run_id.slice(0,12)} 对照 ${reference.slice(0,12)}；基准曲线为所选实验，只比较重合观测窗口。`);
+    renderNavChart();
+  } catch(_) {
+    if(version===researchComparisonVersion)setText("research-run-note","对照实验读取失败，当前曲线保持原结果。");
+  }
 }

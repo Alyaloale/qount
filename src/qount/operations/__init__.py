@@ -1,87 +1,60 @@
-"""Host-facing operational adapters for verified qount artifacts."""
+"""Public compatibility exports loaded only when requested."""
+from importlib import import_module
 
-from qount.operations.backups import BACKUP_SCHEMA_VERSION
-from qount.operations.backups import BackupError
-from qount.operations.backups import BackupRecord
-from qount.operations.backups import BackupRetentionResult
-from qount.operations.backups import RestoreDrillResult
-from qount.operations.backups import create_dashboard_backup
-from qount.operations.backups import prune_dashboard_backups
-from qount.operations.backups import read_latest_dashboard_backup
-from qount.operations.backups import verify_dashboard_restore_drill
-from qount.operations.authority_writer import AUTHORITY_WRITER_SCHEMA_VERSION
-from qount.operations.authority_writer import AuthorityWriterBlocked
-from qount.operations.authority_writer import AuthorityWriterConfig
-from qount.operations.authority_writer import AuthorityWriterError
-from qount.operations.authority_writer import AuthorityWriterResult
-from qount.operations.authority_writer import authorize_minimal_live_authority_bundle
-from qount.operations.authority_writer import refresh_authority_bundle_from_runtime
-from qount.operations.authority_writer import write_order_free_authority_bundle
-from qount.operations.base_production import BASE_STANDARD_PRODUCTION_CHAIN
-from qount.operations.base_production import BASE_STANDARD_PRODUCTION_MODE
-from qount.operations.base_production import BASE_STANDARD_PRODUCTION_SCHEMA_VERSION
-from qount.operations.base_production import BaseStandardProductionError
-from qount.operations.base_production import prepare_base_standard_production_store
-from qount.operations.base_production import read_base_standard_production_status
-from qount.operations.base_production import record_base_standard_production_cycle
-from qount.operations.health_probes import CommandResult
-from qount.operations.health_probes import HealthProbeConfig
-from qount.operations.health_probes import HealthProbeDependencies
-from qount.operations.health_probes import HealthProbeError
-from qount.operations.health_probes import collect_os_system_health
-from qount.operations.publisher_paths import PUBLISHER_AUTHORIZATION_GRANTED
-from qount.operations.publisher_paths import PUBLISHER_AUTHORIZATION_PENDING
-from qount.operations.publisher_paths import PUBLISHER_PATH_AUDIT_SCHEMA_VERSION
-from qount.operations.publisher_paths import PublisherPathAudit
-from qount.operations.publisher_paths import PublisherPathAuditError
-from qount.operations.publisher_paths import audit_publisher_paths
-from qount.operations.release_provenance import RELEASE_PROVENANCE_ARTIFACT_TYPE
-from qount.operations.release_provenance import RELEASE_PROVENANCE_SCHEMA_VERSION
-from qount.operations.release_provenance import ReleaseProvenanceError
-from qount.operations.release_provenance import build_release_provenance
-from qount.operations.release_provenance import build_release_provenance_verification
-from qount.operations.release_provenance import verify_release_provenance
+_EXPORTS = {
+    'BACKUP_SCHEMA_VERSION': ('qount.operations.backups', 'BACKUP_SCHEMA_VERSION'),
+    'AUTHORITY_WRITER_SCHEMA_VERSION': ('qount.operations.authority_writer', 'AUTHORITY_WRITER_SCHEMA_VERSION'),
+    'BASE_STANDARD_PRODUCTION_CHAIN': ('qount.operations.base_production', 'BASE_STANDARD_PRODUCTION_CHAIN'),
+    'BASE_STANDARD_PRODUCTION_MODE': ('qount.operations.base_production', 'BASE_STANDARD_PRODUCTION_MODE'),
+    'BASE_STANDARD_PRODUCTION_SCHEMA_VERSION': ('qount.operations.base_production', 'BASE_STANDARD_PRODUCTION_SCHEMA_VERSION'),
+    'AuthorityWriterBlocked': ('qount.operations.authority_writer', 'AuthorityWriterBlocked'),
+    'AuthorityWriterConfig': ('qount.operations.authority_writer', 'AuthorityWriterConfig'),
+    'AuthorityWriterError': ('qount.operations.authority_writer', 'AuthorityWriterError'),
+    'AuthorityWriterResult': ('qount.operations.authority_writer', 'AuthorityWriterResult'),
+    'authorize_minimal_live_authority_bundle': ('qount.operations.authority_writer', 'authorize_minimal_live_authority_bundle'),
+    'BackupError': ('qount.operations.backups', 'BackupError'),
+    'BackupRecord': ('qount.operations.backups', 'BackupRecord'),
+    'BackupRetentionResult': ('qount.operations.backups', 'BackupRetentionResult'),
+    'BaseStandardProductionError': ('qount.operations.base_production', 'BaseStandardProductionError'),
+    'CommandResult': ('qount.operations.health_probes', 'CommandResult'),
+    'HealthProbeConfig': ('qount.operations.health_probes', 'HealthProbeConfig'),
+    'HealthProbeDependencies': ('qount.operations.health_probes', 'HealthProbeDependencies'),
+    'HealthProbeError': ('qount.operations.health_probes', 'HealthProbeError'),
+    'PUBLISHER_AUTHORIZATION_GRANTED': ('qount.operations.publisher_paths', 'PUBLISHER_AUTHORIZATION_GRANTED'),
+    'PUBLISHER_AUTHORIZATION_PENDING': ('qount.operations.publisher_paths', 'PUBLISHER_AUTHORIZATION_PENDING'),
+    'PUBLISHER_PATH_AUDIT_SCHEMA_VERSION': ('qount.operations.publisher_paths', 'PUBLISHER_PATH_AUDIT_SCHEMA_VERSION'),
+    'RELEASE_PROVENANCE_ARTIFACT_TYPE': ('qount.operations.release_provenance', 'RELEASE_PROVENANCE_ARTIFACT_TYPE'),
+    'RELEASE_PROVENANCE_SCHEMA_VERSION': ('qount.operations.release_provenance', 'RELEASE_PROVENANCE_SCHEMA_VERSION'),
+    'ReleaseProvenanceError': ('qount.operations.release_provenance', 'ReleaseProvenanceError'),
+    'PublisherPathAudit': ('qount.operations.publisher_paths', 'PublisherPathAudit'),
+    'PublisherPathAuditError': ('qount.operations.publisher_paths', 'PublisherPathAuditError'),
+    'prepare_base_standard_production_store': ('qount.operations.base_production', 'prepare_base_standard_production_store'),
+    'RestoreDrillResult': ('qount.operations.backups', 'RestoreDrillResult'),
+    'create_dashboard_backup': ('qount.operations.backups', 'create_dashboard_backup'),
+    'collect_os_system_health': ('qount.operations.health_probes', 'collect_os_system_health'),
+    'prune_dashboard_backups': ('qount.operations.backups', 'prune_dashboard_backups'),
+    'read_latest_dashboard_backup': ('qount.operations.backups', 'read_latest_dashboard_backup'),
+    'read_base_standard_production_status': ('qount.operations.base_production', 'read_base_standard_production_status'),
+    'record_base_standard_production_cycle': ('qount.operations.base_production', 'record_base_standard_production_cycle'),
+    'refresh_authority_bundle_from_runtime': ('qount.operations.authority_writer', 'refresh_authority_bundle_from_runtime'),
+    'verify_dashboard_restore_drill': ('qount.operations.backups', 'verify_dashboard_restore_drill'),
+    'write_order_free_authority_bundle': ('qount.operations.authority_writer', 'write_order_free_authority_bundle'),
+    'audit_publisher_paths': ('qount.operations.publisher_paths', 'audit_publisher_paths'),
+    'build_release_provenance': ('qount.operations.release_provenance', 'build_release_provenance'),
+    'build_release_provenance_verification': ('qount.operations.release_provenance', 'build_release_provenance_verification'),
+    'verify_release_provenance': ('qount.operations.release_provenance', 'verify_release_provenance'),
+}
+__all__ = list(_EXPORTS)
 
-__all__ = [
-    "BACKUP_SCHEMA_VERSION",
-    "AUTHORITY_WRITER_SCHEMA_VERSION",
-    "BASE_STANDARD_PRODUCTION_CHAIN",
-    "BASE_STANDARD_PRODUCTION_MODE",
-    "BASE_STANDARD_PRODUCTION_SCHEMA_VERSION",
-    "AuthorityWriterBlocked",
-    "AuthorityWriterConfig",
-    "AuthorityWriterError",
-    "AuthorityWriterResult",
-    "authorize_minimal_live_authority_bundle",
-    "BackupError",
-    "BackupRecord",
-    "BackupRetentionResult",
-    "BaseStandardProductionError",
-    "CommandResult",
-    "HealthProbeConfig",
-    "HealthProbeDependencies",
-    "HealthProbeError",
-    "PUBLISHER_AUTHORIZATION_GRANTED",
-    "PUBLISHER_AUTHORIZATION_PENDING",
-    "PUBLISHER_PATH_AUDIT_SCHEMA_VERSION",
-    "RELEASE_PROVENANCE_ARTIFACT_TYPE",
-    "RELEASE_PROVENANCE_SCHEMA_VERSION",
-    "ReleaseProvenanceError",
-    "PublisherPathAudit",
-    "PublisherPathAuditError",
-    "prepare_base_standard_production_store",
-    "RestoreDrillResult",
-    "create_dashboard_backup",
-    "collect_os_system_health",
-    "prune_dashboard_backups",
-    "read_latest_dashboard_backup",
-    "read_base_standard_production_status",
-    "record_base_standard_production_cycle",
-    "refresh_authority_bundle_from_runtime",
-    "verify_dashboard_restore_drill",
-    "write_order_free_authority_bundle",
-    "audit_publisher_paths",
-    "build_release_provenance",
-    "build_release_provenance_verification",
-    "verify_release_provenance",
-]
+
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+    module, symbol = _EXPORTS[name]
+    value = getattr(import_module(module), symbol)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
