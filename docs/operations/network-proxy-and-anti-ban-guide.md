@@ -1,8 +1,8 @@
 # 本机网络分流与 AI 防封控架构手册
 
-> **状态**：active｜**权威**：L2 运维手册｜**最后更新**：2026-10-10
+> **状态**：active｜**权威**：L2 运维手册｜**最后更新**：2026-10-15
 > **本文回答**：Mac 个人网络分流拓扑、VPS 443 TLS 隧道、美国住宅代理链式转发原理、防 Claude 封号环境对齐全套方法与故障排查。
-> **TL;DR**：架构实现“国内直连、常规海外走自建 VPS、AI 流量经 VPS 链式路由至美国芝加哥住宅代理”。SSH 彻底解耦公网 22 改走 443 TLS WebSocket 独立隧道。系统时区已对齐住宅出口所在城市（America/Chicago），Chrome 已固化 WebRTC 防泄漏策略与语言偏好，终端已补齐环境注入。
+> **TL;DR**：国内直连；仅 Claude／Anthropic 与 Gemini（含 AI Studio、Gemini API／CLI）走美国住宅代理；OpenAI／ChatGPT／Codex／Sora 显式走自建 VPS，其他海外流量沿用 VPS 兜底。SSH 使用 443 TLS WebSocket 独立隧道。下文时区、浏览器与固定出口地址为 2026-10-10 的配置记录；住宅出口可能变化，本次分流修复未修改这些环境设置。
 
 ---
 
@@ -12,8 +12,8 @@
 flowchart TD
     subgraph Client["Mac 本地客户端 (macOS)"]
         DirectFlow["国内流量<br/>(B站/百度/淘宝)"]
-        NormalOverseas["海外常规流量<br/>(Google/GitHub)"]
-        AIFlow["AI 专属业务<br/>(Claude/ChatGPT/Codex)"]
+        NormalOverseas["VPS 流量<br/>(OpenAI/ChatGPT/Codex/Google/GitHub)"]
+        AIFlow["住宅业务<br/>(Claude/Gemini)"]
         DevSSH["运维通道<br/>ssh qount-vps"]
         
         ClashCore["Clash Verge 核心<br/>(127.0.0.1:7897 / utun1024 / mode: rule)"]
@@ -34,7 +34,7 @@ flowchart TD
 
     DirectFlow -->|规则匹配 DIRECT| ChinaDirect
     NormalOverseas --> ClashCore
-    ClashCore -->|MATCH 良心云 / Aliyun-Manila-Relay| Caddy443
+    ClashCore -->|自建VPS 或 MATCH 良心云 / Aliyun-Manila-Relay| Caddy443
     AIFlow --> ClashCore
     ClashCore -->|AI-美国住宅 / dialer-proxy: Aliyun-Manila-Relay| Caddy443
 
@@ -46,8 +46,8 @@ flowchart TD
     XrayLocal -->|链式代理拨号| USResidential
     XrayLocal -->|本地回环转发| SSHD
 
-    USResidential -->|访问 Claude / OpenAI / Gemini / Grok| TargetAI["AI 平台服务端"]
-    ManilaExit -->|访问 Google / GitHub| TargetOverseas["海外普通网站"]
+    USResidential -->|访问 Claude / Gemini| TargetAI["住宅业务服务端"]
+    ManilaExit -->|访问 OpenAI / Grok / Google / GitHub| TargetOverseas["VPS 业务服务端"]
 ```
 
 ---
@@ -60,7 +60,8 @@ flowchart TD
 | :--- | :--- | :--- | :--- | :--- |
 | **国内直连** | `GEOIP,CN`<br>`DOMAIN-SUFFIX,cn` 等 | 本机直连网卡 | `123.150.147.188`<br>中国电信 | 延迟 70~150ms，零代理损耗，绝不消耗住宅流量 |
 | **海外常规** | `MATCH,良心云`<br>(选定 `Aliyun-Manila-Relay`) | Mac ➔ VPS (443 TLS) ➔ 公网 | `8.220.130.35`<br>菲律宾马尼拉阿里云 | 完全脱离第三方机场依赖，带宽独享，不花住宅流量 |
-| **AI 专属业务** | `AI-美国住宅`<br>(涵盖 Anthropic/OpenAI/Google AI/xAI) | Mac ➔ VPS (443 TLS) ➔ 住宅代理 ➔ 目标平台 | `172.59.191.50`<br>美国芝加哥 T-Mobile 家宽 | 纯正住宅 ISP，原生绕过机房 IP 403 质询拦截 |
+| **OpenAI 相关业务** | OpenAI／ChatGPT／Codex／Sora 显式域名规则 ➔ `自建VPS` | Mac ➔ VPS (443 TLS) ➔ 目标平台 | `8.220.130.35`<br>菲律宾马尼拉阿里云 | 不消耗住宅流量 |
+| **住宅业务** | `AI-美国住宅`<br>仅 Claude／Anthropic、Gemini（含 AI Studio、API／CLI） | Mac ➔ VPS (443 TLS) ➔ 住宅代理 ➔ 目标平台 | 美国住宅，动态 IP；以 Claude trace 为准 | Grok、NotebookLM、其他 Google AI 与通用 Cloudflare 域名走 VPS 兜底 |
 | **SSH 运维** | `~/.ssh/config`<br>(Host `qount-vps`) | Mac ➔ 本地 17893 ➔ VPS 443 ➔ 本机 22 | 内网回环连接 | 避开公网 22 阻断，0.8 秒免密直连 |
 
 ---
@@ -117,7 +118,7 @@ Claude 的反作弊系统（基于 Cloudflare Turnstile、IP 欺诈库及自研�
   export TZ="America/Chicago"
   export LANG="en_US.UTF-8"
   ```
-  终端运行 `cc` (Claude Code) 和 Codex 时，Node.js 运行时环境自动对齐美国中部时间与美式语言，且通过 Cloudflare 探测预检。
+  `cc` (Claude Code) 使用 `claude.ai/cdn-cgi/trace` 预检住宅出口；Codex 与其他终端工具共用 7897 端口，OpenAI 域名按规则走 VPS。上述时区与语言变量为既有设置，本次未改动。
 
 ### 4.5 住宅会话稳定性（Sticky Session）
 * 住宅代理使用固定会话 `sid-Rv3gvPAw-t-120`（120 分钟租期），保持出口 IP 稳定，避免网页每刷新一次就跳跃一次跨州 IP。
@@ -135,7 +136,7 @@ Claude 的反作弊系统（基于 Cloudflare Turnstile、IP 欺诈库及自研�
 | `~/.codex/proxy-env.zsh` | 终端 Codex 环境 | 导出 7897 代理变量与 `America/Chicago` 时区 |
 | `.../clash-verge-rev/clash-verge.yaml` | Clash Verge 运行时 | 锁定 `mode: rule` 与 `mixed-port: 7897` |
 | `.../clash-verge-rev/profiles.yaml` | Clash Verge 配置集 | 持久化记录 `良心云 -> Aliyun-Manila-Relay` 选中项 |
-| `.../profiles/rn08w8hHqxDo.yaml` | Clash Verge 分流规则 | 规定 AI 域名与 Cloudflare 探测走住宅，VPS 节点直连 |
+| `.../profiles/rn08w8hHqxDo.yaml` | Clash Verge 分流规则 | 仅 Claude／Gemini 走住宅，OpenAI 显式走自建 VPS，VPS 节点直连 |
 | `/etc/systemd/system/aliyun-relay.service` | VPS 端 systemd | 运行 Xray VLESS 服务，监听 `127.0.0.1:16789` |
 | `/etc/caddy/Caddyfile` | VPS 端 Caddy | 443 端口反向代理 WebSocket 路径至 Xray |
 
@@ -151,8 +152,11 @@ curl -s --connect-timeout 5 https://myip.ipip.net
 # 2. 验证海外常规出口（应返回菲律宾马尼拉阿里云 IP: 8.220.130.35）
 curl -s --connect-timeout 5 -x http://127.0.0.1:7897 https://ipinfo.io/json
 
-# 3. 验证 AI 专属业务出口（应返回美国芝加哥 T-Mobile IP: 172.59.191.50，loc=US）
-curl -s --connect-timeout 5 -x http://127.0.0.1:7897 https://www.cloudflare.com/cdn-cgi/trace | grep -E "ip|loc|colo"
+# 3. 验证 Claude 住宅出口（loc=US，IP 可变化）
+curl -s --connect-timeout 5 -x http://127.0.0.1:7897 https://claude.ai/cdn-cgi/trace | grep -E "ip|loc|colo"
+
+# 4. 验证 OpenAI 出口（VPS 8.220.130.35，loc=PH）
+curl -s --connect-timeout 5 -x http://127.0.0.1:7897 https://chatgpt.com/cdn-cgi/trace | grep -E "ip|loc|colo"
 ```
 
 ### 6.2 验证开发工具与时区
