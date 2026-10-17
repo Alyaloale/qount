@@ -49,6 +49,6 @@ except Exception as e:
 
 print("=== Quick verification passed ===")
 print("\nNext steps (requires WSL with numpy/torch):")
-print("1. Run full test: python3 scripts/research/test_stale_mechanism.py")
+print("1. Run full test: python3 scripts/archive/research-legacy/p2-tools/test_stale_mechanism.py")
 print("2. Verify parity: python3 -m pytest tests/test_etf_trader_native.py -xvs")
 print("3. Run 1,000-world acceptance with standard seed 20260930")

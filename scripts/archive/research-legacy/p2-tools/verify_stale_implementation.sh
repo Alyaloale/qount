@@ -11,7 +11,7 @@ cd /mnt/c/Users/alyaloale/Code/qount
 source venv/bin/activate
 
 echo "1. Testing numpy backend..."
-python3 scripts/research/test_stale_mechanism.py 2>&1 | tee /tmp/stale_test_output.txt
+python3 scripts/archive/research-legacy/p2-tools/test_stale_mechanism.py 2>&1 | tee /tmp/stale_test_output.txt
 
 echo ""
 echo "2. Running native kernel parity tests..."

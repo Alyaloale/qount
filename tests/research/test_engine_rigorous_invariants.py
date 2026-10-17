@@ -1,16 +1,20 @@
 """Engine invariant tests to prevent backtest pitfalls and artifacts."""
 import unittest
+import importlib.util
 import numpy as np
 from datetime import datetime
+from pathlib import Path
 
 from qount.research.ashare_master_strategy import (
     MasterBar,
     MasterStrategySimulator,
 )
-from scripts.research.rigorous_independent_audit import (
-    standalone_ashare_reproduction,
-    UNIVERSE_ASHARE,
-)
+_audit_path = Path(__file__).resolve().parents[2] / "scripts/archive/research-legacy/universal-regime/rigorous_independent_audit.py"
+_audit_spec = importlib.util.spec_from_file_location("historical_rigorous_audit", _audit_path)
+_audit = importlib.util.module_from_spec(_audit_spec)
+_audit_spec.loader.exec_module(_audit)
+standalone_ashare_reproduction = _audit.standalone_ashare_reproduction
+UNIVERSE_ASHARE = _audit.UNIVERSE_ASHARE
 
 
 class TestEngineRigorousInvariants(unittest.TestCase):

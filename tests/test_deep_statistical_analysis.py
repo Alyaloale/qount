@@ -3,13 +3,18 @@ Tests for Deep Institutional Statistical Analysis Suite
 """
 
 import unittest
-from scripts.research.deep_statistical_analysis_universal_regime import (
-    compute_underwater_stats,
-    compute_advanced_time_series_stats,
-    compute_trade_microstructure,
-    perform_hypothesis_testing,
-    perform_monte_carlo_permutation,
-)
+import importlib.util
+from pathlib import Path
+
+_spec = importlib.util.spec_from_file_location("historical_statistics", Path(__file__).resolve().parents[1] / "scripts/archive/research-legacy/universal-regime/deep_statistical_analysis_universal_regime.py")
+_history = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_history)
+compute_underwater_stats = _history.compute_underwater_stats
+compute_advanced_time_series_stats = _history.compute_advanced_time_series_stats
+compute_trade_microstructure = _history.compute_trade_microstructure
+perform_hypothesis_testing = _history.perform_hypothesis_testing
+perform_monte_carlo_permutation = _history.perform_monte_carlo_permutation
+
 
 
 class TestDeepStatisticalAnalysis(unittest.TestCase):

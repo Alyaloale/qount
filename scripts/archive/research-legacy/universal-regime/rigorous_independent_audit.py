@@ -21,7 +21,7 @@ import subprocess
 import sys
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 if str(ROOT) not in sys.path:
@@ -462,13 +462,13 @@ def print_provenance_and_hashes():
     print("\n--- 7. AUDITED REPRODUCIBILITY PROVENANCE & FULL SHA256 HASHES ---")
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
     print(f"  Git HEAD Commit: {commit}")
-    print(f"  Reproduction Command: PYTHONPATH=src ./.venv/bin/python scripts/research/rigorous_independent_audit.py")
+    print(f"  Reproduction Command: PYTHONPATH=src ./.venv/bin/python scripts/archive/research-legacy/universal-regime/rigorous_independent_audit.py")
     files = [
         "src/qount/research/binance_global_macro.py",
         "src/qount/research/ashare_master_strategy.py",
         "data/processed/clean_sectors_daily_2013_2026.json",
         "data/raw/cn_index/sh000300_2005_2014.csv",
-        "scripts/research/rigorous_independent_audit.py",
+        "scripts/archive/research-legacy/universal-regime/rigorous_independent_audit.py",
     ]
     for f in files:
         p = ROOT / f

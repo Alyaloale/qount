@@ -14,7 +14,6 @@ from pathlib import Path
 import random
 import selectors
 import ssl
-import stat
 import subprocess
 import sys
 import threading
@@ -24,6 +23,7 @@ import urllib.error
 import http.client
 
 from qount.research.ashare_tushare import NoRedirect
+from qount.local_credentials import load_local_credential
 
 ALLOWED = frozenset(('stock_basic','trade_cal','index_classify','index_member_all',
     'income_vip','cashflow_vip','balancesheet_vip','dividend','forecast_vip',
@@ -43,21 +43,7 @@ def sha(data):
 
 
 def saved_token(path):
-    if sys.platform != 'darwin':
-        raise ValueError('credential_Mac_only')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(fd) as stream:
-        info = os.fstat(stream.fileno())
-        if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
-                or info.st_uid != os.getuid()):
-            raise ValueError('credential_requires_owned_regular_0600')
-        lines = stream.read(4096).splitlines()
-    if len(lines) != 1 or not lines[0].startswith('TUSHARE_TOKEN='):
-        raise ValueError('credential_format')
-    token = lines[0].split('=',1)[1]
-    if not token or not token.isalnum():
-        raise ValueError('credential_shape')
-    return token
+    return load_local_credential('tushare', path=path)
 
 
 def check_page(raw, token, api, params, fields=''):

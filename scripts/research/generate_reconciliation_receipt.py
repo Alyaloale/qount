@@ -209,7 +209,7 @@ def main():
                         "execution_delay_days": 1,
                         "stop_execution_mode": "bar_close",
                         "note": "Exiting at bar close upon intraday trigger introduces favorable execution bias in trending markets.",
-                        "evidence_path": "scripts/research/rigorous_independent_audit.py"
+                        "evidence_path": "scripts/archive/research-legacy/universal-regime/rigorous_independent_audit.py"
                     }
                 ],
                 "benchmarks": [
@@ -259,7 +259,7 @@ def main():
                         "terminal_equity_cny": ashare_term_2020,
                         "permutation_test_1000_p": 0.4530,
                         "verdict": "FAIL (Alpha not statistically significant, p=0.4530)",
-                        "evidence_path": "scripts/research/rigorous_independent_audit.py"
+                        "evidence_path": "scripts/archive/research-legacy/universal-regime/rigorous_independent_audit.py"
                     },
                     {
                         "scenario_id": "qilin_warmup_preserved_2021_2026",
@@ -272,7 +272,7 @@ def main():
                         "plateau_flatness_ratio": "2/8 (25.0%)",
                         "plateau_gate_threshold": ">= 80% within ±3.0%",
                         "verdict": "FAIL (Sharp peak along breakout parameter axis, fragile parameter plateau)",
-                        "evidence_path": "scripts/research/rigorous_independent_audit.py"
+                        "evidence_path": "scripts/archive/research-legacy/universal-regime/rigorous_independent_audit.py"
                     }
                 ],
                 "benchmarks": [

@@ -32,6 +32,10 @@ def run_binance_regime_evaluation(
     orders_authorized: bool = False,
     output_json: bool = False,
 ) -> Dict[str, Any]:
+    # This research runner can evaluate a plan only. CLI flags are not an
+    # owner authorization source and therefore can never enable live orders.
+    orders_authorized = False
+    dry_run = True
     client = BinanceFuturesClient()
     engine = BinanceRegimeExecutionEngine(
         client=client,
@@ -94,19 +98,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--equity", type=float, default=100.0, help="Account equity in USDT (default: 100.0)")
     parser.add_argument("--mode", type=str, default="DYNAMIC_BULL_2_5X", choices=["DYNAMIC_BULL_2_5X", "1X_SPOT", "TRADIFI_MARGIN_2X"], help="Strategy leverage mode")
-    parser.add_argument("--live", action="store_true", help="Enable live trading (STRICT OWNER AUTHORIZATION REQUIRED)")
-    parser.add_argument("--confirm-live-orders", action="store_true", help="Explicit confirmation for real order submission")
+    parser.add_argument("--live", action="store_true", help="Rejected: live execution requires an existing owner authorization")
+    parser.add_argument("--confirm-live-orders", action="store_true", help="Rejected: CLI confirmation is not authorization")
     parser.add_argument("--json", action="store_true", help="Output JSON only")
     args = parser.parse_args()
 
-    orders_authorized = False
-    dry_run = True
-    if args.live:
-        if not args.confirm_live_orders:
-            print("[ERROR] Live trading requested without --confirm-live-orders. Aborting for safety.", file=sys.stderr)
-            sys.exit(1)
-        orders_authorized = True
-        dry_run = False
+    if args.live or args.confirm_live_orders:
+        print("[ERROR] CLI flags cannot authorize Binance orders; evaluation remains dry-run.", file=sys.stderr)
 
     run_binance_regime_evaluation(
         equity=args.equity,

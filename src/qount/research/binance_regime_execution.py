@@ -33,6 +33,7 @@ Key Features:
 from __future__ import annotations
 
 import datetime as dt
+import math
 import hashlib
 import hmac
 import json
@@ -44,19 +45,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import urllib.parse
 import urllib.request
 
+from qount.binance_assets import execution_to_signal_map
+
 # Venue Constants
 BINANCE_FUTURES_BASE_URL = "https://fapi.binance.com"
 
 # Macro Universe Mapping: Strategy Symbol -> Binance Futures Contract
 BINANCE_SYMBOL_MAPPING: Dict[str, str] = {
-    "SPY": "SPYUSDT",
-    "SMH": "SMHUSDT",
-    "IWM": "IWMUSDT",
-    "QQQ": "QQQUSDT",
-    "GLD": "XAUUSDT",
-    "CPER": "COPPERUSDT",
-    "XLE": "XLEUSDT",
-    "CL": "CLUSDT",
+    signal: execution
+    for execution, signal in execution_to_signal_map(
+        asset_ids={"spy", "qqq", "smh", "iwm", "xle", "xau", "copper", "cl"}
+    ).items()
 }
 
 REVERSE_SYMBOL_MAPPING: Dict[str, str] = {v: k for k, v in BINANCE_SYMBOL_MAPPING.items()}
@@ -171,10 +170,10 @@ class BinanceFuturesClient:
                     "baseAsset": s["baseAsset"],
                     "quoteAsset": s["quoteAsset"],
                     "status": s["status"],
-                    "minQty": 0.0,
-                    "stepSize": 0.0,
-                    "minNotional": 5.0,
-                    "tickSize": 0.01,
+                    "minQty": None,
+                    "stepSize": None,
+                    "minNotional": None,
+                    "tickSize": None,
                 }
                 for f in s.get("filters", []):
                     f_type = f.get("filterType")
@@ -182,9 +181,11 @@ class BinanceFuturesClient:
                         rules["minQty"] = float(f.get("minQty", 0.0))
                         rules["stepSize"] = float(f.get("stepSize", 0.0))
                     elif f_type == "MIN_NOTIONAL":
-                        rules["minNotional"] = float(f.get("notional", 5.0))
+                        rules["minNotional"] = float(f["notional"] if "notional" in f else f["minNotional"])
                     elif f_type == "PRICE_FILTER":
-                        rules["tickSize"] = float(f.get("tickSize", 0.01))
+                        rules["tickSize"] = float(f["tickSize"])
+                if any(rules[key] is None or not math.isfinite(float(rules[key])) or float(rules[key]) <= 0.0 for key in ("minQty", "stepSize", "minNotional", "tickSize")):
+                    raise ValueError(f"Incomplete Binance USD-M rules for {symbol}")
                 return rules
         raise ValueError(f"Symbol {symbol} not found on Binance Futures.")
 
@@ -380,8 +381,10 @@ class BinanceRegimeExecutionEngine:
     ):
         self.client = client or BinanceFuturesClient()
         self.mode = mode
-        self.dry_run = dry_run
-        self.orders_authorized = orders_authorized
+        # This research engine is never an authorization source.  Live execution
+        # remains unavailable until a separately owned execution boundary is wired.
+        self.dry_run = True
+        self.orders_authorized = False
         self.min_atr_pct = min_atr_pct
         self.er_min = er_min
         self.min_rs60 = min_rs60
@@ -584,10 +587,12 @@ class BinanceRegimeExecutionEngine:
             min_notional = rules["minNotional"]
             tick = rules["tickSize"]
         except Exception:
-            step = 0.01
-            min_qty = 0.01
-            min_notional = 5.0
-            tick = 0.01
+            return {
+                "decision": "HOLD_CASH",
+                "reason": "Binance USD-M exchange rules unavailable; activation fails closed.",
+                "effective_leverage": effective_leverage,
+                "orders": [],
+            }
 
         final_qty = round_step(raw_qty, step)
         notional = final_qty * entry_p

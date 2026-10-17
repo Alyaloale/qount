@@ -125,6 +125,7 @@ def _is_managed_name(name: str) -> bool:
         "OPENAI_API_KEY",
         "TIINGO_API_TOKEN",
         "TUSHARE_TOKEN",
+        "FUYAO_API_KEY",
         "LD_LIBRARY_PATH",
     }
 

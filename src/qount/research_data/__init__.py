@@ -1,120 +1,73 @@
-"""R0-DATA point-in-time data collection infrastructure.
+"""Public compatibility exports loaded only when requested."""
+from importlib import import_module
 
-Builds symbol lifecycle records, data-availability manifests, and frozen
-universe revisions from Binance public data.  Feeds the R0-DATA step of the
-research advancement roadmap.
+_EXPORTS = {
+    'CANDIDATE_CONFIG_SCHEMA_VERSION': ('qount.research_data.candidate_config', 'CANDIDATE_CONFIG_SCHEMA_VERSION'),
+    'COST_MODEL_TYPES': ('qount.research_data.cost_model', 'COST_MODEL_TYPES'),
+    'CandidateConfig': ('qount.research_data.candidate_config', 'CandidateConfig'),
+    'ATR': ('qount.research_data.indicators', 'ATR'),
+    'Bar': ('qount.research_data.market_data', 'Bar'),
+    'CostComponent': ('qount.research_data.cost_model', 'CostComponent'),
+    'DataAvailability': ('qount.research_data.availability', 'DataAvailability'),
+    'EXCHANGE_INFO_URLS': ('qount.research_data.lifecycle', 'EXCHANGE_INFO_URLS'),
+    'FrozenCostModel': ('qount.research_data.cost_model', 'FrozenCostModel'),
+    'Funding': ('qount.research_data.market_data', 'Funding'),
+    'KalmanHedge': ('qount.research_data.indicators', 'KalmanHedge'),
+    'NavResult': ('qount.research_data.nav', 'NavResult'),
+    'VENUE_BY_MARKET': ('qount.research_data.lifecycle', 'VENUE_BY_MARKET'),
+    'build_availability_manifest': ('qount.research_data.availability', 'build_availability_manifest'),
+    'build_exclusion_reasons': ('qount.research_data.universe', 'build_exclusion_reasons'),
+    'build_lifecycle_from_exchange_info': ('qount.research_data.lifecycle', 'build_lifecycle_from_exchange_info'),
+    'build_lifecycle_from_symbol': ('qount.research_data.lifecycle', 'build_lifecycle_from_symbol'),
+    'build_revision': ('qount.research_data.universe', 'build_revision'),
+    'build_revision_series': ('qount.research_data.universe', 'build_revision_series'),
+    'build_rules_dict': ('qount.research_data.lifecycle', 'build_rules_dict'),
+    'build_rules_hash': ('qount.research_data.lifecycle', 'build_rules_hash'),
+    'compute_carry_signal_nav': ('qount.research_data.nav', 'compute_carry_signal_nav'),
+    'compute_carry_standalone_nav': ('qount.research_data.nav', 'compute_carry_standalone_nav'),
+    'compute_max_drawdown': ('qount.research_data.nav', 'compute_max_drawdown'),
+    'compute_signal_nav': ('qount.research_data.nav', 'compute_signal_nav'),
+    'compute_standalone_nav': ('qount.research_data.nav', 'compute_standalone_nav'),
+    'default_cxd_trend_cost_model': ('qount.research_data.cost_model', 'default_cxd_trend_cost_model'),
+    'default_cxd_carry_cost_model': ('qount.research_data.cost_model', 'default_cxd_carry_cost_model'),
+    'default_cta_r_etf_cost_model': ('qount.research_data.cost_model', 'default_cta_r_etf_cost_model'),
+    'default_cta_r_futures_cost_model': ('qount.research_data.cost_model', 'default_cta_r_futures_cost_model'),
+    'deflated_sharpe_ratio': ('qount.research_data.metrics', 'deflated_sharpe_ratio'),
+    'expected_max_sharpe': ('qount.research_data.metrics', 'expected_max_sharpe'),
+    'fetch_exchange_info': ('qount.research_data.lifecycle', 'fetch_exchange_info'),
+    'infer_spot_listing_date': ('qount.research_data.lifecycle', 'infer_spot_listing_date'),
+    'load_funding': ('qount.research_data.market_data', 'load_funding'),
+    'load_klines': ('qount.research_data.market_data', 'load_klines'),
+    'monthly_schedule': ('qount.research_data.universe', 'monthly_schedule'),
+    'parse_lifecycle_state': ('qount.research_data.lifecycle', 'parse_lifecycle_state'),
+    'parse_valid_from': ('qount.research_data.lifecycle', 'parse_valid_from'),
+    'parse_valid_to': ('qount.research_data.lifecycle', 'parse_valid_to'),
+    'probe_funding_month': ('qount.research_data.availability', 'probe_funding_month'),
+    'probe_kline_month': ('qount.research_data.availability', 'probe_kline_month'),
+    'probe_oi_month': ('qount.research_data.availability', 'probe_oi_month'),
+    'pbo_cscv': ('qount.research_data.metrics', 'pbo_cscv'),
+    'parse_funding_csv': ('qount.research_data.market_data', 'parse_funding_csv'),
+    'parse_kline_csv': ('qount.research_data.market_data', 'parse_kline_csv'),
+    'quarterly_schedule': ('qount.research_data.universe', 'quarterly_schedule'),
+    'scan_funding_availability': ('qount.research_data.availability', 'scan_funding_availability'),
+    'scan_kline_availability': ('qount.research_data.availability', 'scan_kline_availability'),
+    'scan_oi_availability': ('qount.research_data.availability', 'scan_oi_availability'),
+    'summarize_lifecycle_batch': ('qount.research_data.lifecycle', 'summarize_lifecycle_batch'),
+    'summarize_revisions': ('qount.research_data.universe', 'summarize_revisions'),
+    'returns_from_curve': ('qount.research_data.metrics', 'returns_from_curve'),
+    'sharpe': ('qount.research_data.metrics', 'sharpe'),
+}
+__all__ = list(_EXPORTS)
 
-All modules use injectable fetchers so tests never touch the network.
-"""
 
-from qount.research_data.availability import DataAvailability
-from qount.research_data.availability import build_availability_manifest
-from qount.research_data.availability import probe_funding_month
-from qount.research_data.availability import probe_kline_month
-from qount.research_data.availability import probe_oi_month
-from qount.research_data.availability import scan_funding_availability
-from qount.research_data.availability import scan_kline_availability
-from qount.research_data.availability import scan_oi_availability
-from qount.research_data.lifecycle import EXCHANGE_INFO_URLS
-from qount.research_data.lifecycle import VENUE_BY_MARKET
-from qount.research_data.lifecycle import build_lifecycle_from_exchange_info
-from qount.research_data.lifecycle import build_lifecycle_from_symbol
-from qount.research_data.lifecycle import build_rules_dict
-from qount.research_data.lifecycle import build_rules_hash
-from qount.research_data.lifecycle import fetch_exchange_info
-from qount.research_data.lifecycle import infer_spot_listing_date
-from qount.research_data.lifecycle import parse_lifecycle_state
-from qount.research_data.lifecycle import parse_valid_from
-from qount.research_data.lifecycle import parse_valid_to
-from qount.research_data.lifecycle import summarize_lifecycle_batch
-from qount.research_data.candidate_config import CANDIDATE_CONFIG_SCHEMA_VERSION
-from qount.research_data.candidate_config import CandidateConfig
-from qount.research_data.cost_model import COST_MODEL_TYPES
-from qount.research_data.cost_model import CostComponent
-from qount.research_data.cost_model import FrozenCostModel
-from qount.research_data.cost_model import default_cxd_trend_cost_model
-from qount.research_data.cost_model import default_cxd_carry_cost_model
-from qount.research_data.cost_model import default_cta_r_etf_cost_model
-from qount.research_data.cost_model import default_cta_r_futures_cost_model
-from qount.research_data.nav import NavResult
-from qount.research_data.nav import compute_carry_signal_nav
-from qount.research_data.nav import compute_carry_standalone_nav
-from qount.research_data.nav import compute_max_drawdown
-from qount.research_data.nav import compute_signal_nav
-from qount.research_data.nav import compute_standalone_nav
-from qount.research_data.universe import build_revision
-from qount.research_data.universe import build_revision_series
-from qount.research_data.universe import build_exclusion_reasons
-from qount.research_data.universe import monthly_schedule
-from qount.research_data.universe import quarterly_schedule
-from qount.research_data.universe import summarize_revisions
-from qount.research_data.indicators import ATR
-from qount.research_data.indicators import KalmanHedge
-from qount.research_data.market_data import Bar
-from qount.research_data.market_data import Funding
-from qount.research_data.market_data import load_funding
-from qount.research_data.market_data import load_klines
-from qount.research_data.market_data import parse_funding_csv
-from qount.research_data.market_data import parse_kline_csv
-from qount.research_data.metrics import deflated_sharpe_ratio
-from qount.research_data.metrics import expected_max_sharpe
-from qount.research_data.metrics import pbo_cscv
-from qount.research_data.metrics import returns_from_curve
-from qount.research_data.metrics import sharpe
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+    module, symbol = _EXPORTS[name]
+    value = getattr(import_module(module), symbol)
+    globals()[name] = value
+    return value
 
-__all__ = [
-    "CANDIDATE_CONFIG_SCHEMA_VERSION",
-    "COST_MODEL_TYPES",
-    "CandidateConfig",
-    "ATR",
-    "Bar",
-    "CostComponent",
-    "DataAvailability",
-    "EXCHANGE_INFO_URLS",
-    "FrozenCostModel",
-    "Funding",
-    "KalmanHedge",
-    "NavResult",
-    "VENUE_BY_MARKET",
-    "build_availability_manifest",
-    "build_exclusion_reasons",
-    "build_lifecycle_from_exchange_info",
-    "build_lifecycle_from_symbol",
-    "build_revision",
-    "build_revision_series",
-    "build_rules_dict",
-    "build_rules_hash",
-    "compute_carry_signal_nav",
-    "compute_carry_standalone_nav",
-    "compute_max_drawdown",
-    "compute_signal_nav",
-    "compute_standalone_nav",
-    "default_cxd_trend_cost_model",
-    "default_cxd_carry_cost_model",
-    "default_cta_r_etf_cost_model",
-    "default_cta_r_futures_cost_model",
-    "deflated_sharpe_ratio",
-    "expected_max_sharpe",
-    "fetch_exchange_info",
-    "infer_spot_listing_date",
-    "load_funding",
-    "load_klines",
-    "monthly_schedule",
-    "parse_lifecycle_state",
-    "parse_valid_from",
-    "parse_valid_to",
-    "probe_funding_month",
-    "probe_kline_month",
-    "probe_oi_month",
-    "pbo_cscv",
-    "parse_funding_csv",
-    "parse_kline_csv",
-    "quarterly_schedule",
-    "scan_funding_availability",
-    "scan_kline_availability",
-    "scan_oi_availability",
-    "summarize_lifecycle_batch",
-    "summarize_revisions",
-    "returns_from_curve",
-    "sharpe",
-]
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))

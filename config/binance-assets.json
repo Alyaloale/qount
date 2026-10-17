@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "venue": "binance_usdm",
+  "quote_asset": "USDT",
+  "assets": [
+    {
+      "asset_id": "btc",
+      "signal_symbol": "BTC",
+      "execution_symbol": "BTCUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "eth",
+      "signal_symbol": "ETH",
+      "execution_symbol": "ETHUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "spy",
+      "signal_symbol": "SPY",
+      "execution_symbol": "SPYUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "qqq",
+      "signal_symbol": "QQQ",
+      "execution_symbol": "QQQUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "smh",
+      "signal_symbol": "SMH",
+      "execution_symbol": "SMHUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "iwm",
+      "signal_symbol": "IWM",
+      "execution_symbol": "IWMUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "xle",
+      "signal_symbol": "XLE",
+      "execution_symbol": "XLEUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "xau",
+      "signal_symbol": "GLD",
+      "execution_symbol": "XAUUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "copper",
+      "signal_symbol": "CPER",
+      "execution_symbol": "COPPERUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    },
+    {
+      "asset_id": "cl",
+      "signal_symbol": "USO",
+      "execution_symbol": "CLUSDT",
+      "venue": "binance_usdm",
+      "status": "active",
+      "price_source": "binance_um_klines"
+    }
+  ]
+}
