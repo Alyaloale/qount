@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QOUNT · 个人资产管理交易系统</title>
     <link rel="icon" type="image/svg+xml" href="assets/qount-mark.svg" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=20261022-continuous" />
     <script src="vendor/echarts.min.js" defer></script>
   </head>
   <body>
@@ -153,6 +153,7 @@
             <div class="research-toolbar">
               <div id="research-filters" class="research-filters" role="group" aria-label="筛选研究线">
                 <button class="research-filter active" data-research-filter="all" aria-pressed="true">全部</button>
+                <button class="research-filter" data-research-filter="forward" aria-pressed="false">持续模拟</button>
                 <button class="research-filter" data-research-filter="available" aria-pressed="false">可查看结果</button>
                 <button class="research-filter" data-research-filter="waiting" aria-pressed="false">等待数据</button>
                 <button class="research-filter" data-research-filter="archived" aria-pressed="false">封存与停止</button>
@@ -208,7 +209,7 @@
                   <label class="range-picker"
                     >比较窗口
                     <select id="chart-time-range" onchange="changeChartRange()">
-                      <option value="all">全部历史</option>
+                      <option value="all">全部样本</option>
                       <option value="1y">近一年</option>
                       <option value="3m">近三个月</option>
                       <option value="ytd">年初至今</option>
@@ -217,6 +218,7 @@
                 </div>
                 <div id="detail-metrics-grid" class="metrics-grid"></div>
                 <p id="detail-window-note" class="header-note"></p>
+                <p id="detail-sample-segments" class="header-note"></p>
                 <details class="provenance-card">
                   <summary>全样本指标与计算口径</summary>
                   <div id="detail-full-metrics" class="metrics-grid"></div>
@@ -360,7 +362,7 @@
                 <span id="positions-as-of" class="header-note">--</span>
               </div>
               <p class="header-note">
-                最新持仓独立展示；日期筛选应用于下方流水。
+                持仓快照独立展示；历史研究仅展示来源截止时点，不代表当前仓位。日期筛选应用于下方流水。
               </p>
               <div class="table-container">
                 <table class="data-table">
@@ -429,8 +431,8 @@
       </div>
     </div>
     <script src="metrics.js"></script>
-    <script src="research.js"></script>
+    <script src="research.js?v=20261022-continuous"></script>
     <script src="live.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=20261025-g20-cash"></script>
   </body>
 </html>

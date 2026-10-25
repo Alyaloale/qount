@@ -11,7 +11,40 @@ const lines = [
 test("stale results remain available while missing sources do not change research lifecycle", () => {
   assert.equal(research.group(lines[0]), "available");
   assert.equal(research.dataState(lines[0]).label, "数据待更新");
-  assert.deepEqual(research.summary(lines), { all: 3, available: 1, waiting: 1, archived: 1, stale: 1, missing: 2 });
+  assert.deepEqual(research.summary(lines), { all: 3, available: 1, forward: 0, historical: 2, waiting: 1, archived: 1, stale: 1, missing: 2 });
+});
+
+test("forward filter retains unhealthy enabled accounts and intersects market and search", () => {
+  const active = {...lines[0], sample_kind: "forward", paper_enabled: true};
+  const missing = {...lines[1], sample_kind: "forward", paper_enabled: true};
+  const archived = {...lines[2], sample_kind: "forward", paper_enabled: true};
+  const all = [active, missing, archived, lines[0]];
+  assert.deepEqual(research.select(all, "forward"), [active, missing]);
+  assert.deepEqual(research.select(all, "forward", "G20", "美股"), [active]);
+  assert.equal(research.summary(all).forward, 2);
+  assert.equal(research.summary(all).historical, 1);
+  const continuous={...active,sample_kind:"mixed"};
+  assert.equal(research.forward(continuous),true);
+  assert.equal(research.lifecycle(continuous),"模拟已启用");
+});
+
+test("a paper run timestamp never becomes a historical experiment query", () => {
+  const paper = {run_id: "2026-10-22T05:50:29Z", sample_kind: "forward", source: {observation_kind: "forward_paper"}};
+  assert.equal(research.experimentRunId(paper), null);
+  assert.equal(research.experimentRunId(undefined), null);
+  assert.equal(research.experimentRunId({run_id: "opaque"}), null);
+  assert.equal(research.experimentRunId({run_id: "hash", sample_kind: "historical", source: {observation_kind: "historical_backtest"}}), "hash");
+});
+
+test("explicitly known empty snapshots retain date and differ from unknown snapshots", () => {
+  assert.deepEqual(research.positionSnapshot({status: "KNOWN", as_of: "2026-10-21", positions: []}),
+    {positions: [], as_of: "2026-10-21", confirmed: true});
+  for (const status of ["UNKNOWN", "MISSING"]) {
+    assert.throws(() => research.positionSnapshot({status, positions: []}));
+  }
+  assert.throws(() => research.positionSnapshot({status: "KNOWN"}));
+  assert.equal(research.positionSnapshot([]).confirmed, false);
+  assert.equal(research.positionSnapshot([{date: "2026-10-21", symbol: "SPY"}]).confirmed, true);
 });
 
 test("search, lifecycle and market filters intersect and can find archived research", () => {
@@ -32,4 +65,15 @@ test("disabled simulations retain historical research without stale-data alarms"
  assert.equal(research.group(historical),"available");
  assert.equal(research.dataState(historical).label,"历史样本");
  assert.equal(research.summary([historical]).stale,0);
+});
+
+test("historical artifacts do not imply a currently paused or running strategy", () => {
+  for (const research_status of ['paused', 'research', 'forward']) {
+    const historical = {...lines[0], sample_kind: 'historical', paper_enabled: false, research_status};
+    assert.equal(research.lifecycle(historical), '历史记录');
+    assert.equal(research.lifecycle({...historical, sample_kind: 'forward', paper_enabled: true}), '前向已启用');
+  }
+  assert.equal(research.lifecycle(lines[2]), '已停止');
+  assert.equal(research.lifecycle({research_status: 'archived'}), '已封存');
+  assert.equal(research.lifecycle({research_status: 'research'}), '状态待确认');
 });

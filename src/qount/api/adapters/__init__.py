@@ -39,4 +39,6 @@ def _ensure_loaded() -> None:
         import qount.api.adapters.cta_r_forward
         import qount.api.adapters.universal_regime
         import qount.api.adapters.experiment
+        import qount.api.adapters.research_paper
+        import qount.api.adapters.g20_cash
         _loaded = True

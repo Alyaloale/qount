@@ -1,0 +1,14 @@
+[Unit]
+Description=Refresh paper accounts after their market closes, with one morning retry
+
+[Timer]
+OnCalendar=*-*-* 06:15:00 UTC
+OnCalendar=*-*-* 11:10:00 UTC
+OnCalendar=*-*-* 22:45:00 UTC
+Persistent=false
+RandomizedDelaySec=10s
+AccuracySec=1s
+Unit=qount-research-paper.service
+
+[Install]
+WantedBy=timers.target

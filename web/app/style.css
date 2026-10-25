@@ -1093,7 +1093,7 @@ code {
     padding: 16px;
   }
   .detail-panel {
-    scroll-margin-top: 16px;
+    scroll-margin-top: 72px;
   }
 }
 @media (max-width: 1000px) {
@@ -1139,7 +1139,7 @@ code {
   }
   .detail-panel {
     padding: 12px;
-    scroll-margin-top: 12px;
+    scroll-margin-top: 72px;
   }
   .detail-chart-wrapper {
     padding: 8px;

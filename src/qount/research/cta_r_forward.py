@@ -219,7 +219,7 @@ def read_ledger(path: Path) -> list[dict[str, Any]]:
     return entries
 
 
-def advance(panel: Panel, ledger: Sequence[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+def advance(panel: Panel, ledger: Sequence[Mapping[str, Any]], *, recorded_at: str | None = None) -> tuple[list[dict[str, Any]], list[str]]:
     """New entries for every seed date after the ledger head, continuing from the recorded state."""
 
     reasons: list[str] = []
@@ -244,7 +244,10 @@ def advance(panel: Panel, ledger: Sequence[Mapping[str, Any]]) -> tuple[list[dic
             stress_equity -= stress_equity * stress * turnover
         if p != bar and "panel_index_drift" not in reasons:
             reasons.append("panel_index_drift")  # diagnostic: seed rows changed; cadence follows the ledger
-        head = _seal({"kind": "bar", "date": panel.dates[p], "bar_index": bar, "panel_index": p,
+        timing = ({"recorded_at":recorded_at, "sample_kind":"reconstructed" if
+                   len(panel.dates)-panel.dates.index((ledger[-1] if ledger else entries[0])["date"])-1>1
+                   else "forward"} if recorded_at else {})
+        head = _seal({**timing,"kind": "bar", "date": panel.dates[p], "bar_index": bar, "panel_index": p,
                       "weights_held": held, "asset_returns": asset, "gross_return": round(gross, 12),
                       "rebalanced": turnover > 0.0 or (bar >= FIRST_SIGNAL_INDEX and bar % REBALANCE_DAYS == 0),
                       "turnover": round(turnover, 10), "weights_after_close": after,

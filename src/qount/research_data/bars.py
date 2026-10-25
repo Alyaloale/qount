@@ -1,6 +1,6 @@
 """Shared seconds-based research bars and causal calculations.
 
-session() preserves the explicitly limited 2026 US calendar used by old studies.
+session() uses the published NYSE 2026–2028 calendar; 2026 study dates are unchanged.
 """
 from __future__ import annotations
 import datetime as dt
@@ -13,6 +13,25 @@ NY = ZoneInfo("America/New_York")
 UTC = dt.timezone.utc
 HOLIDAYS_2026 = {"2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25"}
 EARLY_CLOSE_2026 = {"2026-11-27", "2026-12-24"}
+# NYSE cash-equity holidays/13:00 ET closes, checked 2026-10-18:
+# https://www.nyse.com/trade/hours-calendars
+# Explicit published years only; no inferred holidays for unsupported years.
+NYSE_HOLIDAYS = {
+    2026: HOLIDAYS_2026,
+    2027: {"2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+           "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"},
+    2028: {"2028-01-17", "2028-02-21", "2028-04-14", "2028-05-29", "2028-06-19",
+           "2028-07-04", "2028-09-04", "2028-11-23", "2028-12-25"},
+}
+NYSE_EARLY_CLOSES = {
+    2026: EARLY_CLOSE_2026,
+    2027: {"2027-11-26"},
+    2028: {"2028-07-03", "2028-11-24"},
+}
+
+
+class CalendarUnavailable(ValueError):
+    """No published schedule is configured for the requested New York year."""
 
 @dataclass(frozen=True)
 class Bar:
@@ -58,11 +77,11 @@ def atr(bars: list[Bar], span: int = 14) -> list[float | None]:
 def session(t: int) -> tuple[str, int, int] | None:
     local = dt.datetime.fromtimestamp(t, NY)
     date = local.date().isoformat()
-    if local.year != 2026:
-        raise ValueError("calendar_only_certified_for_2026")
-    if local.weekday() >= 5 or date in HOLIDAYS_2026:
+    if local.year not in NYSE_HOLIDAYS:
+        raise CalendarUnavailable("nyse_calendar_year_unsupported")
+    if local.weekday() >= 5 or date in NYSE_HOLIDAYS[local.year]:
         return None
-    return date, local.hour*60+local.minute, 13*60 if date in EARLY_CLOSE_2026 else 16*60
+    return date, local.hour*60+local.minute, 13*60 if date in NYSE_EARLY_CLOSES[local.year] else 16*60
 
 
 def funding_budget(rows: list[dict], snapshots: list[dict], now: int,

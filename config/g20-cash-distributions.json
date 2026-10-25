@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "policy": "gross_cash_on_issuer_pay_date_after_close",
+  "sources": {
+    "BIL": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx",
+    "BIL_calendar": "https://www.ssga.com/library-content/products/fund-data/etfs/us/distribution/SPDR_Dividend_Distribution_Schedule.pdf",
+    "direxion": "https://www.direxion.com/etf-distributions",
+    "proshares": "https://www.proshares.com/resources/distributions/distribution-schedule"
+  },
+  "verified_actions": [
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-10-01",
+      "pay_date": "2026-10-06",
+      "amount": 0.263176,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-09-01",
+      "pay_date": "2026-09-04",
+      "amount": 0.279771,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-08-03",
+      "pay_date": "2026-08-06",
+      "amount": 0.272951,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-07-01",
+      "pay_date": "2026-07-07",
+      "amount": 0.267622,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-06-01",
+      "pay_date": "2026-06-04",
+      "amount": 0.269202,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-05-01",
+      "pay_date": "2026-05-06",
+      "amount": 0.26991,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-04-01",
+      "pay_date": "2026-04-06",
+      "amount": 0.263657,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-03-02",
+      "pay_date": "2026-03-05",
+      "amount": 0.243106,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    },
+    {
+      "symbol": "BIL",
+      "ex_date": "2026-02-02",
+      "pay_date": "2026-02-05",
+      "amount": 0.273931,
+      "source": "https://www.ssga.com/library-content/products/fund-data/etfs/us/spdr-etf-historical-distributions.xlsx"
+    }
+  ],
+  "pay_dates": {
+    "BIL": {
+      "2026-10-01": "2026-10-06",
+      "2026-09-01": "2026-09-04",
+      "2026-08-03": "2026-08-06",
+      "2026-07-01": "2026-07-07",
+      "2026-06-01": "2026-06-04",
+      "2026-05-01": "2026-05-06",
+      "2026-04-01": "2026-04-06",
+      "2026-03-02": "2026-03-05",
+      "2026-02-02": "2026-02-05",
+      "2026-11-02": "2026-11-05",
+      "2026-12-01": "2026-12-04",
+      "2026-12-22": "2026-12-28",
+      "2026-12-31": "2027-01-06"
+    },
+    "direxion": {
+      "2026-03-24": "2026-03-31",
+      "2026-06-23": "2026-06-30",
+      "2026-09-22": "2026-09-29"
+    },
+    "proshares": {
+      "2026-03-25": "2026-03-31",
+      "2026-06-24": "2026-06-30",
+      "2026-09-23": "2026-09-29",
+      "2026-12-23": "2026-12-30",
+      "2026-12-31": "2027-01-07"
+    }
+  }
+}

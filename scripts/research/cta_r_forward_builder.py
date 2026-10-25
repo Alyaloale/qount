@@ -13,11 +13,13 @@ import json
 import shutil
 import time
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from qount.research.cta_r_forward import (
     CONTRACT, CtaRForwardError, advance, append_ledger, fetch_tencent_series, forward_summary,
     load_panel, read_ledger, replay_drift, write_seed,
+    settled_cutoff,
 )
 from qount.research.cta_r_paper import build_cta_r_paper_snapshot, write_cta_r_paper_snapshot
 
@@ -26,7 +28,8 @@ def _get(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 qount-research"})
     for attempt in range(4):
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - fixed public host
+            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(request, timeout=15) as response:  # fixed public host
                 body = response.read()
             time.sleep(0.15)
             return body
@@ -40,6 +43,19 @@ def _get(url: str) -> bytes:
 def _refresh_seed(seed: Path, observed: dt.datetime, ledger_last: str | None) -> list[str]:
     """Replace the seed only if the fresh fetch is complete and not behind the ledger."""
 
+    if seed.exists():
+        try:
+            with zipfile.ZipFile(seed) as archive:
+                metadata=json.loads(archive.read("metadata/manifest.json"))
+            fetched=dt.datetime.fromisoformat(metadata["fetched_at"])
+            panel=load_panel(seed)
+            cutoff=settled_cutoff(observed)
+            if (metadata.get("source")==CONTRACT["source"] and metadata.get("orders_authorized") is False
+                and fetched<=observed and settled_cutoff(fetched)==cutoff
+                and panel.dates[-1]==cutoff.isoformat()):
+                return []
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+            pass
     tmp = seed.with_name(seed.name + ".candidate")
     try:
         write_seed(tmp, fetch_tencent_series(_get, observed_at=observed), fetched_at=observed)
@@ -73,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     panel = load_panel(seed)
-    new, advance_reasons = advance(panel, ledger)
+    new, advance_reasons = advance(panel, ledger, recorded_at=observed.isoformat())
     appended = append_ledger(ledger_path, new)
     ledger = ledger + new
     reasons += advance_reasons

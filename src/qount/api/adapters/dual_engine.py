@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -286,6 +287,8 @@ def load_rebalance_trade_events(line_id: str, snapshot_path: str) -> Optional[li
     if not isinstance(rebalances, dict) or not isinstance(rebalances.get("events"), list):
         return None
     events: list[dict[str, object]] = []
+    continuity_path=Path(snapshot_path).parent.parent/"continuity.json"
+    continuity=json.loads(continuity_path.read_text()) if continuity_path.exists() else None
     for rebalance in rebalances["events"]:
         if not isinstance(rebalance, dict):
             continue
@@ -293,6 +296,8 @@ def load_rebalance_trade_events(line_id: str, snapshot_path: str) -> Optional[li
         for fill in rebalance.get("fills") or []:
             if not isinstance(fill, dict):
                 continue
+            reconstructed=next((s for s in (continuity or {}).get("segments",[]) if s["kind"]=="reconstructed"
+                and s["start"]<=observed_at<=s["end"]),None)
             events.append({
                 "date": observed_at,
                 "symbol": fill.get("symbol"),
@@ -300,6 +305,9 @@ def load_rebalance_trade_events(line_id: str, snapshot_path: str) -> Optional[li
                 "quantity": fill.get("quantity"),
                 "price": fill.get("reference_price"),
                 "cost": fill.get("cost"),
+                "sample_kind": "reconstructed" if reconstructed else "historical" if continuity and observed_at<=continuity["segments"][0]["end"] else "forward",
+                "recorded_at": reconstructed["recorded_at"] if reconstructed else None,
+                "note": f"历史补算；recorded_at={reconstructed['recorded_at']}；公开分钟开盘价撮合模型" if reconstructed else "模拟调仓，非真实成交",
             })
     return events
 
@@ -355,13 +363,24 @@ def adapt_dual_engine(line_id: str, name: str, config: Dict[str, Any]) -> PaperL
 
     data_cutoff = snapshot.get("data_cutoff") or nav_series[-1].date
     as_of = format_date_str(str(data_cutoff))
+    segments=[]
+    if config.get("continuous"):
+        try:
+            continuity=json.loads((Path(snapshot_path).parent.parent/"continuity.json").read_text())
+            segments=continuity["segments"]
+            forward_points=[p for p in nav_series if p.date>segments[-1]["end"]]
+            if forward_points:
+                segments.append(dict(kind="forward",start=forward_points[0].date,end=forward_points[-1].date))
+        except (OSError,ValueError,KeyError,IndexError,TypeError):
+            return _unavailable(line_id,name,account,snapshot_path,today,error="CONTINUITY_SOURCE_MISSING")
 
     return PaperLine(
         line_id=line_id,
         name=name,
         category=_ACCOUNT_CATEGORY.get(account, "equity"),
         status="ACTIVE_PAPER",
-        adjudication=_ADJUDICATION,
+        adjudication=("从原持仓和现金续接停跑缺口，原历史净值不改写；补算分段标记，非当时前向运行或真实成交。" if config.get("continuous") else
+            "实际重启区间独立起算；旧YTD和停跑缺口不拼接。" if config.get("forward_only") else _ADJUDICATION),
         as_of=as_of,
         freshness=compute_freshness(as_of, config.get("reference_date")),
         curve_granularity="SNAPSHOT",
@@ -372,7 +391,16 @@ def adapt_dual_engine(line_id: str, name: str, config: Dict[str, Any]) -> PaperL
         source=LineSource(
             path=snapshot_path,
             sha256=compute_sha256(snapshot_path),
-            produced_at=snapshot.get("generated_at"),
+            produced_at=(continuity["recorded_at"] if config.get("continuous") and not forward_points else snapshot.get("generated_at")),
+            venue="multi_market" if config.get("forward_only") else None,
+            instrument_type="ETF+SPOT" if config.get("forward_only") else None,
+            price_source=(("yahoo_public" if "yahoo_public" in snapshot.get("source_hashes",{}) else "tiingo_public")
+                          + "_binance_spot") if config.get("forward_only") else None,
+            observation_kind="continuous_paper" if config.get("continuous") else "forward_paper" if config.get("forward_only") else None,
+            segments=segments,
+            execution_symbols=(["TQQQ","SOXL","FAS","CURE","URTY","DRN","ERX","BIL",
+                "BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","LTCUSDT","BCHUSDT","DOTUSDT","PAXGUSDT"]
+                if config.get("forward_only") else []),
         ),
         safety=LineSafety(research_only=True, orders_authorized=False),
         error=None,

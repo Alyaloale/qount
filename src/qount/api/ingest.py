@@ -78,7 +78,13 @@ def run_ingest(
                 "presentation": entry.get("presentation", {}),
             })
             trade_events = None
-            if adapter_name == "experiment" and line_obj.data_status == "AVAILABLE":
+            if adapter_name == "g20_cash" and line_obj.data_status == "AVAILABLE":
+                from qount.api.adapters.g20_cash import g20_cash_trades
+                trade_events = g20_cash_trades(config)
+            elif adapter_name == "research_paper" and line_obj.data_status == "AVAILABLE":
+                from qount.api.adapters.research_paper import research_paper_trades
+                trade_events = research_paper_trades(config)
+            elif adapter_name == "experiment" and line_obj.data_status == "AVAILABLE":
                 from qount.api.adapters.experiment import experiment_trade_events
                 trade_events = experiment_trade_events(line_id, config)
             elif adapter_name == "dual_engine":

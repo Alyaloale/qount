@@ -1257,12 +1257,13 @@ class PaperProgramSnapshot:
                     )
                 ):
                     raise DualEngineContractError("paper_snapshot_benchmark_source_invalid")
-        if dict(self.history_reference) != {
+        if dict(self.history_reference) not in ({
             "status": "owner_authorized_ytd_replay",
             "start_at": "2026-01-01T00:00:00+00:00",
             "method": "tiingo_daily_open_and_binance_minute",
             "curve_role": "simulated_not_realized",
-        }:
+        }, {"status":"forward_restart_no_backfill", "start_at":self.forward_start_at,
+             "method":"yahoo_daily_and_current_binance_spot_quotes", "curve_role":"simulated_not_realized"}):
             raise DualEngineContractError("paper_snapshot_history_reference_invalid")
         latest = self.latest_decision
         if not isinstance(latest, Mapping) or set(latest) != {
@@ -1284,12 +1285,12 @@ class PaperProgramSnapshot:
                 or any(not is_sha256(str(item)) for item in values)
                 for values in (latest["intent_ids"], latest["intent_hashes"])
             )
-            or latest["reason_codes"] != [
+            or latest["reason_codes"] not in ([
                 "PAPER_ONLY",
                 "ORDERS_NOT_AUTHORIZED",
                 "USD_USDT_PARITY_ASSUMED",
                 "OWNER_AUTHORIZED_YTD_REPLAY",
-            ]
+            ], ["PAPER_ONLY", "ORDERS_NOT_AUTHORIZED", "USD_USDT_PARITY_ASSUMED", "FORWARD_RESTART_NO_BACKFILL"])
         ):
             raise DualEngineContractError("paper_snapshot_latest_decision_invalid")
         if self.audit_row_count < 1:

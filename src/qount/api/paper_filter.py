@@ -17,6 +17,8 @@ def _asset_for_symbol(symbol: str, assets: tuple[BinanceAsset, ...]) -> BinanceA
 
 def normalize_paper_line(line: PaperLine) -> PaperLine:
     """Annotate native execution symbols; never turn proxy returns into USD-M returns."""
+    if line.source.venue != "binance_usdm" and is_forward_paper_line(line):
+        return line
     assets = load_binance_assets()
     normalized: list[PositionItem] = []
     for position in line.positions:
@@ -73,4 +75,30 @@ def is_forward_binance_line(line: PaperLine) -> bool:
         (not source.execution_symbols or all(position.symbol in source.execution_symbols for position in normalized.positions))
         and normalized.safety.research_only and not normalized.safety.orders_authorized
     )
+
+
+def is_forward_paper_line(line: PaperLine) -> bool:
+    """Personal paper accounts may use their actual market, without Binance relabeling."""
+    if line.source.venue == "binance_usdm":
+        return is_forward_binance_line(line)
+    allowed = {
+        ("multi_market", "ETF+SPOT", "yahoo_public_binance_spot"),
+        ("multi_market", "ETF+SPOT", "tiingo_public_binance_spot"),
+        ("sse_szse", "ETF_ADJUSTED_PROXY", "tencent_public_qfq"),
+        ("sse_szse", "ETF", "tencent_public_raw_and_qfq"),
+        ("us_etf", "ETF", "yahoo_public"),
+        ("us_etf", "ETF", "yahoo_public_raw+issuer_cash_distributions"),
+    }
+    source=line.source
+    qualified_sample=(line.sample_kind=="forward" and source.observation_kind=="forward_paper") or (
+        line.sample_kind=="mixed" and source.observation_kind=="continuous_paper" and source.segments)
+    return bool(line.paper_enabled and qualified_sample and
+        line.status=="ACTIVE_PAPER" and line.data_status=="AVAILABLE" and
+        line.freshness=="FRESH" and not line.error and line.position_status=="KNOWN" and
+        source.sha256 and source.execution_symbols and
+        (source.venue,source.instrument_type,source.price_source) in allowed and
+        all(p.symbol in source.execution_symbols or (
+            p.symbol=="DIVIDEND_RECEIVABLE" and source.venue=="us_etf" and
+            source.price_source=="yahoo_public_raw+issuer_cash_distributions") for p in line.positions) and
+        line.safety.research_only and not line.safety.orders_authorized)
 

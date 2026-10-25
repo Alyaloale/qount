@@ -122,6 +122,8 @@ def run_regime_backtest(
     enable_cash_overlay: bool = True,
     cash_rate_mode: str = "historical",  # "historical", "flat_4pct", "none"
     data_dir: str = "data/raw",
+    opening_state: Optional[Dict[str, Any]] = None,
+    return_state: bool = False,
 ) -> Dict[str, Any]:
   """Executes the universal regime expectancy strategy backtest with audited causality."""
   if symbols is None:
@@ -192,6 +194,13 @@ def run_regime_backtest(
   active_positions = {}
   cooldowns = {}
   pending_orders = []
+  if opening_state is not None:
+    import copy
+    equity = float(opening_state["equity"])
+    peak_equity = float(opening_state["peak_equity"])
+    active_positions = copy.deepcopy(opening_state["active_positions"])
+    cooldowns = dict(opening_state["cooldowns"])
+    pending_orders = copy.deepcopy(opening_state["pending_orders"])
 
   # Cost configurations
   if mode == "1X_SPOT":
@@ -749,7 +758,7 @@ def run_regime_backtest(
     if t["net_pnl_usd"] > 0:
       sym_pnl[s]["wins"] += 1
 
-  return {
+  result = {
       "return_pct": ret_pct,
       "mdd_pct": max_drawdown * 100.0,
       "win_rate": win_rate,
@@ -765,3 +774,7 @@ def run_regime_backtest(
       "trades": trades,
       "curve": curve,
   }
+  if return_state:
+    result["paper_state"] = dict(equity=equity, peak_equity=peak_equity,
+        active_positions=active_positions, cooldowns=cooldowns, pending_orders=pending_orders)
+  return result

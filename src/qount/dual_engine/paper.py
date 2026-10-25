@@ -896,7 +896,7 @@ def _build_snapshot(
             "PAPER_ONLY",
             "ORDERS_NOT_AUTHORIZED",
             "USD_USDT_PARITY_ASSUMED",
-            "OWNER_AUTHORIZED_YTD_REPLAY",
+            "FORWARD_RESTART_NO_BACKFILL" if "yahoo_public" in cycle.source_hashes else "OWNER_AUTHORIZED_YTD_REPLAY",
         ],
     }
     return PaperProgramSnapshot.create(
@@ -914,7 +914,9 @@ def _build_snapshot(
             initial_capital=contract.initial_capital_usd_eq,
             forward_start_at=str(state["forward_start_at"]),
         ),
-        history_reference={
+        history_reference={"status":"forward_restart_no_backfill",
+            "start_at":str(state["forward_start_at"]),"method":"yahoo_daily_and_current_binance_spot_quotes",
+            "curve_role":"simulated_not_realized"} if "yahoo_public" in cycle.source_hashes else {
             "status": "owner_authorized_ytd_replay",
             "start_at": "2026-01-01T00:00:00+00:00",
             "method": "tiingo_daily_open_and_binance_minute",
@@ -1021,6 +1023,7 @@ def run_paper_cycle(
     cycle: PaperCycleInput,
     *,
     contract: DualEnginePaperContract | None = None,
+    initialize_cash: bool = False,
 ) -> PaperProgramSnapshot:
     """Advance all four portfolios once and atomically publish a verified snapshot."""
 
@@ -1042,6 +1045,7 @@ def run_paper_cycle(
     with lock_path.open("a+") as lock_handle:
         os.chmod(lock_path, 0o600)
         fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        new_account = not state_path.exists()
         if state_path.exists():
             state = _read_json(state_path, name="paper_state")
             _validate_state(state, contract)
@@ -1109,6 +1113,14 @@ def run_paper_cycle(
                 state["current_g20_target"],
                 c60.target_weights,
             )
+            if new_account and initialize_cash:
+                # Actual startup is a cash baseline. Do not manufacture fills
+                # at a previous equity close or a historical crypto quote.
+                _advance_portfolio(
+                    portfolio, budgets=_budgets(portfolio_id,d15_budget),
+                    targets={sleeve:{} for sleeve in targets}, cycle=cycle, contract=contract,
+                    cross_rebalance=True, rebalance_scope="initial")
+                continue
             _advance_portfolio(
                 portfolio,
                 budgets=_budgets(portfolio_id, d15_budget),

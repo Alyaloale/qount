@@ -8,6 +8,7 @@ let performanceChartInstance = null;
 let performanceRequestVersion = 0;
 let performanceData = null;
 let researchRuns = [];
+let researchSourceBenchmark = new Map();
 let researchComparisonVersion = 0;
 let currentLineDetail = null;
 let currentLineId = null;
@@ -59,7 +60,7 @@ const fmt = (value, digits = 2) =>
 const pct = (value) =>
   QountMetrics.number(value) == null
     ? "--"
-    : `${Number(value) > 0 ? "+" : ""}${fmt(value)}%`;
+    : `${Number(value) > 0 ? "+" : ""}${fmt(Number(value) === 0 ? 0 : value)}%`;
 function assetAmount(value) {
   const amount = QountMetrics.number(value);
   if (amount == null) return "--";
@@ -119,6 +120,8 @@ function statusText(value) {
       ADJUST: "调整",
       HOLD: "持有",
       SPLIT: "份额拆分",
+      DIVIDEND_ACCRUAL: "分红应收",
+      DIVIDEND_PAYMENT: "分红转现金",
       long: "多头",
       short: "空头",
       unknown: "未知",
@@ -150,11 +153,11 @@ function identity(line) {
 function nextQuestion(line) {
   if (["ARCHIVED", "STOPPED"].includes(line.status))
     return "保留失败结论与资料；不根据旧指标推定策略已获准恢复。";
-  if (line.line_id === "personal_assistant")
+  if (["personal_assistant", "personal_assistant_forward"].includes(line.line_id))
     return "待验证：MA120＋1.5% 带宽相对同标的买持，在净收益、回撤与暴露上提供多少增量？已有历史回放；前向来源未接入时不显示为正在积累。";
   if (line.line_id === "universal_regime")
     return "待验证：v1.3 冻结参数（旧 Calmar 字段已更正）在未见数据上的前向表现能否复现回测指标？短样本期间不报告年化。";
-  if (line.line_id === "cta_r")
+  if (["cta_r", "cta_r_forward"].includes(line.line_id))
     return "待验证：前向记录是否连续、持仓与成本是否一致？短样本暂不报告年化与 Sharpe。";
   return "待验证：信号与模拟执行差异能否由来源中的费用、交易单位和执行约束解释？";
 }
@@ -611,7 +614,9 @@ async function fetchPaperLines() {
     setText("paper-lines-count", "列表读取失败");
   }
 }
-function sourceReturn(metrics) {
+function sourceReturn(metrics, line) {
+  if (line && QountResearch.forward(line)) return [line.sample_kind === "mixed" ? "连续模拟累计收益" : "前向起算收益", metrics?.total_return_pct ??
+    (metrics?.executable_nav == null ? null : (metrics.executable_nav - 1) * 100)];
   if (metrics?.cagr_pct != null) return ["来源年化收益", metrics.cagr_pct];
   if (metrics?.ytd_return_pct != null)
     return ["年初至今收益", metrics.ytd_return_pct];
@@ -626,15 +631,17 @@ function renderPaperLines(lines) {
   const selected = QountResearch.select(lines, researchFilter, researchQuery, researchCategory);
   const groups = Object.fromEntries(["available", "waiting", "archived"].map(key =>
     [key, selected.filter(line => QountResearch.group(line) === key)]));
+  groups.forward = groups.available.filter(QountResearch.forward);
+  groups.historical = groups.available.filter(line => !QountResearch.forward(line));
   setText("paper-lines-count", `${counts.all} 条已接入`);
   $("research-summary").innerHTML = [
-    ["可查看结果", counts.available, "历史或前向记录", "available"],
-    ["等待数据", counts.waiting, "尚无可展示结果", "waiting"],
+    ["启用模拟", counts.forward, "数据状态逐线显示", "available"],
+    ["历史研究", counts.historical, "保留原样本与结论", "waiting"],
     ["封存与停止", counts.archived, "保留结论供复核", "archived"],
   ].map(([label, count, note, key]) => `<div class="research-stat ${key}"><span>${label}</span><strong>${count}<small> 条</small></strong><p>${note}</p></div>`).join("");
   document.querySelectorAll("[data-research-filter]").forEach(button => {
     const key = button.dataset.researchFilter;
-    const labels = { all: "全部", available: "可查看结果", waiting: "等待数据", archived: "封存与停止" };
+    const labels = { all: "全部", forward: "持续模拟", available: "可查看结果", waiting: "等待数据", archived: "封存与停止" };
     button.textContent = `${labels[key]} ${counts[key]}`;
     button.classList.toggle("active", researchFilter === key);
     button.setAttribute("aria-pressed", String(researchFilter === key));
@@ -647,25 +654,30 @@ function renderPaperLines(lines) {
     const profile = QountResearch.profile(line);
     const source = QountResearch.dataState(line);
     const unavailable = historicalOnly(line);
-    const [returnLabel, returnValue] = sourceReturn(m);
+    const [returnLabel, returnValue] = sourceReturn(m, line);
+    const forward = QountResearch.forward(line);
     const period = !QountResearch.available(line) && !m.start_date ? [] : [m.start_date, line.as_of].filter(date => date && date !== "unknown").map(formatDate);
     const facts = unavailable
       ? `<div class="research-unavailable"><span aria-hidden="true">${QountResearch.archived(line) ? "▤" : "◷"}</span><p>${QountResearch.archived(line) ? "历史工件与最终结论在详情中保留。" : "来源尚未接入，暂不展示收益与持仓。"}</p></div>`
-      : `<dl class="research-facts"><div><dt>${returnLabel}</dt><dd class="${signClass(returnValue)}">${pct(returnValue)}</dd></div><div><dt>历史最大回撤</dt><dd class="negative">${pct(m.max_drawdown_pct == null ? null : -Math.abs(m.max_drawdown_pct))}</dd></div><div><dt>${m.benchmark_cagr_pct == null ? "当前回撤" : "同标的买持年化"}</dt><dd>${m.benchmark_cagr_pct == null ? pct(m.current_drawdown_pct == null ? null : -Math.abs(m.current_drawdown_pct)) : pct(m.benchmark_cagr_pct)}</dd></div></dl>`;
-    const lifecycle = QountResearch.archived(line) ? (line.status === "STOPPED" ? "已停止" : "已封存") : line.research_status === "paused" ? "暂停研究" : "研究中";
+      : `<dl class="research-facts"><div><dt>${returnLabel}</dt><dd class="${signClass(returnValue)}">${pct(returnValue)}</dd></div><div><dt>${line.sample_kind === "mixed" ? "全样本最大回撤" : forward ? "前向最大回撤" : "历史最大回撤"}</dt><dd class="negative">${pct(m.max_drawdown_pct == null ? null : -Math.abs(m.max_drawdown_pct))}</dd></div><div><dt>${m.benchmark_cagr_pct == null ? "当前回撤" : "同标的买持年化"}</dt><dd>${m.benchmark_cagr_pct == null ? pct(m.current_drawdown_pct == null ? null : -Math.abs(m.current_drawdown_pct)) : pct(m.benchmark_cagr_pct)}</dd></div></dl>`;
+    const lifecycle = QountResearch.lifecycle(line);
     const footnote = m.cagr_basis === "252 trading days" ? "年化按 252 交易日计算" : profile.sample;
+    const periodText = forward
+      ? `${m.start_date ? "观测起于 " + formatDate(m.start_date) + " · " : ""}行情截至 ${formatDate(line.as_of)}`
+      : period.length > 1 ? "样本 " + period.join(" — ") : period.length ? "数据截至 " + period[0] : "数据日期尚未确认";
     return `<article class="research-card" data-line-id="${escapeHtml(line.line_id)}" style="--enter-index:${index % 6}">
       <div class="research-card-top"><span class="research-category">${escapeHtml(profile.category)} <span>／ ${escapeHtml(profile.family)}</span></span><span class="research-lifecycle">${lifecycle}</span></div>
       <h3>${escapeHtml(profile.name)}</h3><p class="research-method">${escapeHtml(profile.method)}</p>
       <div class="research-source-row"><span class="source-chip ${source.tone}"><i aria-hidden="true"></i>${escapeHtml(source.label)}</span><span class="sample-chip">${escapeHtml(profile.sample)}</span></div>
-      ${facts}<p class="research-card-period">${period.length > 1 ? "样本 " + period.join(" — ") : period.length ? "数据截至 " + period[0] : "数据日期尚未确认"}${unavailable ? "" : " · " + escapeHtml(footnote)}</p>
+      ${facts}<p class="research-card-period">${escapeHtml(periodText)}${unavailable ? "" : " · " + escapeHtml(footnote)}</p>
       <p class="research-takeaway"><strong>研究判断</strong>${escapeHtml(profile.note)}</p>
       <div class="research-card-bottom"><span class="research-id">${escapeHtml(line.line_id)}</span><button class="btn-action" data-open-line="${escapeHtml(line.line_id)}">${QountResearch.archived(line) ? "复核历史" : "查看详情"}<span aria-hidden="true"> ↗</span></button></div>
     </article>`;
   }
   let offset = 0;
   $("paper-lines-body").innerHTML = [
-    ["available", "可查看的研究结果", "包含历史回放与前向模拟，按各自样本范围解读。"],
+    ["forward", "已启用的模拟策略", "每条策略统一展示历史、停跑补算和后续模拟；各段保留样本类型与实际记录时间。"],
+    ["historical", "历史研究结果", "保留原样本与结论，不与前向记录拼接收益。"],
     ["waiting", "等待数据的研究线", "保留研究方向与当前判断，接入来源后再展示结果。"],
   ].filter(([key]) => groups[key].length).map(([key, title, note]) => {
     const cards = groups[key].map(line => card(line, offset++)).join("");
@@ -759,8 +771,9 @@ async function showLineDetail(lineId, scroll = true, preserveRange = false, runI
     if (requestVersion !== detailRequestVersion || currentLineId !== lineId)
       return;
     currentLineDetail = data;
+    researchSourceBenchmark = new Map(data.nav_series.map(row => [row.date, row.benchmark_nav]));
     renderLineDetail(data);
-    if (data.run_id) loadResearchRuns(data, requestVersion);
+    if (QountResearch.experimentRunId(data)) loadResearchRuns(data, requestVersion);
     if (
       previousRange === "custom" &&
       previousWindow.length &&
@@ -810,7 +823,7 @@ function closeDetailPanel() {
 }
 function fullMetricItems(line) {
   const m = line.metrics || {};
-  const [returnTitle, value] = sourceReturn(m);
+  const [returnTitle, value] = sourceReturn(m, line);
   return [
     [
       returnTitle +
@@ -874,6 +887,10 @@ function renderLineDetail(line) {
   setText("detail-source-path", line.source?.path || "--");
   setText("detail-source-sha256", line.source?.sha256 || "未核验／来源未提供");
   setText("detail-cost-coverage", costsText(line));
+  const kindLabel={historical:"原历史",reconstructed:"历史补算",forward:"前向观测",genesis:"初始观测"};
+  setText("detail-sample-segments",(line.source?.segments || []).map(segment =>
+    `${kindLabel[segment.kind] || segment.kind}：${formatDate(segment.start)} 至 ${formatDate(segment.end)}${segment.kind === "reconstructed" && segment.recorded_at ? "（实际记录 " + formatTime(segment.recorded_at) + "）" : ""}`).join("；"));
+  $("line-daily-panel")?.classList.toggle("hidden",line.line_id !== "personal_assistant" || QountResearch.forward(line));
   $("detail-constraints").innerHTML =
     (line.execution_constraints || [])
       .map((text) => `<li>${escapeHtml(text)}</li>`)
@@ -907,7 +924,7 @@ function selectedStats() {
     currentLineDetail?.nav_series || [],
     chartStart,
     chartEnd,
-    currentLineDetail?.line_id !== "cta_r",
+    !["cta_r", "cta_r_forward"].includes(currentLineDetail?.line_id),
   );
 }
 function updateWindowMetrics() {
@@ -965,13 +982,15 @@ function updateWindowMetrics() {
   )
     ? " · 基准不可用"
     : "";
+  const containsReconstruction=(line.source?.segments || []).some(s => s.kind === "reconstructed" &&
+    stats.selected.some(row => QountMetrics.timestamp(row.date)>=QountMetrics.timestamp(s.start) && QountMetrics.timestamp(row.date)<=QountMetrics.timestamp(s.end)));
   setText(
     "chart-range",
     `${range} · ${stats.selected.length} 个观测点${sourceLabel}${signalLabel}${benchmarkLabel}`,
   );
   setText(
     "detail-window-note",
-    `窗口 ${range}。收益为首末观测比值；不足一年或不足 20 个观测点不年化，CTA-R 早期记录不年化。交易日数仅在全样本来源明确提供时展示。`,
+    `${stats.selected.length === 1 ? (QountResearch.forward(line) && line.nav_series.length === 1 ? "仅有初始化观测，尚无可计算的收益区间。" : "窗口仅一个观测点，无法计算区间收益。") : ""}${containsReconstruction ? "所选窗口含历史补算，不能当作独立前向业绩。" : ""}窗口 ${range}。收益为首末观测比值；不足一年或不足 20 个观测点不年化，CTA-R 代理记录不年化。交易日数仅在全样本来源明确提供时展示。`,
   );
   const full =
     chartStart === 0 && chartEnd === (line.nav_series || []).length - 1;
@@ -1024,6 +1043,8 @@ function renderNavChart() {
     smooth: 0.3,
     showSymbol: rows.length === 1,
     connectNulls: false,
+    markArea: fill ? {silent:true,itemStyle:{color:"rgba(255,217,61,.22)"},label:{show:true,formatter:"历史补算",color:"#796000"},
+      data:(line.source?.segments || []).filter(s=>s.kind==="reconstructed").map(s=>[{xAxis:s.start},{xAxis:s.end}])} : undefined,
     lineStyle: { width: 2.5, color },
     itemStyle: { color },
     symbolSize: 6,
@@ -1215,7 +1236,7 @@ async function loadLineCurrentPositions(line, version) {
     return;
   }
   try {
-    const rows = currentPositionRows(
+    const snapshot = QountResearch.positionSnapshot(
       await readJSON(
         `/research/positions/current?line_id=${encodeURIComponent(lineId)}`,
       ),
@@ -1223,16 +1244,17 @@ async function loadLineCurrentPositions(line, version) {
     if (version !== detailRequestVersion || currentLineId !== lineId) return;
     setText(
       "detail-position-as-of",
-      `${researchName(line)} · 最新快照 ${rows[0] ? ledgerDate(rows[0].date) : formatDate(line.as_of)}`,
+      `${researchName(line)} · ${line.sample_kind === "historical" ? "历史快照" : "最新快照"} ${ledgerDate(snapshot.as_of || snapshot.positions[0]?.date)}`,
     );
-    renderHoldingRows("detail-current-positions", rows, line);
+    renderHoldingRows("detail-current-positions", snapshot, line);
   } catch (error) {
     if (version !== detailRequestVersion || currentLineId !== lineId) return;
     tableMessage("detail-current-positions", 6, `${researchName(line)} 持仓读取失败`);
     setText("detail-position-as-of", `${researchName(line)} · 快照读取失败`);
   }
 }
-function renderHoldingRows(id, rows, line) {
+function renderHoldingRows(id, snapshot, line) {
+  const rows = snapshot.positions;
   const current = rows.filter(
     (row) =>
       row.action !== "CLOSE" &&
@@ -1242,7 +1264,7 @@ function renderHoldingRows(id, rows, line) {
     tableMessage(
       id,
       6,
-      rows.length ? "来源快照确认空仓" : "尚无可复核持仓快照",
+      snapshot.confirmed ? "来源快照确认空仓" : "尚无可复核持仓快照",
     );
     return;
   }
@@ -1254,13 +1276,6 @@ function renderHoldingRows(id, rows, line) {
     .join("");
 }
 
-function currentPositionRows(payload) {
-  // Older test/preview APIs return an array; deployed APIs also bind validity to the read.
-  if (Array.isArray(payload)) return payload;
-  if (!payload || payload.status !== "KNOWN")
-    throw new Error("当前快照资格不足");
-  return payload.positions;
-}
 function openCurrentLedger() {
   if (!currentLineDetail) return;
   const stats = selectedStats();
@@ -1292,6 +1307,7 @@ async function loadPaperPositions() {
   };
   const start = $("ledger-start").value;
   const end = $("ledger-end").value;
+  const selectedRun = QountResearch.experimentRunId(currentLineDetail?.line_id === id ? currentLineDetail : line);
   [
     "paper-current-positions-body",
     "paper-trades-body",
@@ -1304,7 +1320,7 @@ async function loadPaperPositions() {
   setText("action-count", "读取中…");
   setText(
     "ledger-context",
-    `${researchName(line) || id} · ${start || "最早"} 至 ${end || "最新"}`,
+    `${researchName(line) || id}${selectedRun ? " · 实验 " + selectedRun.slice(0, 12) : ""} · ${start || "最早"} 至 ${end || "最新"}`,
   );
   if (start && end && start > end) {
     tableMessage("paper-trades-body", 7, "开始日期不能晚于结束日期");
@@ -1315,11 +1331,10 @@ async function loadPaperPositions() {
   const query = new URLSearchParams({ line_id: id, limit: "1000" });
   if (start) query.set("start", start);
   if (end) query.set("end", end);
-  const selectedRun = currentLineDetail?.line_id === id ? currentLineDetail.run_id : paperLines.get(id)?.run_id;
   if (selectedRun) query.set("run_id", selectedRun);
   const [positions, trades] = await Promise.allSettled([
     readJSON(`/research/positions/current?line_id=${encodeURIComponent(id)}`).then(
-      currentPositionRows,
+      QountResearch.positionSnapshot,
     ),
     readJSON(`/research/trades?${query}`),
   ]);
@@ -1328,19 +1343,21 @@ async function loadPaperPositions() {
     $("positions-line-select").value !== id
   )
     return;
-  if (historicalOnly(line) || line.position_status !== "KNOWN")
+  if (historicalOnly(line) || line.position_status !== "KNOWN") {
     tableMessage(
       "paper-current-positions-body",
       6,
       "当前持仓来源缺失／不适用，不能把历史快照视为当前仓位",
     );
-  else if (positions.status === "rejected")
+    setText("positions-as-of", `${researchName(line) || id} · 当前快照不适用／未知`);
+  } else if (positions.status === "rejected") {
     tableMessage("paper-current-positions-body", 6, "持仓快照读取失败");
-  else {
+    setText("positions-as-of", `${researchName(line) || id} · 快照读取失败`);
+  } else {
     renderHoldingRows("paper-current-positions-body", positions.value, line);
     setText(
       "positions-as-of",
-      `${researchName(line) || id} · ${ledgerDate(positions.value[0]?.date)}`,
+      `${researchName(line) || id} · ${line.sample_kind === "historical" ? "历史快照" : "最新快照"} ${ledgerDate(positions.value.as_of || positions.value.positions[0]?.date)}`,
     );
   }
   if (trades.status === "rejected") {
@@ -1350,8 +1367,8 @@ async function loadPaperPositions() {
     setText("action-count", "读取失败");
     return;
   }
-  const actions = trades.value.filter((row) => row.side === "SPLIT");
-  const fills = trades.value.filter((row) => row.side !== "SPLIT");
+  const actions = trades.value.filter((row) => ["SPLIT","DIVIDEND_ACCRUAL","DIVIDEND_PAYMENT"].includes(row.side));
+  const fills = trades.value.filter((row) => ["BUY","SELL"].includes(row.side));
   setText(
     "trade-count",
     `${fills.length} 笔买卖／调仓${trades.value.length >= 1000 ? " · 已达 1000 条上限" : ""}`,
@@ -1371,6 +1388,10 @@ async function loadPaperPositions() {
   else
     $("paper-actions-body").innerHTML = actions
       .map((row) => {
+        if (row.side !== "SPLIT") {
+          const amount = row.quantity != null && row.price != null ? fmt(row.quantity * row.price, 6) : "来源未提供";
+          return `<tr><td class="date">${escapeHtml(ledgerDate(row.date))}</td><td>${escapeHtml(row.symbol)}</td><td>${escapeHtml(statusText(row.side))}</td><td>${amount} USD_EQ<details><summary>来源说明</summary><p>${escapeHtml(row.note || "来源未提供")}</p></details></td></tr>`;
+        }
         const ratio =
           String(row.note || "").match(/split_ratio=([\d.]+)/)?.[1] ||
           String(row.note || "").match(/1\s*[:：]\s*([\d.]+)\s*拆分/)?.[1];
@@ -1468,8 +1489,9 @@ async function compareResearchRun() {
   if(!line)return;
   const version=++researchComparisonVersion;
   if(!reference) {
-    line.nav_series=line.nav_series.map(row=>({...row,benchmark_nav:null}));
-    renderNavChart();return;
+    line.nav_series=line.nav_series.map(row=>({...row,benchmark_nav:researchSourceBenchmark.get(row.date) ?? null}));
+    setText("research-run-note",`正在查看实验 ${line.run_id.slice(0,12)}；已恢复来源基准。`);
+    rerenderCurrentChart();return;
   }
   try {
     const data=await readJSON(`/research/lines/${encodeURIComponent(line.line_id)}?run_id=${encodeURIComponent(reference)}`);
@@ -1478,7 +1500,7 @@ async function compareResearchRun() {
     line.nav_series=line.nav_series.map(row=>({...row,benchmark_nav:lookup.get(row.date) ?? null}));
     $("chart-show-benchmark").checked=true;
     setText("research-run-note",`实验 ${line.run_id.slice(0,12)} 对照 ${reference.slice(0,12)}；基准曲线为所选实验，只比较重合观测窗口。`);
-    renderNavChart();
+    rerenderCurrentChart();
   } catch(_) {
     if(version===researchComparisonVersion)setText("research-run-note","对照实验读取失败，当前曲线保持原结果。");
   }

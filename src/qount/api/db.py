@@ -20,7 +20,7 @@ from qount.api.schemas import (
     LineSource,
     LineSafety,
 )
-from qount.api.paper_filter import is_forward_binance_line, normalize_paper_line
+from qount.api.paper_filter import is_forward_paper_line, normalize_paper_line
 
 DEFAULT_DB_PATH = "state/qount.db"
 
@@ -292,6 +292,7 @@ def _save_source_trade_events(
     grouped: dict[tuple[str, str, str], dict[str, float]] = {}
     notes: dict[tuple[str, str, str], list[str]] = {}
     missing_costs: set[tuple[str, str, str]] = set()
+    sample_kinds: dict[tuple[str,str,str],set[str]] = {}
     for event in trade_events:
         observed_at = _canonical_timestamp(str(event.get("date") or ""))
         symbol = str(event.get("symbol") or "").strip()
@@ -309,9 +310,20 @@ def _save_source_trade_events(
                 record_kind="corporate_action",
             )
             continue
+        if side in {"DIVIDEND_ACCRUAL", "DIVIDEND_PAYMENT"}:
+            _insert_trade(cursor,line_id=line.line_id,date_value=observed_at,symbol=symbol,
+                side=side,quantity=quantity,price=price,cost=cost,
+                note=str(event.get("note") or "税前模拟分红；非真实到账")+
+                     f"; recorded_at={event.get('recorded_at','见来源分段')}",
+                record_kind="reconstructed" if event.get("sample_kind")=="reconstructed" else "forward_paper")
+            continue
         if side not in {"BUY", "SELL"} or quantity is None or quantity <= 0.0:
             continue
         key = (observed_at, symbol, side)
+        kind=event.get("sample_kind")
+        record_kind={"historical":"historical_backtest","reconstructed":"reconstructed","forward":"forward_paper"}.get(kind)
+        sample_kinds.setdefault(key,set()).add(record_kind or (
+            "historical_backtest" if line.source.observation_kind=="historical_backtest" else "simulated_not_realized"))
         row = grouped.setdefault(key, {"quantity": 0.0, "notional": 0.0, "cost": 0.0})
         row["quantity"] += quantity
         if price is not None:
@@ -321,6 +333,8 @@ def _save_source_trade_events(
         else:
             missing_costs.add(key)
         note = str(event.get("note") or "").strip()
+        if event.get("sample_kind")=="reconstructed":
+            note += f"; 历史补算，非当时运行; recorded_at={event.get('recorded_at','见来源分段')}"
         if note and note not in notes.setdefault(key, []):
             notes[key].append(note)
     for (observed_at, symbol, side), values in grouped.items():
@@ -337,7 +351,7 @@ def _save_source_trade_events(
             price=price,
             cost=cost,
             note="; ".join(notes.get((observed_at, symbol, side), [])) or "simulated_not_realized; source paper rebalance event",
-            record_kind="historical_backtest" if line.run_id else "simulated_not_realized",
+            record_kind=next(iter(sample_kinds[(observed_at,symbol,side)])) if len(sample_kinds[(observed_at,symbol,side)])==1 else "mixed",
         )
 
 
@@ -534,7 +548,7 @@ def get_paper_lines_summary(db_path: Optional[str] = None, *, forward_only: bool
                 line = PaperLine(**data)
                 if forward_only:
                     line = normalize_paper_line(line)
-                if forward_only and not is_forward_binance_line(line):
+                if forward_only and not is_forward_paper_line(line):
                     continue
                 summaries.append(PaperLineSummary(**line.model_dump(exclude={"nav_series"})))
             except Exception:
@@ -583,7 +597,7 @@ def get_paper_line(line_id: str, db_path: Optional[str] = None, *, forward_only:
             # Unknown/stale positions are hidden at the read boundary rather
             # than leaking adapter errors through detail or history endpoints.
             return None
-        if forward_only and not is_forward_binance_line(line):
+        if forward_only and not is_forward_paper_line(line):
             return None
         return line
 

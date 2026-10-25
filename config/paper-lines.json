@@ -2,24 +2,24 @@
   "lines": [
     {
       "id": "dual_g20",
-      "adapter": "dual_engine",
+      "adapter": "g20_cash",
       "name": "美股轮动 (G20)",
       "category": "equity",
-      "enabled": false,
+      "enabled": true,
       "config": {
-        "account": "g20",
-        "root": "state/dual_engine"
+        "root": "state/paper/forward-20261022/dual-engine/g20-cash",
+        "legacy_root": "state/paper/forward-20261022/dual-engine"
       },
       "display": true,
-      "research_status": "paused",
-      "sample_kind": "historical",
+      "research_status": "forward",
+      "sample_kind": "mixed",
       "presentation": {
         "name": "美股轮动 · G20",
         "category": "美股",
         "family": "Dual-Engine",
-        "sample": "历史回放＋模拟",
-        "method": "在美股资产间轮动，比较信号与模拟执行的差异。",
-        "note": "包含历史回放；离线改进尚待新数据验证。"
+        "sample": "现金分红修正版 · 历史重算＋持续模拟",
+        "method": "63日调整价格行业轮动，月度20%风险资产＋80%BIL；分红应收与到账分开。",
+        "note": "修复遗漏分红、保留原价格曲线作基准；历史重算非当时前向。税前整数股模型，不改变原信号或提高风险。"
       }
     },
     {
@@ -27,21 +27,24 @@
       "adapter": "dual_engine",
       "name": "加密趋势 (C60)",
       "category": "crypto",
-      "enabled": false,
+      "enabled": true,
       "config": {
         "account": "c60",
-        "root": "state/dual_engine"
+        "root": "state/paper/forward-20261022/dual-engine",
+        "forward_only": true,
+        "continuous": true,
+        "snapshot": "state/paper/forward-20261022/dual-engine/current/paper_program_snapshot.json"
       },
       "display": true,
-      "research_status": "paused",
-      "sample_kind": "historical",
+      "research_status": "forward",
+      "sample_kind": "mixed",
       "presentation": {
         "name": "加密趋势 · C60",
         "category": "加密资产",
         "family": "Dual-Engine",
-        "sample": "历史回放＋模拟",
+        "sample": "历史＋补算＋持续模拟",
         "method": "跟踪加密资产趋势，保留原有模拟盘作为对照。",
-        "note": "稳定选币优势已撤回；保留模拟记录，不视为已验证 Alpha。"
+        "note": "沿用原冻结规则和账户状态，补齐停跑区间；缺口为历史补算，后续按现有周期持续模拟。"
       }
     },
     {
@@ -49,21 +52,24 @@
       "adapter": "dual_engine",
       "name": "固定组合 (GC5)",
       "category": "mixed",
-      "enabled": false,
+      "enabled": true,
       "config": {
         "account": "gc5",
-        "root": "state/dual_engine"
+        "root": "state/paper/forward-20261022/dual-engine",
+        "forward_only": true,
+        "continuous": true,
+        "snapshot": "state/paper/forward-20261022/dual-engine/current/paper_program_snapshot.json"
       },
       "display": true,
-      "research_status": "paused",
-      "sample_kind": "historical",
+      "research_status": "forward",
+      "sample_kind": "mixed",
       "presentation": {
         "name": "固定组合 · GC5",
         "category": "多资产",
         "family": "Dual-Engine",
-        "sample": "历史回放＋模拟",
+        "sample": "历史＋补算＋持续模拟",
         "method": "以固定资产配置作为轮动与动态配置的比较基线。",
-        "note": "历史回放与前向模拟混合，不能当作实盘收益。"
+        "note": "沿用原冻结规则和账户状态，补齐停跑区间；缺口为历史补算，后续按现有周期持续模拟。"
       }
     },
     {
@@ -71,21 +77,24 @@
       "adapter": "dual_engine",
       "name": "动态组合 (D15)",
       "category": "mixed",
-      "enabled": false,
+      "enabled": true,
       "config": {
         "account": "d15",
-        "root": "state/dual_engine"
+        "root": "state/paper/forward-20261022/dual-engine",
+        "forward_only": true,
+        "continuous": true,
+        "snapshot": "state/paper/forward-20261022/dual-engine/current/paper_program_snapshot.json"
       },
       "display": true,
-      "research_status": "paused",
-      "sample_kind": "historical",
+      "research_status": "forward",
+      "sample_kind": "mixed",
       "presentation": {
         "name": "动态组合 · D15",
         "category": "多资产",
         "family": "Dual-Engine",
-        "sample": "历史回放＋模拟",
+        "sample": "历史＋补算＋持续模拟",
         "method": "动态调整资产配置，与固定组合在同一窗口比较。",
-        "note": "离线领先尚待新数据确认；不外推为预期收益。"
+        "note": "沿用原冻结规则和账户状态，补齐停跑区间；缺口为历史补算，后续按现有周期持续模拟。"
       }
     },
     {
@@ -93,41 +102,44 @@
       "adapter": "cta_r_forward",
       "name": "CTA-R 前瞻研究账本",
       "category": "equity",
-      "enabled": false,
+      "enabled": true,
       "config": {
-        "root": "state/cta_r"
+        "root": "state/cta_r",
+        "status_path": "/var/www/qount/data/cta_r_paper.json",
+        "continuous": true
       },
       "display": true,
-      "research_status": "paused",
-      "sample_kind": "historical",
+      "research_status": "forward",
+      "sample_kind": "mixed",
       "presentation": {
         "name": "CTA-R 趋势研究",
-        "category": "美股",
+        "category": "ETF",
         "family": "独立研究",
-        "sample": "早期前向观测",
+        "sample": "连续收盘权重收益代理（含补算）",
         "method": "按冻结规则积累独立趋势策略的前向模拟记录。",
-        "note": "样本仍短，不年化；成本与可交易性尚待确认。"
+        "note": "原账本不归一化重置；补算保留真实记录时间，仍为收盘权重收益代理。"
       }
     },
     {
       "id": "personal_assistant",
-      "adapter": "personal_assistant",
+      "adapter": "research_paper",
       "name": "ETF 均线择时研究",
       "category": "equity",
-      "enabled": false,
+      "enabled": true,
       "config": {
-        "run": "state/research_runs/personal_assistant_reconciled_20261012"
+        "root": "state/research/paper-forward-20261022/etf",
+        "continuous": true
       },
       "display": true,
-      "research_status": "paused",
-      "sample_kind": "historical",
+      "research_status": "forward",
+      "sample_kind": "mixed",
       "presentation": {
         "name": "ETF 均线择时研究",
         "category": "ETF",
         "family": "独立研究",
-        "sample": "历史回放",
+        "sample": "历史＋补算＋持续模拟",
         "method": "研究 MA120＋1.5% 带宽对纳指 ETF 的择时效果。",
-        "note": "已有回放年化低于同标的买持，重点检验回撤与暴露改善。"
+        "note": "延续原MA120/1.5%/两日确认、小数份额、单边6bp手续费/5bp滑点和假定现金年收益2%；不是实收利息。"
       }
     },
     {
@@ -174,23 +186,23 @@
     },
     {
       "id": "universal_regime",
-      "adapter": "universal_regime_forward",
+      "adapter": "research_paper",
       "name": "通用状态期望 v1.3 (冻结前向)",
       "category": "macro",
-      "enabled": false,
+      "enabled": true,
       "config": {
-        "root": "state/research_runs/universal_regime_v1.3_forward"
+        "root": "state/research/paper-forward-20261022/regime"
       },
       "display": true,
-      "research_status": "paused",
-      "sample_kind": "historical",
+      "research_status": "forward",
+      "sample_kind": "forward",
       "presentation": {
         "name": "通用状态期望 · v1.3",
         "category": "多资产",
         "family": "独立研究",
-        "sample": "前向来源待接入",
+        "sample": "实际启动后前向模拟",
         "method": "以 v1.3 为基准，检验市场状态与动态配置的前向表现。",
-        "note": "旧 Calmar 口径错误，不能用于排名；后续版本存在高过拟合风险，保留历史结论。"
+        "note": "显式固定v1.3基准开关，1X；关闭后续MR收阳、衰竭退出和假定现金生息。不沿用旧Calmar。"
       }
     },
     {

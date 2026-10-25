@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
 from qount.api.adapters import register_adapter
-from qount.api.adapters.utils import compute_freshness, compute_sha256, unavailable_line
+from qount.api.adapters.utils import compute_freshness, compute_sha256, unavailable_line, observation_segments
 from qount.api.schemas import LineMetrics, LineSafety, LineSource, NavPoint, PaperLine, PositionItem
 from qount.research.cta_r_forward import CONTRACT, read_ledger
 
@@ -44,12 +45,17 @@ def adapt_cta_r_forward(line_id: str, name: str, config: Dict[str, Any]) -> Pape
 
     try:
         ledger = read_ledger(ledger_path)
-        if not ledger or ledger[0].get("kind") != "genesis":
+        forward_start=config.get("forward_start")
+        if forward_start:
+            # Rebase on a recorded restart boundary; old catchup stays in the
+            # original ledger and historical research line, not new performance.
+            ledger=[entry for entry in ledger if entry["date"]>=forward_start]
+        if not ledger or (not forward_start and ledger[0].get("kind") != "genesis"):
             raise ValueError("forward_ledger_genesis_missing")
         if any(entry.get("orders_authorized") is True for entry in ledger):
             raise ValueError("forward_ledger_order_guard_invalid")
-        bars = [entry for entry in ledger if entry.get("kind") == "bar"]
-        if not bars:
+        bars = [entry for entry in ledger[1:] if entry.get("kind") == "bar"] if forward_start else [entry for entry in ledger if entry.get("kind") == "bar"]
+        if not bars and not forward_start:
             return unavailable_line(
                 line_id,
                 name,
@@ -59,7 +65,7 @@ def adapt_cta_r_forward(line_id: str, name: str, config: Dict[str, Any]) -> Pape
                 _ADJUDICATION,
             )
 
-        initial = float(CONTRACT["initial_equity"])
+        initial = float(ledger[0]["equity"] if forward_start else CONTRACT["initial_equity"])
         if not initial > 0.0:
             raise ValueError("forward_ledger_initial_equity_invalid")
         equity = initial
@@ -102,6 +108,11 @@ def adapt_cta_r_forward(line_id: str, name: str, config: Dict[str, Any]) -> Pape
             for symbol, weight in sorted((last.get("weights_after_close") or {}).items())
             if float(weight) > 0.0
         ]
+        latest_error=None
+        if config.get("status_path"):
+            attempt=json.loads(Path(config["status_path"]).read_text())
+            if attempt.get("status")!="valid":
+                latest_error="LATEST_CTA_INPUT_REFRESH_FAILED"
     except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
         return unavailable_line(
             line_id,
@@ -117,7 +128,8 @@ def adapt_cta_r_forward(line_id: str, name: str, config: Dict[str, Any]) -> Pape
         name=name,
         category="equity",
         status="ACTIVE_PAPER",
-        adjudication=_ADJUDICATION,
+        adjudication=("原账本连续展示，含停跑历史补算；补算有真实记录时间，非当时前向运行。收盘权重收益代理，不等于次日开盘现金成交净值。" if config.get("continuous") else
+            "按原冻结合同记录收盘权重收益代理；不等于下一开盘现金成交净值。恢复边界以前及补算不计入本段收益。" if forward_start else _ADJUDICATION),
         as_of=as_of,
         freshness=compute_freshness(as_of, config.get("reference_date")),
         curve_granularity="DAILY",
@@ -145,6 +157,13 @@ def adapt_cta_r_forward(line_id: str, name: str, config: Dict[str, Any]) -> Pape
             path=str(ledger_path),
             sha256=compute_sha256(str(ledger_path)),
             produced_at=produced_at,
+            venue="sse_szse" if forward_start or config.get("continuous") else None,
+            instrument_type="ETF_ADJUSTED_PROXY" if forward_start or config.get("continuous") else None,
+            price_source="tencent_public_qfq" if forward_start or config.get("continuous") else None,
+            observation_kind="continuous_paper" if config.get("continuous") else "forward_paper" if forward_start else None,
+            segments=observation_segments(ledger) if config.get("continuous") else [],
+            execution_symbols=list(CONTRACT["universe"]) if forward_start or config.get("continuous") else [],
         ),
         safety=LineSafety(research_only=True, orders_authorized=False),
+        error=latest_error,
     )

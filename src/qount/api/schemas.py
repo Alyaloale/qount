@@ -89,6 +89,8 @@ class LineSource(BaseModel):
     price_source: Optional[str] = None
     observation_kind: Optional[str] = None
     execution_symbols: List[str] = Field(default_factory=list)
+    # Continuous simulations retain the distinction between old results, catchup and observed runs.
+    segments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LineSafety(BaseModel):

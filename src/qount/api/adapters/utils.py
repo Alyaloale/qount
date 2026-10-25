@@ -11,6 +11,19 @@ from typing import Optional
 from qount.api.schemas import LineSafety, LineSource, PaperLine
 
 
+def observation_segments(rows):
+    """Describe contiguous sample kinds without treating reconstructed rows as observed runs."""
+    segments=[]
+    for row in rows:
+        kind=row.get("sample_kind") or "historical"
+        if not segments or segments[-1]["kind"]!=kind:
+            segments.append(dict(kind=kind,start=row["date"],end=row["date"],count=0))
+        segment=segments[-1]
+        segment.update(end=row["date"],count=segment["count"]+1)
+        if row.get("recorded_at"):segment["recorded_at"]=row["recorded_at"]
+    return segments
+
+
 def compute_sha256(path: str) -> Optional[str]:
     if not os.path.exists(path):
         return None

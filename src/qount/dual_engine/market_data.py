@@ -409,6 +409,7 @@ def _binance_history_and_fill(
     observed: dt.datetime,
     config: DualEngineMarketConfig,
     getter: JsonGetter,
+    current_quote: bool = False,
 ) -> tuple[tuple[float, ...], float, int, tuple[str, str], dict[str, object]]:
     observed_ms = int(observed.timestamp() * 1000)
     payload, history_hash = getter(
@@ -428,6 +429,17 @@ def _binance_history_and_fill(
     closed = closed[-100:]
     closes = tuple(_number(row[4], name=f"paper_binance_close:{symbol}") for row in closed)
     cutoff_ms = int(closed[-1][6])
+    if current_quote:
+        quote, fill_hash = getter(_url(BINANCE_BASE_URL, "/api/v3/ticker/bookTicker", {"symbol":symbol}),
+                                  {}, config.timeout_seconds)
+        if not isinstance(quote, Mapping) or quote.get("symbol")!=symbol:
+            raise DualEngineMarketDataError(f"paper_binance_current_quote_invalid:{symbol}")
+        # Research friction remains charged by the paper ledger. Use the current
+        # midpoint, never the first trade many hours before this decision.
+        bid=_number(quote.get("bidPrice"),name="paper_bid")
+        ask=_number(quote.get("askPrice"),name="paper_ask")
+        if ask<bid:raise DualEngineMarketDataError("paper_crossed_book")
+        return closes,(bid+ask)/2,cutoff_ms,(history_hash,fill_hash),_binance_daily_bar(closed[-1],symbol=symbol)
     trades, fill_hash = getter(
         _url(
             BINANCE_BASE_URL,
@@ -496,6 +508,7 @@ def collect_market_cycle(
     getter: JsonGetter = _public_json_get,
     environment: Mapping[str, str] | None = None,
     cache_root: Path | None = None,
+    equity_source: str = "tiingo_public",
 ) -> PaperCycleInput:
     """Collect one no-order cycle; scheduled dates are explicit and fail closed."""
 
@@ -512,7 +525,9 @@ def collect_market_cycle(
     g20_signal_day = event == "daily-close" and session_text in config.g20_signal_dates
     g20_rebalance_day = event == "g20-open"
     token = (environment or os.environ).get(config.tiingo_token_env, "")
-    if not token:
+    if equity_source not in {"tiingo_public", "yahoo_public"}:
+        raise DualEngineMarketDataError("paper_equity_source_invalid")
+    if not token and equity_source == "tiingo_public":
         raise DualEngineMarketDataError("paper_tiingo_token_missing")
     start = session - dt.timedelta(days=config.history_calendar_days)
 
@@ -524,7 +539,7 @@ def collect_market_cycle(
     tiingo_cutoffs: list[dt.datetime] = []
     tiingo_sessions: list[dt.date] = []
     for symbol in (*G20_PROXY_SYMBOLS, *G20_EXECUTION_SYMBOLS, "BIL"):
-        if cache_root is None:
+        if cache_root is None or equity_source == "yahoo_public":
             rows, payload_hash = _tiingo_daily(
                 symbol,
                 start=start,
@@ -625,6 +640,7 @@ def collect_market_cycle(
             observed=observed,
             config=config,
             getter=getter,
+            current_quote=equity_source == "yahoo_public",
         )
         crypto_closes[symbol] = closes
         mark_prices[symbol] = fill
@@ -646,7 +662,7 @@ def collect_market_cycle(
         fill_prices=fill_prices,
         symbol_rules=rules,
         source_hashes={
-            "tiingo_public": canonical_hash(tiingo_hashes),
+            equity_source: canonical_hash(tiingo_hashes),
             "binance_public": canonical_hash(binance_hashes),
             "binance_exchange_rules": rules_hash,
         },
