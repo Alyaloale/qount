@@ -1,11 +1,145 @@
 # 新前端部署执行手册（qount.alyaloale.com）
 
-> **状态**：资产、实盘收益、账户记录与十一线研究目录已部署｜**执行者**：owner／授权 Agent｜**最后更新**：2026-10-17 UTC
+> **状态**：资产、实盘收益、账户记录与十一线研究目录已部署｜**执行者**：owner／授权 Agent｜**最后更新**：2026-10-23 UTC
 > **目标**：把新的只读 API + 双屏前端部署到既有域名 `https://qount.alyaloale.com/`，替换现有旧 dashboard。
 > **本文性质**：**纯操作手册**。每一步都给出可直接复制的命令、预期输出、失败判据与回退方式。
 > **默认边界**：`research_only=true / orders_authorized=false`。全程不涉及下单、不修改交易授权。
 
 ---
+
+## G20现金分红模拟修复（2026-10-25 13:10 UTC）
+
+owner要求修复优化最新G20模拟，发布位于`/root/qount-releases/g20-cash-20261025/`。`candidate/`以独立SQLite及模拟状态验证，再更新G20现金模块/适配器、既有收集器调用、公司行动查询展示与原注册表G20项；其他注册项保持线上原值。新增账本为`/var/lib/qount/paper/forward-20261022/dual-engine/g20-cash/forward.json`，由原每日及G20开盘timer调用，不新增服务。原四账户状态、冻结合同、旧历史和真实执行权限不改。
+
+新账本除息记应收、付款日收盘转现金，未知付款日不使用；BIL金额/付款日核对发行人，税务与未核验金额精度限制见[结果](../state/research_runs/g20_cash_repair_20261025/report.md)。2026年204点全部标为本次历史重建，发布后新观测按真实时间追加。13:10发布后API为7条模拟/11条研究、ingest ok、stale/missing 0；G20累计21.3875%、MDD15.9479%，原18.5649%曲线保留作对照。其他10条线金融行、原四账户状态及实盘保护文件不变，orders/fills/macro_stops仍2/0/0；仅重启只读API一次。`published.json`和`verification.json`记录实际核对，`backup/`保留原源码、注册表及查询库一致性备份。
+
+本发布回退会拒绝覆盖后续源码/其他注册项，恢复原源码与注册表后从当前来源重建派生查询并重启API；保留新现金账本、原模拟状态和真实账户，不用旧SQLite覆盖后续金融状态：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/g20-cash-20261025/publish.py --rollback'
+```
+
+## 模拟公开日线容错及精度修复（2026-10-23 15:01 UTC）
+
+owner要求修复ETF HTTP 501和Dual-Engine未推进。发布`/root/qount-releases/paper-input-repair-20261023T145537Z/`，仅更新`src/qount/research_data/paper_daily.py`。腾讯主/备用节点分别成对取得原始及复权日线，完整校验后写缓存；明确结束日期，避免开放查询追加两位小数复权报价而与三位小数原始收盘不一致，旧查询缓存不复用。Yahoo完整OHLC/日期校验移入双节点重试，不放松校验或填造价格。
+
+`backup/`保留原模块、模拟账户状态与SQLite一致性备份，未备份凭据。Dual及research-paper既有服务实际运行成功；7条模拟/11条研究、ingest ok，Dual四账户各304条至22日，ETF3266条至23日。原净值与交易前缀一致，第二次运行无重复追加；27项本地测试、VPS六项故障回归及三标的公开日线校验通过。实盘源码、交易service/timer哈希与执行计数2/0/0不变，未重启API。恢复过程和校验结果见本目录`before.json`、`verified.json`。
+
+回退只恢复原模拟输入模块，拒绝覆盖后续版本，保留已追加的模拟记录、缓存、真实账户和调度：
+
+```bash
+ssh qount-vps 'python3 /root/qount-releases/paper-input-repair-20261023T145537Z/rollback.py'
+```
+
+## 宏观日线空值与提前预取修复（2026-10-22 14:25 UTC）
+
+owner要求修复BLOCKED、增加重试、提前获取数据并分析补单。14:00故障来自Yahoo两节点13个代理10月21日日线全部空值，非币安订单拒绝。发布`/root/qount-releases/qount-macro-daily-20261022T142200Z/`，仅`src/qount/research_data/macro_live.py`、`src/qount/execution/macro_live.py`、`scripts/operations/run_macro_1atr.py`。校验失败切换节点；预取最多4次、轮间退避1秒，正式窗口最多2次，各5秒超时。沿既有小时timer在纽约交易日17:00、06:00、09:00预取；保留同日期有效缓存、最新完整日线检查和90秒下单截止。
+
+周期锁内确认真实空仓及无挂单，备份三文件、SQLite、状态和原失败收据；将Mac当天10:41 UTC保存的13份完整Yahoo原始快照按原字节/哈希恢复到运行缓存，研究源未改。`input-sources.json`记录来源及时间，`release.json`记录源码/保护文件哈希，`read-only-check/result.json`保留隔离状态和仅GET客户端回查：14:00为`HOLD_NO_SIGNAL / candidate_count=0 / regime_off`，不补单。76项本地相关测试通过；VPS候选67项运行、1项缺历史缓存跳过。线上全部代理日期及8合约公开输入实际校验成功，14:26:30运行既有自动service为`HOLD_MISSED_DECISION`、exit 0；持仓、普通/Algo挂单均0，执行计数2/0/0未变，预算/配置/service/timer哈希保持原值，API未重启。
+
+回退在VPS原服务环境加载后执行（脚本不加载或复制凭据）：
+
+```bash
+cd /root/qount
+PYTHONPATH=src .venv/bin/python /root/qount-releases/qount-macro-daily-20261022T142200Z/publish.py --rollback
+```
+
+回退会检查当前代码仍属本发布、账户新鲜空仓且无未决状态，仅恢复三处源码；保留真实执行库、状态、已校验公开缓存及timer。原始失败收据保留在发布目录`backup/live-result.json`，不把事后诊断写成正式决策。
+
+## 25%风险预算优化发布（2026-10-20 08:12 UTC）
+
+owner明确要求“优化并发布”，08:12:19 UTC发布`/root/qount-releases/macro-risk25-20261020T081024Z/`，仅三个文件：
+
+- `src/qount/strategies/macro_1atr.py`：压力预算50%→25%，入场和既有资金费续期均读取此常量。
+- `scripts/operations/run_macro_1atr.py`：收据从同一常量读取预算，避免运行值与展示值不一致。
+- `web/app/index.html`：当前策略说明同步25%。
+
+保留原信号、八资产、成交量容量、20倍名义上限、50倍设置杠杆上限、7/21天期限和小时自动timer。没有部署盘口扩容、2x名义上限或部分续期减仓实验。
+
+发布前及08:19发布后直接GET确认USDT权益15.27112826、无持仓、普通挂单或Algo挂单；周期锁内备份原三文件、执行SQLite、状态及旧收据。SQLite quick_check与源文件备份哈希核对通过；回退保留真实账本与后续状态，不用旧快照覆盖。136项相关Python测试、7项前端测试、仓库检查通过；旧50%研究控制及新25%候选入场几何、资金费预算和时间因果核对通过。回退导入校验兼容旧版字面量预算收据，已在隔离进程验证，未执行线上回退。
+
+08:12:34 UTC运行既有`qount-1atr-auto.service`返回`auto_live / WAIT_NY_1000 / FLAT`、预算0.25、exit 0。08:18核对timer active/enabled、API health ok、PID368717未变；代码/HTTP哈希匹配，接口预算0.25。执行orders/fills/macro_stops仍2/0/0（2条为原有记录），无新增订单或成交。下一检查09:00:05 UTC，下一允许入场14:00 UTC（北京时间22:00）。源站和Mac公网匿名请求均401；VPS公网请求被Cloudflare以403拒绝，按网络视角单独记录，没有改动边缘访问配置。保护文件哈希、交易服务和timer配置保持一致，未重启API。
+
+发布记录为`release.json`、`published.json`、`verification.json`；回退先确认账户新鲜空仓、无未决状态和当前源码仍属本发布，拒绝覆盖后续版本：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/macro-risk25-20261020T081024Z/rollback.py'
+```
+
+回退仅恢复三个代码/页面文件，预算恢复50%，保留真实执行库、状态和原timer；只用于本次发布故障恢复。
+
+## Yahoo行情代理路径修复（2026-10-20 14:26 UTC）
+
+owner要求“修复根因查看”。正式14:00周期再次`URLError`；加载服务环境代理后两个Yahoo节点均约5秒超时，局部无代理直连约0.5秒成功。发布`/root/qount-releases/macro-yahoo-direct-20261020T142700Z/`，只替换`src/qount/research_data/macro_live.py`：Yahoo日线使用独立`ProxyHandler({})`，保留双节点各5秒和原数据校验，不改环境或币安客户端。
+
+周期锁内直接GET确认空仓及无普通/Algo挂单，备份原源码、执行SQLite、宏观状态和失败收据。65项本地测试通过；VPS回归48通过/1缺历史缓存跳过。公开GET实际补齐13份10月19日日线并验证8合约小时/资金费/容量输入，约6秒。隔离副本仅GET回查今日14:00为`HOLD_NO_SIGNAL / candidate_count=0`，只作事后输入诊断，不替代正式失败记录。随后既有自动service成功返回`14:26:52Z / HOLD_MISSED_DECISION`，未补单；只读observer刷新后运行状态`AUTO`，API未重启。直接GET再次确认空仓、普通/Algo挂单均0，USDT权益15.27112826，执行计数仍2/0/0；策略、配置及service/timer哈希不变。
+
+发布源码及备份哈希、保护文件哈希和前后账户核对分别保存在`release.json`与`verified.json`；隔离诊断在`read-only-check/`。回退检查当前源码属于本发布、账户新鲜空仓且无未决单/状态，仅恢复源码，保留真实账本、缓存、状态及timer：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/macro-yahoo-direct-20261020T142700Z/publish.py --rollback'
+```
+
+## 入场公开输入容错修正（2026-10-19 14:24 UTC）
+
+今日14:00正式周期报`input_or_exchange_error:URLError`，仍空仓、无新订单。原收据无法确定底层网络原因；复查两个Yahoo节点均恢复可达。按本轮发布并运行授权，补发`/root/qount-releases/macro-input-retry-20261019T142435Z/`，仅`src/qount/research_data/macro_live.py`与`src/qount/execution/macro_live.py`：公开日线最多两个节点各5秒，在原每小时周期的纽约交易日09:00空仓分支预取已完成日线；失败不占用正式决策、不使用旧数据。策略、档位修正、权限及服务/timer配置保持原值。
+
+175项相关测试与仓库检查通过。空仓及周期锁内备份两文件、执行SQLite、状态和失败收据；哈希与导入验证通过。13个代理文件截至10月16日、8个合约历史已实际预热；14:25在本发布的`read-only-check/`隔离副本与仅GET客户端回查14:00信号，得到XLE0.47/8x候选，非实际可成交证明。随后重新运行既有自动service，14:25:42收据`HOLD_MISSED_DECISION / entry_decision_window_expired`、exit 0，未补单。14:26核对timer active，执行orders/fills/macro_stops计数仍2/0/0，空仓；下一入场10月20日14:00 UTC。
+
+回退仅恢复本轮两个源码文件，保留真实账户/执行账本与timer；检查当前文件仍属本发布且账户新鲜空仓：
+
+```bash
+/root/qount/.venv/bin/python /root/qount-releases/macro-input-retry-20261019T142435Z/rollback.py
+```
+
+先回退本轮才能回退早先档位补丁；旧发布的哈希保护会拒绝覆盖后续代码。取消本轮会失去预热与有界重试，不改变真实档位修正。
+
+## 逐合约保证金档位修正（2026-10-19 UTC）
+
+owner要求“先发布优化后的策略并运行”，09:23 UTC发布`/root/qount-releases/macro-brackets-20261019T092306Z/`：仅`src/qount/strategies/perpetual.py`与`src/qount/execution/macro_live.py`。取消统一维持保证金不超过1%的拒绝门槛，以账户真实档位约束杠杆、名义金额与清算距离；下单前重查。研究参数仍50%压力预算、20倍名义上限、原10%分钟量容量，不发布容量/风险实验变体。
+
+163项相关测试及仓库规范检查通过；在空仓、无订单、周期锁内备份代码、执行SQLite和状态，数据库quick_check通过。源码哈希、运行导入、策略配置和服务/timer哈希核对通过。立即启动既有`qount-1atr-auto.service`，09:23:26 UTC收据`auto_live / WAIT_NY_1000 / FLAT`，exit 0；自动timer active，订单/成交/保护表计数未增加（orders表2条为既有记录）。账户权益15.27112826USDT。未重启API，下一允许入场10月19日14:00 UTC。
+
+回退只恢复这两个源码文件，保留真实账本和timer；需新鲜空仓观测、无未决状态及当前文件仍属本发布：
+
+```bash
+/root/qount/.venv/bin/python /root/qount-releases/macro-brackets-20261019T092306Z/rollback.py
+```
+
+回退会重新引入旧1%门槛，应仅用于本修正故障恢复。
+
+## 跨年日历维护（2026-10-18 UTC）
+
+owner要求“先补齐日历支持”，发布`/root/qount-releases/calendar-20261018T071711Z/`，仅`src/qount/research_data/bars.py`与`src/qount/execution/macro_live.py`两文件。按[NYSE官方日历](https://www.nyse.com/trade/hours-calendars)收录2027、2028休市及提前收市，保留2026全部行为。纽约10:00决策由ZoneInfo换算，提前收市日线仍16:00可用；跨年特征及只读接口的下一允许入场日期使用同一日历。
+
+- 未收录年份仍拒绝新仓；已有持仓先做已知退出、保护与已完成小时移动止损，续期日历未知按续期失败全平。其余日历检查报阻塞，保留原生止损，不默认把未知年份当交易日。
+- 本地121项相关Python测试通过，含365天旧日历逐日比较、休市/提前收市、夏令时、跨年特征/接口、未知年份保护和退出。原基础/双成本完整曲线及成交精确复现；VPS两份离线测试共43项，42项通过、1项缺本地历史行情缓存而跳过，使用替身交易所及临时状态，无真实下单。
+- 发布前既有observer确认账户空仓，在周期锁内备份两个原文件、执行SQLite及宏观状态/收据，SQLite quick_check通过。`release.json`保存前后源码与受保护文件哈希，`before/`为原代码、`state/`为执行状态备份；未复制凭据或覆盖真实账本。
+- 只读API重启一次；交易timer、service配置、策略参数、资产映射、纯策略函数与Caddy哈希不变。07:18 UTC核对当前两文件与保护文件哈希匹配，API/自动timer active、AUTO、无HALT、空仓、USDT权益15.27112826、新策略订单0；下一允许入场仍为10月19日14:00 UTC。
+
+回退只恢复本轮两文件并重启只读API，保留执行/账户状态和timer配置；要求新鲜空仓观测、无持仓/未决状态且当前文件仍属本发布，否则拒绝覆盖。恢复旧日历会重新限于2026，跨年后不能把回退当作继续运行的方案：
+
+```bash
+ssh qount-vps 'python3 /root/qount-releases/calendar-20261018T071711Z/rollback.py'
+```
+
+## 到期退出与必要告警修复（2026-10-17 UTC）
+
+owner在精简设计后要求“执行”。发布目录`/root/qount-releases/live-reliability-20261017T132315Z/`，共9个源码/部署模板文件；实际observer新增通知库环境drop-in，未新增timer或服务。既有自动交易周期配置、原策略参数/资产映射和Caddy保持原值；只读API主动重启一次。发布前核对账户空仓、无未决状态，持有既有周期锁时保存执行库和宏观状态。
+
+- 到期退出提前于非必要查询，明细采集不再作为风险退出前置；续期income未知按原续期失败规则退出。保留原client ID核对、实际数量边界和原生保护，部分退出/超时/重启场景经回归验证。未实际触发新策略开平仓。
+- 两个0700入口目录仅所有者修正为root，模式不变；既有通知重试与账户observer在实际服务约束下成功。通知通过独立observer复用原通知库/重试；失败、阻塞、timer停止及收据过期去重通知，恢复只提示一次，普通等待不推送。通知失败不阻塞执行，不覆盖VPS整机失联。
+- 前端依据实际timer/服务与周期收据展示状态，透出最近正式决策/拒绝原因，并读取实际微信投递结果。历史微信`ret=-2`失败在owner发送新入站消息刷新会话后恢复；13:31:55 UTC一条明确授权的验收通知首次发送即获`DELIVERED`，只表示通道接受。投递诊断两文件补丁记在`release.json`内，当前哈希已更新，原版备份在`delivery-diagnostic-before/`。
+- `state/`包含执行库、宏观状态/收据与账户历史备份；SQLite使用backup API，隔离恢复的quick_check及JSON身份核对通过，凭据不在备份内。同机副本用于误操作恢复，不作为异机灾备。
+- 129项相关Python、17项前端测试通过；核心发布版本正式浏览器六宽度回归通过。投递诊断两文件补丁后浏览器重跑因SSH转发中断未完成，另行直连SSH核对API/自动timer active，API结果、当前9文件及静态HTTP哈希通过。13:24 UTC核对收据13:00:05为`WAIT_NY_1000`，空仓、无HALT、新策略订单0，USDT权益15.27112826；13:34 observer返回AUTO及通知通道接受状态。跨年日历未在本轮扩展。
+
+代码回退先核对当前9文件哈希且要求宏观状态空仓、无未决意图；只恢复源码及observer通知库drop-in，保留真实账户/执行状态和目录所有者修正，不停交易timer，不恢复错误的旧策略。遇后续版本拒绝覆盖，执行前必须另行只读核对交易所实际仓位及未决单：
+
+```bash
+ssh qount-vps 'python3 /root/qount-releases/live-reliability-20261017T132315Z/rollback.py'
+```
+
+本次修复沿用既有宏观实盘修正与本轮“执行”授权，不扩大资金、策略或真实交易权限。当前状态见[current](current.md)，实施范围及按需项见[设计计划](system-improvement-design-plan-2026-10.md)。
 
 ## 个人系统、真实收益与研究查询发布（2026-10-16/17 UTC）
 

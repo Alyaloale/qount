@@ -1,6 +1,6 @@
 # 文档入口
 
-> **状态**：active｜**权威**：文档导航；遵循 [AGENTS.md](../AGENTS.md)｜**最后更新**：2026-10-12
+> **状态**：active｜**权威**：文档导航；遵循 [AGENTS.md](../AGENTS.md)｜**最后更新**：2026-10-25
 > **适用范围**：当前事实、规则、运行手册、参考资料、活跃研究和历史归档的稳定入口。
 > **TL;DR**：当前事实只在 [current.md](current.md)。本页组织导航，不复制生产状态或研究结论。
 
@@ -24,6 +24,8 @@
 ## Architecture, research and records
 
 - [个人交易系统收敛方案](personal-system-consolidation-plan.md) — 个人项目的最小结构、数据复用、研究线分类和前后端职责。
+- [资产管理策略选择与设计依据](asset-management-strategy-review-2026-10.md) — 纳指风险预算、G20、CTA-R等候选的证据、适用角色、资金规模与组合设计限制。
+- [系统改进设计与实施计划](system-improvement-design-plan-2026-10.md) — 项目检查后的执行退出、通知、运行状态、策略绩效与连续运行改进设计；实施与生产授权分开。
 - [架构主设计](system-architecture-design.md) — 当前研究、只读助手与生产执行边界；[旧架构与迁移记录](archive/system-architecture-design-pre-2026-10-12.md)保留历史细节。
 - [系统环境与研究全景手册](system-environment-and-research-landscape.md) — 主机分工、配置规范、研究导航与排障。
 - [存储与计算拓扑](storage-topology.md)
