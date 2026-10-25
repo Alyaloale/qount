@@ -6,8 +6,14 @@ from qount.research_data.regime import compute_ema
 
 def exit_features(features, policy):
     """Replace only causal holding eligibility; entry/rank/size are unchanged."""
-    if policy not in ("hold_tactical", "hold_price_trend", "hold_structural"):
+    if policy not in ("hold_tactical", "hold_price_trend", "hold_structural", "state_exit_price_confirm"):
         raise ValueError("unknown_tactical_exit_policy")
+    if policy == "state_exit_price_confirm":
+        # Both inputs already include the original structural/systemic vetoes.
+        # Retain a trend on a state-label change only while its daily price
+        # remains above EMA20; entries, ranks, horizons and MR holds stay frozen.
+        return {s: [{**row, "hold_tactical": row["hold_tactical"] or row["hold_price_trend"]}
+                    for row in rows] for s, rows in features.items()}
     return {s: [{**row, "hold_tactical": row[policy]} for row in rows] for s, rows in features.items()}
 
 

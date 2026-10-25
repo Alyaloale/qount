@@ -95,6 +95,58 @@ class TestFundingLease(unittest.TestCase):
         self.assertAlmostEqual(t["funding_cost_cap_usdt"], t["risk_budget_usdt"]-base)
         self.assertTrue(all(r["funding_cost_cap"] == t["funding_cost_cap_usdt"] for r in t["funding_lease_reviews"]))
 
+    def test_entry_headroom_reduces_quantity_without_expanding_lifetime_budget(self):
+        data, features = self.fixture(extend=True)
+        original = self.run_lease(data, features, funding_lease_budget="risk")["trades"][0]
+        result = self.run_lease(data, features, funding_lease_budget="risk",
+                                funding_lease_entry_utilization=.5)
+        t = result["trades"][0]
+        self.assertLess(t["quantity"], original["quantity"])
+        self.assertEqual(t["risk_budget_usdt"], original["risk_budget_usdt"])
+        self.assertLessEqual(t["stress_risk_usdt"], .5*t["risk_budget_usdt"])
+        self.assertGreater(t["funding_cost_cap_usdt"], original["funding_cost_cap_usdt"])
+        self.assertTrue(all(r["funding_cost_cap"] == t["funding_cost_cap_usdt"]
+                            for r in t["funding_lease_reviews"]))
+        self.assertAlmostEqual(10+sum(x["net_pnl"] for x in result["trades"]),
+                               result["summary"]["final_equity"])
+
+    def test_entry_headroom_ignores_nonleased_setups_and_default_is_unchanged(self):
+        data, features = self.fixture()
+        original = self.run_lease(data, features, funding_lease_budget="risk")
+        self.assertEqual(original, self.run_lease(data, features, funding_lease_budget="risk",
+                                                 funding_lease_entry_utilization=1))
+        for rows in features.values():
+            for row in rows:
+                row["tactical_setup"] = "breakout"
+        original = self.run_lease(data, features, funding_lease_budget="risk")
+        self.assertEqual(original, self.run_lease(data, features, funding_lease_budget="risk",
+                                                 funding_lease_entry_utilization=.9))
+
+    def test_entry_headroom_is_causal_and_still_exits_after_cost_overspend(self):
+        data, features = self.fixture(extend=True)
+        args = dict(funding_lease_budget="risk", funding_lease_entry_utilization=.9)
+        baseline = self.run_lease(data, features, **args)["trades"][0]
+        now = baseline["funding_lease_reviews"][0]["time"]
+        changed = copy.deepcopy(data)
+        d = changed[baseline["symbol"]]
+        d["funding"].append(dict(fundingTime=now*1000+1, fundingRate="1",
+                                markPrice="100", rateType="Regular"))
+        d["funding"].sort(key=lambda row: int(row["fundingTime"]))
+        result = self.run_lease(changed, features, **args)["trades"][0]
+        self.assertEqual(result["quantity"], baseline["quantity"])
+        self.assertEqual(result["funding_lease_reviews"][0], baseline["funding_lease_reviews"][0])
+        self.assertEqual(result["exit_reason"], "funding_cost_exit")
+        self.assertEqual(result["exit_time"], now+3600)
+
+    def test_entry_headroom_rejects_invalid_or_unrelated_configuration(self):
+        data, features = self.fixture()
+        for value in (0, -1, 1.01, float("nan"), float("inf")):
+            with self.assertRaisesRegex(ValueError, "invalid_funding_lease_entry_utilization"):
+                self.run_lease(data, features, funding_lease_budget="risk",
+                               funding_lease_entry_utilization=value)
+        with self.assertRaisesRegex(ValueError, "entry_headroom_requires_risk_funding_lease"):
+            self.run_lease(data, features, funding_lease_entry_utilization=.9)
+
     def test_partial_listing_history_never_backfills_prices_or_bypasses_atr_warmup(self):
         data, features = self.fixture(extend=True)
         listing = data["QQQUSDT"]["trade"][24*21].t

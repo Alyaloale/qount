@@ -1,10 +1,13 @@
 """Causality and account checks for the isolated ETF perpetual experiment."""
 import datetime as dt
+import copy
 import unittest
 from unittest.mock import patch
 
 from qount.research.binance_etf_leverage import feature_at, funding_reserve, replay
 from qount.research.small_account_breakout import Bar, NY, session
+from qount.strategies.macro_1atr import sizing_config
+from qount.strategies.perpetual import size
 
 
 def fixture():
@@ -133,6 +136,47 @@ class TestBinanceETFLeverage(unittest.TestCase):
         low = replay(data, features, gross_cap=2, risk_fraction=0.03)
         high = replay(data, features, gross_cap=3, risk_fraction=0.03)
         self.assertEqual(low["trades"], high["trades"])
+
+
+class TestVenueBracketSizing(unittest.TestCase):
+    def setUp(self):
+        self.rule=fixture()[0]['SPYUSDT']['rule']
+        self.rule['liquidationFee']='.015'
+    def sized(self,brackets=None,equity=15):
+        rule=copy.deepcopy(self.rule)
+        if brackets is not None:rule['leverage_brackets']=brackets
+        return size(sizing_config(),rule,100,100.25,1.56,equity,equity*.5,
+                    .0007,.0005,.0025,100000,liquidation_stop_multiple=1.25)
+    def tier(self,rate=.025,leverage=20,floor=0,cap=10000):
+        return dict(notionalFloor=floor,notionalCap=cap,maintMarginRatio=rate,initialLeverage=leverage)
+    def test_actual_maintenance_changes_size_without_excluding_symbol(self):
+        old,_=self.sized()
+        new,reason=self.sized([self.tier()])
+        self.assertEqual(reason,'accepted')
+        self.assertEqual(old['leverage'],9)
+        self.assertEqual(new['leverage'],8)
+        self.assertLess(new['quantity'],old['quantity'])
+        self.assertEqual(new['maintenance_margin_ratio'],.025)
+        self.assertLessEqual(new['stress_risk_usdt'],7.5)
+    def test_venue_maximum_leverage_caps_sizing(self):
+        order,_=self.sized([self.tier(leverage=3)])
+        self.assertEqual(order['leverage'],3)
+        self.assertLessEqual(order['margin_usdt'],12)
+    def test_selects_largest_feasible_quantity_across_notional_tiers(self):
+        order,_=self.sized([self.tier(cap=200),self.tier(.05,3,200,10000)],equity=1000)
+        self.assertEqual(order['leverage'],3)
+        self.assertGreaterEqual(order['notional_usdt'],200)
+        self.assertLess(order['notional_usdt'],10000)
+        self.assertLessEqual(order['margin_usdt'],800)
+    def test_final_tier_caps_quantity_before_order_is_built(self):
+        order,_=self.sized([self.tier(cap=100)],equity=1000)
+        self.assertLess(order['notional_usdt'],100)
+        self.assertEqual(order['quantity'],.99)
+    def test_missing_nonfinite_and_discontinuous_tiers_reject(self):
+        for tiers in ([],[self.tier(rate=float('nan'))],[self.tier(floor=1)],
+                      [self.tier(cap=100),self.tier(floor=101)]):
+            with self.subTest(tiers=tiers),self.assertRaisesRegex(ValueError,'invalid_leverage_brackets'):
+                self.sized(tiers)
 
 
 if __name__ == "__main__":

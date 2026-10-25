@@ -1,5 +1,6 @@
 """Reusable perpetual sizing and unit accounting; no venue IO or orders."""
 from __future__ import annotations
+import copy
 import math
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
@@ -37,10 +38,53 @@ def common_step(filters):
     return Decimal(math.lcm(*(int(v * scale) for v in values))) / scale
 
 
+def normalize_brackets(rows):
+    """Validate the account's ordered notional tiers before using them for sizing."""
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("invalid_leverage_brackets")
+    result, previous_cap = [], 0.0
+    for row in rows:
+        bracket = {k: float(row[k]) for k in
+                   ("notionalFloor", "notionalCap", "maintMarginRatio", "initialLeverage")}
+        if (not all(math.isfinite(v) for v in bracket.values())
+                or bracket["notionalFloor"] != previous_cap
+                or bracket["notionalCap"] <= previous_cap
+                or not 0 <= bracket["maintMarginRatio"] < 1
+                or bracket["initialLeverage"] < 1
+                or not bracket["initialLeverage"].is_integer()):
+            raise ValueError("invalid_leverage_brackets")
+        bracket["initialLeverage"] = int(bracket["initialLeverage"])
+        result.append(bracket)
+        previous_cap = bracket["notionalCap"]
+    return result
+
+
 def size(config, rule, reference, price, volatility, equity, budget, reserve, fee, slip, liquidity,
          *, side=1, liquidation_stop_multiple=3.0):
     if side not in (-1, 1) or not math.isfinite(liquidation_stop_multiple) or liquidation_stop_multiple < 1:
         raise ValueError("invalid_side_or_liquidation_cushion")
+    if "leverage_brackets" in rule:
+        # Quantity determines its tier, while the tier determines leverage and
+        # quantity. Solve each tier, then retain the largest feasible quantity.
+        candidates, reasons = [], []
+        for bracket in normalize_brackets(rule["leverage_brackets"]):
+            tier_rule = {k: v for k, v in rule.items() if k != "leverage_brackets"}
+            tier_rule["maintenance_margin_ratio"] = bracket["maintMarginRatio"]
+            tier_config = copy.deepcopy(config)
+            tier_config["sizing"]["exchange_leverage"]["maximum"] = min(
+                config["sizing"]["exchange_leverage"]["maximum"], bracket["initialLeverage"])
+            order, reason = size(tier_config, tier_rule, reference, price, volatility,
+                equity, budget, reserve, fee, slip,
+                min(liquidity, math.nextafter(bracket["notionalCap"], 0)/price),
+                side=side, liquidation_stop_multiple=liquidation_stop_multiple)
+            if order is not None and bracket["notionalFloor"] <= order["notional_usdt"] < bracket["notionalCap"]:
+                order.update(maintenance_margin_ratio=bracket["maintMarginRatio"], leverage_bracket=bracket)
+                candidates.append(order)
+            else:
+                reasons.append(reason if order is None else "venue_notional_bracket")
+        if candidates:
+            return max(candidates, key=lambda p: (p["quantity"], p["leverage"])), "accepted"
+        return None, reasons[0]
     filters = rule["filters"]
     if isinstance(filters, list):
         filters = {f["filterType"]: f for f in filters}
@@ -53,7 +97,9 @@ def size(config, rule, reference, price, volatility, equity, budget, reserve, fe
     if friction > config["cost_model"]["ordinary_friction_limit_fraction_of_stop"]*distance:
         return None, "friction_budget"
     gap = config["cost_model"]["stop_gap_reserve"]
-    buffer = 0.01 + float(rule.get("liquidationFee", rule.get("liquidation_fee", 0.015)))
+    # Historical inputs without account tiers retain their explicit 1% proxy.
+    # Ignore the tier's maintenance deduction conservatively in this cushion.
+    buffer = float(rule.get("maintenance_margin_ratio", .01)) + float(rule.get("liquidationFee", rule.get("liquidation_fee", 0.015)))
     leverage = config["sizing"]["exchange_leverage"]["maximum"]
     while leverage and (1/leverage-buffer)/(1-side*buffer) < liquidation_stop_multiple*(distance+gap):
         leverage -= 1

@@ -13,6 +13,23 @@ from test_binance_macro_attack import macro_fixture
 
 
 class TestMacroSignals(unittest.TestCase):
+    def test_state_exit_confirmation_preserves_entries_and_structural_veto(self):
+        rows = [dict(available=i, entry_tactical=True, rank_tactical=3,
+                     hold_tactical=tactical, hold_price_trend=price, hold_structural=structural)
+                for i, (tactical, price, structural) in enumerate(
+                    ((False, True, True), (False, False, True), (False, False, False), (True, False, True)))]
+        features = {"A": rows}
+        original = copy.deepcopy(features)
+        result = exit_features(features, "state_exit_price_confirm")
+        self.assertEqual([r["hold_tactical"] for r in result["A"]], [True, False, False, True])
+        for old, new in zip(rows, result["A"]):
+            self.assertEqual({k: v for k, v in old.items() if k != "hold_tactical"},
+                             {k: v for k, v in new.items() if k != "hold_tactical"})
+        self.assertEqual(features, original)
+        changed = copy.deepcopy(features)
+        changed["A"][-1]["hold_price_trend"] = True
+        self.assertEqual(exit_features(changed, "state_exit_price_confirm")["A"][:-1], result["A"][:-1])
+
     def test_exit_policy_preserves_entries_ranks_and_information_times(self):
         features = {"A": [dict(available=100, entry_tactical=True, rank_tactical=3,
                                hold_tactical=False, hold_price_trend=True, hold_structural=True)]}

@@ -78,7 +78,8 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
            friction_limit_fraction_of_stop=0.2, tactical_setup_policies=None,
            entry_end_exclusive=None, funding_lease_hours=None, funding_lease_budget="cost",
            allow_partial_histories=False, funding_lease_resize=False, lease_exit_liquidity_caps=None,
-           capital_flows=None):
+           capital_flows=None, funding_lease_entry_utilization=1.0, entry_execution_model=None,
+           exit_execution_model=None, funding_lease_setups=None, entry_risk_controls=None):
     """Hourly pessimistic stop fills, signed funding, isolated margin proxy.
 
     No intrabar trailing updates. A decision at 10:00 ET uses only prior completed
@@ -95,6 +96,8 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
         raise ValueError("liquidity_caps_require_tactical_only")
     if entry_confirmations is not None and strategy != "macro_tactical":
         raise ValueError("confirmations_require_tactical_only")
+    if entry_risk_controls is not None and strategy != "macro_tactical":
+        raise ValueError("entry_risk_controls_require_tactical_only")
     if not isinstance(tactical_max_hold_hours, int) or not 1 <= tactical_max_hold_hours <= 720:
         raise ValueError("invalid_tactical_horizon")
     if tactical_max_hold_hours != 168 and strategy != "macro_tactical":
@@ -118,6 +121,23 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
         raise ValueError("funding_lease_requires_tactical_setup_policy")
     if funding_lease_budget not in ("cost", "risk") or (funding_lease_budget != "cost" and funding_lease_hours is None):
         raise ValueError("invalid_funding_lease_budget")
+    if funding_lease_setups is None:
+        funding_lease_setups = ("mean_reversion",)
+    elif (funding_lease_hours is None or not isinstance(funding_lease_setups, (tuple, list))
+            or not funding_lease_setups or len(set(funding_lease_setups)) != len(funding_lease_setups)
+            or any(s not in ("breakout", "pullback", "mean_reversion") for s in funding_lease_setups)):
+        raise ValueError("invalid_funding_lease_setups")
+    if (not math.isfinite(funding_lease_entry_utilization)
+            or not 0 < funding_lease_entry_utilization <= 1):
+        raise ValueError("invalid_funding_lease_entry_utilization")
+    if funding_lease_entry_utilization != 1 and (funding_lease_hours is None or funding_lease_budget != "risk"):
+        raise ValueError("entry_headroom_requires_risk_funding_lease")
+    if entry_execution_model is not None and strategy != "macro_tactical":
+        raise ValueError("depth_execution_requires_tactical_only")
+    if exit_execution_model is not None and (
+            strategy != "macro_tactical" or funding_lease_resize or routing != "core_first"):
+        raise ValueError("exit_depth_requires_tactical_full_exit_without_handover")
+    execution_attempts = []
     if allow_partial_histories and strategy != "macro_tactical":
         raise ValueError("partial_histories_require_tactical_only")
     if funding_lease_resize and (funding_lease_hours is None or funding_lease_budget != "risk" or lease_exit_liquidity_caps is None):
@@ -187,9 +207,29 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
         return equity if pos is None else equity+pos.get("side", 1)*pos["quantity"]*(price-pos["entry_price"])-pos["quantity"]*price*fee
 
     def close(now, raw_price, reason):
-        nonlocal equity, pos, total_fee, total_slip
+        nonlocal equity, pos, total_fee, total_slip, total_funding
         side = pos.get("side", 1)
         price = raw_price*(1-side*slip)
+        if exit_execution_model is not None:
+            receipt = exit_execution_model.execute(pos, now, raw_price, reason, slip)
+            price, filled_at = receipt["fill_price"], receipt["fill_time"]
+            if (not math.isfinite(price) or price <= 0 or not now <= filled_at <= now+90
+                    or receipt["quantity"] != pos["quantity"]):
+                raise ValueError("invalid_full_exit_execution")
+            delayed_funding = 0.
+            if filled_at > now:
+                # Scheduled exits occur before this hour's settlement loop.
+                # Keep charging/crediting the position through delayed execution;
+                # include settlement at the exact fill timestamp by convention.
+                for row in funding_hours[pos["symbol"]].get(now, []):
+                    if now*1000 <= int(row["fundingTime"]) <= filled_at*1000:
+                        payment = -side*pos["quantity"]*float(row["markPrice"])*float(row["fundingRate"])
+                        equity += payment
+                        pos["funding"] += payment
+                        total_funding += payment
+                        delayed_funding += payment
+            pos.update(exit_fill_time=filled_at,
+                       exit_execution=dict(receipt, delayed_funding=delayed_funding))
         exit_fee = pos["quantity"]*price*fee
         equity += side*pos["quantity"]*(price-pos["entry_price"])-exit_fee
         total_fee += exit_fee
@@ -380,7 +420,7 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                                (720 if engine == "core" else tactical_max_hold_hours) if macro else max_hold_hours)
                     side = fs[s].get("side", 1)
                     lease = (funding_lease_hours if funding_lease_hours is not None
-                             and fs[s]["tactical_setup"] == "mean_reversion" and horizon > funding_lease_hours else None)
+                             and fs[s]["tactical_setup"] in funding_lease_setups and horizon > funding_lease_hours else None)
                     reserve_hours = min(horizon, lease) if lease is not None else horizon
                     reserve = funding_reserve(data[s]["funding"], now, reserve_hours, funding_policy, side)
                     if reserve is None:
@@ -389,7 +429,8 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                     b = data[s]["trade"][ix[s]]
                     liquidity = data[s]["trade"][ix[s]-1].v*0.01
                     liquidity_context = None
-                    if entry_liquidity_caps is not None:
+                    if entry_liquidity_caps is not None and not (
+                            entry_execution_model is not None and entry_execution_model.use_depth_sizing):
                         liquidity_context = entry_liquidity_caps.get((s, now))
                         if liquidity_context is None:
                             rejected["liquidity_unknown"] += 1
@@ -407,11 +448,40 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                             continue
                         liquidity = min(liquidity, cap)
                     price = b.o*(1+side*slip)
+                    execution_quote = None
+                    if entry_execution_model is not None:
+                        if side != 1:
+                            raise ValueError("depth_execution_long_only")
+                        execution_quote = entry_execution_model.quote(s, now, price, data[s]["rule"])
+                        if execution_quote["status"] != "quote":
+                            rejected[execution_quote["status"]] += 1
+                            continue
+                        liquidity = (execution_quote["quantity_cap"] if entry_execution_model.use_depth_sizing
+                                     else min(liquidity, execution_quote["quantity_cap"]))
                     current_equity = equity
                     downshift = 0.5 if account_controls and macro and current_equity <= 0.9*peak else 1.0
                     available = risk_fraction*equity*downshift
                     if account_controls:
                         available = min(available, max(0, equity-0.8*peak))
+                    risk_context = None
+                    if entry_risk_controls is not None:
+                        risk_context = entry_risk_controls.get((s, now))
+                        if risk_context is None:
+                            rejected["entry_risk_unknown"] += 1
+                            continue
+                        asof, multiplier = risk_context.get("asof"), risk_context.get("multiplier")
+                        if (isinstance(asof, bool) or not isinstance(asof, (int, float)) or not math.isfinite(asof)
+                                or isinstance(multiplier, bool) or not isinstance(multiplier, (int, float))
+                                or not math.isfinite(multiplier) or not 0 < multiplier <= 1):
+                            raise ValueError("invalid_entry_risk_control")
+                        if asof > now:
+                            raise ValueError("future_entry_risk_control")
+                        if asof < now-3600:
+                            rejected["entry_risk_stale"] += 1
+                            continue
+                        # Research-only reduction of both initial sizing AND
+                        # the lifetime budget; never reset it at lease review.
+                        available *= multiplier
                     if macro:
                         config["sizing"]["notional_caps"]["effective_gross"] = min(gross_cap, fs[s]["gross_target"])*downshift
                     if strategy == "hold":
@@ -425,13 +495,48 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                                  "stop": 0.0, "notional_usdt": q*price, "leverage": 5,
                                  "stress_risk_usdt": None, "risk_budget_usdt": None}
                     else:
+                        sizing_budget = available*(funding_lease_entry_utilization if lease is not None else 1)
                         order, reason = size(config, data[s]["rule"], b.o, price,
-                                             volrows[vi][1], equity, available, reserve,
+                                             volrows[vi][1], equity, sizing_budget, reserve,
                                              fee, slip, liquidity,
                                              side=side, liquidation_stop_multiple=liquidation_stop_multiple)
                         if order is None:
                             rejected[reason] += 1
                             continue
+                        if lease is not None and funding_lease_entry_utilization != 1:
+                            # Offline ablation: leave entry headroom inside the
+                            # original lifetime risk budget. Renewals, paid
+                            # debits, cash checks and full exits stay unchanged.
+                            order.update(entry_sizing_budget_usdt=sizing_budget,
+                                         funding_lease_entry_utilization=funding_lease_entry_utilization,
+                                         risk_budget_usdt=available)
+                    execution_receipt = None
+                    planned_cost_cap = None
+                    if entry_execution_model is not None:
+                        execution_receipt = entry_execution_model.fill(order, execution_quote, data[s]["rule"])
+                        execution_attempts.append(execution_receipt)
+                        if execution_receipt["filled_quantity"] == 0:
+                            rejected[execution_receipt["status"]] += 1
+                            # One selected IOC consumes this decision, just as
+                            # the live path does; do not retry another asset.
+                            break
+                        ratio = execution_receipt["filled_quantity"]/order["quantity"]
+                        if lease is not None:
+                            distance = side*(price-order["initial_stop"])/price
+                            planned_cost_cap = order["quantity"]*price*max(
+                                0, friction_limit_fraction_of_stop*distance-2*(fee+slip))
+                            if funding_lease_budget == "risk":
+                                planned_cost_cap = max(0, order["risk_budget_usdt"]-(
+                                    order["stress_risk_usdt"]-order["notional_usdt"]*reserve))
+                            planned_cost_cap *= ratio
+                        for key in ("margin_usdt", "stress_risk_usdt", "structural_risk_usdt"):
+                            order[key] *= ratio
+                        price = execution_receipt["fill_price"]
+                        order.update(quantity=execution_receipt["filled_quantity"], entry_price=price,
+                                     notional_usdt=execution_receipt["filled_quantity"]*price,
+                                     margin_usdt=execution_receipt["filled_quantity"]*price/order["leverage"],
+                                     entry_fill_time=execution_receipt["arrival_time"],
+                                     entry_execution=execution_receipt)
                     q = order["quantity"]
                     entry_fee = q*price*fee
                     equity -= entry_fee
@@ -443,6 +548,8 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                            "structural_r": side*(price-order["initial_stop"]), "highest_close": price}
                     if side == -1:
                         pos["side"] = -1
+                    if risk_context is not None and risk_context["multiplier"] != 1:
+                        pos["entry_risk_control"] = dict(risk_context)
                     if liquidity_context is not None:
                         pos["entry_liquidity"] = dict(liquidity_context)
                     if sizing_gap_reserve != .01:
@@ -455,6 +562,11 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                         if funding_lease_budget == "risk":
                             base_risk = order["stress_risk_usdt"]-q*price*reserve
                             cost_cap = max(0, order["risk_budget_usdt"]-base_risk)
+                        if planned_cost_cap is not None:
+                            # Match live partial-fill semantics: scale the
+                            # pretrade funding allowance, never grant fresh
+                            # allowance from the unfilled part of the order.
+                            cost_cap = planned_cost_cap
                         pos.update(funding_reserve_hours=reserve_hours, funding_lease_hours=lease,
                                    funding_reserve_fraction=reserve, funding_lease_budget=funding_lease_budget,
                                    funding_lease_deadline=now+lease*3600,
@@ -479,13 +591,15 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
             b, m = data[s]["trade"][ix[s]], data[s]["mark"][ix[s]]
             invested += 1
             max_gross = max(max_gross, q*m.o/max(nav(m.o), 1e-12))
-            # Account-bracket proxy: 1% maintenance, 5x isolated setting.
-            liquidation = pos["entry_price"]*(1-side/pos["leverage"])/(1-side*0.01)
+            # Use supplied account tiers; old inputs retain their 1% proxy.
+            # Omitting maintenance deductions keeps this hourly proxy conservative.
+            maintenance = pos.get("maintenance_margin_ratio", .01)
+            liquidation = pos["entry_price"]*(1-side/pos["leverage"])/(1-side*maintenance)
             stopped = (b.l <= pos["stop"] if side == 1 else b.h >= pos["stop"]) if strategy != "hold" else False
             liquidated = m.l <= liquidation if side == 1 else m.h >= liquidation
             for row in funding_hours[s].get(now, []):
                 ftime = int(row["fundingTime"])
-                if ftime < pos["entry_time"]*1000:
+                if ftime < pos.get("entry_fill_time", pos["entry_time"])*1000:
                     continue
                 payment = -side*q*float(row["markPrice"])*float(row["fundingRate"])
                 # Stop/funding ordering inside an hourly bar is unknown: charge
@@ -560,6 +674,8 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                "rejections": dict(rejected), "top_two_winner_pnl": sum(wins[:2]),
                "monthly_returns": {m: v["end"]/v["start"]-1 for m, v in months.items()}}
     result = {"summary": summary, "trades": trades, "curve": curve}
+    if entry_execution_model is not None:
+        result["execution_attempts"] = execution_attempts
     if flows_by_time:
         summary.update(return_basis="unit_nav",net_external_flows=net_flows,
                        deposits=sum(max(0,f["amount"]) for f in applied_flows),
