@@ -114,24 +114,38 @@ def bil_amount_conflicts(cache, issuer, *, rounding_tolerance=.0011):
     return sorted(found, key=lambda r: r["ex_date"])
 
 
-def simulate(panel, panels, actions, targets, *, capital, friction, delay, start="2018-04-02"):
+def simulate(panel, panels, actions, targets, *, capital, friction, delay, start="2018-04-02", decision_filter=None):
     """Stream unchanged cash-step calculations; keep full history outside ephemeral snapshots."""
     first = next(i for i, d in enumerate(panel.dates) if d >= start)
     data = ledger.new_account("2026-10-26T00:00:00+00:00")
     data["initial_equity"] = data["layer"]["sleeves"]["g20"]["cash"] = capital
     records, trades, income = [], [], []
+    decisions = []
+    plans = targets if decision_filter is None else {i: t for i, t in targets.items() if i < first}
+    if decision_filter is not None:
+        from qount.research.g20_rebalance import selected_symbol
+        known = [j for j in targets if j < first]
+        previous_symbol = selected_symbol(targets[max(known)]) if known else None
     rebalancer = partial(rebalance_cash, friction=friction)
     for i in range(first, len(panel.dates)):
         day = panel.dates[i]
         j = i - delay
-        if j in targets:
-            data["pending"] = dict(target=targets[j], decision_date=panel.dates[j],
+        if j in plans:
+            data["pending"] = dict(target=plans[j], decision_date=panel.dates[j],
                 available_at=datetime.combine(datetime.fromisoformat(panel.dates[j]), time(16), ledger.NY).isoformat())
         data = ledger.step(data, day=day, bar={s: panels[s][day] for s in SYMBOLS},
             actions=actions.get(day, []), decision=None,
             opening=datetime.combine(datetime.fromisoformat(day), time(9, 30), ledger.NY),
             observed_at="2026-10-26T00:00:00+00:00", reconstructed=True, historical_replay=True,
             execution_symbols=SYMBOLS, rebalance=rebalancer)
+        if decision_filter is not None and i in targets:
+            sleeve = data["layer"]["sleeves"]["g20"]
+            decision = decision_filter(target=targets[i], positions=sleeve["positions"], cash=sleeve["cash"],
+                prices={s: panels[s][day]["close"] for s in SYMBOLS}, previous_symbol=previous_symbol)
+            decisions.append(dict(date=day, **decision))
+            previous_symbol = decision["selected"]
+            if decision["execute"]:
+                plans[i] = targets[i]
         for key, history in (("observations", records), ("trades", trades), ("income", income)):
             history.extend(data[key])
             data[key] = []
@@ -151,7 +165,7 @@ def simulate(panel, panels, actions, targets, *, capital, friction, delay, start
             continue
         assert t["decision_date"] < t["date"]
         assert math.isclose(t["quantity"], round(t["quantity"]), abs_tol=1e-8)
-        assert math.isclose(t["cost"], friction.fee(t["quantity"] * t["price"]), abs_tol=1e-8)
+        assert math.isclose(t["cost"], friction.fee(t["quantity"] * t["price"], t["quantity"]), abs_tol=1e-8)
         sign = 1 if t["side"] == "BUY" else -1
         held[t["symbol"]] = held.get(t["symbol"], 0.) + sign * t["quantity"]
         cash -= sign * t["quantity"] * t["price"] + t["cost"]
@@ -177,7 +191,10 @@ def simulate(panel, panels, actions, targets, *, capital, friction, delay, start
         gross_entitlement=sum(e["quantity"] * e.get("gross_amount", e["amount"]) for e in income if e["side"] == "DIVIDEND_ACCRUAL"),
         entitlement_deduction=sum(e["quantity"] * (e.get("gross_amount", e["amount"]) - e["amount"]) for e in income if e["side"] == "DIVIDEND_ACCRUAL"),
         split_count=len(split_entitlements), annual_returns=annual)
-    return dict(metrics=metrics, records=records, trades=trades, income=income)
+    result = dict(metrics=metrics, records=records, trades=trades, income=income)
+    if decision_filter is not None:
+        result["decisions"] = decisions
+    return result
 
 
 def paired_diagnostics(original, candidate, *, draws=1000):

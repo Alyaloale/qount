@@ -45,6 +45,22 @@ class G20CashExecutionTests(unittest.TestCase):
         cost,events=rebalance(b,{"SMH":.7},{"SMH":10.},CashFriction(minimum_commission=1))
         self.assertEqual(events,[]);self.assertEqual(cost,0.)
 
+    def test_share_commission_floor_cap_and_extra_slippage(self):
+        f=CashFriction(cost_bps=15,commission_bps=0,minimum_commission=1,commission_per_share=.005,commission_cap_rate=.01)
+        self.assertAlmostEqual(f.fee(25,1),.25+.0375)
+        self.assertAlmostEqual(f.fee(2500,100),1.+3.75)
+        self.assertAlmostEqual(f.fee(25000,1000),5.+37.5)
+        self.assertEqual(f.fee(0,0),0.)
+        with self.assertRaisesRegex(ValueError,'quantity_required'):f.fee(100.)
+
+    def test_share_commission_funding_includes_cap_that_can_override_floor(self):
+        f=CashFriction(cost_bps=15,commission_bps=0,minimum_commission=1,commission_per_share=.005,commission_cap_rate=.01)
+        b=layer(10.115)
+        cost,events=rebalance(b,{'SMH':1.},{'SMH':10.},f)
+        self.assertEqual(events[0]['quantity'],1.)
+        self.assertAlmostEqual(cost,.115)
+        self.assertAlmostEqual(b['sleeves']['g20']['cash'],0.)
+
     def test_zero_floor_reproduces_published_rebalancer(self):
         prices={"SOXL":72.31,"BIL":91.7}
         for initial in (layer(10000.),layer(1000.,{"SOXL":5.,"BIL":80.})):
