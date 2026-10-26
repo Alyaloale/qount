@@ -63,7 +63,7 @@ def new_account(observed_at):
                    taxes="gross_before_tax_not_broker_net", unknown_pay_date="unspendable_receivable"))
 
 
-def normalize_cache(cache, policy):
+def normalize_cache(cache, policy, *, execution_symbols=SYMBOLS, issuer_groups=None):
     """Undo Yahoo's historical split adjustment for physical cash/share accounting."""
     panels, actions = {}, {}
     verified = {(a["symbol"], a["ex_date"]):a for a in policy["verified_actions"]}
@@ -75,7 +75,7 @@ def normalize_cache(cache, policy):
             if not math.isfinite(ratio) or ratio <= 0:
                 raise ValueError("g20_cash_split_invalid")
             splits.append((day, ratio))
-            if symbol in SYMBOLS:
+            if symbol in execution_symbols:
                 actions.setdefault(day, []).append(dict(kind="split", symbol=symbol, ratio=ratio))
         rows = {}
         previous = ""
@@ -94,9 +94,10 @@ def normalize_cache(cache, policy):
                 raise ValueError("g20_cash_ohlc_invalid")
             rows[day] = row
         panels[symbol] = rows
-        if symbol not in SYMBOLS:
+        if symbol not in execution_symbols:
             continue
-        group = "proshares" if symbol in ("TQQQ", "URTY") else "BIL" if symbol == "BIL" else "direxion"
+        group = (issuer_groups or {}).get(symbol) or (
+            "proshares" if symbol in ("TQQQ", "URTY") else "BIL" if symbol == "BIL" else "direxion")
         for e in payload.get("events", {}).get("dividends", {}).values():
             day = dt.datetime.fromtimestamp(e["date"], NY).date().isoformat()
             declared = verified.get((symbol, day))
@@ -124,7 +125,7 @@ def normalize_cache(cache, policy):
 
 
 def step(data, *, day, bar, actions, decision, opening, observed_at, reconstructed=False,
-         historical_replay=False):
+         historical_replay=False, execution_symbols=SYMBOLS, rebalance=None):
     """One completed session; paid income becomes spendable the following session."""
     data = copy.deepcopy(data)
     sleeve = data["layer"]["sleeves"]["g20"]
@@ -149,10 +150,10 @@ def step(data, *, day, bar, actions, decision, opening, observed_at, reconstruct
             data["income"].append(event)
     pending = data["pending"]
     if pending and (historical_replay or dt.datetime.fromisoformat(pending["available_at"]) <= opening):
-        marks = {s:bar[s]["open"] for s in SYMBOLS}
-        _, fills = _rebalance_layer(data["layer"], sleeve_budgets={"g20":1.},
+        marks = {s:bar[s]["open"] for s in execution_symbols}
+        _, fills = (rebalance or _rebalance_layer)(data["layer"], sleeve_budgets={"g20":1.},
             sleeve_targets={"g20":pending["target"]}, marks=marks, fills=marks,
-            rules={s:dict(step_size=1.,minimum_notional=0.) for s in SYMBOLS},
+            rules={s:dict(step_size=1.,minimum_notional=0.) for s in execution_symbols},
             contract=DualEnginePaperContract.frozen_v1(), signal=False)
         for f in fills:
             data["trades"].append(dict(date=day,symbol=f["symbol"],side=f["side"].upper(),
