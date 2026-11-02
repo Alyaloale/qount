@@ -1,0 +1,3786 @@
+{
+  "research_only": true,
+  "orders_authorized": false,
+  "symbols": [
+    "ETHUSDT",
+    "SOLUSDT",
+    "SPYUSDT",
+    "QQQUSDT",
+    "SMHUSDT",
+    "IWMUSDT",
+    "XLEUSDT",
+    "XAUUSDT",
+    "COPPERUSDT",
+    "CLUSDT"
+  ],
+  "excluded_symbols": [
+    "BTCUSDT"
+  ],
+  "source_window": {
+    "start": "2026-07-30T00:00:00+00:00",
+    "end": "2026-10-25T23:00:00+00:00",
+    "bars": 2112
+  },
+  "tested_window": {
+    "start": "2026-09-29T00:00:00+00:00",
+    "end": "2026-10-25T23:00:00+00:00"
+  },
+  "mechanism": "Six-hour decisions use prior seven-day momentum, positive 30-day momentum, and price above a 60-day SMA as a short window feasibility proxy; the intended production parameters remain 63-day momentum and 120-day SMA. Positions are fixed quantity; rank changes do not rotate them. A dual-core entry requires one ETH/SOL crypto and one non-BTC ETF. Exits are complete and occur only after both momentum and price trend legs fail. Liquidation uses the shared wallet and hourly mark lows.",
+  "cost_assumptions": "One-way 10bp and 30bp; funding rows with markPrice, current filters, 0.5% maintenance and 1% liquidation fee proxy.",
+  "leverage_definition": "gross is initial notional/equity per portfolio; each10x means approximately 20x or 30x total initial notional for two or three positions.",
+  "approximate_funding_events": 0,
+  "results": {
+    "dual_2slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 14.873107565965904,
+        "return_pct": -30.00890557192516,
+        "cagr_pct": -99.20469574543914,
+        "mdd_pct": 33.852476833986046,
+        "calmar": -2.930500365806115,
+        "intraday_drawdown_bound_pct": 34.69221344830839,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.3466391326017813,
+        "mean_actual_gross": 1.3353462902120943,
+        "active_hours": 454,
+        "mean_holding_days": 11.680555555555555,
+        "median_holding_days": 9.583333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.02905213403408748,
+        "price_pnl": -6.234299999999997,
+        "costs": 0.11354030000000001,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 46,
+          "trend_exit": 3,
+          "minimum_notional_skip": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -2.3357999999999977,
+            "funding": -0.028630660884598542,
+            "costs": 0.037859000000000004
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -2.7567,
+            "funding": -0.00186755552497671,
+            "costs": 0.0354279
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.1417999999999993,
+            "funding": 0.0014460823754877717,
+            "costs": 0.04025340000000001
+          }
+        }
+      }
+    },
+    "dual_2slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 14.6460269659659,
+        "return_pct": -31.077520160160464,
+        "cagr_pct": -99.35434208109135,
+        "mdd_pct": 34.33614270516166,
+        "calmar": -2.8935790177198806,
+        "intraday_drawdown_bound_pct": 35.17903782716758,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.372815417630234,
+        "mean_actual_gross": 1.3454914288081756,
+        "active_hours": 454,
+        "mean_holding_days": 11.680555555555555,
+        "median_holding_days": 9.583333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.02905213403408748,
+        "price_pnl": -6.234299999999997,
+        "costs": 0.3406209,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 46,
+          "trend_exit": 3,
+          "minimum_notional_skip": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -2.3357999999999977,
+            "funding": -0.028630660884598542,
+            "costs": 0.11357700000000001
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -2.7567,
+            "funding": -0.00186755552497671,
+            "costs": 0.1062837
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.1417999999999993,
+            "funding": 0.0014460823754877717,
+            "costs": 0.12076020000000001
+          }
+        }
+      }
+    },
+    "dual_2slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 10.023211567711932,
+        "return_pct": -52.83194556370856,
+        "cagr_pct": -99.99621244763134,
+        "mdd_pct": 59.76922988910849,
+        "calmar": -1.6730383281356827,
+        "intraday_drawdown_bound_pct": 61.007541538327544,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 6.483956164590519,
+        "mean_actual_gross": 2.6468725354435656,
+        "active_hours": 454,
+        "mean_holding_days": 9.375,
+        "median_holding_days": 6.541666666666667,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.05835869228807252,
+        "price_pnl": -10.937979999999998,
+        "costs": 0.23044974000000001,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 48,
+          "trend_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -3.8453800000000014,
+            "funding": -0.0023053787472275557,
+            "costs": 0.07199794000000001
+          },
+          "SOLUSDT": {
+            "price": -4.8089999999999975,
+            "funding": -0.05894547829182051,
+            "costs": 0.07794499999999999
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -2.2835999999999985,
+            "funding": 0.0028921647509755435,
+            "costs": 0.08050680000000002
+          }
+        }
+      }
+    },
+    "dual_2slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 9.56231208771193,
+        "return_pct": -55.000884293120336,
+        "cagr_pct": -99.99799843579366,
+        "mdd_pct": 61.21702933011042,
+        "calmar": -1.633499690038182,
+        "intraday_drawdown_bound_pct": 62.46458213772215,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 6.668759842580946,
+        "mean_actual_gross": 2.707990643537152,
+        "active_hours": 454,
+        "mean_holding_days": 9.375,
+        "median_holding_days": 6.541666666666667,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.05835869228807252,
+        "price_pnl": -10.937979999999998,
+        "costs": 0.69134922,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 48,
+          "trend_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -3.8453800000000014,
+            "funding": -0.0023053787472275557,
+            "costs": 0.21599382
+          },
+          "SOLUSDT": {
+            "price": -4.8089999999999975,
+            "funding": -0.05894547829182051,
+            "costs": 0.233835
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -2.2835999999999985,
+            "funding": 0.0028921647509755435,
+            "costs": 0.24152040000000002
+          }
+        }
+      }
+    },
+    "dual_2slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 4.565475184234186,
+        "return_pct": -78.51541089772147,
+        "cagr_pct": -99.99999991062852,
+        "mdd_pct": 86.89363950554412,
+        "calmar": -1.1508322183264998,
+        "intraday_drawdown_bound_pct": 88.72303907833383,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 18.329068152729338,
+        "mean_actual_gross": 5.765039225250585,
+        "active_hours": 454,
+        "mean_holding_days": 9.375,
+        "median_holding_days": 6.541666666666667,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.0881497157658366,
+        "price_pnl": -16.25289999999999,
+        "costs": 0.34347510000000003,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 48,
+          "trend_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -5.493400000000002,
+            "funding": -0.003293398210325079,
+            "costs": 0.1028542
+          },
+          "SOLUSDT": {
+            "price": -7.2821999999999925,
+            "funding": -0.08926029569904247,
+            "costs": 0.11803100000000001
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -3.477299999999997,
+            "funding": 0.0044039781435309434,
+            "costs": 0.1225899
+          }
+        }
+      }
+    },
+    "dual_2slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 3.935848353217121,
+        "return_pct": -81.47836069074296,
+        "cagr_pct": -99.9999999880321,
+        "mdd_pct": 89.0470663945557,
+        "calmar": -1.1230016219169467,
+        "intraday_drawdown_bound_pct": 90.89531164371867,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 22.15863814224064,
+        "mean_actual_gross": 6.164426474736628,
+        "active_hours": 454,
+        "mean_holding_days": 9.375,
+        "median_holding_days": 6.541666666666667,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.08821544678290423,
+        "price_pnl": -16.200999999999993,
+        "costs": 1.0249362,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 48,
+          "trend_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -5.493400000000002,
+            "funding": -0.003293398210325079,
+            "costs": 0.3085626
+          },
+          "SOLUSDT": {
+            "price": -7.2821999999999925,
+            "funding": -0.08926029569904247,
+            "costs": 0.354093
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -3.425399999999997,
+            "funding": 0.0043382471264633155,
+            "costs": 0.3622806
+          }
+        }
+      }
+    },
+    "dual_2slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 45.943468800575054,
+        "mean_actual_gross": 4.469288681664844,
+        "active_hours": 225,
+        "mean_holding_days": 6.180555555555556,
+        "median_holding_days": 6.541666666666667,
+        "max_holding_days": 9.375,
+        "funding_pnl": -0.12734249024007468,
+        "price_pnl": -23.42414,
+        "costs": 2.10750139,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 24,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -8.656440000000005,
+            "funding": -0.06711705556840387,
+            "costs": 0.8370988899999999
+          },
+          "SOLUSDT": {
+            "price": -9.006800000000002,
+            "funding": -0.0675215775661773,
+            "costs": 1.0673058
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -5.760899999999994,
+            "funding": 0.0072961428945064865,
+            "costs": 0.20309670000000002
+          }
+        }
+      }
+    },
+    "dual_2slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 50.31217710873757,
+        "mean_actual_gross": 4.552560744348667,
+        "active_hours": 225,
+        "mean_holding_days": 6.180555555555556,
+        "median_holding_days": 6.541666666666667,
+        "max_holding_days": 9.375,
+        "funding_pnl": -0.12664530238198832,
+        "price_pnl": -22.9399,
+        "costs": 2.8343097999999998,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 24,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -8.377200000000006,
+            "funding": -0.06701638182748762,
+            "costs": 0.9726171
+          },
+          "SOLUSDT": {
+            "price": -8.905600000000002,
+            "funding": -0.06679360141487194,
+            "costs": 1.2633808
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -5.657099999999996,
+            "funding": 0.007164680860371234,
+            "costs": 0.5983119
+          }
+        }
+      }
+    },
+    "dual_3slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 17.311490943363978,
+        "return_pct": -18.53416026652246,
+        "cagr_pct": -93.77935377897845,
+        "mdd_pct": 22.596370102595763,
+        "calmar": -4.150195511632442,
+        "intraday_drawdown_bound_pct": 23.108374913712147,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 1.8752362937765648,
+        "mean_actual_gross": 1.1146432686707397,
+        "active_hours": 454,
+        "mean_holding_days": 13.197916666666666,
+        "median_holding_days": 13.666666666666666,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.04007585663601817,
+        "price_pnl": -3.809,
+        "costs": 0.08943319999999999,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 62,
+          "trend_exit": 4,
+          "minimum_notional_skip": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -1.5113999999999996,
+            "funding": -0.01852572174885787,
+            "costs": 0.024496999999999998
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -0.47070000000000045,
+            "funding": -0.01970129782652355,
+            "costs": 0.014661500000000001
+          },
+          "SMHUSDT": {
+            "price": -1.0484000000000009,
+            "funding": -0.0028348023166511398,
+            "costs": 0.0228292
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.7784999999999993,
+            "funding": 0.00098596525601439,
+            "costs": 0.027445499999999998
+          }
+        }
+      }
+    },
+    "dual_3slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 17.13262454336398,
+        "return_pct": -19.375884501816554,
+        "cagr_pct": -94.59590303346378,
+        "mdd_pct": 23.030433973093846,
+        "calmar": -4.107430330838704,
+        "intraday_drawdown_bound_pct": 23.54425802905388,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 1.8822737082286638,
+        "mean_actual_gross": 1.120582487146095,
+        "active_hours": 454,
+        "mean_holding_days": 13.197916666666666,
+        "median_holding_days": 13.666666666666666,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.04007585663601817,
+        "price_pnl": -3.809,
+        "costs": 0.2682996,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 62,
+          "trend_exit": 4,
+          "minimum_notional_skip": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -1.5113999999999996,
+            "funding": -0.01852572174885787,
+            "costs": 0.073491
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -0.47070000000000045,
+            "funding": -0.01970129782652355,
+            "costs": 0.043984499999999996
+          },
+          "SMHUSDT": {
+            "price": -1.0484000000000009,
+            "funding": -0.0028348023166511398,
+            "costs": 0.06848760000000001
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.7784999999999993,
+            "funding": 0.00098596525601439,
+            "costs": 0.0823365
+          }
+        }
+      }
+    },
+    "dual_3slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 11.442022526753258,
+        "return_pct": -46.15518810939644,
+        "cagr_pct": -99.97723054846934,
+        "mdd_pct": 52.86492636860542,
+        "calmar": -1.8911826312093805,
+        "intraday_drawdown_bound_pct": 53.937736891481556,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 4.935884025774248,
+        "mean_actual_gross": 2.383863593937971,
+        "active_hours": 454,
+        "mean_holding_days": 11.114583333333334,
+        "median_holding_days": 11.4375,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.04407997324677522,
+        "price_pnl": -9.5607,
+        "costs": 0.2031975,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 51,
+          "trend_exit": 4
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -2.746700000000001,
+            "funding": -0.0016466991051625394,
+            "costs": 0.0514271
+          },
+          "SOLUSDT": {
+            "price": -3.1602,
+            "funding": -0.038735600020339184,
+            "costs": 0.051221
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -2.0968000000000018,
+            "funding": -0.0056696046333022795,
+            "costs": 0.0456584
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.5569999999999986,
+            "funding": 0.00197193051202878,
+            "costs": 0.054890999999999995
+          }
+        }
+      }
+    },
+    "dual_3slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 11.092950895736184,
+        "return_pct": -47.79787813771208,
+        "cagr_pct": -99.98503607907128,
+        "mdd_pct": 53.7036727764113,
+        "calmar": -1.861791399172023,
+        "intraday_drawdown_bound_pct": 54.78311235077384,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 5.003743840196111,
+        "mean_actual_gross": 2.4047384749622913,
+        "active_hours": 454,
+        "mean_holding_days": 11.114583333333334,
+        "median_holding_days": 11.4375,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.04414570426384285,
+        "price_pnl": -9.508800000000003,
+        "costs": 0.6041034000000001,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 51,
+          "trend_exit": 4
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -2.746700000000001,
+            "funding": -0.0016466991051625394,
+            "costs": 0.1542813
+          },
+          "SOLUSDT": {
+            "price": -3.1602,
+            "funding": -0.038735600020339184,
+            "costs": 0.153663
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -2.0968000000000018,
+            "funding": -0.0056696046333022795,
+            "costs": 0.13697520000000002
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.5051,
+            "funding": 0.0019061994949611536,
+            "costs": 0.1591839
+          }
+        }
+      }
+    },
+    "dual_3slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 5.704032799782621,
+        "return_pct": -73.15749270690532,
+        "cagr_pct": -99.99999817483085,
+        "mdd_pct": 80.28716175000132,
+        "calmar": -1.245529123151862,
+        "intraday_drawdown_bound_pct": 81.93669393601218,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 15.636883854179214,
+        "mean_actual_gross": 4.6892221380220604,
+        "active_hours": 454,
+        "mean_holding_days": 11.114583333333334,
+        "median_holding_days": 11.4375,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.06860984021738402,
+        "price_pnl": -15.156720000000004,
+        "costs": 0.32063736000000004,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 51,
+          "trend_exit": 4
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -4.394720000000001,
+            "funding": -0.0026347185682600626,
+            "costs": 0.08228336
+          },
+          "SOLUSDT": {
+            "price": -4.8089999999999975,
+            "funding": -0.05894547829182051,
+            "costs": 0.07794499999999999
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -3.6694000000000067,
+            "funding": -0.00992180810827899,
+            "costs": 0.07990220000000002
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -2.2835999999999985,
+            "funding": 0.0028921647509755435,
+            "costs": 0.08050680000000002
+          }
+        }
+      }
+    },
+    "dual_3slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 5.912882080851445,
+        "return_pct": -72.17467256069908,
+        "cagr_pct": -99.99999702904746,
+        "mdd_pct": 78.43524941718259,
+        "calmar": -1.274936941899247,
+        "intraday_drawdown_bound_pct": 80.0143067040402,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 13.501578307310933,
+        "mean_actual_gross": 4.456510658128175,
+        "active_hours": 454,
+        "mean_holding_days": 11.114583333333334,
+        "median_holding_days": 11.4375,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.0670277691485422,
+        "price_pnl": -14.357850000000001,
+        "costs": 0.91224015,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 51,
+          "trend_exit": 4
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -4.12005,
+            "funding": -0.002470048657743808,
+            "costs": 0.23142195
+          },
+          "SOLUSDT": {
+            "price": -4.8089999999999975,
+            "funding": -0.05894547829182051,
+            "costs": 0.233835
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -3.145200000000005,
+            "funding": -0.008504406949953419,
+            "costs": 0.2054628
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -2.2835999999999985,
+            "funding": 0.0028921647509755435,
+            "costs": 0.24152040000000002
+          }
+        }
+      }
+    },
+    "dual_3slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 81.96205209531611,
+        "mean_actual_gross": 7.793613862769509,
+        "active_hours": 329,
+        "mean_holding_days": 9.15625,
+        "median_holding_days": 10.125,
+        "max_holding_days": 13.708333333333334,
+        "funding_pnl": -0.0869797220476826,
+        "price_pnl": -20.125756172899997,
+        "costs": 1.682994918271,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 39,
+          "trend_exit": 2,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -7.690760000000003,
+            "funding": -0.0046107574944551115,
+            "costs": 0.14399588000000002
+          },
+          "SOLUSDT": {
+            "price": -7.577996172899997,
+            "funding": -0.07422918202465055,
+            "costs": 0.6914678382709999
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -1.0163999999999982,
+            "funding": -0.01300387779158127,
+            "costs": 0.7121334000000001
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -3.8405999999999976,
+            "funding": 0.004864095263004324,
+            "costs": 0.13539779999999998
+          }
+        }
+      }
+    },
+    "dual_3slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 118.45437153296994,
+        "mean_actual_gross": 8.394674094581264,
+        "active_hours": 329,
+        "mean_holding_days": 9.15625,
+        "median_holding_days": 10.125,
+        "max_holding_days": 13.708333333333334,
+        "funding_pnl": -0.08688078315423398,
+        "price_pnl": -19.799186172899997,
+        "costs": 2.491691448271,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 39,
+          "trend_exit": 2,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -7.4160900000000005,
+            "funding": -0.004446087583938856,
+            "costs": 0.41655951
+          },
+          "SOLUSDT": {
+            "price": -7.577996172899997,
+            "funding": -0.07422918202465055,
+            "costs": 0.830967438271
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": -1.0163999999999982,
+            "funding": -0.01300387779158127,
+            "costs": 0.8434602000000001
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -3.7887000000000004,
+            "funding": 0.0047983642459366975,
+            "costs": 0.4007043
+          }
+        }
+      }
+    },
+    "pool_2slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 18.74267805907607,
+        "return_pct": -11.799162074936142,
+        "cagr_pct": -81.75151268320681,
+        "mdd_pct": 21.957441769737695,
+        "calmar": -3.723180211088107,
+        "intraday_drawdown_bound_pct": 22.911289184853413,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.0686266083832754,
+        "mean_actual_gross": 1.787367360071929,
+        "active_hours": 646,
+        "mean_holding_days": 10.708333333333334,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 16.583333333333332,
+        "funding_pnl": -0.02166484092392973,
+        "price_pnl": -2.310300000000004,
+        "costs": 0.17535710000000002,
+        "counts": {
+          "entry": 5,
+          "funding_debit_intervals": 22,
+          "trend_exit": 3,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -0.9414000000000009,
+            "funding": -0.0394025956530471,
+            "costs": 0.029323000000000002
+          },
+          "SMHUSDT": {
+            "price": -1.7127000000000006,
+            "funding": -0.004252203474976709,
+            "costs": 0.0343839
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.7045999999999988,
+            "funding": -0.011523321409033744,
+            "costs": 0.035414600000000004
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.3608000000000012,
+            "funding": 0.033513279613127826,
+            "costs": 0.0762356
+          }
+        }
+      }
+    },
+    "pool_2slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 18.364445080791572,
+        "return_pct": -13.579081972745543,
+        "cagr_pct": -86.1557628857958,
+        "mdd_pct": 22.810977810109268,
+        "calmar": -3.7769429966133967,
+        "intraday_drawdown_bound_pct": 23.737068053381027,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.040505107977808,
+        "mean_actual_gross": 1.7863469235436955,
+        "active_hours": 646,
+        "mean_holding_days": 10.708333333333334,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 16.583333333333332,
+        "funding_pnl": -0.023315119208437533,
+        "price_pnl": -2.3422000000000023,
+        "costs": 0.5200398,
+        "counts": {
+          "entry": 5,
+          "funding_debit_intervals": 22,
+          "trend_exit": 3,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -0.9414000000000009,
+            "funding": -0.0394025956530471,
+            "costs": 0.08796899999999999
+          },
+          "SMHUSDT": {
+            "price": -1.7127000000000006,
+            "funding": -0.004252203474976709,
+            "costs": 0.1031517
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.7045999999999988,
+            "funding": -0.011523321409033744,
+            "costs": 0.1062438
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.39269999999999966,
+            "funding": 0.03186300132862002,
+            "costs": 0.22267530000000002
+          }
+        }
+      }
+    },
+    "pool_2slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 14.48343329556133,
+        "return_pct": -31.842666844417266,
+        "cagr_pct": -99.44497274966051,
+        "mdd_pct": 47.28047660413532,
+        "calmar": -2.103298864397714,
+        "intraday_drawdown_bound_pct": 48.63476605811737,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 5.648077884257491,
+        "mean_actual_gross": 4.03937500153265,
+        "active_hours": 646,
+        "mean_holding_days": 10.708333333333334,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 16.583333333333332,
+        "funding_pnl": -0.07545960443866674,
+        "price_pnl": -6.348900000000011,
+        "costs": 0.34220710000000004,
+        "counts": {
+          "entry": 5,
+          "funding_debit_intervals": 22,
+          "trend_exit": 3,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -2.3535000000000026,
+            "funding": -0.09850648913261775,
+            "costs": 0.0733075
+          },
+          "SMHUSDT": {
+            "price": -3.9963000000000046,
+            "funding": -0.00992180810827899,
+            "costs": 0.08022910000000001
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 1.083999999999997,
+            "funding": -0.01772818678312884,
+            "costs": 0.054484000000000005
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.0831000000000008,
+            "funding": 0.050696879585358845,
+            "costs": 0.13418650000000001
+          }
+        }
+      }
+    },
+    "pool_2slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 14.428290892050068,
+        "return_pct": -32.10216050799968,
+        "cagr_pct": -99.4729290334658,
+        "mdd_pct": 46.01224753663893,
+        "calmar": -2.1618793768823585,
+        "intraday_drawdown_bound_pct": 47.41006531924443,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 5.127648797648645,
+        "mean_actual_gross": 3.8989521240206733,
+        "active_hours": 646,
+        "mean_holding_days": 10.708333333333334,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 16.583333333333332,
+        "funding_pnl": -0.07448540794991938,
+        "price_pnl": -5.750900000000009,
+        "costs": 0.9963237,
+        "counts": {
+          "entry": 5,
+          "funding_debit_intervals": 22,
+          "trend_exit": 3,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -2.3535000000000026,
+            "funding": -0.09850648913261775,
+            "costs": 0.21992250000000002
+          },
+          "SMHUSDT": {
+            "price": -3.425400000000001,
+            "funding": -0.008504406949953419,
+            "costs": 0.2063034
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 1.1110999999999964,
+            "funding": -0.018171391452707054,
+            "costs": 0.16753829999999997
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.0831000000000008,
+            "funding": 0.050696879585358845,
+            "costs": 0.4025595
+          }
+        }
+      }
+    },
+    "pool_2slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 10.334241831909129,
+        "return_pct": -51.368273732192336,
+        "cagr_pct": -99.99426975679602,
+        "mdd_pct": 66.9749452013335,
+        "calmar": -1.4930101018552993,
+        "intraday_drawdown_bound_pct": 68.37655728815749,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 12.187984529376308,
+        "mean_actual_gross": 6.413224586678938,
+        "active_hours": 646,
+        "mean_holding_days": 10.708333333333334,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 16.583333333333332,
+        "funding_pnl": -0.13495686809085058,
+        "price_pnl": -10.310900000000009,
+        "costs": 0.46990129999999997,
+        "counts": {
+          "entry": 5,
+          "funding_debit_intervals": 22,
+          "trend_exit": 3,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -3.7656000000000036,
+            "funding": -0.1576103826121884,
+            "costs": 0.11729200000000001
+          },
+          "SMHUSDT": {
+            "price": -5.709000000000005,
+            "funding": -0.014174011583255697,
+            "costs": 0.11461299999999999
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 1.1923999999999966,
+            "funding": -0.01950100546144172,
+            "costs": 0.0599324
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -2.0286999999999975,
+            "funding": 0.05632853156603523,
+            "costs": 0.1780639
+          }
+        }
+      }
+    },
+    "pool_2slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 9.291959207860195,
+        "return_pct": -56.27313313948144,
+        "cagr_pct": -99.99864289875391,
+        "mdd_pct": 69.61124546739974,
+        "calmar": -1.4365300064281303,
+        "intraday_drawdown_bound_pct": 70.89652977436177,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 12.79841452331165,
+        "mean_actual_gross": 6.510098249850309,
+        "active_hours": 646,
+        "mean_holding_days": 10.708333333333334,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 16.583333333333332,
+        "funding_pnl": -0.1387511921398206,
+        "price_pnl": -10.445400000000014,
+        "costs": 1.3738896,
+        "counts": {
+          "entry": 5,
+          "funding_debit_intervals": 22,
+          "trend_exit": 3,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -3.7656000000000036,
+            "funding": -0.1576103826121884,
+            "costs": 0.35187599999999997
+          },
+          "SMHUSDT": {
+            "price": -5.709000000000005,
+            "funding": -0.014174011583255697,
+            "costs": 0.343839
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 1.1110999999999964,
+            "funding": -0.018171391452707054,
+            "costs": 0.16753829999999997
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -2.081900000000001,
+            "funding": 0.051204593508330565,
+            "costs": 0.5106363
+          }
+        }
+      }
+    },
+    "pool_2slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 89.59779756605016,
+        "mean_actual_gross": 8.385182511378725,
+        "active_hours": 397,
+        "mean_holding_days": 10.958333333333334,
+        "median_holding_days": 9.541666666666666,
+        "max_holding_days": 16.541666666666668,
+        "funding_pnl": -0.18307134400405561,
+        "price_pnl": -20.473222503899997,
+        "costs": 2.3391767749610004,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 14,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -5.548628096199997,
+            "funding": -0.17853618638500127,
+            "costs": 1.1096931190380002
+          },
+          "SMHUSDT": {
+            "price": -10.122094407699999,
+            "funding": -0.024095819691534688,
+            "costs": 1.023789755923
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -4.8025,
+            "funding": 0.01956066207248034,
+            "costs": 0.20569389999999999
+          }
+        }
+      }
+    },
+    "pool_2slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 105.00985279175258,
+        "mean_actual_gross": 8.625828393231355,
+        "active_hours": 397,
+        "mean_holding_days": 10.958333333333334,
+        "median_holding_days": 9.541666666666666,
+        "max_holding_days": 16.541666666666668,
+        "funding_pnl": -0.170491862466451,
+        "price_pnl": -20.034391925599998,
+        "costs": 3.0671058807440006,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 14,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -5.152297517899997,
+            "funding": -0.16578360164321543,
+            "costs": 1.2271479248210002
+          },
+          "SMHUSDT": {
+            "price": -10.122094407699999,
+            "funding": -0.024095819691534688,
+            "costs": 1.2283371559230003
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -4.760000000000001,
+            "funding": 0.019387558868299105,
+            "costs": 0.6116208000000001
+          }
+        }
+      }
+    },
+    "pool_3slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 18.056368007917445,
+        "return_pct": -15.028856433329674,
+        "cagr_pct": -88.99167492455994,
+        "mdd_pct": 22.57871759951978,
+        "calmar": -3.9413963407050487,
+        "intraday_drawdown_bound_pct": 23.17354065710887,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 1.9477065679324013,
+        "mean_actual_gross": 1.5831414439062579,
+        "active_hours": 646,
+        "mean_holding_days": 10.422619047619047,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.02784669208255782,
+        "price_pnl": -3.0157000000000016,
+        "costs": 0.1500853,
+        "counts": {
+          "entry": 7,
+          "funding_debit_intervals": 65,
+          "trend_exit": 5,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -1.5113999999999996,
+            "funding": -0.01852572174885787,
+            "costs": 0.024496999999999998
+          },
+          "SPYUSDT": {
+            "price": -0.06590000000000032,
+            "funding": 0.0,
+            "costs": 0.015428500000000001
+          },
+          "QQQUSDT": {
+            "price": -0.47070000000000045,
+            "funding": -0.01970129782652355,
+            "costs": 0.014661500000000001
+          },
+          "SMHUSDT": {
+            "price": -1.1418000000000004,
+            "funding": -0.0028348023166511398,
+            "costs": 0.0229226
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.46069999999999933,
+            "funding": -0.007534479382829756,
+            "costs": 0.0231557
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.2866000000000001,
+            "funding": 0.020749609192304494,
+            "costs": 0.049420000000000006
+          }
+        }
+      }
+    },
+    "pool_3slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 17.75619740791745,
+        "return_pct": -16.441423962741407,
+        "cagr_pct": -91.22835703938101,
+        "mdd_pct": 23.31776611697507,
+        "calmar": -3.912396950107832,
+        "intraday_drawdown_bound_pct": 23.914695382983187,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 1.970284745450891,
+        "mean_actual_gross": 1.5952249224417892,
+        "active_hours": 646,
+        "mean_holding_days": 10.422619047619047,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.02784669208255782,
+        "price_pnl": -3.0157000000000016,
+        "costs": 0.45025590000000004,
+        "counts": {
+          "entry": 7,
+          "funding_debit_intervals": 65,
+          "trend_exit": 5,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -1.5113999999999996,
+            "funding": -0.01852572174885787,
+            "costs": 0.073491
+          },
+          "SPYUSDT": {
+            "price": -0.06590000000000032,
+            "funding": 0.0,
+            "costs": 0.04628550000000001
+          },
+          "QQQUSDT": {
+            "price": -0.47070000000000045,
+            "funding": -0.01970129782652355,
+            "costs": 0.043984499999999996
+          },
+          "SMHUSDT": {
+            "price": -1.1418000000000004,
+            "funding": -0.0028348023166511398,
+            "costs": 0.0687678
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.46069999999999933,
+            "funding": -0.007534479382829756,
+            "costs": 0.0694671
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.2866000000000001,
+            "funding": 0.020749609192304494,
+            "costs": 0.14826
+          }
+        }
+      }
+    },
+    "pool_3slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 13.88160030275022,
+        "return_pct": -34.67482210470485,
+        "cagr_pct": -99.68769058012663,
+        "mdd_pct": 45.90618477798901,
+        "calmar": -2.171552505664218,
+        "intraday_drawdown_bound_pct": 46.975110450357505,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 5.363537375904385,
+        "mean_actual_gross": 3.5919331654755497,
+        "active_hours": 646,
+        "mean_holding_days": 10.422619047619047,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.08222779724975413,
+        "price_pnl": -6.988700000000005,
+        "costs": 0.2974719,
+        "counts": {
+          "entry": 7,
+          "funding_debit_intervals": 65,
+          "trend_exit": 5,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -3.1602,
+            "funding": -0.038735600020339184,
+            "costs": 0.051221
+          },
+          "SPYUSDT": {
+            "price": -0.13180000000000064,
+            "funding": 0.0,
+            "costs": 0.030857000000000002
+          },
+          "QQQUSDT": {
+            "price": -1.412100000000002,
+            "funding": -0.05910389347957065,
+            "costs": 0.043984499999999996
+          },
+          "SMHUSDT": {
+            "price": -2.2836000000000007,
+            "funding": -0.0056696046333022795,
+            "costs": 0.0458452
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.7316999999999979,
+            "funding": -0.011966526078611966,
+            "costs": 0.0367767
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.7326999999999992,
+            "funding": 0.03324782696206996,
+            "costs": 0.0887875
+          }
+        }
+      }
+    },
+    "pool_3slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 13.264086007419788,
+        "return_pct": -37.580771729789234,
+        "cagr_pct": -99.83140947911436,
+        "mdd_pct": 47.56213601546532,
+        "calmar": -2.098968167591404,
+        "intraday_drawdown_bound_pct": 48.447132825036775,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 5.476203231790867,
+        "mean_actual_gross": 3.6437520915135293,
+        "active_hours": 646,
+        "mean_holding_days": 10.422619047619047,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.0817845925801759,
+        "price_pnl": -7.015800000000004,
+        "costs": 0.8883294,
+        "counts": {
+          "entry": 7,
+          "funding_debit_intervals": 65,
+          "trend_exit": 5,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -3.1602,
+            "funding": -0.038735600020339184,
+            "costs": 0.153663
+          },
+          "SPYUSDT": {
+            "price": -0.13180000000000064,
+            "funding": 0.0,
+            "costs": 0.09257100000000001
+          },
+          "QQQUSDT": {
+            "price": -1.412100000000002,
+            "funding": -0.05910389347957065,
+            "costs": 0.1319535
+          },
+          "SMHUSDT": {
+            "price": -2.2836000000000007,
+            "funding": -0.0056696046333022795,
+            "costs": 0.1375356
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.7045999999999988,
+            "funding": -0.011523321409033744,
+            "costs": 0.1062438
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -0.7326999999999992,
+            "funding": 0.03324782696206996,
+            "costs": 0.2663625
+          }
+        }
+      }
+    },
+    "pool_3slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 8.81198549512896,
+        "return_pct": -58.53183296409901,
+        "cagr_pct": -99.99933848712558,
+        "mdd_pct": 69.92394663876055,
+        "calmar": -1.4301157656866796,
+        "intraday_drawdown_bound_pct": 71.87289614393568,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 15.18004494105349,
+        "mean_actual_gross": 6.292904833820423,
+        "active_hours": 646,
+        "mean_holding_days": 10.422619047619047,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.14514620487104843,
+        "price_pnl": -11.895100000000008,
+        "costs": 0.3977683,
+        "counts": {
+          "entry": 7,
+          "funding_debit_intervals": 65,
+          "trend_exit": 5,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -4.8089999999999975,
+            "funding": -0.05894547829182051,
+            "costs": 0.07794499999999999
+          },
+          "SPYUSDT": {
+            "price": -0.06590000000000032,
+            "funding": 0.0,
+            "costs": 0.015428500000000001
+          },
+          "QQQUSDT": {
+            "price": -2.3535000000000026,
+            "funding": -0.09850648913261775,
+            "costs": 0.0733075
+          },
+          "SMHUSDT": {
+            "price": -3.9963000000000046,
+            "funding": -0.00992180810827899,
+            "costs": 0.08022910000000001
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.7316999999999979,
+            "funding": -0.011966526078611966,
+            "costs": 0.0367767
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.4021000000000006,
+            "funding": 0.03419409674028078,
+            "costs": 0.1140815
+          }
+        }
+      }
+    },
+    "pool_3slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 8.623150196287277,
+        "return_pct": -59.420469664530465,
+        "cagr_pct": -99.99950674140801,
+        "mdd_pct": 69.29502522435776,
+        "calmar": -1.4430979196217593,
+        "intraday_drawdown_bound_pct": 70.47774173894112,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 14.065067883003918,
+        "mean_actual_gross": 6.173236008356263,
+        "active_hours": 646,
+        "mean_holding_days": 10.422619047619047,
+        "median_holding_days": 10.208333333333334,
+        "max_holding_days": 18.916666666666668,
+        "funding_pnl": -0.14372880371272287,
+        "price_pnl": -11.324200000000005,
+        "costs": 1.158921,
+        "counts": {
+          "entry": 7,
+          "funding_debit_intervals": 65,
+          "trend_exit": 5,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -4.8089999999999975,
+            "funding": -0.05894547829182051,
+            "costs": 0.233835
+          },
+          "SPYUSDT": {
+            "price": -0.06590000000000032,
+            "funding": 0.0,
+            "costs": 0.04628550000000001
+          },
+          "QQQUSDT": {
+            "price": -2.3535000000000026,
+            "funding": -0.09850648913261775,
+            "costs": 0.21992250000000002
+          },
+          "SMHUSDT": {
+            "price": -3.425400000000001,
+            "funding": -0.008504406949953419,
+            "costs": 0.2063034
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.7316999999999979,
+            "funding": -0.011966526078611966,
+            "costs": 0.11033010000000001
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -1.4021000000000006,
+            "funding": 0.03419409674028078,
+            "costs": 0.3422445
+          }
+        }
+      }
+    },
+    "pool_3slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 118.92874543592626,
+        "mean_actual_gross": 8.5724807466177,
+        "active_hours": 383,
+        "mean_holding_days": 11.854166666666666,
+        "median_holding_days": 12.333333333333334,
+        "max_holding_days": 15.958333333333334,
+        "funding_pnl": -0.37243069821711045,
+        "price_pnl": -20.0223160953,
+        "costs": 2.295641239047,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 49,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -8.354399999999995,
+            "funding": -0.09397774990170324,
+            "costs": 0.6837038
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -3.3490000000000006,
+            "funding": -0.2758442758874191,
+            "costs": 0.798781
+          },
+          "SMHUSDT": {
+            "price": -5.131416095300002,
+            "funding": -0.01559141274158127,
+            "costs": 0.6766339390470001
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -3.1875,
+            "funding": 0.012982740313593151,
+            "costs": 0.1365225
+          }
+        }
+      }
+    },
+    "pool_3slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 130.87628138599155,
+        "mean_actual_gross": 8.678967714537261,
+        "active_hours": 383,
+        "mean_holding_days": 11.854166666666666,
+        "median_holding_days": 12.333333333333334,
+        "max_holding_days": 15.958333333333334,
+        "funding_pnl": -0.36162146130185097,
+        "price_pnl": -19.54581609529999,
+        "costs": 2.8828991390470002,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 49,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": -8.212799999999987,
+            "funding": -0.09255702818856776,
+            "costs": 0.8092508
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": -3.0141,
+            "funding": -0.2664557606852951,
+            "costs": 0.8550927
+          },
+          "SMHUSDT": {
+            "price": -5.131416095300002,
+            "funding": -0.01559141274158127,
+            "costs": 0.808988139047
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -3.1875,
+            "funding": 0.012982740313593151,
+            "costs": 0.4095675000000001
+          }
+        }
+      }
+    },
+    "dual_2slots_each10x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 10.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 10.0,
+        "max_actual_gross": 45.90455619405716,
+        "mean_actual_gross": 7.555035141244532,
+        "active_hours": 188,
+        "mean_holding_days": 5.152777777777778,
+        "median_holding_days": 6.541666666666667,
+        "max_holding_days": 7.833333333333333,
+        "funding_pnl": -0.14916883316774032,
+        "price_pnl": -19.334191361860007,
+        "costs": 4.087448096381401,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 21,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -5.576565600760003,
+            "funding": -0.01690539556836803,
+            "costs": 1.4042182539924
+          },
+          "SOLUSDT": {
+            "price": -2.2877257611000097,
+            "funding": -0.14678999237131765,
+            "costs": 2.2788661423890004
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -11.469899999999994,
+            "funding": 0.014526554771945345,
+            "costs": 0.4043637
+          }
+        }
+      }
+    },
+    "dual_3slots_each10x_10bp": {
+      "rule": {
+        "rank_hours": 168,
+        "trend_hours": 720,
+        "mean_hours": 1440,
+        "decision_hours": 6,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 10.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2026-09-29T00:00:00+00:00",
+        "end_open": "2026-10-25T23:00:00+00:00",
+        "hours": 647,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 10.0,
+        "max_actual_gross": 98.5916443194532,
+        "mean_actual_gross": 8.463227393228438,
+        "active_hours": 196,
+        "mean_holding_days": 6.072916666666667,
+        "median_holding_days": 7.354166666666667,
+        "max_holding_days": 8.166666666666666,
+        "funding_pnl": -0.15611379222675878,
+        "price_pnl": -17.90774074981002,
+        "costs": 7.7644565225019,
+        "counts": {
+          "entry": 4,
+          "funding_debit_intervals": 22,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -13.693539628109999,
+            "funding": -0.02528356262349228,
+            "costs": 2.7532368337189004
+          },
+          "SOLUSDT": {
+            "price": -2.458780118700001,
+            "funding": -0.11833077427521184,
+            "costs": 2.277155598813
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 9.714478996999974,
+            "funding": -0.027026010099999997,
+            "costs": 2.32970038997
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -11.469899999999994,
+            "funding": 0.014526554771945345,
+            "costs": 0.4043637
+          }
+        }
+      }
+    }
+  },
+  "sources": [
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/CLUSDT-funding-1785369600-1792022400.json",
+      "sha256": "d1f240e23a9e1f8d0907dd7c7a42f21b8fe717afadc0a821a808eb6c0a2a68ff"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/CLUSDT-mark-1785369600-1792022400.json",
+      "sha256": "f50542c6fafdb02093aa97b8ea8d1390ff32d2a98876f26dfdd9a54d5985a3b3"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/CLUSDT-trade-1785369600-1792022400.json",
+      "sha256": "15ac9641bb4607e5e421cac6ac80f0c9770aa5dcc0c15571687e93062a7c86b9"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/COPPERUSDT-funding-1785369600-1792022400.json",
+      "sha256": "62e5819283a5037654cd9051cb359821fd25fc00a78134b21a68300e6f6286c2"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/COPPERUSDT-mark-1785369600-1792022400.json",
+      "sha256": "3266ee225ea1e1b328e8bae1f84704f415e4b45f85720983eaff25a0b2b9e33f"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/COPPERUSDT-trade-1785369600-1792022400.json",
+      "sha256": "0ef89601045b03627e93882f58c19eb4a0cc654cde80f7b0939d8d332185ed5c"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/IWMUSDT-funding-1785369600-1792022400.json",
+      "sha256": "2ed22c1ca05002ff3126e8694ed27bc9fc87fb2b796161f1d83c0b4df566bc4b"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/IWMUSDT-mark-1785369600-1792022400.json",
+      "sha256": "f6c6772c8433a9ec658b6c4927a532f87352d4a7d1112895604ed67a53daae93"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/IWMUSDT-trade-1785369600-1792022400.json",
+      "sha256": "df58087d2c7671e01bb03a3d84d23b691b49acf43391a44e1aa1144389964994"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/QQQUSDT-funding-1785369600-1792022400.json",
+      "sha256": "38fae7aa22432d6da722aba2536e520ad490ee30cfd84e0fb9981189c545c814"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/QQQUSDT-mark-1785369600-1792022400.json",
+      "sha256": "309fd37c439069df9dcb8c308c188e1bb7e64e9795cacdb4401cacb5aa2f2728"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/QQQUSDT-trade-1785369600-1792022400.json",
+      "sha256": "6fdd05e31439ada0bb9b3361c6f17e02d5f8b13b8a13b033dccc918a8709acda"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/SMHUSDT-funding-1785369600-1792022400.json",
+      "sha256": "d34e5459c014914ec94a77dbe141283818b91f98c1d7bf3820f024521b15e12d"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/SMHUSDT-mark-1785369600-1792022400.json",
+      "sha256": "19456e3c1d1768e0321c50df8c29b3859952085188f338973979b219cbe689c0"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/SMHUSDT-trade-1785369600-1792022400.json",
+      "sha256": "eca0bdcafaff8535434c0fd575f8bb5a5d1049404ee8fee153259f52b39f23c3"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/SPYUSDT-funding-1785369600-1792022400.json",
+      "sha256": "a98304770f1245588b49952898bc9a7437a8d0363967de8208a50ea1a6d50fb7"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/SPYUSDT-mark-1785369600-1792022400.json",
+      "sha256": "094e34d8ac1c81ddeda1cc728d3d55d5f3799602c1a33778f8d6a31f13ee67f4"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/SPYUSDT-trade-1785369600-1792022400.json",
+      "sha256": "5c50dd2c2ce1677710d5b8729ead9bb11ad30d8333567b366990211f74c066c6"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/XAUUSDT-funding-1785369600-1792022400.json",
+      "sha256": "0cc4e993d775ecd3ba2f18483b799ab2ee419a8b977b02ada5627149171e5eb8"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/XAUUSDT-mark-1785369600-1792022400.json",
+      "sha256": "9b3a994904653611074bd6569042eb263e38af58b7a24fe3d156ed557eb6f4b2"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/XAUUSDT-trade-1785369600-1792022400.json",
+      "sha256": "e0e3af2ab298ee37dd0289d1dfa24deb2dbbd64706ddb7753b0b2a64cb82a23f"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/XLEUSDT-funding-1785369600-1792022400.json",
+      "sha256": "94820e4c538a14e7d65e131c7eacbac7bd4f44cfcafa3c784e9f17bf162b9abc"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/XLEUSDT-mark-1785369600-1792022400.json",
+      "sha256": "f5441fa45b97a0e70c1dad437e731b9e223a5c02ba5410ff004abc05fd4906cc"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/XLEUSDT-trade-1785369600-1792022400.json",
+      "sha256": "cd627594b44ad81cbc82e2d550675dbe5f47abf0e8c7c5640efe2d58226b2bb7"
+    },
+    {
+      "path": "state/research_cache/binance_macro_attack_20261015/exchange-info.json",
+      "sha256": "bc086e92e67be799a00c8ce3af1b6cfce7527626405e466244956ad7d3db5feb"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/CLUSDT-funding-1781136000-1785369600.json",
+      "sha256": "1c730a0a9e5d564ca9b663ac435db0c8f2f272af7a3a2aa45c82dc7c0ec0a62d"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/CLUSDT-mark-1781136000-1785369600.json",
+      "sha256": "ae3366988b9053960434bdc82cc6640f281cbcd569d091b6e1dbd494abf34daf"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/CLUSDT-trade-1781136000-1785369600.json",
+      "sha256": "c7ad675c3f819add4ab4c4a3210ac217639748b5b73f8a1f49be0a620186da66"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/COPPERUSDT-funding-1781136000-1785369600.json",
+      "sha256": "9826fc60d53e11d58f93a4c534872442f82c74f190814e42c73c11a12a876008"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/COPPERUSDT-mark-1781136000-1785369600.json",
+      "sha256": "e121b04eea0b5d74ae07c6ba33cd023b8ce4823a271b24e77dde312f634674b6"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/COPPERUSDT-trade-1781136000-1785369600.json",
+      "sha256": "86acc3b4eb14c897a50560328df02e0257807852e2b36bc0e503225335aba3e4"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/IWMUSDT-funding-1781136000-1785369600.json",
+      "sha256": "d96aa9637c802328004c7ec75206917deb4988ef279b54c3369e5457a3a5c157"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/IWMUSDT-mark-1781136000-1785369600.json",
+      "sha256": "05e9d504d948e5251ec966903a1e01ce8f72062ffb1765370aadcf9292fc45e6"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/IWMUSDT-trade-1781136000-1785369600.json",
+      "sha256": "a952cdc025b6fac5a168760551e3df19bb751115f501a7b5a5542aee600db122"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/QQQUSDT-funding-1781136000-1785369600.json",
+      "sha256": "c87a9067af9b20ef1fc5b26bc1e345de9dec256eba1d46f03dc38ba5667bf4c6"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/QQQUSDT-mark-1781136000-1785369600.json",
+      "sha256": "92ccc643059a55286abfc5a994042d8267833f0a84d959416607bdf671ae98d5"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/QQQUSDT-trade-1781136000-1785369600.json",
+      "sha256": "ce28f8bfb4bb97bbc56a4e81b8f3853d5da9cc1b80ada5c21751673999a8efe3"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/SPYUSDT-funding-1781136000-1785369600.json",
+      "sha256": "1e6f019b4b3f1ccb166f039253ad4c392bc488d6e500b711bbab3817f8c35197"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/SPYUSDT-mark-1781136000-1785369600.json",
+      "sha256": "c4cad1f42e9884bcae90ecf810f3827bdc4749a1df7883978b150dbc23510fe2"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/SPYUSDT-trade-1781136000-1785369600.json",
+      "sha256": "80666736c868bfdab753ac013e452aab4f4871b2d92a1d578d98c41d1e148c09"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/XAUUSDT-funding-1781136000-1785369600.json",
+      "sha256": "44f84f53e4622aaa680bd492513a8a5be3559cf50be57eb21935979b71c0d24d"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/XAUUSDT-mark-1781136000-1785369600.json",
+      "sha256": "f53b899f0a9f5ddc97b548f3ed7b2deaae539c0be296e26bb0a9144eab4ecec6"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/XAUUSDT-trade-1781136000-1785369600.json",
+      "sha256": "3c7e3b3bf2bd10dadb4ba6f3618a9f0d08c22d91a6fea98609e8a9a24cc65cdf"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/XLEUSDT-funding-1781136000-1785369600.json",
+      "sha256": "175345d3370899c74a3136fb75a62dd4da5467e77677f3f57bf86905ea12e75b"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/XLEUSDT-mark-1781136000-1785369600.json",
+      "sha256": "5081f9a7a60686ec35f79b76a75c4f869f24fe15515bc4d2dba9389dc064798a"
+    },
+    {
+      "path": "state/research_cache/binance_macro_earlier_20260611_20260730/XLEUSDT-trade-1781136000-1785369600.json",
+      "sha256": "15e9388ba513b861c92f67dbf8169d434a7f0fca1e027bc6bf879af09feca603"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/CLUSDT-funding-1775520000-1781136000.json",
+      "sha256": "abc8c62e8b316f8cbb622a21e5df4b2e7268222a1241d20b3264c845c5ae875d"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/CLUSDT-mark-1775520000-1781136000.json",
+      "sha256": "25a308a150eeda53942775321c7c5ba35fffe6123222748fb09fac544cb7bcca"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/CLUSDT-trade-1775520000-1781136000.json",
+      "sha256": "e7287c35201d855cb45bd2ec9d8d115852670148e8c57675e92674cbb11c3a5f"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/COPPERUSDT-funding-1775520000-1781136000.json",
+      "sha256": "3b037cdc63a6a6067cb7dd9cd72bd86bf79e77df6a1f365492128ee3028fbb57"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/COPPERUSDT-mark-1775520000-1781136000.json",
+      "sha256": "4a0eceeced689f2b4f45f6f0c40e2ef7e2cb4776ff5773fbc5fa884e83129d05"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/COPPERUSDT-trade-1775520000-1781136000.json",
+      "sha256": "12d432ace1a11490f17b0697e2ae4932b2121d4fda7f1ce53200338635097285"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/QQQUSDT-funding-1775520000-1781136000.json",
+      "sha256": "00665803f08e557eac4988f825572c5251d2b1aeaeeecf1d93d829238f1a740e"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/QQQUSDT-mark-1775520000-1781136000.json",
+      "sha256": "0dd76adc504d0c8dd9a3d38d93d6580f69d0a30bc576867dd7551b8b3df4e699"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/QQQUSDT-trade-1775520000-1781136000.json",
+      "sha256": "e23304c05290fdabfa19d570c882db561c9bebc353a3886556bf48a437fc4381"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/SPYUSDT-funding-1775520000-1781136000.json",
+      "sha256": "51e94382f0ca81d1eea9988ad63879e8bbe352ff646232d5e72122f4bbf09b8e"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/SPYUSDT-mark-1775520000-1781136000.json",
+      "sha256": "7029c71b130809295c1b270f8f4923025b569a9d9bba41d8e6a319685cf98c4f"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/SPYUSDT-trade-1775520000-1781136000.json",
+      "sha256": "d8ffa19404406911a33f2e9b7f9b797686650b05bca2e03727d322f7fead0c68"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/XAUUSDT-funding-1775520000-1781136000.json",
+      "sha256": "63ef27f7271c66e22d0f3450ab7a5bf18215a93580db445709e32956df05d7ec"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/XAUUSDT-mark-1775520000-1781136000.json",
+      "sha256": "0a3abe2845c5ef676d0a9bec17a5c58433a61cdbbe482a2070921a2c58aa6615"
+    },
+    {
+      "path": "state/research_cache/binance_macro_prefix_20260407_20260611/XAUUSDT-trade-1775520000-1781136000.json",
+      "sha256": "6f3585e36ac5cd56b66bab0d2aef9fe2da08e5c3d9327f9a73cb59763b0f7b97"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/CLUSDT-funding-1792022400-1792627200.json",
+      "sha256": "3e05e0da6f8bdc97d7abdaf009dcd183de103ca05d51ee9c1a552824aef1c18d"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/CLUSDT-mark-1792022400-1792627200.json",
+      "sha256": "5d06659a9f8daa33cb1dada386a89a041108d6f811c0136a1c6c6ed67a2eb0e6"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/CLUSDT-trade-1792022400-1792627200.json",
+      "sha256": "e0cb69f953d2250ff5802afe7a3c24c1c05ee57d60dc09f523dd18bb5a7f685f"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/COPPERUSDT-funding-1792022400-1792627200.json",
+      "sha256": "facef6bdac5a21644b9d94c27469844ab1f5ef32677d9537f02317462a97d9a8"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/COPPERUSDT-mark-1792022400-1792627200.json",
+      "sha256": "db1eaa650c37afb64ec4519c34e0845f75de86777075bd18226fb2477b276e75"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/COPPERUSDT-trade-1792022400-1792627200.json",
+      "sha256": "cfc9e66570db1155404d0fd40717fd5d16819579a1762e943d523d60e99c66da"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/IWMUSDT-funding-1792022400-1792627200.json",
+      "sha256": "740cfa3b1271793f66a68a0bc595ad3bf803a11cc1c72a84dd39cf39e5a2001e"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/IWMUSDT-mark-1792022400-1792627200.json",
+      "sha256": "72432d18324be502d8423a585b3b1e3ddd50e9216241e3d03608de50c6739111"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/IWMUSDT-trade-1792022400-1792627200.json",
+      "sha256": "7fc6cb15bda3c22223bf3d9e84101b78b9605330dba2533a1282eb4bcabdbab0"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/QQQUSDT-funding-1792022400-1792627200.json",
+      "sha256": "64ee52fdecb23f5b3e266ca22a553dc10fdefb270d81bb3035a1ad4f3b7909fc"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/QQQUSDT-mark-1792022400-1792627200.json",
+      "sha256": "a8232c2c756105e1b49b04c8b124324ff2ef5ed57f503ac48b334b669a72f17d"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/QQQUSDT-trade-1792022400-1792627200.json",
+      "sha256": "3fc1b5a4c4f25fbcc878d12ae282ac85411c4127120343f59915af0b6d6da5b0"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/SMHUSDT-funding-1792022400-1792627200.json",
+      "sha256": "05158693e0e37989c3e9e4416205415d00db28693aad24c9f8ce772d1f6e047e"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/SMHUSDT-mark-1792022400-1792627200.json",
+      "sha256": "f01c77d45c4575519577229e252697d8d594d7867aafab6c400fb667f7ff8d5c"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/SMHUSDT-trade-1792022400-1792627200.json",
+      "sha256": "98da5fe32f7e2b3678d5c1a15aa1a20ddecbae1bb5d14d02b658ce5edad39902"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/SPYUSDT-funding-1792022400-1792627200.json",
+      "sha256": "bf40c79d95de0dd5a89bca37c9aba0099a939223203e7b45fc7d4e10ba7ea8e2"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/SPYUSDT-mark-1792022400-1792627200.json",
+      "sha256": "3e62f554061b595bb52e57899b91694b6e51f781347e8845acc87dadb6340cf8"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/SPYUSDT-trade-1792022400-1792627200.json",
+      "sha256": "e160b685885f4cf07be24153264dd0eb8033c7eeea32eec0c7e28c335dcbf818"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/XAUUSDT-funding-1792022400-1792627200.json",
+      "sha256": "227195fea433d9f1a1c2dd92741b470b2e278de4f0ff19f98d09e6bef189bc58"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/XAUUSDT-mark-1792022400-1792627200.json",
+      "sha256": "daa326d1713b2241cf29cdcd5c0cecb7f11ded17e156dcd9b35cea034fa74773"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/XAUUSDT-trade-1792022400-1792627200.json",
+      "sha256": "9408c4af02ef3a7350a006d7b603f3dcdff0c32a024c5a8023377473df3560d5"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/XLEUSDT-funding-1792022400-1792627200.json",
+      "sha256": "663627753fc71bef86ba30fb2aec8e445e275a1ca92bef2c9f0155edaba1156a"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/XLEUSDT-mark-1792022400-1792627200.json",
+      "sha256": "8b207f39efadf1894b6de9ba3502fd86a73f946a2ed742743b6a078e5ee26aa1"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261022/XLEUSDT-trade-1792022400-1792627200.json",
+      "sha256": "3badb955deae643818b21a3182d9e18c564061c78d1fea744368e4982d48594e"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/CLUSDT-funding-1792627200-1792972800.json",
+      "sha256": "662293e01a6f4ab48143999b514773357963913b9fdf24da91d93efe60f3c854"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/CLUSDT-mark-1792627200-1792972800.json",
+      "sha256": "ddf69f30b9f804feeff5fa7a38f1d317c9162f3c7ae6301b85292876da87f9e1"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/CLUSDT-trade-1792627200-1792972800.json",
+      "sha256": "c0e433e3b3f89a920413cbf7d3289ce05234bba71b06c2db459889124bca5a67"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/COPPERUSDT-funding-1792627200-1792972800.json",
+      "sha256": "405aa0f09268489c3c6c70fa79f7cae8b656c4d329cff552db1dd1a3e1519797"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/COPPERUSDT-mark-1792627200-1792972800.json",
+      "sha256": "8c7fd2d03cf5e1bb3e1835a3a17968e81ea1f57e2e367fda0b7ec45b77ee5351"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/COPPERUSDT-trade-1792627200-1792972800.json",
+      "sha256": "ba0d75b0008af6f146dab8d3169ee7c28f9ea909f217a3362e1c4e6084364b4f"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/IWMUSDT-funding-1792627200-1792972800.json",
+      "sha256": "09242fe82f908c43c69d774e2beb7656f3cd89161e5679f58c575ee57053da46"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/IWMUSDT-mark-1792627200-1792972800.json",
+      "sha256": "d11ab9a3f08786bb76e1a048adf6edb3e35a71863b59bad4eb716e4a95f476b2"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/IWMUSDT-trade-1792627200-1792972800.json",
+      "sha256": "55d45a143b7129b4a2322c0ed0e3b468d2671ea1b9ac7dd6e356a7696d9421fd"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/QQQUSDT-funding-1792627200-1792972800.json",
+      "sha256": "19269d6ea1e87189a79b221f59497c4be246a4f70984cec9d4a9d606ccccb7ea"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/QQQUSDT-mark-1792627200-1792972800.json",
+      "sha256": "eca47d1b6c8cc2e2391484fc832ab8bc2ac196befa8592d0e52686b1652915f6"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/QQQUSDT-trade-1792627200-1792972800.json",
+      "sha256": "f637837855f1c848ff3a3ee72b38c9385dfaf6cdbd5332d4c91c207d82e2fc57"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/SMHUSDT-funding-1792627200-1792972800.json",
+      "sha256": "28199df848ad432505529749976b6d4584ffe90cde599ea5060d85beb87ed0b2"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/SMHUSDT-mark-1792627200-1792972800.json",
+      "sha256": "a46e080af9631c1e656ab9e245c47573ce454e9f320d461f96831c36115e0392"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/SMHUSDT-trade-1792627200-1792972800.json",
+      "sha256": "11790f49cde63502c0587739fdb9a8495793229b12db735cba1ee069dfca6e98"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/SPYUSDT-funding-1792627200-1792972800.json",
+      "sha256": "f532475cd12a7dd4026a1d950b18820db7696c69422960a46e57a46e65124334"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/SPYUSDT-mark-1792627200-1792972800.json",
+      "sha256": "6bc786967b55b06ae2aaac68edbedc531c4dd460385e87f27f42be17b48d5516"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/SPYUSDT-trade-1792627200-1792972800.json",
+      "sha256": "18a0e012af0da92490a2e42f3e8b9bc38c09e551bc98eca06bce3d5da081484c"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/XAUUSDT-funding-1792627200-1792972800.json",
+      "sha256": "291077160d4d6086597061e1060cc0909135ff18f373dc18147f9c143fa6c010"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/XAUUSDT-mark-1792627200-1792972800.json",
+      "sha256": "f0aef907994bb582cd60947752c113f72938318b665dbb4b5a5ac0e8d2e8eb0b"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/XAUUSDT-trade-1792627200-1792972800.json",
+      "sha256": "71db144c23ad3ba475456d8f68f5d55d3d674dfb4a9aea463faf92fa36615f90"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/XLEUSDT-funding-1792627200-1792972800.json",
+      "sha256": "f2ad2e95755a7949131a3f29d42437332a5d75e7c5bad23c5d0dd1efa8fc0a58"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/XLEUSDT-mark-1792627200-1792972800.json",
+      "sha256": "28658f212e8280f2946ae17eff78c2a73ace271ed2aa0827dd6b7cbc52c65d55"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/XLEUSDT-trade-1792627200-1792972800.json",
+      "sha256": "f91e075261b7617b224e79e3be3a8f028bc3ad7fd1572b298db25ba6f234fbfd"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-SPY-20250101-2026-10-26.json",
+      "sha256": "c809aa0333b12df84803900959fdc06e74568035f6399e36829f05ab07e4f65f"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-QQQ-20250101-2026-10-26.json",
+      "sha256": "03e0ab94453ef1b600f190d53ea779411a5c547a2c24e943a424cca66003391c"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-SMH-20250101-2026-10-26.json",
+      "sha256": "65f1d2f4d319124ebf6ece95eeef7bf015186e4d6c4f50fd23872944f86a2f4e"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-IWM-20250101-2026-10-26.json",
+      "sha256": "f404c87cd9a9c55d501f16e3743db5e9d8ae72702916dfe538f52f32361d8e56"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-XLE-20250101-2026-10-26.json",
+      "sha256": "87295ff2c14dd0294f7d47685c3c6148ceb1e870b75e9fade9c50546c9cba11b"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-GLD-20250101-2026-10-26.json",
+      "sha256": "aaa0e3e9af35b175c85b0c0bf6bd80473984b6d886df19e31a28e2202906a11d"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-CPER-20250101-2026-10-26.json",
+      "sha256": "e4bc49eb68f392339719e016ab1f924809c8a26da70aa013e83a305313007c32"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/yahoo-USO-20250101-2026-10-26.json",
+      "sha256": "4574515b0a6b747c7c62892568bf565d5e24198cbcf9cabe80e6d6cf9eca5ced"
+    },
+    {
+      "path": "state/research_cache/position_flow_20261027/hourly.json",
+      "sha256": "a2ff7f257b4c800d12e0f5e25da5c53a4df5e352a6195a98f329006a4b22846b"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_rotation_20261102/mark_hourly_windows.json",
+      "sha256": "57638f78e63aa390be757cdd662440c964158ac3762442ef433ae193689d4397"
+    },
+    {
+      "path": "state/research_cache/independent_crypto_factors_20261027/panel_seven.json",
+      "sha256": "ed6cd3e2fbde739a975442820ac0855ef2899214484cbe37e249aee183b64b6e"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_rotation_20261102/exchange_filters.json",
+      "sha256": "1b830a3a80cd585a14c96f7af6ff206d179a858688ba7dbadc95200e955346fa"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_rotation_20261102/mark_daily.json",
+      "sha256": "e7585c31d87c65b4bead01c019cf25c869db945a4cc2bdf6995dd6585bc9389c"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/ETHUSDT-trade-1630454400-1793145600.json",
+      "sha256": "456f4f597bef76f56538a9e08d718a69ba682c4a3279b8155a75119e3131f878"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/ETHUSDT-mark-1630454400-1793145600.json",
+      "sha256": "9d60d2cd62e55aecb142c982b7272df0b4e48304ea4bb1a9916188aebe08f09f"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/SOLUSDT-trade-1630454400-1793145600.json",
+      "sha256": "9cf61d7d53e3ff44fde54dcaba86a318b3b50b612d3ad6fb28372de139c03380"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/SOLUSDT-mark-1630454400-1793145600.json",
+      "sha256": "d6775875850642f4f057f8eb234769f1e9c31091b228c5c1ecdc8aed3e016926"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_rotation_20261102/exchange_filters.json",
+      "sha256": "1b830a3a80cd585a14c96f7af6ff206d179a858688ba7dbadc95200e955346fa"
+    },
+    {
+      "path": "state/research_cache/macro_native_tail_20261026/exchange-info.json",
+      "sha256": "346068016514d681838970407d7faa2d5953207f8a095a33eb48be0befbb1cdf"
+    }
+  ],
+  "limitations": [
+    "ETF perpetuals only have a short 2026 listing history; this is a feasibility window, not long-term evidence.",
+    "Historical leverage tiers, mark-price liquidation matching, spread, impact and execution queue are not reconstructed.",
+    "A shared-wallet liquidation trigger uses hourly mark lows and closes all positions at a conservative wallet-level bound.",
+    "The strategy opens fixed quantities and never adds, trims, rebalances or rotates a held symbol."
+  ]
+}

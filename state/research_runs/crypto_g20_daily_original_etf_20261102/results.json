@@ -1,0 +1,3402 @@
+{
+  "research_only": true,
+  "orders_authorized": false,
+  "symbols": [
+    "ETHUSDT",
+    "SOLUSDT",
+    "SPYUSDT",
+    "QQQUSDT",
+    "SMHUSDT",
+    "IWMUSDT",
+    "XLEUSDT",
+    "XAUUSDT",
+    "COPPERUSDT",
+    "CLUSDT"
+  ],
+  "excluded_symbols": [
+    "BTCUSDT"
+  ],
+  "source_window": {
+    "start": "2022-01-03T21:00:00+00:00",
+    "end": "2025-12-31T21:00:00+00:00",
+    "bars": 1003
+  },
+  "tested_window": {
+    "start": "2022-06-28T20:00:00+00:00",
+    "end": "2025-12-31T21:00:00+00:00"
+  },
+  "mechanism": "Daily close signals use 7-day ranking momentum, positive 63-day momentum and 120-day mean. Entry is the next ETF session open or next synchronized crypto sample. Positions are fixed quantity, never resized or rebalanced, and rank changes never rotate a held symbol. Dual mode requires one ETH/SOL position and one original ETF. A shared wallet liquidates all positions on the hourly mark-low bound.",
+  "proxy_warning": "Original Yahoo ETFs are adjusted daily proxies with fractional quantities and zero ETF funding; they are not Binance ETF perpetual execution prices.",
+  "cost_assumptions": "One-way 10bp and 30bp; crypto funding from observed settlements; 0.5% maintenance and 1% liquidation fee proxy.",
+  "leverage_definition": "total gross is initial aggregate notional/equity; 10x total is split equally across slots, while each10x would imply 20x/30x aggregate and is not a sensible default.",
+  "results": {
+    "dual_2slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 105.72817558728853,
+        "return_pct": 397.5443557048872,
+        "cagr_pct": 57.9520932334638,
+        "mdd_pct": 67.69162935931934,
+        "calmar": 0.8561190472435471,
+        "intraday_drawdown_bound_pct": 70.44521633518795,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.6500224226214497,
+        "mean_actual_gross": 1.227395788838017,
+        "active_hours": 678,
+        "mean_holding_days": 3.140625,
+        "median_holding_days": 1.125,
+        "max_holding_days": 12.333333333333334,
+        "funding_pnl": -19.59453506311905,
+        "price_pnl": 106.09617363651218,
+        "costs": 2.0234629861044384,
+        "counts": {
+          "entry": 16,
+          "funding_debit_intervals": 489,
+          "trend_exit": 15,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 3.472169431193155,
+            "funding": -3.4914376411406876,
+            "costs": 0.6356953036756801
+          },
+          "SOLUSDT": {
+            "price": 47.58336313498997,
+            "funding": -16.10309742197836,
+            "costs": 0.8552251678696724
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 20.336960712917566,
+            "funding": 0.0,
+            "costs": 0.12860018210646812
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 41.70256146219671,
+            "funding": 0.0,
+            "costs": 0.18705462623381075
+          },
+          "COPPERUSDT": {
+            "price": -4.223745974923973,
+            "funding": 0.0,
+            "costs": 0.16991508053492566
+          },
+          "CLUSDT": {
+            "price": -2.775135129861262,
+            "funding": 0.0,
+            "costs": 0.04697262568388137
+          }
+        }
+      }
+    },
+    "dual_2slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 99.80816861291278,
+        "return_pct": 369.6854993548837,
+        "cagr_pct": 55.380292314940064,
+        "mdd_pct": 68.88271624338557,
+        "calmar": 0.8039795079982481,
+        "intraday_drawdown_bound_pct": 71.52774630546838,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.6698265506950434,
+        "mean_actual_gross": 1.230452311192033,
+        "active_hours": 678,
+        "mean_holding_days": 3.140625,
+        "median_holding_days": 1.125,
+        "max_holding_days": 12.333333333333334,
+        "funding_pnl": -19.12240599016247,
+        "price_pnl": 103.55033001937547,
+        "costs": 5.869755416300363,
+        "counts": {
+          "entry": 16,
+          "funding_debit_intervals": 489,
+          "trend_exit": 15,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 3.010152073523151,
+            "funding": -3.3716548312022034,
+            "costs": 1.8424018416632417
+          },
+          "SOLUSDT": {
+            "price": 47.48688406701168,
+            "funding": -15.750751158960268,
+            "costs": 2.481679177745605
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 19.98509450670833,
+            "funding": 0.0,
+            "costs": 0.3797505715410727
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 39.85988082560581,
+            "funding": 0.0,
+            "costs": 0.5363681400949504
+          },
+          "COPPERUSDT": {
+            "price": -4.07231450378381,
+            "funding": 0.0,
+            "costs": 0.4914696463627362
+          },
+          "CLUSDT": {
+            "price": -2.719366949689694,
+            "funding": 0.0,
+            "costs": 0.1380860388927564
+          }
+        }
+      }
+    },
+    "dual_2slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 153.0446434344823,
+        "return_pct": 620.210086750505,
+        "cagr_pct": 75.50426334426162,
+        "mdd_pct": 87.19689040558578,
+        "calmar": 0.8659054582458466,
+        "intraday_drawdown_bound_pct": 91.76085594203171,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 7.4006656360932555,
+        "mean_actual_gross": 2.050340082361124,
+        "active_hours": 678,
+        "mean_holding_days": 3.140625,
+        "median_holding_days": 1.125,
+        "max_holding_days": 12.333333333333334,
+        "funding_pnl": -42.899601028223,
+        "price_pnl": 180.14769472831574,
+        "costs": 5.4534502656105674,
+        "counts": {
+          "entry": 16,
+          "funding_debit_intervals": 489,
+          "trend_exit": 15,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -15.596769319852942,
+            "funding": -8.124734738463385,
+            "costs": 1.8167578332915122
+          },
+          "SOLUSDT": {
+            "price": 68.98536972866754,
+            "funding": -34.774866289759615,
+            "costs": 2.322195345006539
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 49.0522348745134,
+            "funding": 0.0,
+            "costs": 0.3036725771547646
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 95.51726577709162,
+            "funding": 0.0,
+            "costs": 0.4284376264274746
+          },
+          "COPPERUSDT": {
+            "price": -12.055624442132876,
+            "funding": 0.0,
+            "costs": 0.48498001777218563
+          },
+          "CLUSDT": {
+            "price": -5.754781889970994,
+            "funding": 0.0,
+            "costs": 0.09740686595809153
+          }
+        }
+      }
+    },
+    "dual_2slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 136.5545411504127,
+        "return_pct": 542.6096054137067,
+        "cagr_pct": 69.89548891297459,
+        "mdd_pct": 88.189683299525,
+        "calmar": 0.7925585657857902,
+        "intraday_drawdown_bound_pct": 92.01241557778064,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 7.532449086661683,
+        "mean_actual_gross": 2.060453865264093,
+        "active_hours": 678,
+        "mean_holding_days": 3.140625,
+        "median_holding_days": 1.125,
+        "max_holding_days": 12.333333333333334,
+        "funding_pnl": -40.79822560981262,
+        "price_pnl": 171.41253770451044,
+        "costs": 15.3097709442852,
+        "counts": {
+          "entry": 16,
+          "funding_debit_intervals": 489,
+          "trend_exit": 15,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -16.483829649068788,
+            "funding": -7.598518209683265,
+            "costs": 5.110919146595517
+          },
+          "SOLUSDT": {
+            "price": 70.38472179798143,
+            "funding": -33.199707400129356,
+            "costs": 6.516236100164579
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 47.29493289028254,
+            "funding": 0.0,
+            "costs": 0.880993116296233
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 86.93534412000854,
+            "funding": 0.0,
+            "costs": 1.1698316168624616
+          },
+          "COPPERUSDT": {
+            "price": -11.198330200388517,
+            "funding": 0.0,
+            "costs": 1.3514769987250155
+          },
+          "CLUSDT": {
+            "price": -5.520301254304757,
+            "funding": 0.0,
+            "costs": 0.28031396564139377
+          }
+        }
+      }
+    },
+    "dual_2slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 6.71997127270279,
+        "mean_actual_gross": 1.243750629787985,
+        "active_hours": 368,
+        "mean_holding_days": 3.2453703703703702,
+        "median_holding_days": 1.625,
+        "max_holding_days": 7.625,
+        "funding_pnl": -50.43719222725157,
+        "price_pnl": -31.401064337957788,
+        "costs": 11.364871894085207,
+        "counts": {
+          "entry": 9,
+          "funding_debit_intervals": 327,
+          "trend_exit": 7,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -90.56132531034123,
+            "funding": -7.981001307043756,
+            "costs": 2.368772062088078
+          },
+          "SOLUSDT": {
+            "price": 1.291202850489526,
+            "funding": -42.45619092020782,
+            "costs": 6.640555145946067
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 66.03929856535036,
+            "funding": 0.0,
+            "costs": 2.217253169372025
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -8.170240443456446,
+            "funding": 0.0,
+            "costs": 0.13829151667903639
+          }
+        }
+      }
+    },
+    "dual_2slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 6.780675753951573,
+        "mean_actual_gross": 1.2473167427196072,
+        "active_hours": 368,
+        "mean_holding_days": 3.2453703703703702,
+        "median_holding_days": 1.625,
+        "max_holding_days": 7.625,
+        "funding_pnl": -47.56133293877956,
+        "price_pnl": -22.32129252905095,
+        "costs": 18.431875925648793,
+        "counts": {
+          "entry": 9,
+          "funding_debit_intervals": 327,
+          "trend_exit": 7,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -84.12124939773753,
+            "funding": -7.657372467912644,
+            "costs": 6.677741348120845
+          },
+          "SOLUSDT": {
+            "price": 6.926718744417116,
+            "funding": -39.90396047086691,
+            "costs": 8.73752859516085
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 62.52138886672304,
+            "funding": 0.0,
+            "costs": 2.628242491739025
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -7.648150742453582,
+            "funding": 0.0,
+            "costs": 0.3883634906280745
+          }
+        }
+      }
+    },
+    "dual_2slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 20.482031723403622,
+        "mean_actual_gross": 1.7103058696795284,
+        "active_hours": 368,
+        "mean_holding_days": 3.2453703703703702,
+        "median_holding_days": 1.625,
+        "max_holding_days": 7.625,
+        "funding_pnl": -64.53519776013788,
+        "price_pnl": -202.60687474419848,
+        "costs": 18.32441292077168,
+        "counts": {
+          "entry": 9,
+          "funding_debit_intervals": 327,
+          "trend_exit": 7,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -188.2428524945522,
+            "funding": -15.686280344928736,
+            "costs": 4.774993932935312
+          },
+          "SOLUSDT": {
+            "price": -106.35682789990136,
+            "funding": -48.848917415209144,
+            "costs": 10.078127360229114
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 101.11827270723765,
+            "funding": 0.0,
+            "costs": 3.3168317082880607
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -9.125467056982554,
+            "funding": 0.0,
+            "costs": 0.15445991931919417
+          }
+        }
+      }
+    },
+    "dual_2slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 21.29093304269069,
+        "mean_actual_gross": 1.7218556248439043,
+        "active_hours": 368,
+        "mean_holding_days": 3.2453703703703702,
+        "median_holding_days": 1.625,
+        "max_holding_days": 7.625,
+        "funding_pnl": -56.97298296258581,
+        "price_pnl": -159.40139205322086,
+        "costs": 28.799980770706448,
+        "counts": {
+          "entry": 9,
+          "funding_debit_intervals": 327,
+          "trend_exit": 7,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -162.35159887681655,
+            "funding": -14.416025461297936,
+            "costs": 12.61100421501634
+          },
+          "SOLUSDT": {
+            "price": -79.77047327307992,
+            "funding": -42.556957501287876,
+            "costs": 12.060213725158373
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 90.62768066047646,
+            "funding": 0.0,
+            "costs": 3.7272552710232105
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -7.907000563800836,
+            "funding": 0.0,
+            "costs": 0.40150755950852424
+          }
+        }
+      }
+    },
+    "dual_3slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 72.23151619443487,
+        "return_pct": 239.91301738557587,
+        "cagr_pct": 41.7049965509283,
+        "mdd_pct": 64.16149392679922,
+        "calmar": 0.6500003974113949,
+        "intraday_drawdown_bound_pct": 66.84749339576568,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 3.221982414474966,
+        "mean_actual_gross": 1.4402773897513856,
+        "active_hours": 706,
+        "mean_holding_days": 2.9135802469135803,
+        "median_holding_days": 1.6666666666666667,
+        "max_holding_days": 13.125,
+        "funding_pnl": -16.99226226163242,
+        "price_pnl": 70.19801219216424,
+        "costs": 2.2242337360973594,
+        "counts": {
+          "entry": 27,
+          "funding_debit_intervals": 549,
+          "trend_exit": 26,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -8.734113999288196,
+            "funding": -4.150525360702195,
+            "costs": 0.5077263914547329
+          },
+          "SOLUSDT": {
+            "price": 42.36080629205255,
+            "funding": -12.841736900930224,
+            "costs": 0.7011394146982077
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 6.848448905316739,
+            "funding": 0.0,
+            "costs": 0.08934492858554649
+          },
+          "SMHUSDT": {
+            "price": 11.652157887985737,
+            "funding": 0.0,
+            "costs": 0.19239647794310716
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -1.8668194795674133,
+            "funding": 0.0,
+            "costs": 0.13175366404114863
+          },
+          "XAUUSDT": {
+            "price": 37.03843862707744,
+            "funding": 0.0,
+            "costs": 0.15684850121721144
+          },
+          "COPPERUSDT": {
+            "price": -10.772789182982278,
+            "funding": 0.0,
+            "costs": 0.32386367593037585
+          },
+          "CLUSDT": {
+            "price": -6.3281168584303344,
+            "funding": 0.0,
+            "costs": 0.12116068222702914
+          }
+        }
+      }
+    },
+    "dual_3slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 68.06135048045368,
+        "return_pct": 220.28870814331145,
+        "cagr_pct": 39.32445800359232,
+        "mdd_pct": 65.37083381054885,
+        "calmar": 0.6015596820679769,
+        "intraday_drawdown_bound_pct": 68.03985004537165,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 3.266240556928547,
+        "mean_actual_gross": 1.4479743235324443,
+        "active_hours": 706,
+        "mean_holding_days": 2.9135802469135803,
+        "median_holding_days": 1.6666666666666667,
+        "max_holding_days": 13.125,
+        "funding_pnl": -16.629756025620477,
+        "price_pnl": 69.8933789155331,
+        "costs": 6.452272409458782,
+        "counts": {
+          "entry": 27,
+          "funding_debit_intervals": 549,
+          "trend_exit": 26,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -8.56913760354832,
+            "funding": -4.005538440805996,
+            "costs": 1.4729828184921467
+          },
+          "SOLUSDT": {
+            "price": 42.56336124473565,
+            "funding": -12.624217584814481,
+            "costs": 2.036210584167232
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 6.727919565646555,
+            "funding": 0.0,
+            "costs": 0.26385133115543324
+          },
+          "SMHUSDT": {
+            "price": 11.522913040933126,
+            "funding": 0.0,
+            "costs": 0.561946878494866
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -1.8090975481274634,
+            "funding": 0.0,
+            "costs": 0.3773917990646886
+          },
+          "XAUUSDT": {
+            "price": 35.87133927976762,
+            "funding": 0.0,
+            "costs": 0.4557183842981227
+          },
+          "COPPERUSDT": {
+            "price": -10.37087952619326,
+            "funding": 0.0,
+            "costs": 0.9368585725608253
+          },
+          "CLUSDT": {
+            "price": -6.043039537680809,
+            "funding": 0.0,
+            "costs": 0.34731204122546766
+          }
+        }
+      }
+    },
+    "dual_3slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 107.59804261362201,
+        "return_pct": 406.34372994645656,
+        "cagr_pct": 58.742965014688544,
+        "mdd_pct": 82.80056618743099,
+        "calmar": 0.7094512479747468,
+        "intraday_drawdown_bound_pct": 88.62261037649421,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 8.378778474919264,
+        "mean_actual_gross": 2.7440667709282054,
+        "active_hours": 706,
+        "mean_holding_days": 2.9135802469135803,
+        "median_holding_days": 1.6666666666666667,
+        "max_holding_days": 13.125,
+        "funding_pnl": -42.52245756521657,
+        "price_pnl": 135.541039926447,
+        "costs": 6.67053974760829,
+        "counts": {
+          "entry": 27,
+          "funding_debit_intervals": 549,
+          "trend_exit": 26,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -47.16627964702285,
+            "funding": -12.311961265554183,
+            "costs": 1.5962785687676864
+          },
+          "SOLUSDT": {
+            "price": 56.58382013481544,
+            "funding": -30.21049629966239,
+            "costs": 2.192409521005719
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 18.752019494426875,
+            "funding": 0.0,
+            "costs": 0.2389629154182466
+          },
+          "SMHUSDT": {
+            "price": 30.028785828250058,
+            "funding": 0.0,
+            "costs": 0.5339522514595128
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -4.600047137704626,
+            "funding": 0.0,
+            "costs": 0.3636537543192694
+          },
+          "XAUUSDT": {
+            "price": 126.99353636098624,
+            "funding": 0.0,
+            "costs": 0.5377857863568871
+          },
+          "COPPERUSDT": {
+            "price": -29.427797552756793,
+            "funding": 0.0,
+            "costs": 0.9089773281712688
+          },
+          "CLUSDT": {
+            "price": -15.622997554547341,
+            "funding": 0.0,
+            "costs": 0.2985196221097
+          }
+        }
+      }
+    },
+    "dual_3slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 97.37874875823762,
+        "return_pct": 358.25293533288294,
+        "cagr_pct": 54.29327392694847,
+        "mdd_pct": 83.95671864553759,
+        "calmar": 0.6466817046074993,
+        "intraday_drawdown_bound_pct": 89.19989212769894,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 8.56325860535191,
+        "mean_actual_gross": 2.7752695095115665,
+        "active_hours": 706,
+        "mean_holding_days": 2.9135802469135803,
+        "median_holding_days": 1.6666666666666667,
+        "max_holding_days": 13.125,
+        "funding_pnl": -40.66873264501437,
+        "price_pnl": 135.5887575015267,
+        "costs": 18.79127609827478,
+        "counts": {
+          "entry": 27,
+          "funding_debit_intervals": 549,
+          "trend_exit": 26,
+          "terminal_exit": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -44.934255068062924,
+            "funding": -11.490366233508556,
+            "costs": 4.505914533055949
+          },
+          "SOLUSDT": {
+            "price": 59.48514833242305,
+            "funding": -29.178366411505813,
+            "costs": 6.187957826091415
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 18.118341724240974,
+            "funding": 0.0,
+            "costs": 0.6951479283250861
+          },
+          "SMHUSDT": {
+            "price": 29.385106009748103,
+            "funding": 0.0,
+            "costs": 1.517159373116944
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -4.3297035907079255,
+            "funding": 0.0,
+            "costs": 1.0044372060495639
+          },
+          "XAUUSDT": {
+            "price": 119.496687255022,
+            "funding": 0.0,
+            "costs": 1.5181155300647444
+          },
+          "COPPERUSDT": {
+            "price": -27.355710823639836,
+            "funding": 0.0,
+            "costs": 2.543294758283536
+          },
+          "CLUSDT": {
+            "price": -14.276856337496744,
+            "funding": 0.0,
+            "costs": 0.8192489432875415
+          }
+        }
+      }
+    },
+    "dual_3slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 11.697214028882764,
+        "mean_actual_gross": 2.036856637079437,
+        "active_hours": 477,
+        "mean_holding_days": 2.9342105263157894,
+        "median_holding_days": 2.0416666666666665,
+        "max_holding_days": 7.75,
+        "funding_pnl": -73.02786702531266,
+        "price_pnl": 40.64146009027909,
+        "costs": 17.77548714066309,
+        "counts": {
+          "entry": 19,
+          "funding_debit_intervals": 438,
+          "trend_exit": 16,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -200.20822439510493,
+            "funding": -19.7029191493881,
+            "costs": 5.009697740257138
+          },
+          "SOLUSDT": {
+            "price": 160.61171638491297,
+            "funding": -53.32494787592456,
+            "costs": 5.766045733357319
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 35.60064881163489,
+            "funding": 0.0,
+            "costs": 0.4476398486971337
+          },
+          "SMHUSDT": {
+            "price": 57.777644494689255,
+            "funding": 0.0,
+            "costs": 0.918998400613231
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -4.422336589969749,
+            "funding": 0.0,
+            "costs": 0.11478905394642355
+          },
+          "XAUUSDT": {
+            "price": 18.591564057811812,
+            "funding": 0.0,
+            "costs": 4.547147009606548
+          },
+          "COPPERUSDT": {
+            "price": -21.71912453156066,
+            "funding": 0.0,
+            "costs": 0.8573099690099617
+          },
+          "CLUSDT": {
+            "price": -5.59042814213449,
+            "funding": 0.0,
+            "costs": 0.11385938517533162
+          }
+        }
+      }
+    },
+    "dual_3slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 11.938724893371942,
+        "mean_actual_gross": 2.04969010907201,
+        "active_hours": 477,
+        "mean_holding_days": 2.9342105263157894,
+        "median_holding_days": 2.0416666666666665,
+        "max_holding_days": 7.75,
+        "funding_pnl": -68.35899934558165,
+        "price_pnl": 51.94650198018972,
+        "costs": 31.08064065909006,
+        "counts": {
+          "entry": 19,
+          "funding_debit_intervals": 438,
+          "trend_exit": 16,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -181.43444943988968,
+            "funding": -18.083217135975524,
+            "costs": 8.675810664253664
+          },
+          "SOLUSDT": {
+            "price": 156.30205483241525,
+            "funding": -50.27578220960613,
+            "costs": 10.689624875652603
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 33.83847583513506,
+            "funding": 0.0,
+            "costs": 1.2828882133605268
+          },
+          "SMHUSDT": {
+            "price": 55.79798743946024,
+            "funding": 0.0,
+            "costs": 2.5407920028361057
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -4.163891168129745,
+            "funding": 0.0,
+            "costs": 0.32424202785212564
+          },
+          "XAUUSDT": {
+            "price": 16.958922786374316,
+            "funding": 0.0,
+            "costs": 4.871150819510182
+          },
+          "COPPERUSDT": {
+            "price": -20.067867082816495,
+            "funding": 0.0,
+            "costs": 2.3732321457272794
+          },
+          "CLUSDT": {
+            "price": -5.284731222359227,
+            "funding": 0.0,
+            "costs": 0.32289990989757633
+          }
+        }
+      }
+    },
+    "dual_3slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 10.443027132437544,
+        "mean_actual_gross": 2.0258270329454153,
+        "active_hours": 389,
+        "mean_holding_days": 3.5224358974358974,
+        "median_holding_days": 2.9166666666666665,
+        "max_holding_days": 7.625,
+        "funding_pnl": -87.70235153228461,
+        "price_pnl": -179.13476049465595,
+        "costs": 29.258962198719953,
+        "counts": {
+          "entry": 13,
+          "funding_debit_intervals": 328,
+          "trend_exit": 10,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -215.5343771308406,
+            "funding": -14.396212632091126,
+            "costs": 5.142530985714966
+          },
+          "SOLUSDT": {
+            "price": -126.42384939446998,
+            "funding": -73.30613890019349,
+            "costs": 14.951831492820764
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 61.12508564042568,
+            "funding": 0.0,
+            "costs": 4.106591600703261
+          },
+          "SMHUSDT": {
+            "price": 122.11720696043255,
+            "funding": 0.0,
+            "costs": 4.5483467663937684
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -7.218480997527696,
+            "funding": 0.0,
+            "costs": 0.18736760257366755
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": -4.063072332890687,
+            "funding": 0.0,
+            "costs": 0.13619631990354475
+          },
+          "CLUSDT": {
+            "price": -9.137273239785225,
+            "funding": 0.0,
+            "costs": 0.18609743060998066
+          }
+        }
+      }
+    },
+    "dual_3slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 10.890978749500825,
+        "mean_actual_gross": 2.0397947542848076,
+        "active_hours": 389,
+        "mean_holding_days": 3.5224358974358974,
+        "median_holding_days": 2.9166666666666665,
+        "max_holding_days": 7.625,
+        "funding_pnl": -80.69013845543856,
+        "price_pnl": -144.75123164080222,
+        "costs": 43.848394367637674,
+        "counts": {
+          "entry": 13,
+          "funding_debit_intervals": 328,
+          "trend_exit": 10,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -194.9882655237819,
+            "funding": -13.414912469544012,
+            "costs": 14.074503441705083
+          },
+          "SOLUSDT": {
+            "price": -99.81880300311906,
+            "funding": -67.27522598589455,
+            "costs": 18.467272349167875
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 56.39671173543782,
+            "funding": 0.0,
+            "costs": 4.890780122817526
+          },
+          "SMHUSDT": {
+            "price": 112.33118290132396,
+            "funding": 0.0,
+            "costs": 5.009475339818751
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": -6.458858346119354,
+            "funding": 0.0,
+            "costs": 0.5029510242209362
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": -3.9831453550449663,
+            "funding": 0.0,
+            "costs": 0.400551376804114
+          },
+          "CLUSDT": {
+            "price": -8.230054049498712,
+            "funding": 0.0,
+            "costs": 0.5028607131033911
+          }
+        }
+      }
+    },
+    "pool_2slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 64.31521725297489,
+        "return_pct": 202.65984589635244,
+        "cagr_pct": 37.09532558578734,
+        "mdd_pct": 60.09909869382016,
+        "calmar": 0.617235971786741,
+        "intraday_drawdown_bound_pct": 66.75558223109003,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.8025852938436397,
+        "mean_actual_gross": 1.8312974486211877,
+        "active_hours": 846,
+        "mean_holding_days": 2.336206896551724,
+        "median_holding_days": 1.0,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -8.572749458735972,
+        "price_pnl": 53.734438837999754,
+        "costs": 2.096472126288769,
+        "counts": {
+          "entry": 29,
+          "trend_exit": 27,
+          "funding_debit_intervals": 254,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.006374787255908065,
+            "funding": -0.28219791213700757,
+            "costs": 0.028364318405087956
+          },
+          "SOLUSDT": {
+            "price": 33.44769218871313,
+            "funding": -8.290551546598964,
+            "costs": 0.33784456844843574
+          },
+          "SPYUSDT": {
+            "price": 1.4071036364083105,
+            "funding": 0.0,
+            "costs": 0.1335044851628368
+          },
+          "QQQUSDT": {
+            "price": 0.6942811336359206,
+            "funding": 0.0,
+            "costs": 0.06844344715278453
+          },
+          "SMHUSDT": {
+            "price": 1.337865013056605,
+            "funding": 0.0,
+            "costs": 0.22399221218529586
+          },
+          "IWMUSDT": {
+            "price": -1.98496554120997,
+            "funding": 0.0,
+            "costs": 0.03162943796146486
+          },
+          "XLEUSDT": {
+            "price": -0.5798246302983324,
+            "funding": 0.0,
+            "costs": 0.18450867225619816
+          },
+          "XAUUSDT": {
+            "price": 43.62999879247467,
+            "funding": 0.0,
+            "costs": 0.15276658150816888
+          },
+          "COPPERUSDT": {
+            "price": -9.162582717320298,
+            "funding": 0.0,
+            "costs": 0.41447413851993953
+          },
+          "CLUSDT": {
+            "price": -15.048754250204377,
+            "funding": 0.0,
+            "costs": 0.5209442646885567
+          }
+        }
+      }
+    },
+    "pool_2slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 57.79078496805539,
+        "return_pct": 171.9566351437901,
+        "cagr_pct": 32.98042260710532,
+        "mdd_pct": 60.48251726927312,
+        "calmar": 0.5452885246206566,
+        "intraday_drawdown_bound_pct": 67.08551345421998,
+        "max_positions": 2,
+        "position_gross": 1.0,
+        "max_actual_gross": 2.842319090335138,
+        "mean_actual_gross": 1.8398960962475102,
+        "active_hours": 846,
+        "mean_holding_days": 2.336206896551724,
+        "median_holding_days": 1.0,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -8.064027908477556,
+        "price_pnl": 50.460557669262485,
+        "costs": 5.855744792729566,
+        "counts": {
+          "entry": 29,
+          "trend_exit": 27,
+          "funding_debit_intervals": 254,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.006087833324003866,
+            "funding": -0.26949508815057877,
+            "costs": 0.08126259082879816
+          },
+          "SOLUSDT": {
+            "price": 31.892343284708154,
+            "funding": -7.794532820326976,
+            "costs": 0.936378867719476
+          },
+          "SPYUSDT": {
+            "price": 1.2130448430666538,
+            "funding": 0.0,
+            "costs": 0.3722106181675493
+          },
+          "QQQUSDT": {
+            "price": 0.627030113793826,
+            "funding": 0.0,
+            "costs": 0.19895270435755968
+          },
+          "SMHUSDT": {
+            "price": 1.2792943855566818,
+            "funding": 0.0,
+            "costs": 0.6298267724727133
+          },
+          "IWMUSDT": {
+            "price": -1.940875848510956,
+            "funding": 0.0,
+            "costs": 0.0927806719565955
+          },
+          "XLEUSDT": {
+            "price": -0.5333406471429186,
+            "funding": 0.0,
+            "costs": 0.5165795239469221
+          },
+          "XAUUSDT": {
+            "price": 40.304989970836814,
+            "funding": 0.0,
+            "costs": 0.42337307169220795
+          },
+          "COPPERUSDT": {
+            "price": -8.387425765860417,
+            "funding": 0.0,
+            "costs": 1.1388057597782615
+          },
+          "CLUSDT": {
+            "price": -13.988414833861349,
+            "funding": 0.0,
+            "costs": 1.4655742118094828
+          }
+        }
+      }
+    },
+    "pool_2slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 46.604271191105205,
+        "return_pct": 119.31421736990684,
+        "cagr_pct": 25.074550530320217,
+        "mdd_pct": 83.97081631792541,
+        "calmar": 0.29861029855163507,
+        "intraday_drawdown_bound_pct": 96.80617345037702,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 9.096509411506561,
+        "mean_actual_gross": 3.3998784902079793,
+        "active_hours": 846,
+        "mean_holding_days": 2.336206896551724,
+        "median_holding_days": 1.0,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -9.044305567183365,
+        "price_pnl": 37.568806212284784,
+        "costs": 3.1702294539962086,
+        "counts": {
+          "entry": 29,
+          "trend_exit": 27,
+          "funding_debit_intervals": 254,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.007655233216692925,
+            "funding": -0.33888045890007396,
+            "costs": 0.03406160295345246
+          },
+          "SOLUSDT": {
+            "price": 14.819674016041516,
+            "funding": -8.705425108283292,
+            "costs": 0.5414652812464704
+          },
+          "SPYUSDT": {
+            "price": 1.3258480417522194,
+            "funding": 0.0,
+            "costs": 0.17110894471929244
+          },
+          "QQQUSDT": {
+            "price": 0.3313219665641648,
+            "funding": 0.0,
+            "costs": 0.10590504334607945
+          },
+          "SMHUSDT": {
+            "price": 3.1210643752768883,
+            "funding": 0.0,
+            "costs": 0.32651843355232085
+          },
+          "IWMUSDT": {
+            "price": -3.075218798800688,
+            "funding": 0.0,
+            "costs": 0.04900208099094043
+          },
+          "XLEUSDT": {
+            "price": -1.33747959894118,
+            "funding": 0.0,
+            "costs": 0.2623861439146891
+          },
+          "XAUUSDT": {
+            "price": 58.82481867825284,
+            "funding": 0.0,
+            "costs": 0.2059698992901315
+          },
+          "COPPERUSDT": {
+            "price": -13.34368608444836,
+            "funding": 0.0,
+            "costs": 0.5828644682730006
+          },
+          "CLUSDT": {
+            "price": -23.089881150195925,
+            "funding": 0.0,
+            "costs": 0.8909475557098314
+          }
+        }
+      }
+    },
+    "pool_2slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 37.57962029334379,
+        "return_pct": 76.84527196867666,
+        "cagr_pct": 17.635571278612815,
+        "mdd_pct": 84.31762569242669,
+        "calmar": 0.2091564027543155,
+        "intraday_drawdown_bound_pct": 96.9578443094664,
+        "max_positions": 2,
+        "position_gross": 2.0,
+        "max_actual_gross": 9.180057487467824,
+        "mean_actual_gross": 3.429439226721027,
+        "active_hours": 846,
+        "mean_holding_days": 2.336206896551724,
+        "median_holding_days": 1.0,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -7.919002541089602,
+        "price_pnl": 32.46409366126336,
+        "costs": 8.21547082683004,
+        "counts": {
+          "entry": 29,
+          "trend_exit": 27,
+          "funding_debit_intervals": 254,
+          "terminal_exit": 2
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.006925744931121969,
+            "funding": -0.30658760537380025,
+            "costs": 0.09244733660879027
+          },
+          "SOLUSDT": {
+            "price": 14.29489716144612,
+            "funding": -7.612414935715802,
+            "costs": 1.3738622227914818
+          },
+          "SPYUSDT": {
+            "price": 0.8643995688831931,
+            "funding": 0.0,
+            "costs": 0.44172321996504604
+          },
+          "QQQUSDT": {
+            "price": 0.16878138286610633,
+            "funding": 0.0,
+            "costs": 0.29913381677007955
+          },
+          "SMHUSDT": {
+            "price": 2.698717391457653,
+            "funding": 0.0,
+            "costs": 0.8570874437698613
+          },
+          "IWMUSDT": {
+            "price": -2.933514582659337,
+            "funding": 0.0,
+            "costs": 0.14023228450311087
+          },
+          "XLEUSDT": {
+            "price": -1.2083244030514821,
+            "funding": 0.0,
+            "costs": 0.6905695951649808
+          },
+          "XAUUSDT": {
+            "price": 49.51911472608814,
+            "funding": 0.0,
+            "costs": 0.5201604000951819
+          },
+          "COPPERUSDT": {
+            "price": -11.04959126965463,
+            "funding": 0.0,
+            "costs": 1.454087445947862
+          },
+          "CLUSDT": {
+            "price": -19.88346056918128,
+            "funding": 0.0,
+            "costs": 2.3461670612136465
+          }
+        }
+      }
+    },
+    "pool_2slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 14.148480304663739,
+        "mean_actual_gross": 2.549658789000702,
+        "active_hours": 493,
+        "mean_holding_days": 2.06359649122807,
+        "median_holding_days": 0.75,
+        "max_holding_days": 7.625,
+        "funding_pnl": -6.805588480578005,
+        "price_pnl": -33.67496605961097,
+        "costs": 2.8115505156444254,
+        "counts": {
+          "entry": 19,
+          "trend_exit": 17,
+          "funding_debit_intervals": 246,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.00590999265012998,
+            "funding": -0.26162246984265547,
+            "costs": 0.0262962364971
+          },
+          "SOLUSDT": {
+            "price": -19.506282905238862,
+            "funding": -6.54396601073535,
+            "costs": 1.1349694842142966
+          },
+          "SPYUSDT": {
+            "price": -2.042636241685411,
+            "funding": 0.0,
+            "costs": 0.0531780554542967
+          },
+          "QQQUSDT": {
+            "price": -0.6934922013408193,
+            "funding": 0.0,
+            "costs": 0.12117903820517535
+          },
+          "SMHUSDT": {
+            "price": 6.015430463769187,
+            "funding": 0.0,
+            "costs": 0.5558516829994502
+          },
+          "IWMUSDT": {
+            "price": -3.477502259009366,
+            "funding": 0.0,
+            "costs": 0.055412267708760066
+          },
+          "XLEUSDT": {
+            "price": -1.1573396206590223,
+            "funding": 0.0,
+            "costs": 0.12406627663548372
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": -0.3463265644114405,
+            "funding": 0.0,
+            "costs": 0.05370540465796317
+          },
+          "CLUSDT": {
+            "price": -12.460906738385109,
+            "funding": 0.0,
+            "costs": 0.6868920692718998
+          }
+        }
+      }
+    },
+    "pool_2slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 3.0,
+        "max_actual_gross": 14.388595085337855,
+        "mean_actual_gross": 2.5750306449780966,
+        "active_hours": 493,
+        "mean_holding_days": 2.06359649122807,
+        "median_holding_days": 0.75,
+        "max_holding_days": 7.625,
+        "funding_pnl": -5.408966639803609,
+        "price_pnl": -28.044839453245718,
+        "costs": 4.904394161955648,
+        "counts": {
+          "entry": 19,
+          "trend_exit": 17,
+          "funding_debit_intervals": 246,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.004992452615642573,
+            "funding": -0.2210049760125778,
+            "costs": 0.06664105479653021
+          },
+          "SOLUSDT": {
+            "price": -14.09525309048296,
+            "funding": -5.187961663791031,
+            "costs": 1.2146079259177867
+          },
+          "SPYUSDT": {
+            "price": -1.8833641484022665,
+            "funding": 0.0,
+            "costs": 0.14709468247033308
+          },
+          "QQQUSDT": {
+            "price": -0.864657601051243,
+            "funding": 0.0,
+            "costs": 0.3346324469187729
+          },
+          "SMHUSDT": {
+            "price": 4.148345143031251,
+            "funding": 0.0,
+            "costs": 0.7193715091491768
+          },
+          "IWMUSDT": {
+            "price": -3.225528769139978,
+            "funding": 0.0,
+            "costs": 0.15419158667244773
+          },
+          "XLEUSDT": {
+            "price": -1.2066932588575483,
+            "funding": 0.0,
+            "costs": 0.3565565423900177
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": -0.30803952703433346,
+            "funding": 0.0,
+            "costs": 0.13992110230821053
+          },
+          "CLUSDT": {
+            "price": -10.604655748692998,
+            "funding": 0.0,
+            "costs": 1.771377311332372
+          }
+        }
+      }
+    },
+    "pool_2slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 64.66329214980732,
+        "mean_actual_gross": 1.696714708167352,
+        "active_hours": 129,
+        "mean_holding_days": 0.7465277777777778,
+        "median_holding_days": 0.3125,
+        "max_holding_days": 3.9166666666666665,
+        "funding_pnl": -0.500676,
+        "price_pnl": -20.17983669412886,
+        "costs": 0.8936539726312027,
+        "counts": {
+          "entry": 12,
+          "trend_exit": 10,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.06097044342965161,
+            "funding": -0.500676,
+            "costs": 0.014740031124326012
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": -1.6227090267346242,
+            "funding": 0.0,
+            "costs": 0.04224565727800872
+          },
+          "QQQUSDT": {
+            "price": -3.191338601178598,
+            "funding": 0.0,
+            "costs": 0.1190029061368589
+          },
+          "SMHUSDT": {
+            "price": -3.9942797296493104,
+            "funding": 0.0,
+            "costs": 0.11881093623207838
+          },
+          "IWMUSDT": {
+            "price": -2.889970923039888,
+            "funding": 0.0,
+            "costs": 0.04605024829046053
+          },
+          "XLEUSDT": {
+            "price": -2.749130889334695,
+            "funding": 0.0,
+            "costs": 0.13958146712505726
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.03819567194410142,
+            "funding": 0.0,
+            "costs": 0.01949269170160071
+          },
+          "CLUSDT": {
+            "price": -5.7096327527061925,
+            "funding": 0.0,
+            "costs": 0.39373003474281215
+          }
+        }
+      }
+    },
+    "pool_2slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 5.0,
+        "max_actual_gross": 63.527100944591524,
+        "mean_actual_gross": 0.48671277070508795,
+        "active_hours": 34,
+        "mean_holding_days": 0.3333333333333333,
+        "median_holding_days": 0.3333333333333333,
+        "max_holding_days": 0.75,
+        "funding_pnl": 0.0,
+        "price_pnl": -18.800223709522285,
+        "costs": 2.5479305787577617,
+        "counts": {
+          "entry": 7,
+          "trend_exit": 6,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": -1.3800145655039517,
+            "funding": 0.0,
+            "costs": 0.10778202637522086
+          },
+          "QQQUSDT": {
+            "price": -2.930425443942569,
+            "funding": 0.0,
+            "costs": 0.32782088110403357
+          },
+          "SMHUSDT": {
+            "price": -3.7042155288227154,
+            "funding": 0.0,
+            "costs": 0.33054869321093105
+          },
+          "IWMUSDT": {
+            "price": -2.6299626200680604,
+            "funding": 0.0,
+            "costs": 0.2469265257312381
+          },
+          "XLEUSDT": {
+            "price": -2.7467923965653314,
+            "funding": 0.0,
+            "costs": 0.3924995404906296
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": -5.408813154619658,
+            "funding": 0.0,
+            "costs": 1.1423529118457085
+          }
+        }
+      }
+    },
+    "pool_3slots_2x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 49.86165946737396,
+        "return_pct": 134.64310337587747,
+        "cagr_pct": 27.505265503529387,
+        "mdd_pct": 63.00197100439385,
+        "calmar": 0.43657785724848397,
+        "intraday_drawdown_bound_pct": 63.99694079031176,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 2.9246370975535876,
+        "mean_actual_gross": 1.8514253140838572,
+        "active_hours": 847,
+        "mean_holding_days": 2.199074074074074,
+        "median_holding_days": 0.7916666666666666,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -6.698369579207661,
+        "price_pnl": 37.235850302084685,
+        "costs": 1.9258212555031153,
+        "counts": {
+          "entry": 45,
+          "trend_exit": 42,
+          "funding_debit_intervals": 302,
+          "terminal_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -1.5973352556973357,
+            "funding": -0.3446991495393347,
+            "costs": 0.09174901811771365
+          },
+          "SOLUSDT": {
+            "price": 18.5876789137484,
+            "funding": -6.353670429668326,
+            "costs": 0.30399602805298204
+          },
+          "SPYUSDT": {
+            "price": 0.8070264209145511,
+            "funding": 0.0,
+            "costs": 0.08756587374701127
+          },
+          "QQQUSDT": {
+            "price": 1.549476895955912,
+            "funding": 0.0,
+            "costs": 0.1504783690666976
+          },
+          "SMHUSDT": {
+            "price": 9.490053499619314,
+            "funding": 0.0,
+            "costs": 0.33193910003883315
+          },
+          "IWMUSDT": {
+            "price": -1.3999828799871301,
+            "funding": 0.0,
+            "costs": 0.11230094046208729
+          },
+          "XLEUSDT": {
+            "price": -6.199874407380766,
+            "funding": 0.0,
+            "costs": 0.2003660380166726
+          },
+          "XAUUSDT": {
+            "price": 27.948285392114258,
+            "funding": 0.0,
+            "costs": 0.1170270726581702
+          },
+          "COPPERUSDT": {
+            "price": -3.5911859412968137,
+            "funding": 0.0,
+            "costs": 0.22991027371382783
+          },
+          "CLUSDT": {
+            "price": -8.358292335905706,
+            "funding": 0.0,
+            "costs": 0.30048854162911975
+          }
+        }
+      }
+    },
+    "pool_3slots_2x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 44.89577439064971,
+        "return_pct": 111.27423242658688,
+        "cagr_pct": 23.75075208494797,
+        "mdd_pct": 64.58356092393487,
+        "calmar": 0.36775228471717586,
+        "intraday_drawdown_bound_pct": 65.54060780702305,
+        "max_positions": 3,
+        "position_gross": 0.6666666666666666,
+        "max_actual_gross": 2.9719289717900823,
+        "mean_actual_gross": 1.8639655241599182,
+        "active_hours": 847,
+        "mean_holding_days": 2.199074074074074,
+        "median_holding_days": 0.7916666666666666,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -6.341178749146402,
+        "price_pnl": 35.38958599892449,
+        "costs": 5.402632859128331,
+        "counts": {
+          "entry": 45,
+          "trend_exit": 42,
+          "funding_debit_intervals": 302,
+          "terminal_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -1.4905131868699257,
+            "funding": -0.3297874996419626,
+            "costs": 0.2562261427260667
+          },
+          "SOLUSDT": {
+            "price": 18.22479243595599,
+            "funding": -6.011391249504439,
+            "costs": 0.8431944698381874
+          },
+          "SPYUSDT": {
+            "price": 0.6958125285468201,
+            "funding": 0.0,
+            "costs": 0.2465712562265849
+          },
+          "QQQUSDT": {
+            "price": 1.4711178803801397,
+            "funding": 0.0,
+            "costs": 0.42697198342712145
+          },
+          "SMHUSDT": {
+            "price": 8.598436866608795,
+            "funding": 0.0,
+            "costs": 0.9251831741754125
+          },
+          "IWMUSDT": {
+            "price": -1.3979971258605106,
+            "funding": 0.0,
+            "costs": 0.31996532582527093
+          },
+          "XLEUSDT": {
+            "price": -5.724541258322925,
+            "funding": 0.0,
+            "costs": 0.5640944735496526
+          },
+          "XAUUSDT": {
+            "price": 26.10810982920786,
+            "funding": 0.0,
+            "costs": 0.32981635459910985
+          },
+          "COPPERUSDT": {
+            "price": -3.267066219180631,
+            "funding": 0.0,
+            "costs": 0.6383431152269057
+          },
+          "CLUSDT": {
+            "price": -7.828565751541123,
+            "funding": 0.0,
+            "costs": 0.852266563534019
+          }
+        }
+      }
+    },
+    "pool_3slots_4x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 47.37771995797893,
+        "return_pct": 122.95397627284204,
+        "cagr_pct": 25.662449132919683,
+        "mdd_pct": 81.54680694050602,
+        "calmar": 0.31469594084342506,
+        "intraday_drawdown_bound_pct": 83.82796378289886,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 7.688476465386828,
+        "mean_actual_gross": 3.5561555775980302,
+        "active_hours": 847,
+        "mean_holding_days": 2.199074074074074,
+        "median_holding_days": 0.7916666666666666,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -8.488919100675762,
+        "price_pnl": 37.91675281775516,
+        "costs": 3.3001137591004466,
+        "counts": {
+          "entry": 45,
+          "trend_exit": 42,
+          "funding_debit_intervals": 302,
+          "terminal_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -2.2691182922830104,
+            "funding": -0.5003935764781066,
+            "costs": 0.12794957664303597
+          },
+          "SOLUSDT": {
+            "price": 5.16089863262394,
+            "funding": -7.988525524197656,
+            "costs": 0.5382563235114793
+          },
+          "SPYUSDT": {
+            "price": 1.4391082925895344,
+            "funding": 0.0,
+            "costs": 0.14779762324547652
+          },
+          "QQQUSDT": {
+            "price": 1.8320380682287656,
+            "funding": 0.0,
+            "costs": 0.27105410858694123
+          },
+          "SMHUSDT": {
+            "price": 11.842365997192331,
+            "funding": 0.0,
+            "costs": 0.5561028462478806
+          },
+          "IWMUSDT": {
+            "price": -2.3710843913715953,
+            "funding": 0.0,
+            "costs": 0.19498309736534455
+          },
+          "XLEUSDT": {
+            "price": -10.00505622054342,
+            "funding": 0.0,
+            "costs": 0.3216035655878975
+          },
+          "XAUUSDT": {
+            "price": 51.4192542909574,
+            "funding": 0.0,
+            "costs": 0.20716599249692874
+          },
+          "COPPERUSDT": {
+            "price": -4.795884076246158,
+            "funding": 0.0,
+            "costs": 0.353951572713771
+          },
+          "CLUSDT": {
+            "price": -14.335769483392626,
+            "funding": 0.0,
+            "costs": 0.5812490527016909
+          }
+        }
+      }
+    },
+    "pool_3slots_4x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 39.0557159006963,
+        "return_pct": 83.79160423857081,
+        "cagr_pct": 18.933890668742514,
+        "mdd_pct": 82.72678981555993,
+        "calmar": 0.22887254190517706,
+        "intraday_drawdown_bound_pct": 84.90640867068791,
+        "max_positions": 3,
+        "position_gross": 1.3333333333333333,
+        "max_actual_gross": 7.849900140328827,
+        "mean_actual_gross": 3.602291487095032,
+        "active_hours": 847,
+        "mean_holding_days": 2.199074074074074,
+        "median_holding_days": 0.7916666666666666,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -7.552835543680628,
+        "price_pnl": 34.01246692781789,
+        "costs": 8.653915483440976,
+        "counts": {
+          "entry": 45,
+          "trend_exit": 42,
+          "funding_debit_intervals": 302,
+          "terminal_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -1.9756494792289634,
+            "funding": -0.4555657818198294,
+            "costs": 0.33274620764727625
+          },
+          "SOLUSDT": {
+            "price": 6.478962528478497,
+            "funding": -7.097269761860798,
+            "costs": 1.3793013252440554
+          },
+          "SPYUSDT": {
+            "price": 1.0575466295570792,
+            "funding": 0.0,
+            "costs": 0.3882198518279648
+          },
+          "QQQUSDT": {
+            "price": 1.6348799702767172,
+            "funding": 0.0,
+            "costs": 0.7232280341235788
+          },
+          "SMHUSDT": {
+            "price": 9.73572889289303,
+            "funding": 0.0,
+            "costs": 1.4389232515071695
+          },
+          "IWMUSDT": {
+            "price": -2.362783013531957,
+            "funding": 0.0,
+            "costs": 0.5265195095642612
+          },
+          "XLEUSDT": {
+            "price": -8.556447718172357,
+            "funding": 0.0,
+            "costs": 0.8528061387994925
+          },
+          "XAUUSDT": {
+            "price": 44.549907006662735,
+            "funding": 0.0,
+            "costs": 0.5436181357279716
+          },
+          "COPPERUSDT": {
+            "price": -3.9378322953205624,
+            "funding": 0.0,
+            "costs": 0.9101159646303166
+          },
+          "CLUSDT": {
+            "price": -12.611845593796332,
+            "funding": 0.0,
+            "costs": 1.5584370643688887
+          }
+        }
+      }
+    },
+    "pool_3slots_6x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 32.433540083001326,
+        "return_pct": 52.62842392000624,
+        "cagr_pct": 12.802105300410883,
+        "mdd_pct": 92.32753393986492,
+        "calmar": 0.13865966905115426,
+        "intraday_drawdown_bound_pct": 98.66771051665285,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 17.586136071842326,
+        "mean_actual_gross": 5.340124263470511,
+        "active_hours": 847,
+        "mean_holding_days": 2.199074074074074,
+        "median_holding_days": 0.7916666666666666,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -7.481683990847277,
+        "price_pnl": 22.043298734749495,
+        "costs": 3.378074660900811,
+        "counts": {
+          "entry": 45,
+          "trend_exit": 42,
+          "funding_debit_intervals": 302,
+          "terminal_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -2.052526328475037,
+            "funding": -0.5062073300616002,
+            "costs": 0.11016638603550653
+          },
+          "SOLUSDT": {
+            "price": -6.594361016231675,
+            "funding": -6.975476660785677,
+            "costs": 0.5606547129078113
+          },
+          "SPYUSDT": {
+            "price": 0.7795476341571412,
+            "funding": 0.0,
+            "costs": 0.14120108479847948
+          },
+          "QQQUSDT": {
+            "price": 1.895356854502581,
+            "funding": 0.0,
+            "costs": 0.2963553075850584
+          },
+          "SMHUSDT": {
+            "price": 9.211443359629644,
+            "funding": 0.0,
+            "costs": 0.5311639462320353
+          },
+          "IWMUSDT": {
+            "price": -3.215673205843874,
+            "funding": 0.0,
+            "costs": 0.20875463238394198
+          },
+          "XLEUSDT": {
+            "price": -8.989387896814709,
+            "funding": 0.0,
+            "costs": 0.3199439176407532
+          },
+          "XAUUSDT": {
+            "price": 49.29368837383268,
+            "funding": 0.0,
+            "costs": 0.1992846382080527
+          },
+          "COPPERUSDT": {
+            "price": -2.9254309108633687,
+            "funding": 0.0,
+            "costs": 0.3147574321235158
+          },
+          "CLUSDT": {
+            "price": -15.359358129143887,
+            "funding": 0.0,
+            "costs": 0.6957926029856563
+          }
+        }
+      }
+    },
+    "pool_3slots_6x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 24.39669850336187,
+        "return_pct": 14.807992956997019,
+        "cagr_pct": 4.012584211680759,
+        "mdd_pct": 93.02994161010517,
+        "calmar": 0.043132180266196155,
+        "intraday_drawdown_bound_pct": 98.80860710856976,
+        "max_positions": 3,
+        "position_gross": 2.0,
+        "max_actual_gross": 18.090700151512923,
+        "mean_actual_gross": 5.433851203205253,
+        "active_hours": 847,
+        "mean_holding_days": 2.199074074074074,
+        "median_holding_days": 0.7916666666666666,
+        "max_holding_days": 14.666666666666666,
+        "funding_pnl": -6.181488656729149,
+        "price_pnl": 17.645304173756674,
+        "costs": 8.31711701366581,
+        "counts": {
+          "entry": 45,
+          "trend_exit": 42,
+          "funding_debit_intervals": 302,
+          "terminal_exit": 3
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -1.6750338246995482,
+            "funding": -0.4351229765299931,
+            "costs": 0.26849236204643034
+          },
+          "SOLUSDT": {
+            "price": -3.053613026067632,
+            "funding": -5.7463656801991565,
+            "costs": 1.3192835554268108
+          },
+          "SPYUSDT": {
+            "price": 0.29725301378554536,
+            "funding": 0.0,
+            "costs": 0.34715675474655916
+          },
+          "QQQUSDT": {
+            "price": 1.4894335967476033,
+            "funding": 0.0,
+            "costs": 0.7449640600629316
+          },
+          "SMHUSDT": {
+            "price": 6.797432398889372,
+            "funding": 0.0,
+            "costs": 1.2789799691390393
+          },
+          "IWMUSDT": {
+            "price": -3.1441996796031244,
+            "funding": 0.0,
+            "costs": 0.5426706861155216
+          },
+          "XLEUSDT": {
+            "price": -7.242935281242598,
+            "funding": 0.0,
+            "costs": 0.8122290980638528
+          },
+          "XAUUSDT": {
+            "price": 39.0569533126055,
+            "funding": 0.0,
+            "costs": 0.4813439376725396
+          },
+          "COPPERUSDT": {
+            "price": -2.1174047763840176,
+            "funding": 0.0,
+            "costs": 0.7508167239016323
+          },
+          "CLUSDT": {
+            "price": -12.762581560274425,
+            "funding": 0.0,
+            "costs": 1.7711798664904912
+          }
+        }
+      }
+    },
+    "pool_3slots_10x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 27.80693936766608,
+        "mean_actual_gross": 1.437949137532635,
+        "active_hours": 143,
+        "mean_holding_days": 0.8984375,
+        "median_holding_days": 0.3958333333333333,
+        "max_holding_days": 3.9166666666666665,
+        "funding_pnl": -0.6742875769612386,
+        "price_pnl": -19.6440679917101,
+        "costs": 1.057281556239141,
+        "counts": {
+          "entry": 16,
+          "trend_exit": 13,
+          "funding_debit_intervals": 12,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -1.1705468131649954,
+            "funding": -0.6742875769612386,
+            "costs": 0.07001557601794035
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": -1.7228131983330253,
+            "funding": 0.0,
+            "costs": 0.04485177239524264
+          },
+          "QQQUSDT": {
+            "price": -2.5722864320905323,
+            "funding": 0.0,
+            "costs": 0.09591886010532868
+          },
+          "SMHUSDT": {
+            "price": -3.2141348750845697,
+            "funding": 0.0,
+            "costs": 0.09560531548412605
+          },
+          "IWMUSDT": {
+            "price": -4.221619889420421,
+            "funding": 0.0,
+            "costs": 0.14397967773760506
+          },
+          "XLEUSDT": {
+            "price": -3.0198711678400514,
+            "funding": 0.0,
+            "costs": 0.14786452766874875
+          },
+          "XAUUSDT": {
+            "price": 0.2733376284695178,
+            "funding": 0.0,
+            "costs": 0.07912984003980994
+          },
+          "COPPERUSDT": {
+            "price": 0.3183122738661176,
+            "funding": 0.0,
+            "costs": 0.09911811080768829
+          },
+          "CLUSDT": {
+            "price": -4.31444551811214,
+            "funding": 0.0,
+            "costs": 0.28079787598265127
+          }
+        }
+      }
+    },
+    "pool_3slots_10x_30bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "exit_mode": "dual",
+        "core_mode": "pool"
+      },
+      "cost_bp": 30.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 3.3333333333333335,
+        "max_actual_gross": 25.178525455445715,
+        "mean_actual_gross": 1.2913835499176025,
+        "active_hours": 133,
+        "mean_holding_days": 0.8203125,
+        "median_holding_days": 0.3541666666666667,
+        "max_holding_days": 3.9166666666666665,
+        "funding_pnl": -0.8858303584945325,
+        "price_pnl": -17.972505683706004,
+        "costs": 2.5666586891839636,
+        "counts": {
+          "entry": 16,
+          "trend_exit": 13,
+          "funding_debit_intervals": 3,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -0.35895422990786796,
+            "funding": -0.8858303584945325,
+            "costs": 0.06658267128312587
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": -1.5250008577746361,
+            "funding": 0.0,
+            "costs": 0.11910575930398004
+          },
+          "QQQUSDT": {
+            "price": -2.4338356577389906,
+            "funding": 0.0,
+            "costs": 0.27226836684470435
+          },
+          "SMHUSDT": {
+            "price": -3.061344134772332,
+            "funding": 0.0,
+            "costs": 0.27318154015178353
+          },
+          "IWMUSDT": {
+            "price": -3.823635459894227,
+            "funding": 0.0,
+            "costs": 0.39909016342924786
+          },
+          "XLEUSDT": {
+            "price": -2.8953428762074713,
+            "funding": 0.0,
+            "costs": 0.41692346009397735
+          },
+          "XAUUSDT": {
+            "price": 0.08843686039825252,
+            "funding": 0.0,
+            "costs": 0.06929031167368531
+          },
+          "COPPERUSDT": {
+            "price": 0.18664809244100009,
+            "funding": 0.0,
+            "costs": 0.127958212640896
+          },
+          "CLUSDT": {
+            "price": -4.14947742024973,
+            "funding": 0.0,
+            "costs": 0.8222582037625631
+          }
+        }
+      }
+    },
+    "dual_2slots_each10x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 2,
+        "position_gross": 10.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 2,
+        "position_gross": 10.0,
+        "max_actual_gross": 22.51399506549144,
+        "mean_actual_gross": 1.3161194039683137,
+        "active_hours": 147,
+        "mean_holding_days": 4.027777777777778,
+        "median_holding_days": 4.375,
+        "max_holding_days": 6.125,
+        "funding_pnl": -21.147291892051967,
+        "price_pnl": 0.8008528084059066,
+        "costs": 15.197704410639652,
+        "counts": {
+          "entry": 3,
+          "funding_debit_intervals": 141,
+          "trend_exit": 1,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -64.94916456119677,
+            "funding": -21.147291892051967,
+            "costs": 12.248762221454948
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SMHUSDT": {
+            "price": 65.75001736960267,
+            "funding": 0.0,
+            "costs": 2.9489421891847045
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "CLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          }
+        }
+      }
+    },
+    "dual_3slots_each10x_10bp": {
+      "rule": {
+        "rank_hours": 7,
+        "trend_hours": 63,
+        "mean_hours": 120,
+        "decision_hours": 1,
+        "delay_bars": 1,
+        "max_positions": 3,
+        "position_gross": 10.0,
+        "exit_mode": "dual",
+        "core_mode": "dual"
+      },
+      "cost_bp": 10.0,
+      "summary": {
+        "start": "2022-06-28T20:00:00+00:00",
+        "end_open": "2025-12-31T21:00:00+00:00",
+        "bars": 881,
+        "elapsed_seconds": 110768400,
+        "hours": 30769.0,
+        "initial_usdt": 21.25,
+        "final_usdt": 0.0,
+        "return_pct": -100.0,
+        "cagr_pct": -100.0,
+        "mdd_pct": 100.0,
+        "calmar": -1.0,
+        "intraday_drawdown_bound_pct": 100.0,
+        "max_positions": 3,
+        "position_gross": 10.0,
+        "max_actual_gross": 26.313691801713006,
+        "mean_actual_gross": 1.9203819897312502,
+        "active_hours": 147,
+        "mean_holding_days": 3.625,
+        "median_holding_days": 3.125,
+        "max_holding_days": 6.125,
+        "funding_pnl": -32.53452882733065,
+        "price_pnl": 22.099020811922422,
+        "costs": 37.15055083116602,
+        "counts": {
+          "entry": 5,
+          "funding_debit_intervals": 141,
+          "trend_exit": 2,
+          "shared_liquidation": 1,
+          "ruin": 1
+        },
+        "attribution": {
+          "ETHUSDT": {
+            "price": -153.20970842545552,
+            "funding": -32.53452882733065,
+            "costs": 22.59570108388294
+          },
+          "SOLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "SPYUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "QQQUSDT": {
+            "price": 121.50814793291016,
+            "funding": 0.0,
+            "costs": 11.205356181294265
+          },
+          "SMHUSDT": {
+            "price": 65.75001736960267,
+            "funding": 0.0,
+            "costs": 2.9489421891847045
+          },
+          "IWMUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XLEUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "XAUUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          },
+          "COPPERUSDT": {
+            "price": -11.949436065134897,
+            "funding": 0.0,
+            "costs": 0.4005513768041139
+          },
+          "CLUSDT": {
+            "price": 0.0,
+            "funding": 0.0,
+            "costs": 0.0
+          }
+        }
+      }
+    }
+  },
+  "sources": [
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-SPY-20160101-2026-01-01.json",
+      "sha256": "96547dd811a3206a56699647b8704ea76cfc1161e96f146d3435eb94b6af97ae"
+    },
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-QQQ-20160101-2026-01-01.json",
+      "sha256": "32a289add33c59685a54f4786cfe10e515cd5f75c02c982669a071f8314d3aa9"
+    },
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-SMH-20160101-2026-01-01.json",
+      "sha256": "e20d75f722f14ab3f281ef02f36994060b4d0ccdc4edc298428652dfa67f5788"
+    },
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-IWM-20160101-2026-01-01.json",
+      "sha256": "d7c0b91fd0c11f8ae7cd25f9c66340fe8819eaf202c59edb5a4b169068de5667"
+    },
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-XLE-20160101-2026-01-01.json",
+      "sha256": "554160d2d08e41e84f0c017b529119793a31693bc8e71d900f9476abe3293347"
+    },
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-GLD-20160101-2026-01-01.json",
+      "sha256": "0020b645c21faf97d9e85e0090d735091df9985c4afaad76ef462096ba58ccf5"
+    },
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-CPER-20160101-2026-01-01.json",
+      "sha256": "769ef7f586e7957f46b6847a0dec0029958219a2408f0fcd807a8b08e94bc71a"
+    },
+    {
+      "path": "state/research_cache/binance_macro_etf_history_20261015/yahoo-USO-20160101-2026-01-01.json",
+      "sha256": "fe8d8fd51ea63a3a959af9050980f0b4b90177119b2d3cc85f3c03ab23d15480"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/ETHUSDT-trade-1630454400-1793145600.json",
+      "sha256": "456f4f597bef76f56538a9e08d718a69ba682c4a3279b8155a75119e3131f878"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/ETHUSDT-mark-1630454400-1793145600.json",
+      "sha256": "9d60d2cd62e55aecb142c982b7272df0b4e48304ea4bb1a9916188aebe08f09f"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/SOLUSDT-trade-1630454400-1793145600.json",
+      "sha256": "9cf61d7d53e3ff44fde54dcaba86a318b3b50b612d3ad6fb28372de139c03380"
+    },
+    {
+      "path": "state/research_cache/crypto_g20_hourly_swing_20261102/SOLUSDT-mark-1630454400-1793145600.json",
+      "sha256": "d6775875850642f4f057f8eb234769f1e9c31091b228c5c1ecdc8aed3e016926"
+    }
+  ],
+  "limitations": [
+    "ETF history is long, but the synchronized crypto sample begins in 2022 and uses ETF session closes.",
+    "Adjusted ETF OHLC includes distributions in the price series; it is a research proxy, not a perpetual contract ledger.",
+    "Fractional ETF quantities ignore exchange min-notional and broker lot restrictions; real 21.25U execution can differ materially.",
+    "Hourly mark lows and historical leverage tiers are not reconstructed exactly; liquidation is a conservative shared-wallet proxy."
+  ]
+}
