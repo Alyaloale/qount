@@ -15,7 +15,7 @@ SIGNAL_MAPPING = dict(SPYUSDT="SPY", QQQUSDT="QQQ", SMHUSDT="SMH", IWMUSDT="IWM"
                       XLEUSDT="XLE", XAUUSDT="GLD", COPPERUSDT="CPER", CLUSDT="USO")
 SETUPS = {"breakout": (168, "hold_tactical"), "pullback": (168, "hold_tactical"),
           "mean_reversion": (504, "hold_structural")}
-FEE, SLIP, GAP, RISK_FRACTION = .0005, .0025, .03, .5
+FEE, SLIP, GAP, RISK_FRACTION = .0005, .0025, .03, .25
 
 
 def sizing_config(gross=20):

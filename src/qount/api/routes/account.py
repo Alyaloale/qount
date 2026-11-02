@@ -302,7 +302,8 @@ def get_one_atr_status() -> dict:
             raise ValueError("result_not_object")
         response.update({key: payload.get(key) for key in (
             "strategy_id", "execution_mode", "selected", "auto_action", "execution_blocker", "protection_check",
-            "handover", "position", "decision_clock", "risk_fraction", "gross_cap", "maximum_leverage")})
+            "handover", "position", "decision_clock", "risk_fraction", "gross_cap", "maximum_leverage",
+            "rejections", "candidate_count", "capital_usdt", "last_decision", "accounting_errors")})
         live = payload.get("execution_mode") in {"live", "auto_live"}
         response["strategy_live"] = live
         response["execution_authorized"] = live and payload.get("orders_authorized") is True
@@ -383,6 +384,18 @@ def get_one_atr_status() -> dict:
         response["arm_status"] = "invalid"
     trades_path = Path(os.environ.get("QOUNT_ACCOUNT_TRADES_PATH", str(Path(os.environ.get("QOUNT_ACCOUNT_OBSERVATION_PATH", DEFAULT_OBSERVATION_SOURCE)).with_name("account-trades.sqlite3"))))
     response["accounting"] = strategy_accounting(trades_path, store_path, response["strategy_id"])
+    response["runtime"] = None
+    assets_path = Path(os.environ.get("QOUNT_ACCOUNT_ASSETS_PATH", str(Path(
+        os.environ.get("QOUNT_ACCOUNT_OBSERVATION_PATH", DEFAULT_OBSERVATION_SOURCE)).with_name("account-assets.json"))))
+    try:
+        overview = json.loads(assets_path.read_text())
+        runtime = overview["strategy_runtime"]
+        stamp = datetime.fromisoformat(runtime["observed_at"].replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc)-stamp).total_seconds()
+        if overview.get("read_only") is True and runtime.get("strategy_id") == response["strategy_id"]:
+            response["runtime"] = {**runtime, "stale": not -60 <= age <= 900}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass  # An absent runtime observation never invents an active timer.
     return response
 
 

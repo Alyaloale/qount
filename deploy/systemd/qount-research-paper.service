@@ -2,9 +2,13 @@
 Description=Qount public ETF timing and frozen regime paper accounts, then refresh read-only research
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=2h
+StartLimitBurst=3
 
 [Service]
 Type=oneshot
+Restart=on-failure
+RestartSec=15min
 WorkingDirectory=/root/qount
 Environment=PYTHONPATH=/root/qount/src
 Environment=PYTHONDONTWRITEBYTECODE=1
@@ -15,6 +19,7 @@ Environment=HTTPS_PROXY=
 Environment=ALL_PROXY=
 UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN
 ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_research_paper.py --state-root /var/lib/qount/research/paper-forward-20261022 --registry /root/qount/config/paper-lines.json --db /var/lib/qount/api/candidates/assets-20261015T105250Z.db
+ExecStopPost=-/root/qount/.venv/bin/python -m qount.api.ingest --registry /root/qount/config/paper-lines.json --db /var/lib/qount/api/candidates/assets-20261015T105250Z.db
 UMask=0077
 Nice=10
 CPUQuota=25%

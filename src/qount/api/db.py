@@ -429,8 +429,8 @@ def save_paper_line(
             payload_json = json.dumps(line_dict, ensure_ascii=False)
         elif line.data_status == "AVAILABLE":
             line_dict["last_attempt_at"] = now_str
-            line_dict["last_attempt_status"] = "AVAILABLE"
-            line_dict["last_attempt_error"] = None
+            line_dict["last_attempt_status"] = line.last_attempt_status or "AVAILABLE"
+            line_dict["last_attempt_error"] = line.last_attempt_error
             line_dict["last_attempt_source"] = line_dict.get("source")
             payload_json = json.dumps(line_dict, ensure_ascii=False)
         if has_position_observation:
@@ -816,7 +816,8 @@ def get_ingest_health(db_path: Optional[str] = None) -> tuple[str, int, int]:
     summaries = get_paper_lines_summary(path, forward_only=False)
     stale = sum(1 for line in summaries if line.paper_enabled and line.freshness == "STALE")
     missing = sum(1 for line in summaries if line.data_status in {"MISSING", "ERROR"} or line.freshness == "MISSING")
-    if ingest_status == "ok" and missing:
+    refresh_failed = any(line.paper_enabled and line.last_attempt_status == "FAILED" for line in summaries)
+    if ingest_status == "ok" and (missing or refresh_failed):
         ingest_status = "partial"
     return ingest_status, stale, missing
 

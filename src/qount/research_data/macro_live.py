@@ -5,13 +5,15 @@ import datetime as dt
 import json
 import math
 import os
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from qount.research_data.bars import Bar, NY, session
-from qount.strategies.macro_1atr import SIGNAL_MAPPING, scaled_features
+from qount.strategies.macro_1atr import SIGNAL_MAPPING, is_decision, scaled_features
 from qount.strategies.macro_features import MACRO_TEN, build_macro_features
 from qount.strategies.macro_liquidity import capacity_snapshot
 
@@ -20,6 +22,48 @@ HISTORY_START = int(dt.datetime(2026, 4, 7, tzinfo=dt.timezone.utc).timestamp())
 # A different ATR seed or episode prefix must never silently change live rules.
 NATIVE_HISTORY_START = {s: HISTORY_START for s in SIGNAL_MAPPING}
 NATIVE_HISTORY_START.update(IWMUSDT=1781136000, XLEUSDT=1781136000, SMHUSDT=1785369600)
+
+
+class MacroInputError(ValueError):
+    """Public input validation failure with bounded, non-secret diagnostics."""
+
+    def __init__(self, code, *, ticker, date=None):
+        if code not in {"proxy_invalid_prices", "proxy_invalid_ohlc",
+                        "proxy_history_short_or_duplicate", "proxy_latest_completed_session_missing"}:
+            raise ValueError("unknown_macro_input_code")
+        if ticker not in set(MACRO_TEN) | set(SIGNAL_MAPPING.values()):
+            raise ValueError("unknown_macro_input_ticker")
+        if date is not None:
+            date = dt.date.fromisoformat(date).isoformat()
+        self.details = dict(code=code, ticker=ticker, date=date)
+        super().__init__(code)
+
+
+def fetch_proxy_payload(ticker, now, *, validate=None, max_attempts=2):
+    """Try both public nodes; prefetch may repeat once after a short backoff."""
+    # The runtime environment also configures exchange proxies. Yahoo must not
+    # inherit that route: both Yahoo hosts can otherwise fail through one proxy.
+    # Keep this local; never change the exchange client or global proxy settings.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    params = {"period1": 1735689600, "period2": now+1, "interval": "1d"}
+    if max_attempts not in (2, 4):
+        raise ValueError("proxy_retry_bound_invalid")
+    hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+    for attempt in range(max_attempts):
+        if attempt == 2:
+            time.sleep(1)
+        host = hosts[attempt % 2]
+        url = "https://"+host+"/v8/finance/chart/"+ticker+"?"+urllib.parse.urlencode(params)
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with opener.open(request, timeout=5) as response:
+                payload = json.load(response)
+            if validate is not None:
+                validate(payload)
+            return payload
+        except (urllib.error.URLError, TimeoutError, MacroInputError) as exc:
+            last = exc
+    raise last
 
 
 def write_json(path, payload):
@@ -56,16 +100,16 @@ def parse_proxy(ticker, payload, now):
             continue
         values = [quotes[k][i] for k in ("open", "high", "low", "close")]+[adjusted[i]]
         if any(v is None or not math.isfinite(v) or v <= 0 for v in values):
-            raise ValueError("proxy_invalid_prices")
+            raise MacroInputError("proxy_invalid_prices", ticker=ticker, date=day.isoformat())
         factor = adjusted[i]/quotes["close"][i]
         b = Bar(available, *(quotes[k][i]*factor for k in ("open", "high", "low", "close")),
                 float(quotes["volume"][i] or 0))
         if not 0 < b.l <= min(b.o, b.c)+1e-7 <= max(b.o, b.c)+1e-7 <= b.h+1e-7:
-            raise ValueError("proxy_invalid_ohlc")
+            raise MacroInputError("proxy_invalid_ohlc", ticker=ticker, date=day.isoformat())
         bars.append(b)
         dates.append(day.isoformat())
     if len(bars) < 250 or dates != sorted(set(dates)):
-        raise ValueError("proxy_history_short_or_duplicate")
+        raise MacroInputError("proxy_history_short_or_duplicate", ticker=ticker)
     return ticker, bars, dates, {"ticker": ticker, "last_date": dates[-1]}
 
 
@@ -87,22 +131,24 @@ class MacroLiveInputs:
         tickers = sorted(set(MACRO_TEN) | set(SIGNAL_MAPPING.values()))
         def fetch(ticker):
             path = self.cache/f"yahoo-{ticker}-{expected}.json"
+            def validate(payload):
+                parsed = parse_proxy(ticker, payload, now)
+                if parsed[2][-1] != expected:
+                    raise MacroInputError("proxy_latest_completed_session_missing", ticker=ticker, date=expected)
+                return parsed
             if path.exists():
-                payload = json.loads(path.read_text())
-            else:
-                params = {"period1": 1735689600, "period2": now+1, "interval": "1d"}
-                url = "https://query1.finance.yahoo.com/v8/finance/chart/"+ticker+"?"+urllib.parse.urlencode(params)
-                request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(request, timeout=20) as response:
-                    payload = json.load(response)
-            parsed = parse_proxy(ticker, payload, now)
-            if parsed[2][-1] != expected:
-                raise ValueError("proxy_latest_completed_session_missing")
-            if not path.exists():
-                write_json(path, payload)
-                # Keep just the two latest snapshots per ticker on the runtime host.
-                for old in sorted(self.cache.glob(f"yahoo-{ticker}-*.json"))[:-2]:
-                    old.unlink()
+                try:
+                    return validate(json.loads(path.read_text()))
+                except (MacroInputError, json.JSONDecodeError):
+                    pass  # Refetch a bad snapshot; never fall back to stale bars.
+            # Extra prefetch retries must not consume the formal entry window.
+            payload = fetch_proxy_payload(ticker, now, validate=validate,
+                                          max_attempts=2 if is_decision(now) else 4)
+            parsed = validate(payload)
+            write_json(path, payload)
+            # Keep just the two latest snapshots per ticker on the runtime host.
+            for old in sorted(self.cache.glob(f"yahoo-{ticker}-*.json"))[:-2]:
+                old.unlink()
             return parsed
         with ThreadPoolExecutor(max_workers=3) as pool:
             fetched = list(pool.map(fetch, tickers))

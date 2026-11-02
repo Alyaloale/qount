@@ -13,6 +13,7 @@ EnvironmentFile=-/root/.config/qount/mini-trend-live.env
 Environment=PYTHONPATH=/root/qount/src
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=QOUNT_EXCHANGE_BYPASS_PROXY=true
+Environment=QOUNT_NOTIFICATION_STORE=/var/lib/qount/notifications/store.sqlite3
 Environment=QOUNT_LIVE_ENABLE=false
 Environment=QOUNT_X4_LIVE_ENABLE=false
 Environment=QOUNT_RV_LIVE_ENABLE=false

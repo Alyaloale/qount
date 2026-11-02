@@ -626,6 +626,11 @@ function sourceReturn(metrics, line) {
     return ["相对初始资金收益", (metrics.executable_nav - 1) * 100];
   return ["收益", null];
 }
+function paperRefreshText(line) {
+  if (!QountResearch.forward(line)) return "";
+  return [line.source?.produced_at ? `来源生成 ${formatTime(line.source.produced_at)}` : "",
+    line.last_attempt_at ? `查询刷新 ${formatTime(line.last_attempt_at)}` : ""].filter(Boolean).join(" · ");
+}
 function renderPaperLines(lines) {
   const counts = QountResearch.summary(lines);
   const selected = QountResearch.select(lines, researchFilter, researchQuery, researchCategory);
@@ -648,7 +653,7 @@ function renderPaperLines(lines) {
   });
   setText("research-match-count", researchQuery.trim() || researchFilter !== "all" || researchCategory !== "all"
     ? `找到 ${selected.length} 条研究线`
-    : `${counts.stale} 条数据待更新 · ${counts.missing} 条缺源（含封存线）`);
+    : `${counts.stale} 条更新异常或待更新 · ${counts.missing} 条缺源（含封存线）`);
   function card(line, index) {
     const m = line.metrics || {};
     const profile = QountResearch.profile(line);
@@ -670,13 +675,14 @@ function renderPaperLines(lines) {
       <h3>${escapeHtml(profile.name)}</h3><p class="research-method">${escapeHtml(profile.method)}</p>
       <div class="research-source-row"><span class="source-chip ${source.tone}"><i aria-hidden="true"></i>${escapeHtml(source.label)}</span><span class="sample-chip">${escapeHtml(profile.sample)}</span></div>
       ${facts}<p class="research-card-period">${escapeHtml(periodText)}${unavailable ? "" : " · " + escapeHtml(footnote)}</p>
+      ${paperRefreshText(line) ? `<p class="research-card-period">${escapeHtml(paperRefreshText(line))}</p>` : ""}
       <p class="research-takeaway"><strong>研究判断</strong>${escapeHtml(profile.note)}</p>
       <div class="research-card-bottom"><span class="research-id">${escapeHtml(line.line_id)}</span><button class="btn-action" data-open-line="${escapeHtml(line.line_id)}">${QountResearch.archived(line) ? "复核历史" : "查看详情"}<span aria-hidden="true"> ↗</span></button></div>
     </article>`;
   }
   let offset = 0;
   $("paper-lines-body").innerHTML = [
-    ["forward", "已启用的模拟策略", "每条策略统一展示历史、停跑补算和后续模拟；各段保留样本类型与实际记录时间。"],
+    ["forward", "已启用的模拟策略", "日线仅使用已收盘行情，休市期间沿用最近收盘日；行情截止日与来源生成、查询刷新时间分别展示。加密资产按 UTC 日线收盘及每日任务周期更新。"],
     ["historical", "历史研究结果", "保留原样本与结论，不与前向记录拼接收益。"],
     ["waiting", "等待数据的研究线", "保留研究方向与当前判断，接入来源后再展示结果。"],
   ].filter(([key]) => groups[key].length).map(([key, title, note]) => {
@@ -880,7 +886,7 @@ function renderLineDetail(line) {
   setText("detail-title", QountResearch.profile(line).name);
   setText(
     "detail-identity",
-    `${identity(line)} · ${QountResearch.dataState(line).label} · 数据截至 ${!QountResearch.available(line) && !rows.length ? "未知" : formatDate(line.as_of)} · ${line.line_id}`,
+    `${identity(line)} · ${QountResearch.dataState(line).label} · 行情截至 ${!QountResearch.available(line) && !rows.length ? "未知" : formatDate(line.as_of)}${paperRefreshText(line) ? " · " + paperRefreshText(line) : ""} · ${line.line_id}`,
   );
   setText("detail-adjudication", line.adjudication || "来源未提供裁决");
   setText("detail-next-question", nextQuestion(line));

@@ -8,6 +8,16 @@ const lines = [
   { line_id: "ashare_master", presentation:{name:"麒麟",category:"A 股"}, status: "STOPPED", data_status: "MISSING" },
 ];
 
+test("a failed paper refresh stays visible alongside its preserved valid history", () => {
+  const line={line_id:"dual_c60",status:"ACTIVE_PAPER",data_status:"AVAILABLE",sample_kind:"mixed",
+    paper_enabled:true,freshness:"FRESH",last_attempt_status:"FAILED",last_attempt_error:"PAPER_SERVICE_FAILED"};
+  assert.equal(research.dataState(line).label,"最近更新失败，保留历史");
+  assert.equal(research.summary([line]).stale,1);
+  assert.equal(research.group(line),"available");
+  assert.equal(research.forward(line),true);
+  assert.equal(research.dataState({...line,last_attempt_status:null}).label,"来源已更新");
+});
+
 test("stale results remain available while missing sources do not change research lifecycle", () => {
   assert.equal(research.group(lines[0]), "available");
   assert.equal(research.dataState(lines[0]).label, "数据待更新");

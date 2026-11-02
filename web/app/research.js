@@ -27,6 +27,7 @@ const QountResearch = (() => {
   function dataState(line) {
     if (!available(line)) return { label: line.error || line.data_status === "ERROR" ? "来源不可用" : "来源未接入", tone: "missing" };
     if (line.paper_enabled === false || line.sample_kind === "historical") return { label: "历史样本", tone: "fresh" };
+    if (line.last_attempt_status === "FAILED") return { label: "最近更新失败，保留历史", tone: "stale" };
     if (line.freshness === "STALE") return { label: "数据待更新", tone: "stale" };
     if (line.freshness === "FRESH") return { label: "来源已更新", tone: "fresh" };
     return { label: "时点待确认", tone: "missing" };
@@ -37,7 +38,8 @@ const QountResearch = (() => {
       historical: lines.filter(l => !forward(l) && !archived(l)).length,
       waiting: lines.filter(l => group(l) === "waiting").length,
       archived: lines.filter(archived).length,
-      stale: lines.filter(l => available(l) && l.paper_enabled !== false && l.sample_kind !== "historical" && l.freshness === "STALE").length,
+      stale: lines.filter(l => available(l) && l.paper_enabled !== false && l.sample_kind !== "historical" &&
+        (l.freshness === "STALE" || l.last_attempt_status === "FAILED")).length,
       missing: lines.filter(l => !available(l)).length };
   }
   function select(lines, filter = "all", query = "", category = "all") {

@@ -4,9 +4,13 @@ After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/root/qount
 ConditionPathIsDirectory=/var/www/qount/data
+StartLimitIntervalSec=2h
+StartLimitBurst=3
 
 [Service]
 Type=oneshot
+Restart=on-failure
+RestartSec=15min
 WorkingDirectory=/root/qount
 Environment=PYTHONPATH=/root/qount/src
 Environment=PYTHONDONTWRITEBYTECODE=1
@@ -18,7 +22,7 @@ UnsetEnvironment=BINANCE_API_KEY BINANCE_SECRET BINANCE_SECRET_KEY QOUNT_BINANCE
 StateDirectory=qount/research/cta-r-forward
 StateDirectoryMode=0700
 ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/research/cta_r_forward_builder.py --state-dir /var/lib/qount/research/cta-r-forward --out /var/www/qount/data/cta_r_paper.json --mode 644
-SuccessExitStatus=2
+ExecStopPost=-/root/qount/.venv/bin/python -m qount.api.ingest --registry /root/qount/config/paper-lines.json --db /var/lib/qount/api/candidates/assets-20261015T105250Z.db
 UMask=0022
 Nice=10
 CPUQuota=25%
@@ -33,6 +37,7 @@ ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/var/lib/qount/research/cta-r-forward
 ReadWritePaths=/var/www/qount/data
+ReadWritePaths=/var/lib/qount/api
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

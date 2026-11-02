@@ -522,7 +522,11 @@ def collect_market_cycle(
     session_text = session.isoformat()
     if event == "g20-open" and session_text not in config.g20_rebalance_dates:
         raise NoScheduledPaperEvent("paper_g20_open_not_scheduled")
-    g20_signal_day = event == "daily-close" and session_text in config.g20_signal_dates
+    # A delayed daily refresh may run before the next session's month-end close.
+    # Mark the completed inputs without requesting that not-yet-available signal.
+    session_close = dt.datetime.combine(session, dt.time(hour=16), tzinfo=_NEW_YORK)
+    g20_signal_day = (event == "daily-close" and session_text in config.g20_signal_dates
+                      and observed >= session_close)
     g20_rebalance_day = event == "g20-open"
     token = (environment or os.environ).get(config.tiingo_token_env, "")
     if equity_source not in {"tiingo_public", "yahoo_public"}:

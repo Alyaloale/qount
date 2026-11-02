@@ -61,6 +61,35 @@ class TestApiSmoke(unittest.TestCase):
         self.assertTrue(data["safety"]["research_only"])
         self.assertFalse(data["safety"]["orders_authorized"])
 
+    def test_failed_paper_job_is_reported_without_losing_valid_history(self) -> None:
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        from qount.api.db import get_ingest_health
+        with tempfile.TemporaryDirectory() as folder:
+            path=os.path.join(folder,'query.db')
+            registry=os.path.join(folder,'registry.json')
+            with open(registry,'w') as handle:
+                json.dump({'lines':[{'id':'dual_c60','adapter':'dual_engine','enabled':True}]},handle)
+            today=datetime.now(timezone.utc).date().isoformat()
+            line=PaperLine(line_id='dual_c60',name='C60',as_of=today,
+                nav_series=[NavPoint(date=today,nav=1.23)],position_status='KNOWN',
+                source=self._binance_source(''))
+            for service in ['qount-dual-engine-paper-daily.service','qount-dual-engine-paper-g20-open.service']:
+                with self.subTest(service=service), \
+                     patch('qount.api.ingest.get_adapter',return_value=lambda *args:line), \
+                     patch('qount.api.ingest._failed_paper_services',return_value={service}):
+                    run_ingest(registry,path)
+                retained=get_paper_line('dual_c60',path,forward_only=False)
+                self.assertEqual(retained.nav_series[-1].nav,1.23)
+                self.assertEqual(retained.last_attempt_status,'FAILED')
+                self.assertEqual(retained.data_status,'AVAILABLE')
+                self.assertEqual(get_ingest_health(path),('partial',0,0))
+            with patch('qount.api.ingest.get_adapter',return_value=lambda *args:line), \
+                 patch('qount.api.ingest._failed_paper_services',return_value=set()):
+                run_ingest(registry,path)
+            self.assertEqual(get_paper_line('dual_c60',path,forward_only=False).last_attempt_status,'AVAILABLE')
+            self.assertEqual(get_ingest_health(path),('ok',0,0))
+
     def test_account_endpoint(self) -> None:
         resp = self.client.get("/account")
         self.assertEqual(resp.status_code, 200)

@@ -168,10 +168,27 @@ class ForwardPaperTest(unittest.TestCase):
             self.assertIn('query2.finance.yahoo.com',get.call_args.args[0])
             # A later session with both nodes invalid must preserve the good cache.
             before=(root/'FAS-1d.json').read_bytes()
-            with patch('qount.research_data.paper_daily.get_json',side_effect=[invalid,invalid]):
+            with patch('qount.research_data.paper_daily.get_json',side_effect=[invalid]*4):
                 with self.assertRaisesRegex(ValueError,'yahoo_unavailable'):
                     yahoo_rows('FAS',observed+dt.timedelta(days=1),root)
             self.assertEqual((root/'FAS-1d.json').read_bytes(),before)
+
+    def test_yahoo_retries_invalid_nodes_before_publishing_cache(self):
+        from qount.research_data.paper_daily import yahoo_rows, NY
+        observed=dt.datetime(2026,10,30,7,tzinfo=dt.timezone.utc)
+        stamp=int(dt.datetime(2026,10,29,9,30,tzinfo=NY).timestamp())
+        valid={'chart':{'result':[dict(timestamp=[stamp], indicators=dict(
+            quote=[dict(open=[100.],high=[102.],low=[99.],close=[101.],volume=[1000.])],
+            adjclose=[dict(adjclose=[101.])]))]}}
+        invalid=copy.deepcopy(valid)
+        invalid['chart']['result'][0]['indicators']['quote'][0]['close']=[None]
+        with tempfile.TemporaryDirectory() as folder, \
+             patch('qount.research_data.paper_daily.get_json',side_effect=[invalid,invalid,valid]) as get, \
+             patch('qount.research_data.paper_daily.time.sleep') as sleep:
+            rows,_=yahoo_rows('VNQ',observed,folder)
+            self.assertEqual(rows[-1]['close'],101.)
+            self.assertEqual(get.call_count,3)
+            sleep.assert_called_once_with(1)
 
     def test_tencent_http_failure_tries_backup_and_caches_only_valid_pair(self):
         from urllib.error import HTTPError

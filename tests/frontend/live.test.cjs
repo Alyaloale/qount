@@ -60,3 +60,26 @@ test('real performance requires flow-adjusted provenance and finite historical p
  assert.equal(performanceView({...d,points:[{...d.points[0],return_pct:NaN}]},now),null);
  assert.equal(performanceView({...d,points:[{...d.points[0],observed_at:new Date(now+61000).toISOString()}]},now),null);
 });
+
+test('runtime observations, halt and failures are not inferred from an auto_live receipt',()=>{
+ const {renderOneAtr}=require('../../web/app/live.js');const nodes=new Map();
+ global.document={getElementById:id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id);}};
+ try {
+  const data={status:'AVAILABLE',execution_mode:'auto_live',auto_action:'WAIT_NY_1000'};
+  renderOneAtr(data);
+  assert.match(nodes.get('one-atr-status').textContent,/调度未核实/);
+  renderOneAtr({...data,runtime:{state:'DISABLED',observed_at:new Date().toISOString(),stale:false}});
+  assert.match(nodes.get('one-atr-status').textContent,/定时器未运行/);
+  renderOneAtr({...data,runtime:{state:'AUTO',observed_at:new Date().toISOString(),stale:true}});
+  assert.match(nodes.get('one-atr-status').textContent,/过期/);
+  renderOneAtr({...data,auto_action:'BLOCKED',execution_blocker:'native_stop_unconfirmed'});
+  assert.equal(nodes.get('one-atr-status').textContent,'执行受阻');
+  renderOneAtr({...data,halted:true});
+  assert.match(nodes.get('one-atr-status').textContent,/持仓管理已停/);
+  assert.match(nodes.get('strategy-runtime-note').textContent,/原生止损保留/);
+  renderOneAtr({...data,last_decision:{created_at:new Date().toISOString(),candidate_count:0,rejections:{friction_budget:2}}});
+  assert.match(nodes.get('strategy-last-decision').textContent,/成本超出预算 2/);
+  renderOneAtr({...data,runtime:{state:'AUTO',stale:false,notification_delivery:{status:'LAST_ATTEMPT_FAILED',last_error:'openclaw_weixin_response_rejected:-2'}}});
+  assert.match(nodes.get('strategy-runtime-note').textContent,/微信最近发送被拒绝/);
+ } finally{delete global.document;}
+});

@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
+import subprocess
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -14,6 +16,32 @@ from qount.api.db import init_db, log_ingest, log_ingest_run, mark_line_data_err
 from qount.api.schemas import PaperLine
 
 DEFAULT_REGISTRY_PATH = "config/paper-lines.json"
+PAPER_SERVICES = {
+    "dual_engine": ("qount-dual-engine-paper-daily.service", "qount-dual-engine-paper-g20-open.service"),
+    "g20_cash": ("qount-dual-engine-paper-daily.service", "qount-dual-engine-paper-g20-open.service"),
+    "cta_r_forward": ("qount-research-cta-r-forward.service",),
+    "research_paper": ("qount-research-paper.service",),
+}
+
+
+def _failed_paper_services() -> set[str]:
+    """Observe existing paper jobs; a readable old snapshot does not prove refresh success."""
+    if not Path("/run/systemd/system").is_dir():
+        return set()
+    units = tuple(sorted({unit for services in PAPER_SERVICES.values() for unit in services}))
+    try:
+        result = subprocess.run(["systemctl", "show", *units, "-p", "Id", "-p", "LoadState",
+                                 "-p", "ActiveState", "-p", "Result"],
+                                capture_output=True, text=True, timeout=3, check=True)
+        failed = set()
+        for block in result.stdout.strip().split("\n\n"):
+            fields = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+            if fields.get("LoadState") == "loaded" and (fields.get("ActiveState") == "failed"
+                    or fields.get("Result", "success") not in {"", "success"}):
+                failed.add(fields.get("Id"))
+        return failed.intersection(units)
+    except (OSError, subprocess.SubprocessError):
+        return set()  # Local development or unavailable systemd is not a successful job receipt.
 
 
 def run_ingest(
@@ -49,6 +77,7 @@ def run_ingest(
 
     processed_count = 0
     failed_lines: list[str] = []
+    failed_services = _failed_paper_services()
     for entry in lines_config:
         line_id = entry.get("id")
         adapter_name = entry.get("adapter")
@@ -77,6 +106,9 @@ def run_ingest(
                 "sample_kind": entry.get("sample_kind", "historical"),
                 "presentation": entry.get("presentation", {}),
             })
+            if enabled and failed_services.intersection(PAPER_SERVICES.get(adapter_name, ())):
+                line_obj = line_obj.model_copy(update={"last_attempt_status": "FAILED",
+                                                       "last_attempt_error": "PAPER_SERVICE_FAILED"})
             trade_events = None
             if adapter_name == "g20_cash" and line_obj.data_status == "AVAILABLE":
                 from qount.api.adapters.g20_cash import g20_cash_trades

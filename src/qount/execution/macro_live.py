@@ -19,13 +19,14 @@ import ccxt
 from qount.contracts import canonical_hash
 from qount.execution.binance_usdm import BinanceExecutionStore, BinanceUsdMExecution, normalize_order_response
 from qount.execution.protection import position_amount
-from qount.research_data.macro_live import write_json
+from qount.research_data.bars import CalendarUnavailable, session
+from qount.research_data.macro_live import MacroInputError, write_json
 from qount.strategies.macro_1atr import (
     FEE, GAP, RISK_FRACTION, SLIP, STRATEGY_ID, entry_candidates, is_decision, known_atr, trailing_update,
 )
 from qount.strategies.macro_funding import feature_at, funding_reserve
 from qount.strategies.macro_lease import review_lease
-from qount.strategies.perpetual import grid
+from qount.strategies.perpetual import grid, normalize_brackets
 
 TERMINAL = {"FILLED", "CANCELED", "EXPIRED", "REJECTED"}
 ACTIVE_ALGO = {"NEW", "WORKING"}
@@ -131,7 +132,7 @@ class MacroLive:
             self.save()
         return None
 
-    def submit(self, payload, *, price_limit=None):
+    def submit(self, payload, *, price_limit=None, collect_fills=True):
         self.authorized()
         identity = payload["client_order_id"]
         old = self.store.get_order(identity)
@@ -149,9 +150,9 @@ class MacroLive:
                 self.store.apply_response(identity, normalize_order_response(response))
             except Exception:
                 # An uncertain POST is immediately reconciled, never resubmitted.
-                return self.execution.poll(identity)
+                return self.execution.poll(identity, collect_fills=collect_fills)
         # Poll actual fills even after terminal receipts; order responses omit trade IDs.
-        return self.execution.poll(identity)
+        return self.execution.poll(identity, collect_fills=collect_fills)
 
     def order_payload(self, position, kind, quantity):
         identity = client_id(kind, [position["entry_id"], position.get("exit_attempt", 0)])
@@ -279,7 +280,7 @@ class MacroLive:
     def exit(self, pos, reason):
         self.authorized()
         if pos.get("pending_exit") and self.store.get_order(pos["pending_exit"]["client_order_id"]):
-            existing = self.execution.poll(pos["pending_exit"]["client_order_id"])
+            existing = self.execution.poll(pos["pending_exit"]["client_order_id"], collect_fills=False)
             require(existing["status"] in TERMINAL, "exit_still_pending")
         positions = self.positions()
         require(not positions or (len(positions) == 1 and positions[0]["symbol"] == pos["symbol"]
@@ -292,7 +293,7 @@ class MacroLive:
             else:
                 pos.update(pending_exit=payload, exit_reason=reason)
                 self.save()
-            receipt = self.submit(payload)
+            receipt = self.submit(payload, collect_fills=False)
             require(receipt["status"] in TERMINAL, "exit_still_pending")
             remaining = self.positions()
             if remaining:
@@ -301,7 +302,7 @@ class MacroLive:
                 self.save()
                 raise MacroBlocked("exit_partial_native_stop_retained")
         # Actual flat confirmed before any stop cancellation or optional fill collection.
-        self.sync_triggered_stops(pos)
+        self.sync_triggered_stops(pos, collect_fills=False)
         with sqlite3.connect(self.store.path) as conn:
             owned = {r[0] for r in conn.execute("SELECT client_id FROM macro_stops WHERE parent_client_id=?", (pos["entry_id"],))}
         for raw in self.exchange.fapiPrivateGetOpenAlgoOrders({}):
@@ -313,9 +314,22 @@ class MacroLive:
         self.state.update(position=None, pending_entry=None, pending_stop=None, last_closed_hour=int(time.time())//3600*3600,
                           last_exit={"entry_id": pos["entry_id"], "reason": reason})
         self.save()
-        return dict(auto_action="POSITION_CLOSED", exit_reason=reason)
+        # Fill history can be temporarily unavailable after a real exit. Keep
+        # the durable order identities, but never make it a flat/cleanup gate.
+        accounting_errors = []
+        with sqlite3.connect(self.store.path) as conn:
+            identities = [r[0] for r in conn.execute(
+                "SELECT client_order_id FROM orders WHERE strategy_id=? AND signal_id=?",
+                (STRATEGY_ID, pos["signal_id"]))]
+        for identity in identities:
+            try:
+                self.execution.poll(identity)
+            except Exception as exc:
+                accounting_errors.append(type(exc).__name__)
+        return dict(auto_action="POSITION_CLOSED", exit_reason=reason,
+                    accounting_errors=sorted(set(accounting_errors)))
 
-    def sync_triggered_stops(self, pos):
+    def sync_triggered_stops(self, pos, *, collect_fills=True):
         """Link a triggered algo to its real market order and immutable fills."""
         with sqlite3.connect(self.store.path) as conn:
             identities = [r[0] for r in conn.execute("SELECT client_id FROM macro_stops WHERE parent_client_id=?", (pos["entry_id"],))]
@@ -331,7 +345,7 @@ class MacroLive:
                            signal_id=pos["signal_id"], order_intent_id=f"stop:{identity}", reduce_only=True)
             self.store.create_order(client_order_id=payload["client_order_id"], symbol=pos["symbol"], side="sell",
                                     quantity=payload["quantity"], payload=payload)
-            self.execution.poll(payload["client_order_id"])
+            self.execution.poll(payload["client_order_id"], collect_fills=collect_fills)
             with sqlite3.connect(self.store.path) as conn:
                 conn.execute("UPDATE macro_stops SET status=?,actual_order_id=? WHERE client_id=?",
                              (raw["algoStatus"], str(actual), identity))
@@ -348,10 +362,19 @@ class MacroLive:
         commission = self.exchange.fapiPrivateGetCommissionRate({"symbol": s})
         require(float(commission["takerCommissionRate"]) <= FEE, "live_fee_exceeds_selected_cost_model")
         bracket = self.exchange.fapiPrivateGetLeverageBracket({"symbol": s})
-        brackets = bracket[0]["brackets"]
+        row = next((r for r in bracket if r.get("symbol") == s), None) if isinstance(bracket, list) else bracket
+        require(isinstance(row, dict) and row.get("symbol") == s, "live_bracket_symbol_mismatch")
+        brackets = normalize_brackets(row["brackets"])
         required = next((b for b in brackets if float(b["notionalFloor"]) <= pos["notional_usdt"] < float(b["notionalCap"])), None)
-        require(required is not None and float(required["maintMarginRatio"]) <= .01
-                and int(required["initialLeverage"]) >= pos["leverage"], "live_bracket_outside_research_assumptions")
+        require(required is not None and required["initialLeverage"] >= pos["leverage"],
+                "live_leverage_or_notional_limit")
+        buffer = required["maintMarginRatio"]+float(data[s]["rule"].get("liquidationFee", .015))
+        distance = (pos["entry_price"]-pos["initial_stop"])/pos["entry_price"]
+        require(0 <= buffer < 1 and distance > 0
+                and (1/pos["leverage"]-buffer)/(1-buffer) >= 1.25*(distance+GAP),
+                "live_liquidation_distance")
+        pos = dict(pos, buffer=buffer, maintenance_margin_ratio=required["maintMarginRatio"],
+                   leverage_bracket=required)
         bal = self.balance()
         require(pos["margin_usdt"]+pos["notional_usdt"]*FEE <= bal["availableBalance"], "insufficient_available_margin")
         tick = float(next(f["tickSize"] for f in data[s]["rule"]["filters"] if f["filterType"] == "PRICE_FILTER"))
@@ -418,14 +441,21 @@ class MacroLive:
             return self.exit(pos, "venue_position_closed") if self.execute else dict(auto_action="POSITION_FLAT_RECONCILE")
         if pos.get("exit_reason") and self.execute:
             return self.exit(pos, pos["exit_reason"])
+        require(len(positions) == 1 and positions[0]["symbol"] == pos["symbol"]
+                and abs(position_amount(positions[0])-pos["quantity"]) <= 1e-10,
+                "managed_position_quantity_mismatch")
+        if self.execute:
+            # Known risk exits do not depend on income, public data, pending
+            # stop replacement or optional trade-history collection.
+            if now >= pos.get("funding_exit_due", math.inf):
+                return self.exit(pos, "funding_cost_exit")
+            if now >= pos["entry_time"]+pos["max_hold_hours"]*3600:
+                return self.exit(pos, "time_exit")
         if self.execute:
             self.sync_triggered_stops(pos)
             pending_stop = self.state.get("pending_stop")
             if pending_stop:
                 self.protective(pos, pending_stop["stop"])
-        require(len(positions) == 1 and positions[0]["symbol"] == pos["symbol"]
-                and abs(position_amount(positions[0])-pos["quantity"]) <= 1e-10,
-                "managed_position_quantity_mismatch")
         require(pos.get("stop_id"), "managed_stop_identity_missing")
         stop = self.algo(pos["stop_id"])
         try:
@@ -437,7 +467,12 @@ class MacroLive:
         if not self.execute:
             return dict(auto_action="CHECK_MANAGED_POSITION", protection_check={"status": "PROTECTED"})
         self.retire_stop(pos)
-        self.funding_paid(pos, now)
+        try:
+            self.funding_paid(pos, now)
+        except Exception:
+            if now >= pos.get("funding_lease_deadline", math.inf):
+                return self.exit(pos, "lease_income_unknown")
+            raise
         self.save()
         if now >= pos.get("funding_exit_due", math.inf):
             return self.exit(pos, "funding_cost_exit")
@@ -465,7 +500,16 @@ class MacroLive:
                 self.protective(pos, proposed["stop"])
             pos.update(highest_close=proposed["highest_close"], managed_through=b.t+3600)
             self.save()
-        if is_decision(now) or now >= pos.get("funding_lease_deadline", math.inf):
+        try:
+            decision = is_decision(now)
+        except CalendarUnavailable:
+            # Stops, due exits and completed-hour trailing updates above never
+            # depend on an equity calendar. An unknown calendar cannot renew a
+            # lease; other holds remain protected and report partial management.
+            if now >= pos.get("funding_lease_deadline", math.inf):
+                return self.exit(pos, "lease_calendar_unknown")
+            raise MacroBlocked("calendar_unknown_after_risk_management") from None
+        if decision or now >= pos.get("funding_lease_deadline", math.inf):
             try:
                 features = self.inputs.features(now)
             except Exception:
@@ -487,7 +531,7 @@ class MacroLive:
                     return self.exit(pos, review["reason"])
                 pos["funding_lease_deadline"] = now+hours*3600
                 self.save()
-            if is_decision(now) and not eligible:
+            if decision and not eligible:
                 return self.exit(pos, "trend_off")
         return dict(auto_action="HOLD_MACRO_POSITION", position=pos, protection_check={"status": "PROTECTED"})
 
@@ -518,14 +562,40 @@ class MacroLive:
             require(not normal or (pos.get("pending_exit") and all(r.get("clientOrderId") == pos["pending_exit"]["client_order_id"] for r in normal)), "foreign_normal_orders_present")
             return self.manage(pos, positions, now)
         require(not positions and not normal and not algos, "account_has_unmanaged_exposure_or_orders")
-        if not is_decision(now):
-            return dict(auto_action="WAIT_NY_1000", protection_check={"status": "FLAT"})
+        try:
+            decision = is_decision(now)
+        except CalendarUnavailable:
+            raise MacroBlocked("entry_calendar_unknown") from None
+        if not decision:
+            result = dict(auto_action="WAIT_NY_1000", protection_check={"status": "FLAT"})
+            clock = session(now)
+            if clock is not None and clock[1] in (360, 540, 1020):
+                # Reuse the existing hourly cycle to fetch yesterday's completed
+                # daily bars after the close and before the next market open,
+                # then retry at 09:00 before the 90-second entry window. This never opens
+                # a position and a failed warmup can retry at the real decision.
+                try:
+                    self.inputs.features(now)
+                    result["input_warmup"] = {"status": "READY"}
+                except Exception as exc:
+                    result["input_warmup"] = {"status": "FAILED", "error_type": type(exc).__name__}
+                    if isinstance(exc, MacroInputError):
+                        result["input_warmup"]["input_error"] = exc.details
+            return result
         if self.execute and not 0 <= time.time()-now <= 90:
             return dict(auto_action="HOLD_MISSED_DECISION", execution_blocker="entry_decision_window_expired")
         if self.state.get("last_entry_decision") == now or self.state.get("last_closed_hour") == now:
             return dict(auto_action="HOLD_ALREADY_PROCESSED")
         features = self.inputs.features(now)
         data, caps = self.inputs.snapshot(now, entry=True)
+        # Venue limits participate in candidate sizing, before ranking chooses a
+        # single order. A high maintenance rate is a sizing input, not a ban.
+        rows = self.exchange.fapiPrivateGetLeverageBracket({})
+        require(isinstance(rows, list), "live_brackets_response_invalid")
+        by_symbol = {row["symbol"]: row for row in rows}
+        require(set(data) <= set(by_symbol), "live_brackets_incomplete")
+        data = {s: dict(d, rule=dict(d["rule"], leverage_brackets=
+                    normalize_brackets(by_symbol[s]["brackets"]))) for s, d in data.items()}
         balance = self.balance()
         # All available USD-M USDT is the capital pool, subject to selected risk/margin caps.
         capital = min(balance["marginBalance"], balance["availableBalance"])

@@ -207,6 +207,25 @@ class DualEnginePaperRuntimeTest(unittest.TestCase):
 
 
 class DualEngineMarketDataTest(unittest.TestCase):
+    def test_late_daily_recovery_before_month_end_close_does_not_request_future_signal(self):
+        from qount.dual_engine.market_data import DualEngineMarketDataError
+        config=replace(self._config(),g20_signal_dates=('2026-10-30',))
+        rows=[dict(date=(dt.date(2026,10,29)-dt.timedelta(days=99-i)).isoformat(),
+                   open=100.,high=101.,low=99.,close=100.,adjClose=100.) for i in range(100)]
+        cutoff=int(dt.datetime(2026,10,29,23,59,59,tzinfo=dt.timezone.utc).timestamp()*1000)
+        bar=dict(marked_at='2026-10-29T00:00:00+00:00',open=100.,high=101.,low=99.,close=100.)
+        rules={s:dict(step_size=.001,minimum_notional=0.) for s in C60_SYMBOLS}
+        with patch('qount.dual_engine.market_data._tiingo_daily',return_value=(rows,'a'*64)), \
+             patch('qount.dual_engine.market_data._binance_history_and_fill',return_value=((100.,)*100,100.,cutoff,('b'*64,'c'*64),bar)), \
+             patch('qount.dual_engine.market_data._binance_rules',return_value=(rules,'d'*64)):
+            early=collect_market_cycle(config,observed_at='2026-10-30T07:00:00+00:00',
+                event='daily-close',environment={},equity_source='yahoo_public')
+            self.assertFalse(early.g20_signal_day)
+            self.assertEqual(early.mark_prices['TQQQ'],100.)
+            with self.assertRaisesRegex(DualEngineMarketDataError,'paper_g20_signal_close_unavailable'):
+                collect_market_cycle(config,observed_at='2026-10-30T22:30:00+00:00',
+                    event='daily-close',environment={},equity_source='yahoo_public')
+
     def _config(self) -> DualEngineMarketConfig:
         return DualEngineMarketConfig.from_dict(
             {

@@ -12,8 +12,8 @@ from pathlib import Path
 import ccxt
 
 from qount.execution.macro_live import MacroBlocked, MacroLive
-from qount.research_data.macro_live import MacroLiveInputs, write_json
-from qount.strategies.macro_1atr import STRATEGY_ID
+from qount.research_data.macro_live import MacroInputError, MacroLiveInputs, write_json
+from qount.strategies.macro_1atr import RISK_FRACTION, STRATEGY_ID
 
 
 def _exchange():
@@ -39,7 +39,7 @@ def run_cycle(exchange, *, output, store_path, halt_path, state_path=None,
                       and os.environ.get("QOUNT_PRIMARY_STRATEGY") == STRATEGY_ID,
                   research_only=not execute, selected=None,
                   decision_clock="America/New_York 10:00 regular session",
-                  risk_fraction=.5, gross_cap=20, maximum_leverage=50,
+                  risk_fraction=RISK_FRACTION, gross_cap=20, maximum_leverage=50,
                   protection_check={"status": "UNKNOWN"})
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.with_name("macro-cycle.lock").open("a") as lock:
@@ -48,16 +48,28 @@ def run_cycle(exchange, *, output, store_path, halt_path, state_path=None,
         except BlockingIOError:
             raise MacroBlocked("another_macro_cycle_running") from None
         try:
+            previous = json.loads(output.read_text())
+        except (OSError, ValueError):
+            previous = {}
+        try:
             if halt_path.exists():
                 raise MacroBlocked("owner_halt_exists")
             live = MacroLive(exchange, inputs or MacroLiveInputs(exchange, output.with_name("market-cache")),
                              store_path=store_path, state_path=state_path, handover=config["handover"], execute=execute)
             result.update(live.cycle(stamp//3600*3600))
+        except MacroInputError as exc:
+            result.update(auto_action="BLOCKED", execution_blocker="input_unavailable:"+exc.details["code"],
+                          input_error=exc.details)
         except MacroBlocked as exc:
             result.update(auto_action="BLOCKED", execution_blocker=str(exc))
         except Exception as exc:
             # Exchange exceptions can contain signed URLs. Never serialize their messages.
             result.update(auto_action="BLOCKED", execution_blocker=f"input_or_exchange_error:{type(exc).__name__}")
+        if "candidate_count" in result:
+            result["last_decision"] = {key: result.get(key) for key in (
+                "created_at", "auto_action", "candidate_count", "rejections", "capital_usdt", "selected")}
+        elif isinstance(previous, dict) and previous.get("strategy_id") == STRATEGY_ID:
+            result["last_decision"] = previous.get("last_decision")
         write_json(output, result)
     return result
 

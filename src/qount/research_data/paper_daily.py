@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -38,7 +39,10 @@ def yahoo_rows(symbol, observed, cache_root, *, start=None, interval="1d"):
     query = urllib.parse.urlencode(dict(period1=int(start.timestamp()), period2=int(observed.timestamp()),
                                        interval=interval, events="div,splits"))
     last = None
-    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+    hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+    for attempt, host in enumerate(hosts * 2):
+        if attempt == 2:
+            time.sleep(1)
         try:
             payload = get_json(f"https://{host}/v8/finance/chart/{symbol}?{query}")
             node = payload["chart"]["result"][0]

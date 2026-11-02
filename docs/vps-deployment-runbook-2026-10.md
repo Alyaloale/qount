@@ -1,11 +1,43 @@
 # 新前端部署执行手册（qount.alyaloale.com）
 
-> **状态**：资产、实盘收益、账户记录与十一线研究目录已部署｜**执行者**：owner／授权 Agent｜**最后更新**：2026-10-23 UTC
+> **状态**：资产、实盘收益、账户记录与十一线研究目录已部署｜**执行者**：owner／授权 Agent｜**最后更新**：2026-10-30 UTC
 > **目标**：把新的只读 API + 双屏前端部署到既有域名 `https://qount.alyaloale.com/`，替换现有旧 dashboard。
 > **本文性质**：**纯操作手册**。每一步都给出可直接复制的命令、预期输出、失败判据与回退方式。
 > **默认边界**：`research_only=true / orders_authorized=false`。全程不涉及下单、不修改交易授权。
 
 ---
+
+## 既有模拟任务自动重试与查询续接（2026-10-30 08:23 UTC）
+
+owner要求确保后续正常运行。发布`/root/qount-releases/paper-continuity-20261030T081204Z/`仅更新`src/qount/api/ingest.py`，并为现有Dual daily/G20-open、CTA-R、research-paper四服务追加`zz-paper-reliability-20261030.conf`、为既有research-paper timer追加`95-paper-persistence-20261030.conf`；不覆盖原unit或`paper-forward.conf`，不改实盘、API或通知服务。仓库四个unit模板和timer同步相同行为。失败15分钟后重试、2小时最多3次启动；CTA-R清除`SuccessExitStatus=2`，输入不足须失败。结束后以`ExecStopPost`刷新既有派生查询，错误不改写主任务结果；G20-open失败也纳入查询状态。收尾命令列表先清空再添加，避免未来部署新模板时重复刷新。只追加派生查询目录的写权限及systemd本机查询所需AF_UNIX；特别是Dual的旧`paper-forward.conf`会清空可写列表，本次必须在它后面加载，否则主任务正常而查询收尾会报只读数据库。没有扩大Linux能力集。
+
+配置经`systemd-analyze verify`验证，四服务主任务和查询收尾均实际exit 0。Persistent启用后实际触发原研究模拟补执行、追加0；原10,691行NAV、659行交易金融值及三个源账本无重复或变更。四个paper timer与实盘timer均enabled/active，实盘08:00自然周期成功，实盘保护哈希/2-0-0执行计数/API PID不变。30项本地针对性测试及VPS候选测试通过，包含本周末冬令时；隔离临时systemd服务以1秒测试间隔验证两次失败后恢复、持续失败止于3次及失败时收尾可读Result，未注入生产故障。`retry-check.json`、`actual-service-checks.json`、`verified.json`分别保存对应结果，临时服务已清理。`before/`保存原摄入源码和只读查询/模拟状态；不含凭据。
+
+回退会核对本次发布哈希及四任务未在执行，移除新增覆盖、恢复原摄入源码并重新加载systemd及既有research-paper timer；不回滚金融账本、查询历史或实盘：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/paper-continuity-20261030T081204Z/rollback.py'
+```
+
+## 模拟日线、月末恢复与失败展示修复（2026-10-30 07:29 UTC）
+
+发布与备份位于`/root/qount-releases/runtime-repair-20261030T072030Z/`。七文件为`research_data/paper_daily.py`、`research/cta_r_forward.py`、`dual_engine/market_data.py`、API的`ingest.py`/`db.py`与`web/app/research.js`/`app.js`；未修改实盘源码、服务配置、策略参数或权限。Yahoo日线双节点最多两轮、轮间1秒；月末收盘前恢复只处理已闭合输入，不提前请求当日月末信号，收盘后缺数据仍失败。CTA-R单标的尾部落后时只补取近期缺失日期，备用节点的复权重叠价格必须一致；取不全则失败，避免公共日期交集静默截短。既有paper服务失败状态经查询摄入传入页面，旧曲线可读时仍显示更新失败，健康接口为`partial`。
+
+`before/`保留原七文件、Dual程序/快照、G20现金账本、CTA种子/账本/sidecar及派生查询SQLite一致性备份；不含凭据。`backup.json`记录原路径与保护哈希，`verified.json`记录旧金融行、历史前缀、执行计数和恢复后接口。Dual与CTA既有service均成功，分别推进至29日；第二次Dual为`no_new_closed_inputs`，CTA追加0。旧NAV与交易金融值完整保留，实盘执行记录仍2/0/0，七条模拟错误为空；只读API重启一次，匿名公网仍401。82项本地针对性Python测试、22项前端单测、VPS候选故障/会计测试及上线浏览器回归通过。另一次较宽本地API/前向旧测试有7项固定日期夹具过期失败，未将其计入通过数或放宽生产新鲜度过滤。
+
+代码回退只恢复七文件并重启只读API，不回滚已追加的模拟历史、查询库、交易服务或调度。后续如有代码更新，先核对是否仍属于本次版本，避免覆盖新修改：
+
+```bash
+ssh qount-vps '/root/qount/.venv/bin/python /root/qount-releases/runtime-repair-20261030T072030Z/rollback.py'
+```
+
+## G20模拟配置目录权限恢复（2026-10-29 12:30 UTC）
+
+owner要求仅修复模拟盘，微信暂不处理。`/root/qount/config`仍为Mac UID501/GID50、0700；paper服务的`CapabilityBoundingSet=`为空，因此root进程也不能越过该目录权限读取公开分红配置。`setpriv --bounding-set=-all`只读复现失败后，仅对目录本身执行`chown root:root /root/qount/config`，保留0700及全部文件权限，不递归修改、不扩大服务能力或变更源码。后续同步该目录时保留VPS的root属主，避免重新带入Mac UID。
+
+备份与验证位于`/root/qount-releases/paper-config-access-20261029T122809Z/`：`before.json`保留原目录元数据与保护文件哈希，三个JSON备份保留修复前G20/原四账户状态，`query-before.sqlite3`为一致性派生查询备份，`verified.json`记录实际续接与重复刷新结果。既有daily服务两次执行成功；首轮补齐G20三日、原四账户追加一个有效截止周期，第二轮无新输入跳过；原源历史前缀保留。G20最新207点至28日，7条模拟均新鲜，API未重启，交易权限与通知未操作。
+
+权限回退仅为将该目录属主恢复为原501:50、权限继续0700；这会恢复已知读取故障，通常不应执行。修复没有部署新代码，不需要源码回退；不得用旧模拟/查询备份覆盖之后有效追加的数据。原G20代码发布的回退仍见下一节。
 
 ## G20现金分红模拟修复（2026-10-25 13:10 UTC）
 

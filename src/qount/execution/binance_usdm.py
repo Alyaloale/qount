@@ -365,7 +365,7 @@ class BinanceUsdMExecution:
                                               {"newClientOrderId": order["client_order_id"], "reduceOnly": order["reduce_only"]})
         return self._apply_response(order["client_order_id"], response)
 
-    def poll(self, client_order_id: str) -> dict[str, Any]:
+    def poll(self, client_order_id: str, *, collect_fills: bool = True) -> dict[str, Any]:
         current = self.store.get_order(client_order_id)
         if current is None:
             raise ExecutionContractError("client_order_id_missing")
@@ -377,7 +377,7 @@ class BinanceUsdMExecution:
         result = self._apply_response(client_order_id, response)
         # USD-M order responses usually omit fills. Fetch actual trade identities,
         # even for terminal orders, rather than inventing a fill from the average.
-        if result["executed_quantity"] > 0:
+        if collect_fills and result["executed_quantity"] > 0:
             if hasattr(self.exchange, "fapiPrivateGetUserTrades"):
                 trades = self.exchange.fapiPrivateGetUserTrades({"symbol": symbol, "orderId": result["exchange_order_id"]})
             elif hasattr(self.exchange, "fetch_order_trades"):

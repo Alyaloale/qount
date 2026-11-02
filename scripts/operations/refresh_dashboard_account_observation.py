@@ -19,6 +19,7 @@ from qount.exchange_utils import build_exchange  # noqa: E402
 from qount.mini_trend.pilot_preflight import build_pilot_account_preflight  # noqa: E402
 from qount.operations.account_assets import append_asset_history, collect_asset_overview  # noqa: E402
 from qount.operations.account_trades import collect_trade_records, persist_trade_records  # noqa: E402
+from qount.operations.macro_notifications import collect_macro_runtime  # noqa: E402
 from qount.operations.authority_writer import _readonly_account_observation  # noqa: E402
 from qount.settings import Settings  # noqa: E402
 
@@ -51,6 +52,10 @@ def _write(path: Path, payload: dict[str, object]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    runtime = collect_macro_runtime(
+        Path(os.environ.get("QOUNT_1ATR_RESULT_PATH", "/var/lib/qount/1atr/live-result.json")),
+        Path(os.environ.get("QOUNT_1ATR_HALT_PATH", "/var/lib/qount/1atr/HALT")),
+        notification_store=os.environ.get("QOUNT_NOTIFICATION_STORE"))
     settings = Settings.from_env()
     preflight = build_pilot_account_preflight(settings)
     observed_at = str(preflight["created_at"])
@@ -82,6 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     history_path = args.history_path or args.output_path.with_name("account-assets-history.sqlite3")
     assets_path = args.assets_path or args.output_path.with_name("account-assets.json")
     trades_path = args.trades_path or args.output_path.with_name("account-trades.sqlite3")
+    overview["strategy_runtime"] = runtime
     if len({p.resolve() for p in (history_path, assets_path, trades_path, args.output_path)}) != 4:
         raise ValueError("asset_output_paths_must_differ")
     append_asset_history(history_path, overview)
