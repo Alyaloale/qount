@@ -81,6 +81,23 @@ def settled_cutoff(observed_at: dt.datetime) -> dt.date:
     return local.date() if local.hour >= SETTLED_HOUR else local.date() - dt.timedelta(days=1)
 
 
+def _tencent_closes(getter: Getter, url: str, symbol: str, cutoff: dt.date) -> dict[str, float]:
+    market_code = MARKETS[symbol] + symbol
+    node = (json.loads(getter(url).decode("utf-8")).get("data") or {}).get(market_code) or {}
+    rows = node.get("qfqday")
+    if rows is None and node.get("day"):
+        raise CtaRForwardError(f"tencent_unadjusted_only:{symbol}")
+    closes = {}
+    for row in rows or ():
+        try:
+            day, close = str(row[0])[:10], float(row[2])
+        except (IndexError, TypeError, ValueError):
+            continue
+        if close > 0.0 and math.isfinite(close) and day <= cutoff.isoformat():
+            closes[day] = close
+    return closes
+
+
 def fetch_tencent_series(getter: Getter, *, observed_at: dt.datetime) -> dict[str, dict[str, float]]:
     """Public Tencent qfq daily closes per ETF, fetched in bounded chunks; unsettled days dropped."""
 
@@ -95,22 +112,34 @@ def fetch_tencent_series(getter: Getter, *, observed_at: dt.datetime) -> dict[st
         while cursor <= today:
             end = min(cursor + dt.timedelta(days=CHUNK_DAYS), today)
             url = TENCENT_URL.format(market=market, code=symbol, start=cursor.isoformat(), end=end.isoformat())
-            node = (json.loads(getter(url).decode("utf-8")).get("data") or {}).get(market + symbol) or {}
-            rows = node.get("qfqday")
-            if rows is None and node.get("day"):
-                raise CtaRForwardError(f"tencent_unadjusted_only:{symbol}")
-            for row in rows or ():
-                try:
-                    close = float(row[2])
-                except (IndexError, TypeError, ValueError):
-                    continue
-                day = str(row[0])[:10]
-                if close > 0.0 and math.isfinite(close) and day <= today.isoformat():
-                    closes[day] = close
+            closes.update(_tencent_closes(getter, url, symbol, today))
             cursor = end + dt.timedelta(days=1)
         if not closes:
             raise CtaRForwardError(f"tencent_series_empty:{symbol}")
         out[symbol] = closes
+    # A single lagging ETF otherwise silently truncates the common panel and
+    # makes a failed daily refresh look successful. Retry only its recent tail.
+    latest = max(max(series) for series in out.values())
+    for symbol, closes in out.items():
+        if max(closes) == latest:
+            continue
+        url = TENCENT_URL.format(market=MARKETS[symbol], code=symbol,
+                                 start=(today-dt.timedelta(days=10)).isoformat(), end=today.isoformat())
+        for host in ("web.ifzq.gtimg.cn", "proxy.finance.qq.com/ifzqgtimg"):
+            try:
+                recent = _tencent_closes(getter, url.replace("web.ifzq.gtimg.cn", host), symbol, today)
+                overlap = set(recent).intersection(closes)
+                if latest not in recent or not overlap or any(
+                        not math.isclose(recent[day], closes[day], rel_tol=1e-9, abs_tol=1e-9)
+                        for day in overlap):
+                    continue
+                # Keep the full-fetch history; the retry supplies only missing dates.
+                closes.update({day: price for day, price in recent.items() if day not in closes})
+                break
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        else:
+            raise CtaRForwardError(f"tencent_series_tail_missing:{symbol}:{latest}")
     return out
 
 

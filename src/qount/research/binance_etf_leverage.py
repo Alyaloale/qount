@@ -79,7 +79,8 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
            entry_end_exclusive=None, funding_lease_hours=None, funding_lease_budget="cost",
            allow_partial_histories=False, funding_lease_resize=False, lease_exit_liquidity_caps=None,
            capital_flows=None, funding_lease_entry_utilization=1.0, entry_execution_model=None,
-           exit_execution_model=None, funding_lease_setups=None, entry_risk_controls=None):
+           exit_execution_model=None, funding_lease_setups=None, entry_risk_controls=None,
+           mr_holding_rule=None, mr_topup_policy=None):
     """Hourly pessimistic stop fills, signed funding, isolated margin proxy.
 
     No intrabar trailing updates. A decision at 10:00 ET uses only prior completed
@@ -98,6 +99,12 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
         raise ValueError("confirmations_require_tactical_only")
     if entry_risk_controls is not None and strategy != "macro_tactical":
         raise ValueError("entry_risk_controls_require_tactical_only")
+    if mr_holding_rule is not None and (strategy != "macro_tactical" or not callable(mr_holding_rule)):
+        raise ValueError("invalid_mr_holding_rule")
+    if mr_topup_policy is not None and (not callable(mr_topup_policy) or strategy != "macro_tactical"
+            or funding_lease_resize or capital_flows or funding_lease_budget != "risk"
+            or account_controls or entry_execution_model is not None):
+        raise ValueError("invalid_mr_topup_policy")
     if not isinstance(tactical_max_hold_hours, int) or not 1 <= tactical_max_hold_hours <= 720:
         raise ValueError("invalid_tactical_horizon")
     if tactical_max_hold_hours != 168 and strategy != "macro_tactical":
@@ -200,6 +207,15 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
     invested = 0
     last_core_month = None
     decisions = []
+    topup_attempts = []
+    def holding_allowed(position, feature, now):
+        original = feature[position.get("hold_feature", "hold_"+position["engine"])]
+        if mr_holding_rule is not None and position.get("tactical_setup") == "mean_reversion":
+            result = mr_holding_rule(position, feature, now, original)
+            if not isinstance(result, bool):
+                raise ValueError("invalid_mr_holding_result")
+            return result
+        return original
     if routing not in ("core_first", "tactical_first", "tactical_preempt", "exit_handover"):
         raise ValueError("unknown_entry_routing")
 
@@ -277,11 +293,13 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
             s = pos["symbol"]
             current = feature_at(features[s], now)
             eligible = (current is not None and 0 < now-current["available"] <= 4*86400
-                        and current[pos["hold_feature"]])
+                        and holding_allowed(pos, current, now))
             remaining = (pos["entry_time"]+pos["max_hold_hours"]*3600-now)//3600
             hours = min(pos["funding_lease_hours"], remaining)
             reserve = funding_reserve(data[s]["funding"], now, hours, funding_policy, pos.get("side", 1))
-            review = review_lease(pos, now=now, price=data[s]["trade"][ix[s]].o,
+            from qount.research.macro_topup import review_topup_lease
+            review_fn = review_topup_lease if pos.get("entry_lots") else review_lease
+            review = review_fn(pos, now=now, price=data[s]["trade"][ix[s]].o,
                                   equity=nav(data[s]["mark"][ix[s]].o), cash=equity,
                                   reserve=reserve, hours=hours, eligible=eligible,
                                   fee=fee, slip=slip, risk_fraction=risk_fraction, gap=sizing_gap_reserve)
@@ -335,7 +353,7 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                 # Buy/hold controls have no signal exits or stop; account HALT
                 # and liquidation handling remain identical to the candidate.
                 off = strategy != "hold" and (not fresh or (
-                    not fs[s][pos.get("hold_feature", "hold_"+pos["engine"])] if macro else
+                    not holding_allowed(pos, fs[s], now) if macro else
                     not fs["SPYUSDT"]["eligible"] or not fs[s]["eligible"]))
                 if off:
                     close(now, data[s]["trade"][ix[s]].o, "trend_off")
@@ -364,6 +382,59 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                         preempted_target = (s, "tactical")
                         break
             held_after_exits = {"symbol": pos["symbol"], "engine": pos.get("engine")} if pos else None
+            if (mr_topup_policy is not None and pos is not None and fresh
+                    and pos.get("tactical_setup") == "mean_reversion" and not pos.get("topups")):
+                s = pos["symbol"]
+                import copy
+                plan = mr_topup_policy(copy.deepcopy(pos), fs[s], now,
+                    nav(data[s]["mark"][ix[s]].o), equity, data[s]["trade"][ix[s]].o)
+                if plan is not None:
+                    topup_attempts.append(dict(symbol=s, time=now, **plan))
+                if plan is not None and plan.get("allowed"):
+                    q, price = plan["quantity"], plan["entry_price"]
+                    if not math.isfinite(q) or q <= 0 or not math.isclose(price, data[s]["trade"][ix[s]].o*(1+slip), abs_tol=1e-9):
+                        raise ValueError("invalid_topup_fill")
+                    if (plan["stop"] != pos["stop"] or plan["leverage"] != pos["leverage"]
+                            or plan["original_risk_budget"] != pos["risk_budget_usdt"]
+                            or plan["joint_stress_risk"] > plan["effective_risk_budget"]+1e-9):
+                        raise ValueError("topup_changed_original_protection")
+                    old_q, old_price = pos["quantity"], pos["entry_price"]
+                    from decimal import Decimal
+                    total_q = float(Decimal(str(old_q))+Decimal(str(q)))
+                    entry_fee = q*price*fee
+                    pos["entry_lots"] = [dict(quantity=old_q, entry_price=old_price,
+                        entry_time=pos["entry_time"], entry_fee=pos["entry_fee"],
+                        initial_stress_risk=pos["stress_risk_usdt"]),
+                        dict(quantity=q, entry_price=price, entry_time=now, entry_fee=entry_fee)]
+                    pos["original_entry_price"] = old_price
+                    pos["original_quantity"] = old_q
+                    pos["topups"] = [dict(time=now, quantity=q, entry_price=price, entry_fee=entry_fee,
+                        feature_available=fs[s]["available"], stop=pos["stop"],
+                        original_hold_deadline=pos["entry_time"]+pos["max_hold_hours"]*3600,
+                        original_lease_deadline=pos["funding_lease_deadline"], quote=dict(plan))]
+                    pos["quantity"] = total_q
+                    pos["entry_price"] = (old_q*old_price+q*price)/total_q
+                    pos["notional_usdt"] = old_q*old_price+q*price
+                    pos["margin_usdt"] += q*price/pos["leverage"]
+                    pos["buffer"] = plan["buffer"]
+                    pos["maintenance_margin_ratio"] = plan["maintenance_margin_ratio"]
+                    if plan["leverage_bracket"] is not None:
+                        pos["leverage_bracket"] = plan["leverage_bracket"]
+                    pos["entry_fee"] += entry_fee
+                    pos["stress_risk_usdt"] = plan["joint_stress_risk"]
+                    pos["structural_risk_usdt"] = total_q*(pos["entry_price"]-pos["stop"])
+                    equity -= entry_fee
+                    total_fee += entry_fee
+                    total_slip += q*(price-data[s]["trade"][ix[s]].o)
+                    from qount.research.macro_topup import review_topup_lease
+                    post = review_topup_lease(pos, now=now, price=data[s]["trade"][ix[s]].o,
+                        equity=nav(data[s]["mark"][ix[s]].o), cash=equity,
+                        reserve=plan["old_lease_check"]["reserve"],
+                        hours=plan["old_lease_check"]["forecast_hours"], eligible=True,
+                        fee=fee, slip=slip, risk_fraction=risk_fraction, gap=sizing_gap_reserve)
+                    if not post["allowed"]:
+                        raise ValueError("topup_post_fill_financial_failure")
+                    pos["topups"][0]["post_review"] = post
             entry_clock = ((forced_entry is None or now == forced_entry["time"])
                            and (entry_end_exclusive is None or now < entry_end_exclusive))
             handover = just_closed and routing == "exit_handover"
@@ -633,7 +704,13 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
                 volrows = daily_vol[s]
                 vi = bisect.bisect_right([v[0] for v in volrows], now+3600)-1
                 tick = next(f["tickSize"] for f in data[s]["rule"]["filters"] if f["filterType"] == "PRICE_FILTER")
+                average_entry = pos["entry_price"]
+                if pos.get("topups"):
+                    # Additions never reset the original2R activation threshold.
+                    pos["entry_price"] = pos["original_entry_price"]
                 pos, trailing_exit = trailing_update(pos, b.c, volrows[vi][1] if vi >= 0 else None, tick)
+                if pos.get("topups"):
+                    pos["entry_price"] = average_entry
                 if trailing_exit:
                     close(now+3600, b.c, trailing_exit)
 
@@ -676,6 +753,8 @@ def replay(data, features, *, gross_cap=1.0, risk_fraction=0.03,
     result = {"summary": summary, "trades": trades, "curve": curve}
     if entry_execution_model is not None:
         result["execution_attempts"] = execution_attempts
+    if mr_topup_policy is not None:
+        result["topup_attempts"] = topup_attempts
     if flows_by_time:
         summary.update(return_basis="unit_nav",net_external_flows=net_flows,
                        deposits=sum(max(0,f["amount"]) for f in applied_flows),

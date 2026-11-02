@@ -110,6 +110,35 @@ class CtaRForwardTests(unittest.TestCase):
 
 
 class TencentFetchTests(unittest.TestCase):
+    def test_lagging_etf_tail_uses_backup_without_truncating_the_common_day(self):
+        calls=[]
+        def getter(url):
+            calls.append(url)
+            code=url.split('param=')[1].split(',')[0]
+            day='2026-10-29' if code!='sz159915' or 'proxy.finance.qq.com' in url else '2026-10-28'
+            rows=[['2026-10-28','1','2.649','3','1','1']]
+            if day!='2026-10-28':rows.append([day,'1','2.7','3','1','1'])
+            return json.dumps({'data':{code:{'qfqday':rows}}}).encode()
+        observed=dt.datetime(2026,10,29,11,tzinfo=dt.timezone.utc)
+        out=fwd.fetch_tencent_series(getter,observed_at=observed)
+        self.assertTrue(all(max(series)=='2026-10-29' for series in out.values()))
+        self.assertIn('2026-10-28',out['159915'])
+        self.assertEqual(sum('proxy.finance.qq.com' in url for url in calls),1)
+        # Both endpoints missing the tail is a failed refresh, never a valid old panel.
+        def stale(url):
+            code=url.split('param=')[1].split(',')[0]
+            day='2026-10-28' if code=='sz159915' else '2026-10-29'
+            return json.dumps({'data':{code:{'qfqday':[[day,'1','2','3','1','1']]}}}).encode()
+        with self.assertRaisesRegex(fwd.CtaRForwardError,'tencent_series_tail_missing:159915:2026-10-29'):
+            fwd.fetch_tencent_series(stale,observed_at=observed)
+        def mismatched(url):
+            raw=json.loads(getter(url))
+            if 'proxy.finance.qq.com' in url:
+                raw['data']['sz159915']['qfqday'][0][2]='2.5'
+            return json.dumps(raw).encode()
+        with self.assertRaisesRegex(fwd.CtaRForwardError,'tencent_series_tail_missing:159915'):
+            fwd.fetch_tencent_series(mismatched,observed_at=observed)
+
     def test_chunks_parse_qfq_and_drop_unsettled_day(self):
         calls = []
 

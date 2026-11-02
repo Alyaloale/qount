@@ -165,7 +165,7 @@ def _response_rows(root, response):
     return rows
 
 
-def load_panel(contract):
+def load_panel(contract, *, symbol_filter=None):
     """Return ``(sessions, {symbol: Series}, metadata_snapshot, diagnostics)``.
 
     Contract ``source/qualification/calendar/prefix_locators`` follow the dated
@@ -238,6 +238,12 @@ def load_panel(contract):
     if (len(entries) != contract['expected_source_securities']
             or len({symbol for _, symbol in entries}) != len(entries)):
         raise ValueError('backtest_original_inventory_mismatch')
+    original_count, retired_count = len(entries), len(retired)
+    if symbol_filter is not None:
+        # Validate the full source inventory first, then parse only a bounded
+        # deterministic research sample. Current metadata never selects names.
+        entries = [(member, symbol) for member, symbol in entries if symbol_filter(symbol)]
+        retired = {symbol: parts for symbol, parts in retired.items() if symbol_filter(symbol)}
     panel = {}
     batches = [entries[i:i+32] for i in range(0, len(entries), 32)]
     with concurrent.futures.ProcessPoolExecutor(max_workers=4) as pool:
@@ -254,7 +260,8 @@ def load_panel(contract):
         panel[symbol] = rows_to_series(symbol, rows, sessions, source_kind='tushare_retired', factors=factors)
     diagnostics = {
         'research_only': True, 'orders_authorized': False, 'promotion_evidence': False,
-        'source_original_securities': len(entries), 'source_retired_securities': len(retired),
+        'source_original_securities': original_count, 'source_retired_securities': retired_count,
+        'loaded_original_securities': len(entries), 'loaded_retired_securities': len(retired),
         'panel_securities': len(panel), 'exchange_sessions': len(sessions),
         'first_session': sessions[0], 'last_session': sessions[-1],
         'valid_security_sessions': sum(sum(item.valid) for item in panel.values()),
