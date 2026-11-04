@@ -36,6 +36,7 @@ from scripts.operations.run_daily_intelligence import (
 from scripts.operations.run_daily_intelligence import (
     DAILY_INTELLIGENCE_DEFAULT_LLM_PROVIDER_PROFILE,
 )
+from scripts.operations.run_daily_intelligence import _notification_channel
 from scripts.operations.run_daily_intelligence import _parser as daily_intelligence_parser
 from scripts.operations.run_daily_intelligence import _read_runtime_observation
 from tests.test_ledger_dashboard_bridge import CAPTURED_AT
@@ -716,32 +717,70 @@ class DailyIntelligenceTest(unittest.TestCase):
         self.assertIn("--llm-model glm-5-2-260617", service)
         self.assertIn("--llm-max-tokens 8000", service)
         self.assertNotIn("--send-wecom", service)
-        self.assertIn("--enqueue-personal-weixin", service)
-        self.assertIn("--send-personal-weixin", service)
+        self.assertNotIn("--personal-weixin", service)
+        self.assertNotIn("openclaw", service)
+        self.assertIn("--enqueue-serverchan", service)
+        self.assertIn("--send-serverchan", service)
         self.assertIn(
-            "--personal-weixin-credential-path /etc/qount/intelligence/openclaw-weixin.json",
+            "--serverchan-credential-path /etc/qount/notifications/serverchan-sendkey",
+            service,
+        )
+        self.assertIn("After=network-online.target", service)
+        self.assertNotIn("openclaw-gateway.service", service)
+        self.assertIn(
+            "ConditionPathExists=/etc/qount/notifications/serverchan-sendkey",
             service,
         )
         self.assertIn(
-            "--personal-weixin-context-token-directory /root/.openclaw/openclaw-weixin/accounts",
-            service,
-        )
-        self.assertIn("After=network-online.target openclaw-gateway.service", service)
-        self.assertIn("Wants=network-online.target openclaw-gateway.service", service)
-        self.assertIn(
-            "ConditionPathIsDirectory=/root/.openclaw/openclaw-weixin/accounts",
-            service,
-        )
-        self.assertIn(
-            "ReadOnlyPaths=/root/.openclaw/openclaw-weixin/accounts",
-            service,
-        )
-        self.assertIn(
-            "ConditionPathExists=/etc/qount/intelligence/openclaw-weixin.json",
+            "ReadOnlyPaths=/etc/qount/notifications",
             service,
         )
         self.assertIn("Unit=qount-daily-intelligence.service", timer)
         self.assertIn("OnCalendar=*-*-* 04:30:00 UTC", timer)
+
+    def test_notification_channel_selection_is_exclusive(self) -> None:
+        base = [
+            "--authority-root",
+            "/authority",
+            "--archive-root",
+            "/archive",
+            "--notification-store",
+            "/notifications.sqlite3",
+            "--search-provider",
+            "official-feeds",
+        ]
+
+        self.assertIsNone(
+            _notification_channel(daily_intelligence_parser().parse_args(base))
+        )
+        self.assertEqual(
+            _notification_channel(
+                daily_intelligence_parser().parse_args(base + ["--enqueue-serverchan"])
+            ),
+            "serverchan",
+        )
+        self.assertEqual(
+            _notification_channel(
+                daily_intelligence_parser().parse_args(base + ["--send-serverchan"])
+            ),
+            "serverchan",
+        )
+        with self.assertRaisesRegex(
+            ValueError, "multiple_notification_providers_not_supported"
+        ):
+            _notification_channel(
+                daily_intelligence_parser().parse_args(
+                    base + ["--enqueue-serverchan", "--send-personal-weixin"]
+                )
+            )
+        with self.assertRaisesRegex(
+            ValueError, "multiple_notification_providers_not_supported"
+        ):
+            _notification_channel(
+                daily_intelligence_parser().parse_args(
+                    base + ["--enqueue-serverchan", "--enqueue-wecom"]
+                )
+            )
 
 
 if __name__ == "__main__":

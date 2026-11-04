@@ -28,6 +28,8 @@ from qount.notifications import OPENCLAW_WEIXIN_PROVIDER_NAME  # noqa: E402
 from qount.notifications import OpenClawWeixinProvider  # noqa: E402
 from qount.notifications import ProviderTransport  # noqa: E402
 from qount.notifications import RateLimitPolicy  # noqa: E402
+from qount.notifications import SERVERCHAN_PROVIDER_NAME  # noqa: E402
+from qount.notifications import ServerChanProvider  # noqa: E402
 from qount.notifications import synchronize_producer_incidents  # noqa: E402
 from qount.notifications import WECOM_PROVIDER_NAME  # noqa: E402
 from qount.notifications import WeComGroupRobotProvider  # noqa: E402
@@ -48,6 +50,19 @@ def _read_runtime_observation(authority_root: Path) -> dict | None:
     return read_blocked_runtime_observation(
         authority_root.resolve().parent / "blocked_runtime_observation.json"
     )
+
+
+def _notification_channel(args: argparse.Namespace) -> str | None:
+    requested: list[str] = []
+    if args.enqueue_wecom or args.send_wecom:
+        requested.append("wecom")
+    if args.enqueue_personal_weixin or args.send_personal_weixin:
+        requested.append(OPENCLAW_WEIXIN_PROVIDER_NAME)
+    if args.enqueue_serverchan or args.send_serverchan:
+        requested.append(SERVERCHAN_PROVIDER_NAME)
+    if len(requested) > 1:
+        raise ValueError("multiple_notification_providers_not_supported")
+    return requested[0] if requested else None
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -88,11 +103,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--send-personal-weixin", action="store_true")
     parser.add_argument("--personal-weixin-credential-path", type=Path)
     parser.add_argument("--personal-weixin-context-token-directory", type=Path)
+    parser.add_argument("--enqueue-serverchan", action="store_true")
+    parser.add_argument("--send-serverchan", action="store_true")
+    parser.add_argument("--serverchan-credential-path", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    notification_channel = _notification_channel(args)
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     authority_root = args.authority_root.resolve()
     bundle = read_vps_authority_bundle(authority_root)
@@ -143,18 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         llm_config=llm_config,
     )
 
-    wecom_requested = args.enqueue_wecom or args.send_wecom
-    personal_weixin_requested = (
-        args.enqueue_personal_weixin or args.send_personal_weixin
-    )
-    if wecom_requested and personal_weixin_requested:
-        raise ValueError("multiple_notification_providers_not_supported")
     deliveries = ()
-    notification_channel = None
-    if wecom_requested:
-        notification_channel = "wecom"
-    elif personal_weixin_requested:
-        notification_channel = OPENCLAW_WEIXIN_PROVIDER_NAME
     if notification_channel is not None:
         store = NotificationStore(args.notification_store.resolve())
         intelligence_alert = alert_from_daily_intelligence(run.report)
@@ -222,6 +230,24 @@ def main(argv: list[str] | None = None) -> int:
                 attempted_at=now,
                 transport=transport,
                 channel=OPENCLAW_WEIXIN_PROVIDER_NAME,
+                limit=10,
+                retry_base_seconds=300,
+            )
+        elif args.send_serverchan:
+            if args.serverchan_credential_path is None:
+                raise ValueError("serverchan_credential_path_required")
+            transport = ProviderTransport(
+                ServerChanProvider(timeout_seconds=20),
+                provider_name=SERVERCHAN_PROVIDER_NAME,
+                credential_path=args.serverchan_credential_path.resolve(),
+                require_credential=True,
+                timeout_seconds=25,
+                rate_limit=RateLimitPolicy(max_calls=2, window_seconds=1.0),
+            )
+            deliveries = store.deliver_due(
+                attempted_at=now,
+                transport=transport,
+                channel=SERVERCHAN_PROVIDER_NAME,
                 limit=10,
                 retry_base_seconds=300,
             )
