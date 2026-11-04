@@ -65,7 +65,7 @@ class MacroNotificationTest(unittest.TestCase):
         failures = [event for event in rows['events'].values() if event['category'] == 'macro_execution']
         self.assertEqual(len(failures), 1)
         self.assertEqual(failures[0]['severity'], 'CRITICAL')
-        self.assertEqual(len([job for job in rows['jobs'] if job['channel'] == 'openclaw_weixin']), 1)
+        self.assertEqual(len([job for job in rows['jobs'] if job['channel'] == 'serverchan']), 1)
         self.receipt()
         self.assertEqual(self.observe()['notification_enqueue_status'], 'RECOVERY_RECORDED')
         self.observe()
@@ -164,17 +164,17 @@ class MacroNotificationTest(unittest.TestCase):
             self.assertNotIn('private',json.dumps(result));self.assertNotIn('input_error',result)
 
     def test_idle_retry_service_does_not_hide_a_failed_real_delivery(self):
-        from qount.notifications.weixin import OpenClawWeixinProviderError
+        from qount.notifications.transport import ProviderResponseError
         self.receipt('BLOCKED', 'managed_position_quantity_mismatch')
         self.observe()
         store = NotificationStore(self.store_path)
         def rejected(*args):
-            raise OpenClawWeixinProviderError('openclaw_weixin_response_rejected:-2')
+            raise ProviderResponseError('serverchan_rejected:5001')
         self.now += timedelta(seconds=1)
-        store.deliver_due(attempted_at=self.now.isoformat(), transport=rejected, channel='openclaw_weixin')
+        store.deliver_due(attempted_at=self.now.isoformat(), transport=rejected, channel='serverchan')
         delivery = self.observe()['notification_delivery']
         self.assertEqual(delivery['status'], 'LAST_ATTEMPT_FAILED')
-        self.assertEqual(delivery['last_error'], 'openclaw_weixin_response_rejected:-2')
+        self.assertEqual(delivery['last_error'], 'ProviderResponseError')
         self.now += timedelta(minutes=5)
-        store.deliver_due(attempted_at=self.now.isoformat(), transport=lambda *args:{'accepted':True}, channel='openclaw_weixin')
+        store.deliver_due(attempted_at=self.now.isoformat(), transport=lambda *args:{'accepted':True}, channel='serverchan')
         self.assertEqual(self.observe()['notification_delivery']['status'], 'ACCEPTED_BY_PROVIDER')

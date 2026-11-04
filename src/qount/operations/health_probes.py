@@ -74,8 +74,8 @@ _OPS_SERVICE_POLICIES = (
         True,
     ),
     (
-        "openclaw",
-        "openclaw-gateway.service",
+        "serverchan_retry",
+        "qount-serverchan-retry.timer",
         "active",
         ("delivery",),
         False,

@@ -12,6 +12,7 @@ from qount.strategies.macro_1atr import STRATEGY_ID
 
 UNITS = ("qount-1atr-auto.timer", "qount-1atr-auto.service", "qount-notification-retry.service")
 CATEGORY = "macro_execution"
+CHANNEL = "serverchan"
 
 
 def _reason(value):
@@ -28,7 +29,7 @@ def _record_incident(runtime, path):
     store = NotificationStore(Path(path), busy_timeout_ms=1000)
     rows = store.verified_rows()
     attempted = [job for job in rows["jobs"]
-                 if job["channel"] == "openclaw_weixin" and job.get("last_attempt_at")]
+                 if job["channel"] == CHANNEL and job.get("last_attempt_at")]
     runtime["notification_delivery"] = dict(status="NO_ATTEMPTS", last_attempt_at=None,
                                             last_delivered_at=None, last_error=None)
     if attempted:
@@ -56,7 +57,7 @@ def _record_incident(runtime, path):
                 occurred_at=stamp, source_type="system", source_id=source,
                 source_hash=canonical_hash(dict(reason=reason, observed_at=stamp)),
                 dedupe_key=f"macro:{reason}:{stamp}")
-        store.enqueue(event, channels=("openclaw_weixin",), recorded_at=stamp)
+        store.enqueue(event, channels=(CHANNEL,), recorded_at=stamp)
         keep = (event.alert_id,)
     else:
         keep = ()
@@ -69,7 +70,7 @@ def _record_incident(runtime, path):
                 occurred_at=stamp, source_type="system", source_id=source,
                 source_hash=canonical_hash(dict(recovered=source, observed_at=stamp)),
                 dedupe_key=f"macro:recovered:{source}")
-            store.enqueue(event, channels=("openclaw_weixin",), recorded_at=stamp)
+            store.enqueue(event, channels=(CHANNEL,), recorded_at=stamp)
     store.resolve_superseded_alerts(active_alert_ids=keep, source_type="system",
                                    categories=(CATEGORY,), resolved_at=stamp)
     return "INCIDENT_RECORDED" if reason else "RECOVERY_RECORDED" if active else "OK"
