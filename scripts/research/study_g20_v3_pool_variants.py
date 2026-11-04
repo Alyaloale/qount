@@ -5,6 +5,7 @@ of bets, down-market correlation) and per-leg three-window contributions.
 
 Variants are mechanism-based (not fitted):
 * betaslim — US equity redundancy down (SPY+SMH only), geography up (EWJ+EWY)
+* div11    — betaslim - XRP + EWZ (crypto concentration down, 3 countries up)
 * world14  — base11 + EWJ+EWY+EWZ (pure diversification add, 6.26U/leg feasible)
 * crypto2  — drop highest-beta crypto (XRP), add EWJ (crypto cluster is one bet)
 * xag12    — base11 + silver (metals family completeness)
@@ -47,6 +48,9 @@ VARIANTS = {
     "betaslim": (("SOLUSDT", "BNBUSDT", "XRPUSDT", "SPYUSDT", "SMHUSDT",
                   "EWJUSDT", "EWYUSDT", "XLEUSDT", "XAUUSDT", "COPPERUSDT", "CLUSDT"),
                  {"EWJ": "EWJUSDT", "EWY": "EWYUSDT"}),
+    "div11": (("SOLUSDT", "BNBUSDT", "SPYUSDT", "SMHUSDT", "EWJUSDT", "EWYUSDT",
+               "EWZUSDT", "XLEUSDT", "XAUUSDT", "COPPERUSDT", "CLUSDT"),
+              {"EWJ": "EWJUSDT", "EWY": "EWYUSDT", "EWZ": "EWZUSDT"}),
     "world14": (POOL + ("EWJUSDT", "EWYUSDT", "EWZUSDT"),
                 {"EWJ": "EWJUSDT", "EWY": "EWYUSDT", "EWZ": "EWZUSDT"}),
     "crypto2": (("SOLUSDT", "BNBUSDT", "SPYUSDT", "QQQUSDT", "SMHUSDT", "IWMUSDT",

@@ -34,10 +34,11 @@ from tests.test_account_trades import Exchange as TradeExchange, NOW
 class PersonalAccountTest(unittest.TestCase):
     def test_non_strategy_positions_survive_collector_and_api(self):
         ex = AssetExchange()
-        ex.usdm["positions"][0]["symbol"] = "XRPUSDT"
+        # DOGEUSDT is intentionally NOT in config/binance-assets.json.
+        ex.usdm["positions"][0]["symbol"] = "DOGEUSDT"
         result = _annotate_asset_positions(collect_asset_overview(ex))
         self.assertTrue(result["futures_positions_complete"])
-        self.assertEqual(result["futures_positions"][0]["symbol"], "XRPUSDT")
+        self.assertEqual(result["futures_positions"][0]["symbol"], "DOGEUSDT")
         self.assertFalse(result["futures_positions"][0]["strategy_asset"])
         with tempfile.TemporaryDirectory() as folder:
             p = Path(folder)/"account.json"

@@ -7,7 +7,7 @@ assert.match(base,/^http:\/\/(127\.0\.0\.1|localhost):\d+$/);
 const output=process.env.QOUNT_TEST_SCREENSHOTS || '/tmp/qount-personal-system-screenshots';
 fs.mkdirSync(output,{recursive:true});
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+ const browser=await chromium.launch({headless:true,args:['--no-proxy-server'],executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
  try {
   const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];
   page.on('pageerror',e=>errors.push(e.message));

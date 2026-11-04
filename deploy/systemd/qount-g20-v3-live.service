@@ -1,0 +1,31 @@
+[Unit]
+Description=Qount G20-LP v3 leveraged pool daily resize cycle (real orders)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=2h
+StartLimitBurst=3
+ConditionPathExists=/root/qount/scripts/operations/run_g20_v3_live.py
+ConditionPathExists=!/var/lib/qount/g20-v3/HALT
+
+[Service]
+Type=oneshot
+Restart=on-failure
+RestartSec=15min
+WorkingDirectory=/root/qount
+EnvironmentFile=-/root/qount/.env
+# Must come after .env: later EnvironmentFile= wins, and .env ships
+# QOUNT_LIVE_ENABLE=false which would otherwise defeat the gates below.
+EnvironmentFile=/etc/qount/g20-v3-live.env
+Environment=PYTHONPATH=/root/qount/src
+Environment=QOUNT_BINANCE_ASSETS_PATH=/root/qount/config/binance-assets.json
+Environment=QOUNT_LIVE_ENABLE=true
+Environment=QOUNT_PRIMARY_STRATEGY=g20_leveraged_pool_v3
+ExecStart=/root/qount/.venv/bin/python -m scripts.operations.run_g20_v3_live --execute --output /var/lib/qount/g20-v3/live-result.json
+ExecStopPost=-/root/qount/.venv/bin/python /root/qount/scripts/operations/run_v3_notifications.py --result /var/lib/qount/g20-v3/live-result.json --halt /var/lib/qount/g20-v3/HALT --notification-store /var/lib/qount/notifications/store.sqlite3 --credential-path /etc/qount/notifications/serverchan-sendkey --deliver
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/g20-v3 /var/lib/qount/notifications
+TimeoutStartSec=5m

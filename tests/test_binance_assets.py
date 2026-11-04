@@ -16,7 +16,7 @@ from qount.binance_assets import (
 class TestBinanceAssets(unittest.TestCase):
     def test_repository_mapping_is_unique_and_usdm_only(self) -> None:
         assets = load_binance_assets()
-        self.assertEqual(len(assets), 10)
+        self.assertEqual(len(assets), 13)
         self.assertTrue(all(asset.venue == "binance_usdm" for asset in assets))
         self.assertEqual(asset_by_execution_symbol("spyusdt").signal_symbol, "SPY")
         self.assertEqual(execution_to_signal_map()["CLUSDT"], "USO")

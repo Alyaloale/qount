@@ -13,6 +13,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 (async () => {
   const browser = await chromium.launch({
     headless: true,
+    args: ["--no-proxy-server"],
     executablePath:
       process.env.QOUNT_BROWSER_EXECUTABLE ||
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",

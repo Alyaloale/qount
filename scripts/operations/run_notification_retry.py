@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retry a bounded batch of due OpenClaw Weixin notification jobs."""
+"""Retry a bounded batch of due notification jobs for one explicit channel."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from qount.notifications import OPENCLAW_WEIXIN_PROVIDER_NAME  # noqa: E402
 from qount.notifications import OpenClawWeixinProvider  # noqa: E402
 from qount.notifications import ProviderTransport  # noqa: E402
 from qount.notifications import RateLimitPolicy  # noqa: E402
+from qount.notifications import SERVERCHAN_PROVIDER_NAME  # noqa: E402
+from qount.notifications import ServerChanProvider  # noqa: E402
 
 
 MAXIMUM_RETRY_BATCH = 2
@@ -47,7 +49,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--notification-store", type=Path, required=True)
     parser.add_argument("--credential-path", type=Path, required=True)
-    parser.add_argument("--context-token-directory", type=Path, required=True)
+    parser.add_argument("--context-token-directory", type=Path)
+    parser.add_argument(
+        "--channel",
+        choices=(OPENCLAW_WEIXIN_PROVIDER_NAME, SERVERCHAN_PROVIDER_NAME),
+        default=OPENCLAW_WEIXIN_PROVIDER_NAME,
+    )
     parser.add_argument("--limit", type=_bounded_batch, default=MAXIMUM_RETRY_BATCH)
     parser.add_argument(
         "--retry-base-seconds",
@@ -60,14 +67,20 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.channel == OPENCLAW_WEIXIN_PROVIDER_NAME and args.context_token_directory is None:
+        raise SystemExit("context_token_directory_required")
     attempted_at = dt.datetime.now(dt.timezone.utc).isoformat()
     store = NotificationStore(args.notification_store.absolute())
-    transport = ProviderTransport(
-        OpenClawWeixinProvider(
+    if args.channel == SERVERCHAN_PROVIDER_NAME:
+        provider = ServerChanProvider(timeout_seconds=args.timeout_seconds)
+    else:
+        provider = OpenClawWeixinProvider(
             timeout_seconds=args.timeout_seconds,
             context_token_directory=args.context_token_directory.absolute(),
-        ),
-        provider_name=OPENCLAW_WEIXIN_PROVIDER_NAME,
+        )
+    transport = ProviderTransport(
+        provider,
+        provider_name=args.channel,
         credential_path=args.credential_path.absolute(),
         require_credential=True,
         timeout_seconds=args.timeout_seconds + 5,
@@ -79,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     deliveries = store.deliver_due(
         attempted_at=attempted_at,
         transport=transport,
-        channel=OPENCLAW_WEIXIN_PROVIDER_NAME,
+        channel=args.channel,
         limit=args.limit,
         retry_base_seconds=args.retry_base_seconds,
     )
@@ -88,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(
             {
                 "attempted_at": attempted_at,
-                "channel": OPENCLAW_WEIXIN_PROVIDER_NAME,
+                "channel": args.channel,
                 "processed": len(deliveries),
                 "status_counts": dict(sorted(status_counts.items())),
             },

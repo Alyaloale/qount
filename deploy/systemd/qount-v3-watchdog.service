@@ -1,0 +1,42 @@
+[Unit]
+Description=Qount G20-LP v3 missed-cycle watchdog (observe and enqueue only)
+After=local-fs.target
+ConditionPathIsDirectory=/var/lib/qount/notifications
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/qount
+Environment=PYTHONPATH=/root/qount/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=QOUNT_LIVE_ENABLE=false
+Environment=QOUNT_LIVE_CONFIRMATION=
+UnsetEnvironment=QOUNT_LIVE_CONFIRMATION QOUNT_MINI_TREND_LIVE_CONFIRMATION QOUNT_MINI_TREND_ARM_TOKEN QOUNT_FOMC_LIVE_CONFIRMATION QOUNT_FOMC_ARM_TOKEN BINANCE_API_KEY BINANCE_SECRET QOUNT_BINANCE_API_KEY QOUNT_BINANCE_API_SECRET QOUNT_TESTNET_API_KEY QOUNT_TESTNET_API_SECRET QOUNT_ALPHA_AGENT_API_KEY QOUNT_ALPHA_AGENT_BASE_URL QOUNT_ALPHA_AGENT_MODEL QOUNT_ALPHA_AGENT_PROVIDER_PROFILE QOUNT_ALPHA_AGENT_LLM_ENABLE QOUNT_OPENAI_API_KEY QOUNT_TIINGO_API_KEY OPENAI_API_KEY
+ExecStart=/root/qount/.venv/bin/python /root/qount/scripts/operations/run_v3_notifications.py --result /var/lib/qount/g20-v3/live-result.json --halt /var/lib/qount/g20-v3/HALT --notification-store /var/lib/qount/notifications/store.sqlite3 --credential-path /etc/qount/notifications/serverchan-sendkey
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryHigh=128M
+MemoryMax=192M
+TasksMax=24
+TimeoutStartSec=1m
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/qount/notifications
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

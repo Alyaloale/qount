@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the G20-LP v3 cycle receipt hourly for missed cycles
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=3min
+AccuracySec=1min
+Unit=qount-v3-watchdog.service
+
+[Install]
+WantedBy=timers.target

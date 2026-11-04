@@ -1,0 +1,12 @@
+[Unit]
+Description=Retry Qount ServerChan notifications every five minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+RandomizedDelaySec=15s
+AccuracySec=15s
+Unit=qount-serverchan-retry.service
+
+[Install]
+WantedBy=timers.target

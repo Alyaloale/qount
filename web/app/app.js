@@ -226,6 +226,18 @@ document.addEventListener("DOMContentLoaded", () => {
     mascotSay(MASCOT_TIPS[Math.floor(Math.random() * MASCOT_TIPS.length)]);
   });
   initApp();
+  // ECharts (~1.1MB) is chart-only: load it after first paint instead of on the
+  // critical path, then re-render whatever data arrived while it was loading.
+  (window.requestIdleCallback || ((cb) => setTimeout(cb, 1200)))(() => {
+    const script = document.createElement("script");
+    script.src = "vendor/echarts.min.js";
+    script.addEventListener("load", () => window.dispatchEvent(new Event("qount:charts-ready")));
+    document.head.appendChild(script);
+  }, { timeout: 3000 });
+  window.addEventListener("qount:charts-ready", () => {
+    fetchLiveAccountData();
+    if (currentLineId) showLineDetail(currentLineId, false, true);
+  });
   setInterval(() => { if (activeTab === "account") updateObservationAge(); }, 5000);
   setInterval(() => {
     if (
@@ -406,6 +418,7 @@ async function fetchLiveAccountData() {
   const historyRequest = fetchAssetHistory();
   const recordsRequest = fetchLiveTradeRecords();
   const strategyRequest = fetchOneAtrStatus();
+  const v3Request = fetchG20V3Status();
   const performanceRequest = fetchLivePerformance();
   try {
     const data = await readJSON("/account/assets");
@@ -464,13 +477,17 @@ async function fetchLiveAccountData() {
     showError("live-error", `资产读数不可用：${error.message || "读取失败"}。需由持有只读凭据的采集主机生成新版快照。`);
     updateObservationAge();
   } finally {
-    await Promise.allSettled([historyRequest, recordsRequest, strategyRequest, performanceRequest]);
+    await Promise.allSettled([historyRequest, recordsRequest, strategyRequest, v3Request, performanceRequest]);
     liveFetchPending = false;
   }
 }
 async function fetchOneAtrStatus() {
   try { window.QountLive?.renderOneAtr(await readJSON('/account/one-atr')); }
   catch (_) { window.QountLive?.renderOneAtr(null); }
+}
+async function fetchG20V3Status() {
+  try { window.QountLive?.renderG20V3(await readJSON('/account/g20-v3')); }
+  catch (_) { window.QountLive?.renderG20V3(null); }
 }
 async function fetchLiveTradeRecords() {
   try { window.QountLive?.renderRecords(await readJSON('/account/trades?limit=100')); }
@@ -1035,6 +1052,12 @@ function renderNavChart() {
     chartInstance = null;
     dom.replaceChildren();
     dom.textContent = "无可复核净值观测";
+    return;
+  }
+  if (!window.echarts) {
+    // Charts load lazily after first paint; the qount:charts-ready handler
+    // re-renders the open detail once the library is available.
+    dom.textContent = "图表组件加载中…";
     return;
   }
   if (!chartInstance) {

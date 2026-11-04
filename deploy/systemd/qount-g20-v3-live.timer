@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Qount G20-LP v3 daily resize cycle at the 00:00 UTC bar open
+
+[Timer]
+OnCalendar=*-*-* 00:00:05 UTC
+Persistent=true
+RandomizedDelaySec=0
+AccuracySec=1s
+Unit=qount-g20-v3-live.service
+
+[Install]
+WantedBy=timers.target

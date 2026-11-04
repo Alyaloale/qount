@@ -70,6 +70,10 @@ def _json(value: Any) -> str:
 def _time(value: Any) -> str:
     if value is None:
         return _now()
+    if isinstance(value, str) and value.strip().isdigit():
+        # Raw Binance JSON (fapi userTrades/income) encodes epoch milliseconds as
+        # decimal strings; datetime.fromisoformat would misread them as ISO dates.
+        value = int(value.strip())
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(_finite(value, "fill_time") / 1000, timezone.utc).isoformat()
     try:

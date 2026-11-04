@@ -326,6 +326,50 @@ consumers = []
 legacy = true
 
 [[variables]]
+name = "QOUNT_G20V3_RESULT_PATH"
+domain = "venue"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "state/g20-v3/live-result.json"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_G20V3_STATE_PATH"
+domain = "venue"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "state/g20-v3/g20-v3-state.json"
+consumers = ["src/qount/api/routes/account.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_G20V3_EXECUTION_STORE"
+domain = "venue"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "state/g20-v3/execution.sqlite3"
+consumers = ["scripts/operations/run_g20_v3_live.py"]
+legacy = false
+
+[[variables]]
+name = "QOUNT_G20V3_HALT_PATH"
+domain = "venue"
+type = "path"
+sensitive = false
+allowed_hosts = ["vps"]
+required_when = "never"
+default_policy = "state/g20-v3/HALT"
+consumers = ["scripts/operations/run_g20_v3_live.py"]
+legacy = false
+
+[[variables]]
 name = "QOUNT_1ATR_HALT_PATH"
 domain = "venue"
 type = "path"

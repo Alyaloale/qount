@@ -10,7 +10,7 @@ const output = process.env.QOUNT_TEST_SCREENSHOTS || '/tmp/qount-research-ui';
 for (const url of [base, api, researchApi]) assert.match(url, /^http:\/\/(127\.0\.0\.1|localhost):\d+$/);
 fs.mkdirSync(output, {recursive: true});
 (async () => {
-  const browser = await chromium.launch({headless: true, executablePath: process.env.QOUNT_BROWSER_EXECUTABLE ||
+  const browser = await chromium.launch({headless: true, args: ['--no-proxy-server'], executablePath: process.env.QOUNT_BROWSER_EXECUTABLE ||
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
   let page;
   try {

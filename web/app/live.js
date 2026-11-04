@@ -101,6 +101,33 @@
     text("strategy-assigned-fees",Object.entries(data?.accounting?.commission_by_asset || {}).map(([asset,value])=>`${Number(value).toFixed(6)} ${asset}`).join(" / ") || "--");
     if(data?.protection_check) text("one-atr-protection",({PROTECTED:"交易所保护单已核对",UNPROTECTED:"保护不足，已暂停",UNKNOWN:"交易所保护状态未知",FLAT:"账户空仓",UNASSIGNED:"非本策略持仓"})[data.protection_check.status] || "保护状态待核");
   }
+  function renderG20V3(data) {
+    const text=(id,v)=>{const n=document.getElementById(id);if(n)n.textContent=v;};
+    const clock=v=>Number.isFinite(Date.parse(v)) ? `${new Date(v).toLocaleString("zh-CN",{timeZone:"Asia/Singapore",hour12:false})} UTC+8` : "--";
+    const amount=v=>v==null || !Number.isFinite(Number(v)) ? "--" : Number(v).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:4});
+    const status=data?.halted ? "完整停止 · HALT 生效" : data?.status === "STALE" ? "运行记录已过期（错过周期）" : data?.status === "AVAILABLE" ? (data.auto_action === "BLOCKED" ? "执行受阻" : data.orders_authorized ? "自动实盘运行中" : "计划模式 · 未授权下单") : "状态待接入";
+    text("g20v3-status",status);
+    text("g20v3-last-run",clock(data?.last_result_at));
+    text("g20v3-signal",data?.signal_date || "--");
+    text("g20v3-equity",data?.capital_usdt == null ? "--" : `${amount(data.capital_usdt)} USDT`);
+    const actions={RESIZE:"再平衡执行",NO_ACTION:"带内不动",BLOCKED:"执行受阻"};
+    let action=data?.auto_action ? actions[data.auto_action] || data.auto_action : "--";
+    if(data?.auto_action === "NO_ACTION" && data?.reason === "signal_date_already_processed") action="同信号日已处理";
+    if(data?.auto_action === "BLOCKED") action=`执行受阻 · ${data.execution_blocker || "原因待核"}`;
+    text("g20v3-action",action);
+    const mode=data?.scheduled_resize && data?.drift_breach ? "周度调仓 · 触发漂移带" : data?.scheduled_resize ? "周度调仓" : data?.drift_breach ? "漂移带触发" : "带内不动";
+    text("g20v3-mode",data ? mode : "--");
+    const plan=data?.plan || [];
+    const counts=plan.reduce((acc,leg)=>{acc[leg.action]=(acc[leg.action]||0)+1;return acc;},{});
+    const target=plan[0]?.target_notional;
+    text("g20v3-plan",plan.length ? `${plan.length} 腿 · ${Object.entries(counts).map(([k,v])=>`${{BUY:"买入",SELL:"卖出",CLOSE:"清仓",HOLD:"持有",SKIP:"跳过"}[k]||k}${v}`).join(" / ")}${target != null ? ` · 单腿目标 ${Number(target).toFixed(2)}U` : ""}` : "暂无调仓计划");
+    const oc=data?.order_counts;
+    text("g20v3-orders",oc ? `提交 ${oc.submitted ?? 0} · 规则拒绝 ${oc.skipped_rule ?? 0} · 仅计划 ${oc.planned_only ?? 0}` : data?.orders?.length ? `${data.orders.length} 条执行记录` : "暂无订单");
+    text("g20v3-ledger",data?.orders?.length ? `${data.orders.length} 条执行库订单` : "执行库暂无订单");
+    text("g20v3-cycle",data?.cycle ? `第 ${data.cycle.cycle_count ?? 0} 周期 · 上次信号 ${data.cycle.last_signal_date || "--"}` : "尚未产生实盘周期");
+    text("g20v3-next",clock(data?.next_cycle_at));
+    text("g20v3-halt",data ? (data.halted ? "已停止（HALT 文件存在）" : "未停止") : "状态未知");
+  }
   function performanceView(data, now=Date.now()) {
     if (!data || data.read_only !== true || data.orders_authorized !== false ||
         data.method !== "chained_modified_dietz" || !["AVAILABLE","PARTIAL"].includes(data.status) ||
@@ -109,5 +136,5 @@
         !Number.isInteger(p.segment_id) || number(p.return_pct)==null || number(p.net_pnl_usdt)==null)) return null;
     return data;
   }
-  return { accountView, render, renderRecords, renderOneAtr, performanceView };
+  return { accountView, render, renderRecords, renderOneAtr, renderG20V3, performanceView };
 });

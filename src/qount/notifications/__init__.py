@@ -16,6 +16,11 @@ from qount.notifications.health import SystemHealthSnapshot
 from qount.notifications.read_model import NOTIFICATION_SNAPSHOT_SCHEMA_VERSION
 from qount.notifications.read_model import NotificationSnapshot
 from qount.notifications.read_model import build_notification_snapshot
+from qount.notifications.serverchan import SERVERCHAN_API_HOST
+from qount.notifications.serverchan import SERVERCHAN_PROVIDER_NAME
+from qount.notifications.serverchan import ServerChanProvider
+from qount.notifications.serverchan import ServerChanProviderError
+from qount.notifications.serverchan import validate_serverchan_sendkey
 from qount.notifications.producers import SYSTEM_HEALTH_SCHEMA_VERSION
 from qount.notifications.producers import SYSTEM_HEALTH_STATUSES
 from qount.notifications.producers import PRODUCER_INCIDENT_SYNC_SCHEMA_VERSION
@@ -116,6 +121,11 @@ __all__ = [
     "OpenClawWeixinProvider",
     "OpenClawWeixinProviderError",
     "parse_openclaw_weixin_credential",
+    "SERVERCHAN_API_HOST",
+    "SERVERCHAN_PROVIDER_NAME",
+    "ServerChanProvider",
+    "ServerChanProviderError",
+    "validate_serverchan_sendkey",
     "collect_system_health",
     "synchronize_producer_incidents",
     "load_provider_credential",

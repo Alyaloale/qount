@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -83,6 +84,25 @@ class BinanceUsdMExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(response["executed_quantity"], 2.0)
         self.assertEqual(response["average_price"], 100.0)
         self.assertEqual(response["fills"][1]["fees"]["BNB"], .2)
+
+    def test_raw_binance_usertrades_string_timestamps(self):
+        # Real fapiPrivateGetUserTrades rows encode every numeric field as a
+        # decimal string, including time (epoch millis). Regression for the
+        # 2026-11-04 first live cycle: fill collection raised
+        # fill_time_missing_or_invalid mid-resize and blocked the cycle.
+        response = normalize_order_response({
+            "orderId": "255321054458", "status": "FILLED", "executedQty": "0.08",
+            "avgPrice": "91.08", "trades": [{
+                "id": "3626352156", "price": "91.0800", "qty": "0.08",
+                "commission": "0.00364320", "commissionAsset": "USDT",
+                "time": "1793764749308"}],
+        })
+        self.assertEqual(response["status"], "FILLED")
+        self.assertEqual(response["executed_quantity"], 0.08)
+        self.assertEqual(response["fills"][0]["quantity"], 0.08)
+        self.assertEqual(response["fills"][0]["fees"], {"USDT": 0.00364320})
+        self.assertEqual(response["fills"][0]["occurred_at"],
+                         datetime.fromtimestamp(1793764749308 / 1000, timezone.utc).isoformat())
 
     def test_fill_idempotency_and_signed_cash_event(self):
         with tempfile.TemporaryDirectory() as folder:

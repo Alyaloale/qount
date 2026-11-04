@@ -93,6 +93,9 @@ DEFAULT_OBSERVATION_SOURCE = "/var/lib/qount/blocked_runtime_observation.json"
 DEFAULT_ONE_ATR_RESULT = "/var/lib/qount/1atr/live-result.json"
 DEFAULT_ONE_ATR_STORE = "/var/lib/qount/1atr/execution.sqlite3"
 DEFAULT_ONE_ATR_ARM = "/var/lib/qount/1atr/arm.json"
+DEFAULT_G20V3_RESULT = "/var/lib/qount/g20-v3/live-result.json"
+DEFAULT_G20V3_STORE = "/var/lib/qount/g20-v3/execution.sqlite3"
+DEFAULT_G20V3_STATE = "/var/lib/qount/g20-v3/g20-v3-state.json"
 DEFAULT_ONE_ATR_HALT = "/var/lib/qount/1atr/HALT"
 
 
@@ -396,6 +399,87 @@ def get_one_atr_status() -> dict:
             response["runtime"] = {**runtime, "stale": not -60 <= age <= 900}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         pass  # An absent runtime observation never invents an active timer.
+    return response
+
+
+@router.get("/g20-v3")
+def get_g20_v3_status() -> dict:
+    """Read-only G20-LP v3 live cycle receipt, book plan and execution ledger."""
+    result_path = Path(os.environ.get("QOUNT_G20V3_RESULT_PATH", DEFAULT_G20V3_RESULT))
+    store_path = Path(os.environ.get("QOUNT_G20V3_EXECUTION_STORE", DEFAULT_G20V3_STORE))
+    halt_path = Path(os.environ.get("QOUNT_G20V3_HALT_PATH", "/var/lib/qount/g20-v3/HALT"))
+    state_path = Path(os.environ.get("QOUNT_G20V3_STATE_PATH", DEFAULT_G20V3_STATE))
+    response = {
+        "status": "MISSING", "read_only": True,
+        "strategy_id": "g20_leveraged_pool_v3",
+        "strategy_name": "G20-LP v3 全池杠杆持有",
+        "contract": "11 腿等权 · 总杠杆 2x · 周度再平衡+25%漂移带 · min-notional 现金语义 · 拒单语义",
+        "execution_mode": "unknown", "orders_authorized": False, "research_only": True,
+        "halted": halt_path.exists(), "error": None,
+        "auto_action": None, "execution_blocker": None, "signal_date": None,
+        "capital_usdt": None, "scheduled_resize": None, "drift_breach": None,
+        "plan": [], "orders": [], "order_counts": None, "last_decision": None,
+        "cycle": None, "next_cycle_at": None,
+    }
+    # The daily cycle runs at 00:00:05 UTC; the next fire is the next such boundary.
+    now = datetime.now(timezone.utc)
+    next_cycle = now.replace(hour=0, minute=0, second=5, microsecond=0)
+    if next_cycle <= now:
+        next_cycle += timedelta(days=1)
+    response["next_cycle_at"] = next_cycle.isoformat()
+    try:
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("result_not_object")
+        response.update({key: payload.get(key) for key in (
+            "strategy_id", "execution_mode", "auto_action", "execution_blocker",
+            "signal_date", "capital_usdt", "scheduled_resize", "drift_breach",
+            "plan", "orders", "order_counts", "last_decision")})
+        live = payload.get("execution_mode") == "auto_live"
+        response["research_only"] = not live
+        response["orders_authorized"] = live and payload.get("orders_authorized") is True
+        response["status"] = "AVAILABLE"
+        response["last_result_at"] = payload.get("created_at")
+        try:
+            created = datetime.fromisoformat(str(payload.get("created_at")).replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                raise ValueError("result_timezone_missing")
+            age = max(0.0, (now - created.astimezone(timezone.utc)).total_seconds())
+            response["result_age_seconds"] = age
+            # Daily cadence: a receipt older than 36h means a missed cycle.
+            response["result_stale"] = age > 36 * 3600
+            if response["result_stale"]:
+                response["status"] = "STALE"
+        except (TypeError, ValueError):
+            response["result_stale"] = True
+            response["status"] = "STALE"
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        response["error"] = f"result_unavailable:{type(exc).__name__}"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if isinstance(state, dict):
+            response["cycle"] = {
+                "cycle_count": state.get("cycle_count"),
+                "last_signal_date": state.get("last_signal_date"),
+            }
+    except (OSError, json.JSONDecodeError):
+        response["cycle"] = None
+    try:
+        if store_path.is_file():
+            with sqlite3.connect(f"file:{store_path.resolve()}?mode=ro", uri=True) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = [dict(row) for row in conn.execute(
+                    "SELECT client_order_id,symbol,side,quantity,status,executed_quantity,"
+                    "average_price,strategy_id,signal_id FROM orders "
+                    "WHERE strategy_id='g20_leveraged_pool_v3' ORDER BY rowid DESC LIMIT 200"
+                )]
+                response["orders"] = rows
+                response["executed_fills"] = [dict(row) for row in conn.execute(
+                    "SELECT client_order_id,symbol,quantity,price,fee,fee_asset,occurred_at "
+                    "FROM fills WHERE strategy_id='g20_leveraged_pool_v3' "
+                    "ORDER BY occurred_at DESC LIMIT 200")]
+    except (OSError, sqlite3.Error) as exc:
+        response["error"] = f"execution_store_unavailable:{type(exc).__name__}"
     return response
 
 

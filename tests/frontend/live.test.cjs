@@ -83,3 +83,38 @@ test('runtime observations, halt and failures are not inferred from an auto_live
   assert.match(nodes.get('strategy-runtime-note').textContent,/微信最近发送被拒绝/);
  } finally{delete global.document;}
 });
+
+test('g20v3 status renders contract state without inventing numbers',()=>{
+ const {renderG20V3}=require('../../web/app/live.js');const nodes=new Map();
+ global.document={getElementById:id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id);}};
+ try {
+  renderG20V3({status:'AVAILABLE',execution_mode:'auto_live',orders_authorized:true,halted:false,
+    signal_date:'2026-11-03',capital_usdt:43.8711,auto_action:'RESIZE',scheduled_resize:true,drift_breach:false,
+    plan:[{symbol:'SOLUSDT',action:'BUY',target_notional:7.98},{symbol:'CLUSDT',action:'SKIP',target_notional:7.98}],
+    order_counts:{submitted:1,skipped_rule:0,planned_only:0},
+    orders:[{client_order_id:'v3-20261103-SOLUSDT-b',symbol:'SOLUSDT',side:'buy',status:'FILLED'}],
+    cycle:{cycle_count:0,last_signal_date:'2026-11-03'},
+    next_cycle_at:'2026-11-04T00:00:05+00:00'});
+  assert.equal(nodes.get('g20v3-status').textContent,'自动实盘运行中');
+  assert.equal(nodes.get('g20v3-signal').textContent,'2026-11-03');
+  assert.match(nodes.get('g20v3-equity').textContent,/43\.87/);
+  assert.match(nodes.get('g20v3-action').textContent,/再平衡执行/);
+  assert.match(nodes.get('g20v3-mode').textContent,/周度调仓/);
+  assert.match(nodes.get('g20v3-plan').textContent,/2 腿/);
+  assert.match(nodes.get('g20v3-plan').textContent,/买入1/);
+  assert.match(nodes.get('g20v3-plan').textContent,/跳过1/);
+  assert.match(nodes.get('g20v3-orders').textContent,/提交 1/);
+  assert.match(nodes.get('g20v3-cycle').textContent,/第 0 周期/);
+  assert.equal(nodes.get('g20v3-halt').textContent,'未停止');
+  renderG20V3({status:'AVAILABLE',auto_action:'NO_ACTION',reason:'signal_date_already_processed'});
+  assert.match(nodes.get('g20v3-action').textContent,/同信号日已处理/);
+  renderG20V3({status:'AVAILABLE',auto_action:'BLOCKED',execution_blocker:'inflight_orders_present'});
+  assert.match(nodes.get('g20v3-action').textContent,/inflight_orders_present/);
+  renderG20V3({halted:true,status:'AVAILABLE'});
+  assert.match(nodes.get('g20v3-status').textContent,/完整停止/);
+  renderG20V3(null);
+  assert.equal(nodes.get('g20v3-status').textContent,'状态待接入');
+  assert.equal(nodes.get('g20v3-plan').textContent,'暂无调仓计划');
+  assert.equal(nodes.get('g20v3-equity').textContent,'--');
+ } finally{delete global.document;}
+});
