@@ -1,4 +1,4 @@
-"""Independent local observation, durable incident deduplication and failure isolation."""
+"""Independent local observation; the macro alert path is retired (2026-11-04)."""
 import json
 import os
 import subprocess
@@ -8,9 +8,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from qount.contracts import canonical_hash
-from qount.notifications.contracts import AlertEvent
-from qount.notifications.store import NotificationStore
 from qount.operations.macro_notifications import collect_macro_runtime, UNITS
 from qount.strategies.macro_1atr import STRATEGY_ID
 
@@ -40,46 +37,35 @@ class MacroNotificationTest(unittest.TestCase):
         return subprocess.CompletedProcess(command, 0, '\n\n'.join(blocks), '')
 
     def observe(self, **kwargs):
-        return collect_macro_runtime(self.result, self.halt, notification_store=self.store_path,
+        return collect_macro_runtime(self.result, self.halt,
                                      now=self.now, runner=self.systemd, **kwargs)
 
-    def rows(self):
-        return NotificationStore(self.store_path).verified_rows()
-
-    def test_oneshot_inactive_success_is_healthy_and_normal_wait_does_not_notify(self):
+    def test_oneshot_inactive_success_is_healthy_and_observation_only(self):
         result = self.observe()
         self.assertEqual(result['state'], 'AUTO')
-        self.assertEqual(self.rows()['events'], {})
+        self.assertEqual(result['notification_enqueue_status'], 'RETIRED')
+        self.assertEqual(result['notification_delivery']['status'], 'RETIRED')
+        self.assertFalse(self.store_path.exists())
 
-    def test_same_incident_is_sent_once_and_recovery_does_not_resolve_other_producers(self):
-        store = NotificationStore(self.store_path)
-        other = AlertEvent.create(severity='WARNING', category='system_health', title='Other', summary='Other incident',
-            occurred_at=self.now.isoformat(), source_type='system', source_id=canonical_hash('other'),
-            source_hash=canonical_hash('other'), dedupe_key='other')
-        store.enqueue(other, channels=('dashboard',), recorded_at=self.now.isoformat())
-        self.receipt('BLOCKED', 'managed_position_quantity_mismatch')
-        self.observe()
-        self.now += timedelta(minutes=5)
-        self.observe()
-        rows = self.rows()
-        failures = [event for event in rows['events'].values() if event['category'] == 'macro_execution']
-        self.assertEqual(len(failures), 1)
-        self.assertEqual(failures[0]['severity'], 'CRITICAL')
-        self.assertEqual(len([job for job in rows['jobs'] if job['channel'] == 'serverchan']), 1)
-        self.receipt()
-        self.assertEqual(self.observe()['notification_enqueue_status'], 'RECOVERY_RECORDED')
-        self.observe()
-        rows = self.rows()
-        self.assertEqual(rows['states'][failures[0]['alert_id']]['status'], 'RESOLVED')
-        self.assertEqual(rows['states'][other.alert_id]['status'], 'OPEN')
-        self.assertEqual(len([event for event in rows['events'].values()
-                             if event['category'] == 'macro_execution_recovery']), 1)
+    def test_alerting_states_never_enqueue_or_resolve_events(self):
+        for action, blocker in (('BLOCKED', 'managed_position_quantity_mismatch'),
+                                ('BLOCKED', 'https://signed.invalid/?secret=private')):
+            with self.subTest(action=action, blocker=blocker):
+                self.receipt(action, blocker)
+                self.now += timedelta(minutes=5)
+                result = self.observe()
+                self.assertEqual(result['state'], 'BLOCKED')
+                self.assertEqual(result['notification_enqueue_status'], 'RETIRED')
+                self.assertFalse(self.store_path.exists())
+        self.assertNotIn('private', json.dumps(self.observe()))
 
     def test_inactive_timer_is_detected_even_with_a_fresh_successful_receipt(self):
         self.timer_active = False
         result = self.observe()
         self.assertEqual(result['state'], 'DISABLED')
         self.assertEqual(result['reason'], 'auto_timer_not_active')
+        self.assertEqual(result['notification_enqueue_status'], 'RETIRED')
+        self.assertFalse(self.store_path.exists())
 
     def test_missed_period_and_future_receipt_are_not_healthy(self):
         for seconds in (-3901, 61):
@@ -87,11 +73,11 @@ class MacroNotificationTest(unittest.TestCase):
                 self.receipt(created_at=(self.now+timedelta(seconds=seconds)).isoformat())
                 self.assertEqual(self.observe()['state'], 'STALE')
 
-    def test_halt_is_explicit_and_does_not_send_an_error(self):
+    def test_halt_is_explicit_and_does_not_send(self):
         self.halt.touch()
         result = self.observe()
         self.assertEqual(result['state'], 'HALTED')
-        self.assertEqual(result['notification_enqueue_status'], 'SUPPRESSED_OWNER_HALT')
+        self.assertEqual(result['notification_enqueue_status'], 'RETIRED')
         self.assertFalse(self.store_path.exists())
 
     def test_bad_receipt_and_probe_failures_are_unknown_and_do_not_escape(self):
@@ -102,20 +88,6 @@ class MacroNotificationTest(unittest.TestCase):
         result = collect_macro_runtime(self.result, self.halt, now=self.now, runner=failed)
         self.assertEqual(result['state'], 'UNKNOWN')
         self.assertEqual(result['observation_error'], 'TimeoutExpired')
-
-    def test_notification_failure_is_diagnostic_and_never_overwrites_execution(self):
-        self.receipt('BLOCKED', 'initial_protection_failed_emergency_exit')
-        self.store_path.parent.write_text('not a directory')
-        before = self.result.read_bytes()
-        result = self.observe()
-        self.assertEqual(result['state'], 'BLOCKED')
-        self.assertTrue(result['notification_enqueue_status'].startswith('ERROR:'))
-        self.assertEqual(self.result.read_bytes(), before)
-
-    def test_unsafe_error_text_is_not_copied_into_notification_records(self):
-        self.receipt('BLOCKED', 'https://signed.invalid/?secret=private')
-        self.assertEqual(self.observe()['reason'], 'execution_blocked')
-        self.assertNotIn('private', json.dumps(self.rows()))
 
     def test_api_reads_runtime_from_existing_assets_and_marks_old_observations_stale(self):
         from qount.api.routes.account import get_one_atr_status
@@ -163,18 +135,6 @@ class MacroNotificationTest(unittest.TestCase):
             self.assertEqual(result['execution_blocker'],'input_or_exchange_error:ValueError')
             self.assertNotIn('private',json.dumps(result));self.assertNotIn('input_error',result)
 
-    def test_idle_retry_service_does_not_hide_a_failed_real_delivery(self):
-        from qount.notifications.transport import ProviderResponseError
-        self.receipt('BLOCKED', 'managed_position_quantity_mismatch')
-        self.observe()
-        store = NotificationStore(self.store_path)
-        def rejected(*args):
-            raise ProviderResponseError('serverchan_rejected:5001')
-        self.now += timedelta(seconds=1)
-        store.deliver_due(attempted_at=self.now.isoformat(), transport=rejected, channel='serverchan')
-        delivery = self.observe()['notification_delivery']
-        self.assertEqual(delivery['status'], 'LAST_ATTEMPT_FAILED')
-        self.assertEqual(delivery['last_error'], 'ProviderResponseError')
-        self.now += timedelta(minutes=5)
-        store.deliver_due(attempted_at=self.now.isoformat(), transport=lambda *args:{'accepted':True}, channel='serverchan')
-        self.assertEqual(self.observe()['notification_delivery']['status'], 'ACCEPTED_BY_PROVIDER')
+
+if __name__ == '__main__':
+    unittest.main()

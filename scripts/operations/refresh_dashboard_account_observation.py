@@ -54,8 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     runtime = collect_macro_runtime(
         Path(os.environ.get("QOUNT_1ATR_RESULT_PATH", "/var/lib/qount/1atr/live-result.json")),
-        Path(os.environ.get("QOUNT_1ATR_HALT_PATH", "/var/lib/qount/1atr/HALT")),
-        notification_store=os.environ.get("QOUNT_NOTIFICATION_STORE"))
+        Path(os.environ.get("QOUNT_1ATR_HALT_PATH", "/var/lib/qount/1atr/HALT")))
     settings = Settings.from_env()
     preflight = build_pilot_account_preflight(settings)
     observed_at = str(preflight["created_at"])
