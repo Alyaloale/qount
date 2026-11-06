@@ -11,6 +11,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from qount.operations.account_assets import json_column_value, JSON_ABSENT
+
 ECONOMIC_INCOME = {"REALIZED_PNL", "COMMISSION", "FUNDING_FEE", "INSURANCE_CLEAR",
                    "COMMISSION_REBATE", "REFERRAL_KICKBACK"}
 CASH_FLOW_INCOME = {"TRANSFER"}
@@ -151,6 +153,51 @@ def build_performance(observations, income, coverage, *, max_gap_ms=900_000):
                 observation_count=len(observations))
 
 
+def _downsample_performance(points, days, resolution=None):
+    """Thin chart output only; segment anchors and the final point are always kept.
+
+    The chained-Dietz computation above runs on every observation; this never
+    changes any computed value, it only returns fewer chart points.
+    """
+    if resolution is None:
+        resolution = "raw" if days <= 7 else "1h" if days <= 90 else "6h"
+    if resolution == "raw" or len(points) <= 2:
+        return points, resolution
+    def bucket(stamp):
+        parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if resolution == "1h":
+            parsed = parsed.replace(minute=0, second=0, microsecond=0)
+        elif resolution == "6h":
+            parsed = parsed.replace(hour=parsed.hour - parsed.hour % 6, minute=0, second=0, microsecond=0)
+        return parsed.isoformat()
+    kept, group = [], object()
+    for point in points:
+        key = (bucket(point["observed_at"]), point["segment_id"])
+        if key != group:
+            kept.append(point)
+            group = key
+    if kept[-1] is not points[-1]:
+        kept.append(points[-1])
+    return kept, resolution
+
+
+def _projected_observation(stamp, ro_kind, ro_raw, status, err_kind, err_raw, equity, wallet, sa_kind, sa_raw):
+    """Rebuild exactly the payload fields _observation() reads.
+
+    json_column_value preserves JSON type identity (notably read_only must be
+    the bool True, not 1), so validation behaves as with json.loads(payload).
+    """
+    read_only = json_column_value(ro_kind, ro_raw)
+    errors = json_column_value(err_kind, err_raw)
+    started = json_column_value(sa_kind, sa_raw)
+    row = dict(observed_at=stamp, status=status,
+               errors={} if errors is JSON_ABSENT else errors,
+               usdm_wallet_balance_usdt=wallet, usdm_margin_balance_usdt=equity,
+               started_at=stamp if started is JSON_ABSENT else started,
+               read_only=None if read_only is JSON_ABSENT else read_only)
+    return stamp, row
+
+
 def read_account_performance(history_path, trades_path, days=30):
     result = dict(status="MISSING", scope="Binance USD-M USDT account; includes manual and legacy trades",
                   currency="USDT", read_only=True, orders_authorized=False,
@@ -165,10 +212,22 @@ def read_account_performance(history_path, trades_path, days=30):
     try:
         cutoff = (datetime.now(timezone.utc)-timedelta(days=days)).isoformat()
         with sqlite3.connect(f"file:{Path(history_path).resolve()}?mode=ro", uri=True, timeout=5) as conn:
-            observations = [(t, json.loads(raw)) for t, raw in conn.execute(
-                "SELECT observed_at,payload FROM asset_observations WHERE observed_at>=? ORDER BY observed_at", (cutoff,))]
+            # Project only the fields _observation() reads, inside SQLite (JSON1),
+            # and stream the cursor: full snapshot payloads must not accumulate in
+            # Python (RSS ratchet -> memcg throttle hang, 2026-11-04/05 incidents).
+            observations = [_projected_observation(*row) for row in conn.execute(
+                "SELECT observed_at,"
+                " json_type(payload,'$.read_only'), json_extract(payload,'$.read_only'),"
+                " json_extract(payload,'$.status'),"
+                " json_type(payload,'$.errors'), json_extract(payload,'$.errors'),"
+                " json_extract(payload,'$.usdm_margin_balance_usdt'),"
+                " json_extract(payload,'$.usdm_wallet_balance_usdt'),"
+                " json_type(payload,'$.started_at'), json_extract(payload,'$.started_at')"
+                " FROM asset_observations WHERE observed_at>=? ORDER BY observed_at", (cutoff,))]
         income, coverage = income_history(trades_path)
         result.update(build_performance(observations, income, coverage))
+        result["points"], result["resolution"] = _downsample_performance(result["points"], days)
+        result["downsampled"] = result["resolution"] != "raw"
         result["observed_at"] = observations[-1][0] if observations else None
         result["stale"] = bool(observations and datetime.now(timezone.utc).timestamp()*1000-millis(observations[-1][0]) > 900_000)
         result["income_coverage"] = [dict(start_ms=a, end_ms=b) for a,b in coverage]

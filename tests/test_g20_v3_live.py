@@ -35,6 +35,32 @@ class PlanLegsTests(unittest.TestCase):
         plan = plan_legs(equity=25.0, prices=_prices(100.0), held=held, rules=RULES)
         self.assertEqual({leg["action"] for leg in plan}, {"CLOSE"})
 
+    def test_xau_rounding_dust_rounds_up_not_closes(self):
+        # 2026-11-05 incident: target 8.0444U at price 4071.67, step 0.001.
+        # The floor (0.001 = 4.07U) is below the 5U minimum notional; the
+        # executable size is 0.002 = 8.14U.  The old code zeroed the target
+        # and CLOSED a healthy 0.002 position.
+        rule = LegRule(step_size=0.001, minimum_quantity=0.001, minimum_notional=5.0)
+        rules = {"XAUUSDT": rule}
+        prices = {"XAUUSDT": 4071.67}
+        plan = plan_legs(equity=4.0222, prices=prices, held={"XAUUSDT": 0.002},
+                         rules=rules, pool=("XAUUSDT",))
+        self.assertEqual(plan[0]["action"], "HOLD")
+        self.assertEqual(plan[0]["desired_quantity"], 0.002)
+        plan = plan_legs(equity=4.0222, prices=prices, held={},
+                         rules=rules, pool=("XAUUSDT",))
+        self.assertEqual(plan[0]["action"], "BUY")
+        self.assertEqual(plan[0]["quantity"], 0.002)
+
+    def test_target_above_minimum_never_rounds_to_unexecutable(self):
+        rule = LegRule(step_size=0.001, minimum_quantity=0.001, minimum_notional=5.0)
+        rules = {"XAUUSDT": rule}
+        prices = {"XAUUSDT": 4071.67}
+        for equity in (2.6, 4.0222, 6.0, 100.0):   # targets 5.2 .. 200U
+            plan = plan_legs(equity=equity, prices=prices, held={},
+                             rules=rules, pool=("XAUUSDT",))
+            self.assertGreaterEqual(plan[0]["quantity"] * 4071.67, 5.0)
+
     def test_dust_close_is_skipped_not_ordered(self):
         held = {"SPYUSDT": 0.02}                 # 2U position < 5U minimum
         plan = plan_legs(equity=2.0, prices=_prices(100.0), held=held,
@@ -64,19 +90,39 @@ class PlanLegsTests(unittest.TestCase):
 
 
 class BreachAndSignalTests(unittest.TestCase):
-    def test_breach_only_from_held_legs(self):
-        target = 43.87 * 2 / 11
-        self.assertFalse(breaches(equity=43.87, prices=_prices(100.0), held={}))
-        held_ok = {"SPYUSDT": target * 1.1 / 100.0}
-        self.assertFalse(breaches(equity=43.87, prices=_prices(100.0), held=held_ok))
-        held_bad = {"SPYUSDT": target * 1.3 / 100.0}
-        self.assertTrue(breaches(equity=43.87, prices=_prices(100.0), held=held_bad))
+    def test_breach_covers_missing_and_held_legs(self):
+        full = {s: 0.079 for s in POOL}             # 7.9U vs 7.976U target
+        self.assertFalse(breaches(equity=43.87, prices=_prices(100.0),
+                                  held=full, rules=RULES))
+        missing_one = dict(full)
+        missing_one.pop("SPYUSDT")
+        self.assertTrue(breaches(equity=43.87, prices=_prices(100.0),
+                                 held=missing_one, rules=RULES))
+        # An empty book is the worst missing-leg case, not a clean state.
+        self.assertTrue(breaches(equity=43.87, prices=_prices(100.0),
+                                 held={}, rules=RULES))
+        over = dict(full)
+        over["SPYUSDT"] = 0.079 * 1.3
+        self.assertTrue(breaches(equity=43.87, prices=_prices(100.0),
+                                 held=over, rules=RULES))
 
     def test_breach_ignores_positions_outside_pool(self):
         # A foreign position must not crash the drift check; the cycle layer
         # blocks on it explicitly instead.
+        full = {s: 0.079 for s in POOL}
+        full["BTCUSDT"] = 1.0
         self.assertFalse(breaches(equity=43.87, prices=_prices(100.0),
-                                  held={"BTCUSDT": 1.0}))
+                                  held=full, rules=RULES))
+
+    def test_breach_cash_leg_only_when_tradeable_position_left(self):
+        # equity 25U -> 4.55U target per leg < 5U minimum: cash semantics.
+        # Empty/dust book must not breach (no daily resize churn at the floor).
+        self.assertFalse(breaches(equity=25.0, prices=_prices(100.0),
+                                  held={}, rules=RULES))
+        self.assertFalse(breaches(equity=25.0, prices=_prices(100.0),
+                                  held={"SPYUSDT": 0.02}, rules=RULES))
+        self.assertTrue(breaches(equity=25.0, prices=_prices(100.0),
+                                 held={"SPYUSDT": 0.06}, rules=RULES))
 
     def test_signal_bar_selection_skips_forming_bar(self):
         day = 1_700_000_000_000
@@ -303,6 +349,30 @@ class CycleTests(unittest.TestCase):
         self.assertEqual(receipt["auto_action"], "RESIZE")
         self.assertTrue(receipt["drift_breach"])
 
+    def test_missing_leg_triggers_off_schedule_resize(self):
+        positions = {s: 0.079 for s in POOL}
+        positions.pop("XAUUSDT")                    # wrongly closed leg
+        exchange = FakeExchange(positions=positions)
+        live = self._live(exchange, state={"cycle_count": 1})
+        receipt = live.cycle(execute=False)
+        self.assertEqual(receipt["auto_action"], "RESIZE")
+        self.assertTrue(receipt["drift_breach"])
+
+    def test_cycle_keeps_granular_leg_near_target(self):
+        # 2026-11-05 incident end to end: XAU at 4071.67, held 0.002 (8.14U)
+        # against a 7.98U target must plan HOLD, never CLOSE.
+        prices = {s: 100.0 for s in POOL}
+        prices["XAUUSDT"] = 4071.67
+        positions = {s: 0.079 for s in POOL}
+        positions["XAUUSDT"] = 0.002
+        exchange = FakeExchange(positions=positions, prices=prices)
+        live = self._live(exchange)                 # cycle_count 0 -> scheduled
+        receipt = live.cycle(execute=False)
+        self.assertEqual(receipt["auto_action"], "RESIZE")
+        xau = next(leg for leg in receipt["plan"] if leg["symbol"] == "XAUUSDT")
+        self.assertEqual(xau["action"], "HOLD")
+        self.assertEqual(xau["desired_quantity"], 0.002)
+
     def test_order_identity_is_idempotent_across_reruns(self):
         exchange = FakeExchange()
         live = self._live(exchange)
@@ -310,9 +380,13 @@ class CycleTests(unittest.TestCase):
                                           "QOUNT_PRIMARY_STRATEGY": STRATEGY_ID}):
             first = live.cycle(execute=True)
             live2 = self._live(exchange, state={"cycle_count": 1})
-            second = live2.cycle(execute=True)   # same signal date -> no action
+            # Rerun with lost dedup state re-plans the same signal date, but
+            # every identity is already claimed in the store: RECONCILED, and
+            # the venue never sees a second order.
+            second = live2.cycle(execute=True)
         self.assertEqual(first["auto_action"], "RESIZE")
-        self.assertEqual(second["auto_action"], "NO_ACTION")
+        self.assertEqual(second["auto_action"], "RESIZE")
+        self.assertEqual({o["status"] for o in second["orders"]}, {"RECONCILED"})
         self.assertEqual(len(exchange.orders), len(POOL))
 
     def test_cycle_blocks_on_positions_outside_pool(self):

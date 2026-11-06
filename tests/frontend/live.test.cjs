@@ -113,8 +113,8 @@ test('g20v3 status renders contract state without inventing numbers',()=>{
   renderG20V3({halted:true,status:'AVAILABLE'});
   assert.match(nodes.get('g20v3-status').textContent,/完整停止/);
   renderG20V3(null);
-  assert.equal(nodes.get('g20v3-status').textContent,'状态待接入');
-  assert.equal(nodes.get('g20v3-plan').textContent,'暂无调仓计划');
+  assert.equal(nodes.get('g20v3-status').textContent,'无数据');
+  assert.equal(nodes.get('g20v3-plan').textContent,'无数据');
   assert.equal(nodes.get('g20v3-equity').textContent,'--');
  } finally{delete global.document;}
 });

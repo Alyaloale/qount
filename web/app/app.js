@@ -26,6 +26,10 @@ let liveFetchPending = false;
 let refreshPending = false;
 let accountSafety = null;
 let liveReadOnly = null;
+let marketFeed = null;
+let marketSnapshotPositions = [];
+let marketSnapshotAt = null;
+let marketRows = [];
 let researchFilter = "all";
 let researchQuery = "";
 let researchCategory = "all";
@@ -179,12 +183,12 @@ function costsText(line) {
     : "费率及完整成本覆盖：来源未提供。累计成本有值仅说明存在成本记录，不能据此认定已覆盖价差、冲击、税费或融资成本。";
 }
 function renderPermissions() {
-  const live = liveReadOnly === true ? "账户只读采集" : "账户采集状态待核";
+  const live = liveReadOnly === true ? "账户只读采集" : "账户采集待核对";
   setText("permission-status", `${live} · 页面不提交订单；后台策略运行状态见实盘`);
   setText("footer-permission", `${live} · 页面不提交订单`);
-  setText("topbar-permission", `${liveReadOnly === true ? "页面只读" : "采集状态待核"}`);
+  setText("topbar-permission", `${liveReadOnly === true ? "页面只读" : "采集待核对"}`);
   setText("account-mode-badge", "真实账户");
-  setText("live-mode-badge", liveReadOnly === true ? "只读" : "权限待核");
+  setText("live-mode-badge", liveReadOnly === true ? "只读" : "未授权");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -226,6 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
     mascotSay(MASCOT_TIPS[Math.floor(Math.random() * MASCOT_TIPS.length)]);
   });
   initApp();
+  initMarketFeed();
   // ECharts (~1.1MB) is chart-only: load it after first paint instead of on the
   // critical path, then re-render whatever data arrived while it was loading.
   (window.requestIdleCallback || ((cb) => setTimeout(cb, 1200)))(() => {
@@ -444,6 +449,11 @@ async function fetchLiveAccountData() {
     const equity = QountMetrics.number(data.usdm_margin_balance_usdt);
     setText("live-unavailable", available == null || equity == null ? "--" : fmt(Math.max(0, equity - available)));
     const positions = data.futures_positions || [];
+    marketSnapshotPositions = positions;
+    marketSnapshotAt = data.observed_at || null;
+    setText("market-snapshot-at", marketSnapshotAt ? formatTime(marketSnapshotAt) : "--");
+    initMarketFeed();
+    renderMarketWatch();
     const complete = data.futures_positions_complete === true;
     const notionals = positions.map((pos) => QountMetrics.number(pos.notional_usdt));
     setText("live-exposure", complete && notionals.every((v) => v != null) ? fmt(notionals.reduce((sum, v) => sum + Math.abs(v), 0)) : "--");
@@ -464,20 +474,27 @@ async function fetchLiveAccountData() {
   } catch (error) {
     window.QountLive?.render(null);
     ["live-nav", "live-cash", "live-unavailable", "live-exposure", "live-equity", "live-pnl"].forEach((id) => setText(id, "--"));
-    setText("live-position-count", "持仓待确认");
-    setText("live-positions-note", "合约覆盖待确认");
-    setText("wallet-count", "尚未接入");
-    setText("asset-connection-badge", "Binance · 数据待接入");
+    setText("live-position-count", "持仓待采集");
+    setText("live-positions-note", "合约覆盖待采集");
+    setText("wallet-count", "无数据");
+    setText("asset-connection-badge", "Binance · 无数据");
     setText("asset-coverage", "完整钱包汇总尚未取得，不能据此确认总资产或空仓。");
     setText("live-source-path", "本次读取不可用");
     setText("asset-source-errors", "");
     tableMessage("wallets-body", 5, "完整钱包数据尚未取得");
     tableMessage("live-positions-body", 5, "账户来源不可用，无法确认当前持仓");
     renderWalletAllocation([]);
-    showError("live-error", `资产读数不可用：${error.message || "读取失败"}。需由持有只读凭据的采集主机生成新版快照。`);
+    {
+      const node = $("live-error");
+      if (node) {
+        node.innerHTML = `账户数据暂时无法读取，需由持有只读凭据的采集主机生成新版快照。<details style="display:inline"><summary style="display:inline;cursor:pointer">技术详情</summary> ${escapeHtml(error.message || "读取失败")}</details>`;
+        node.classList.remove("hidden");
+      }
+    }
     updateObservationAge();
   } finally {
     await Promise.allSettled([historyRequest, recordsRequest, strategyRequest, v3Request, performanceRequest]);
+    foldEmptyParams();
     liveFetchPending = false;
   }
 }
@@ -508,7 +525,7 @@ function renderWalletAllocation(wallets) {
   const total = funded.reduce((sum, w) => sum + w.balance_usdt, 0);
   const empty = $("asset-chart-empty");
   empty.classList.toggle("hidden", total > 0 && !!window.echarts);
-  setText("asset-chart-empty", wallets.length ? total > 0 ? "图表暂不可用" : "暂无正余额钱包" : "钱包数据待确认");
+  setText("asset-chart-empty", wallets.length ? total > 0 ? "图表暂不可用" : "暂无正余额钱包" : "钱包数据待采集");
   $("wallet-chart-legend").innerHTML = funded.map((w, i) => `<span><i class="legend-dot" style="background:${WALLET_COLORS[i % WALLET_COLORS.length]}"></i>${escapeHtml(walletName(w.name))} <b>${fmt(w.balance_usdt / total * 100, 1)}%</b></span>`).join("");
   if (!total || !window.echarts) { allocationChartInstance?.clear(); return; }
   if (!allocationChartInstance) allocationChartInstance = echarts.init($("asset-allocation-chart"));
@@ -520,19 +537,43 @@ function renderWalletAllocation(wallets) {
     series: [{ type: "pie", radius: ["67%", "84%"], center: ["50%", "48%"], label: { show: false }, itemStyle: { borderColor: "#fff", borderWidth: 4, borderRadius: 7 }, data: funded.map((w) => ({ name: w.name, value: w.balance_usdt })) }],
   }, true);
 }
+function swrRead(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (_) { return null; }
+}
+function swrWrite(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* quota/private mode: degrade to no cache */ }
+}
 async function fetchAssetHistory() {
   const version = ++assetHistoryRequestVersion;
   const days = $("asset-history-days")?.value || "30";
+  const cacheKey = `qount:history:${days}`;
+  const cached = swrRead(cacheKey);
+  if (cached && version === assetHistoryRequestVersion) renderAssetHistory(cached, true);
   try {
     const data = await readJSON(`/account/history?days=${encodeURIComponent(days)}`);
     if (version !== assetHistoryRequestVersion) return;
     if (data.status === "ERROR") throw new Error("历史记录不可读");
+    swrWrite(cacheKey, data);
+    renderAssetHistory(data, false);
+  } catch (error) {
+    if (version !== assetHistoryRequestVersion) return;
+    if (cached) return; // keep the cached snapshot visible instead of dropping to error
+    assetHistoryChartInstance?.clear();
+    $("asset-history-empty")?.classList.remove("hidden");
+    setText("asset-history-empty", "资产历史读取失败");
+    setText("asset-history-note", "历史数据暂不可用，请刷新重试。");
+  }
+}
+function renderAssetHistory(data, fromCache) {
+  {
     const points = data.points || [];
     const valued = points.filter((p) => p.reported_total_usdt != null);
     const ready = valued.length > 0 && !!window.echarts;
     $("asset-history-empty").classList.toggle("hidden", ready);
     setText("asset-history-empty", points.length ? "该区间暂无有效资产读数" : "真实资产历史待积累");
-    setText("asset-history-note", points.length ? `${points.length} 次真实观测 · ${formatTime(points[0].observed_at)} 至 ${formatTime(points[points.length - 1].observed_at)}。余额变化包含充值、提现与估值变化，不作为收益率。钱包覆盖变化处断线。` : "尚无历史记录；采集主机启用新版只读采集后开始积累，不回填模拟值。");
+    const observationCount = data.observation_count || points.length;
+    const aggregation = data.downsampled ? `图表点按 ${data.resolution === "1h" ? "小时" : "6 小时"}聚合（${points.length} 点）。` : "";
+    setText("asset-history-note", points.length ? `${observationCount} 次真实观测${data.downsampled ? `，${aggregation}` : ""} · ${formatTime(points[0].observed_at)} 至 ${formatTime(points[points.length - 1].observed_at)}。余额变化包含充值、提现与估值变化，不作为收益率。钱包覆盖变化处断线。${fromCache ? "（本地缓存快照，正在更新…）" : ""}` : "尚无历史记录；采集主机启用新版只读采集后开始积累，不回填模拟值。");
     if (!ready) { assetHistoryChartInstance?.clear(); return; }
     if (!assetHistoryChartInstance) assetHistoryChartInstance = echarts.init($("asset-history-chart"));
     const seriesData = (key) => {
@@ -556,13 +597,81 @@ async function fetchAssetHistory() {
       dataZoom: [{ type: "inside" }],
       series: [["钱包折合总额", "reported_total_usdt"], ["合约保证金权益", "futures_equity_usdt"], ["合约未实现盈亏", "futures_unrealized_pnl_usdt"]].map(([name, key]) => ({ name, type: "line", showSymbol: valued.length < 3, symbolSize: 7, connectNulls: false, data: seriesData(key), lineStyle: { width: 2 } })),
     }, true);
-  } catch (error) {
-    if (version !== assetHistoryRequestVersion) return;
-    assetHistoryChartInstance?.clear();
-    $("asset-history-empty")?.classList.remove("hidden");
-    setText("asset-history-empty", "资产历史读取失败");
-    setText("asset-history-note", "历史数据暂不可用，请刷新重试。");
   }
+}
+let marketRenderTimer = null;
+function renderMarketWatch() {
+  // bookTicker can fire many times per second; throttle DOM rebuilds.
+  if (marketRenderTimer) return;
+  marketRenderTimer = setTimeout(() => { marketRenderTimer = null; renderMarketWatchNow(); }, 400);
+}
+function renderMarketWatchNow() {
+  const bySymbol = new Map((marketSnapshotPositions || []).map((p) => [p.symbol, p]));
+  const symbols = [...new Set([...bySymbol.keys(), ...(marketFeed?.snapshot?.() || []).map((r) => r.symbol)])];
+  const feedRows = new Map((marketFeed?.snapshot?.() || []).map((r) => [r.symbol, r]));
+  marketRows = symbols.map((s) => feedRows.get(s)).filter(Boolean);
+  const body = $("market-watch-body");
+  if (!body) return;
+  if (!symbols.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty">账户快照无持仓且行情未连接，暂无看盘数据</td></tr>`;
+    return;
+  }
+  body.innerHTML = symbols.map((symbol) => {
+    const row = feedRows.get(symbol) || {};
+    const pos = bySymbol.get(symbol);
+    const price = row.mid ?? row.mark_price;
+    const est = pos && window.QountMarket ? QountMarket.estimatePnl(pos, row.mark_price ?? price) : null;
+    const funding = row.funding_rate == null ? "--" : `${(row.funding_rate * 100).toFixed(4)}%`;
+    return `<tr><td>${escapeHtml(symbol)}</td>` +
+      `<td class="numeric">${price == null ? "--" : fmt(price, 4)}</td>` +
+      `<td class="numeric">${row.mark_price == null ? "--" : fmt(row.mark_price, 4)}</td>` +
+      `<td class="numeric">${funding}</td>` +
+      `<td class="numeric">${pos ? fmt(pos.quantity, 4) : "—"}</td>` +
+      `<td>${pos ? escapeHtml(statusText(pos.side)) : "—"}</td>` +
+      `<td class="numeric ${est ? signClass(est.estimated_pnl_usdt) : ""}">${est ? fmt(est.estimated_pnl_usdt, 4) : "—"}</td></tr>`;
+  }).join("");
+}
+function initMarketFeed() {
+  if (!window.QountMarket) return;
+  const pool = ["SOLUSDT", "BNBUSDT", "XRPUSDT", "SPYUSDT", "QQQUSDT", "SMHUSDT", "IWMUSDT", "XLEUSDT", "XAUUSDT", "COPPERUSDT", "CLUSDT"];
+  const symbols = [...new Set([...pool, ...marketSnapshotPositions.map((p) => p.symbol)])];
+  if (marketFeed && JSON.stringify(marketFeed.symbols || []) === JSON.stringify(symbols)) return;
+  marketFeed?.stop?.();
+  marketFeed = QountMarket.createMarketFeed({
+    symbols,
+    onStatus: (state) => {
+      const label = { connecting: "行情连接中", live: "行情·实时", degraded: "行情·降级轮询", down: "行情不可用" }[state] || state;
+      setText("market-connection", label);
+      setText("market-note", state === "live"
+        ? "实时价来自 Binance 公共 WebSocket；标记价与资金费率约每分钟刷新。本地推算浮盈=快照持仓×实时标记价，非交易所回报。"
+        : state === "degraded"
+          ? "WebSocket 断流，已降级为定时轮询标记价（约每 5 秒），价格时效降级。"
+          : state === "connecting" ? "正在连接 Binance 公共行情…" : "行情通道不可用；账户采集数据仍可查看。");
+    },
+    onUpdate: () => renderMarketWatch(),
+  });
+  marketFeed.symbols = symbols;
+  marketFeed.start();
+}
+function foldEmptyParams() {
+  document.querySelectorAll("dl.live-parameters").forEach((dl) => {
+    let empty = 0;
+    dl.querySelectorAll(":scope > div").forEach((row) => {
+      const dd = row.querySelector("dd");
+      const blank = !dd || dd.textContent.trim() === "--" || dd.textContent.trim() === "无数据";
+      row.classList.toggle("is-empty", blank);
+      if (blank) empty += 1;
+    });
+    const summary = dl.parentElement?.querySelector(".live-params-summary");
+    if (summary) {
+      summary.classList.toggle("hidden", empty === 0);
+      summary.textContent = `${empty} 项暂无数据已折叠，产生后自动展开。`;
+    }
+  });
+  document.querySelectorAll(".asset-kpi-grid").forEach((grid) => {
+    const values = [...grid.querySelectorAll(".kpi-value")].map((n) => n.textContent.trim());
+    grid.classList.toggle("is-empty-all", values.length > 0 && values.every((v) => v === "--"));
+  });
 }
 function updateObservationAge() {
   const age = QountMetrics.age(liveObservedAt);
@@ -1443,12 +1552,17 @@ function sourceReason(note) {
 async function fetchLivePerformance() {
   const version=++performanceRequestVersion;
   const days=$("performance-days")?.value || "30";
+  const cacheKey=`qount:performance:${days}`;
+  const cached=swrRead(cacheKey);
+  if(cached && version===performanceRequestVersion){performanceData=cached;renderLivePerformance();}
   try {
     const data=await readJSON(`/account/performance?days=${encodeURIComponent(days)}`);
     if(version!==performanceRequestVersion)return;
     performanceData=data;
+    swrWrite(cacheKey,data);
   } catch(_) {
     if(version!==performanceRequestVersion)return;
+    if(cached)return; // keep cached snapshot rendered
     performanceData=null;
   }
   renderLivePerformance();

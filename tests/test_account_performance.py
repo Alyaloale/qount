@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from qount.operations.account_assets import append_asset_history
-from qount.operations.account_performance import build_performance, read_account_performance
+from qount.operations.account_performance import build_performance, read_account_performance, _projected_observation
 from qount.operations.account_trades import persist_trade_records, strategy_accounting, read_trade_records
 from qount.execution.binance_usdm import BinanceExecutionStore
 from tests.test_account_trades import Exchange, collect_trade_records, NOW, fill, income
@@ -26,6 +26,37 @@ def entry(minutes, amount, kind="TRANSFER"):
 
 
 class AccountPerformanceTest(unittest.TestCase):
+    def test_downsampling_thins_chart_points_but_never_summary_or_anchors(self):
+        # 4h of 5-min observations with one deposit: full computation stays exact.
+        obs = [observation(m, 100 if m <= 120 else 150) for m in range(0, 241, 5)]
+        income = [entry(122, 50)]  # strictly between observations to avoid the sampling-race gap rule
+        raw = build_performance(obs, income, [(START, START + 241 * 60_000)])
+        self.assertEqual(raw["summary"]["net_external_flow_usdt"], 50)
+        self.assertEqual(len(raw["points"]), 49)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); history = root / "history.db"; trades = root / "trades.db"
+            for _, row in obs:
+                append_asset_history(history, row)
+            snapshot = collect_trade_records(Exchange(), now_ms=START + 240 * 60_000, symbols=("SPYUSDT",))
+            deposit = dict(account_record_id="income:TRANSFER:1", symbol="", income_type="TRANSFER",
+                           transaction_id=1, time=START + 122 * 60_000, amount=50.0, asset="USDT",
+                           strategy_id=None, signal_id=None, order_intent_id=None,
+                           attribution="unassigned_account_income")
+            snapshot.update(income=[deposit], fills=[])
+            persist_trade_records(trades, snapshot)
+            result = read_account_performance(history, trades)
+            self.assertEqual(result["resolution"], "1h")
+            self.assertTrue(result["downsampled"])
+            self.assertLess(len(result["points"]), 49)
+            self.assertGreaterEqual(len(result["points"]), 5)  # hour anchors + final point
+            # summary identical to the raw computation
+            self.assertEqual(result["summary"], raw["summary"])
+            self.assertEqual(result["segment_count"], raw["segment_count"])
+            # first and last chart points survive
+            self.assertEqual(result["points"][0]["observed_at"], raw["points"][0]["observed_at"])
+            self.assertEqual(result["points"][-1]["observed_at"], raw["points"][-1]["observed_at"])
+            self.assertEqual(result["points"][-1]["return_pct"], raw["points"][-1]["return_pct"])
+
     def test_deposit_and_withdrawal_never_create_profit(self):
         result = build_performance([observation(0,100),observation(5,200),observation(10,150)],
                                    [entry(2,100),entry(7,-50)], [(START,START+600_000)])
@@ -84,6 +115,21 @@ class AccountPerformanceTest(unittest.TestCase):
             result=read_account_performance(history,trades)
             self.assertEqual(result["status"],"AVAILABLE")
             self.assertEqual(result["summary"]["return_pct"],0)
+
+    def test_sql_projection_preserves_observation_validation(self):
+        # json_extract turns JSON true into 1; _observation requires the bool True,
+        # so the loader must rebuild exact JSON type identity.
+        stamp = datetime.now(timezone.utc).isoformat()
+        row = _projected_observation(stamp, "true", 1, "AVAILABLE", "object", "{}", 5.0, 5.0, "string", stamp)[1]
+        self.assertIs(row["read_only"], True)
+        self.assertEqual(row["errors"], {})
+        self.assertEqual(row["started_at"], stamp)
+        row = _projected_observation(stamp, "number", 1, "AVAILABLE", "object", "{}", 5.0, 5.0, "string", stamp)[1]
+        self.assertIsNot(row["read_only"], True)  # 1 is not True -> rejected, same as json.loads
+        row = _projected_observation(stamp, None, None, "AVAILABLE", None, None, 5.0, 5.0, None, None)[1]
+        self.assertIsNone(row["read_only"])      # absent key -> .get() default
+        self.assertEqual(row["errors"], {})      # absent key -> .get("errors", {})
+        self.assertEqual(row["started_at"], stamp)  # absent key -> stamp default
 
     def test_old_record_metadata_does_not_block_new_exchange_records_or_rewrite_raw(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -134,6 +134,67 @@ class TestAccountAssets(unittest.TestCase):
                 append_asset_history(path, conflicting)
             self.assertEqual(read_asset_history(path)["points"][0]["reported_total_usdt"], 120)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_history_downsampling_keeps_scope_breaks_and_raw_counts(self):
+        base = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        def payload(offset_min, wallets, total):
+            stamp = (base + timedelta(minutes=offset_min)).isoformat()
+            return {"observed_at": stamp, "status": "AVAILABLE",
+                    "wallets": [{"name": name, "balance_usdt": 1, "active": True} for name in wallets],
+                    "reported_total_usdt": total, "futures_equity_usdt": total,
+                    "futures_unrealized_pnl_usdt": 0}
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "history.db"
+            rows = [
+                payload(10, ["Spot"], 1),
+                payload(40, ["Spot"], 2),
+                payload(70, ["Spot"], 3),
+                payload(110, ["Spot", "Futures"], 4),  # scope break inside hour bucket
+                payload(130, ["Spot", "Futures"], 5),
+            ]
+            for row in rows:
+                append_asset_history(path, row)
+            hourly = read_asset_history(path, days=30)
+            self.assertEqual(hourly["resolution"], "1h")
+            self.assertTrue(hourly["downsampled"])
+            self.assertEqual(hourly["observation_count"], 5)  # raw count, not point count
+            stamps = [p["observed_at"] for p in hourly["points"]]
+            # 00:40 collapses into the 00:10 bucket (same scope); the 01:50 scope
+            # break and the final point are kept explicitly.
+            self.assertEqual(stamps, [rows[0]["observed_at"], rows[2]["observed_at"],
+                                      rows[3]["observed_at"], rows[4]["observed_at"]])
+            raw = read_asset_history(path, days=30, resolution="raw")
+            self.assertFalse(raw["downsampled"])
+            self.assertEqual(len(raw["points"]), 5)
+            # same scope, same hour: collapsed to first point of the bucket
+            with tempfile.TemporaryDirectory() as root2:
+                path2 = Path(root2) / "history.db"
+                for row in [payload(10, ["Spot"], 1), payload(40, ["Spot"], 2), payload(130, ["Spot"], 3)]:
+                    append_asset_history(path2, row)
+                collapsed = read_asset_history(path2, days=30)
+                self.assertEqual([p["reported_total_usdt"] for p in collapsed["points"]], [1, 3])
+                self.assertEqual(collapsed["observation_count"], 3)
+
+    def test_history_sql_projection_keeps_payload_semantics(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "history.db"
+            stamp = datetime.now(timezone.utc).isoformat()
+            # missing "status" must still read as ERROR, exactly like row["status"] before
+            append_asset_history(path, {"observed_at": stamp, "reported_total_usdt": 1})
+            self.assertEqual(read_asset_history(path)["status"], "ERROR")
+            self.assertEqual(read_asset_history(path)["error"], "KeyError")
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "history.db"
+            stamp = datetime.now(timezone.utc).isoformat()
+            # absent wallets -> empty scope; int/float pass through with JSON identity
+            append_asset_history(path, {"observed_at": stamp, "status": "AVAILABLE",
+                                        "reported_total_usdt": 7, "futures_equity_usdt": 7.5,
+                                        "futures_unrealized_pnl_usdt": None})
+            point = read_asset_history(path)["points"][0]
+            self.assertEqual(point["wallet_scope"], [])
+            self.assertIs(point["reported_total_usdt"], 7)
+            self.assertEqual(point["futures_equity_usdt"], 7.5)
+            self.assertIsNone(point["futures_unrealized_pnl_usdt"])
 
     def test_api_never_substitutes_legacy_or_paper_balance(self):
         with tempfile.TemporaryDirectory() as root:

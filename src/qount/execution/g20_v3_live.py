@@ -11,7 +11,11 @@ Contract (docs/g20-v3-leveraged-pool-2026-11.md), live semantics:
 * Min-notional semantics (live): a target below the exchange minimum closes
   the leg to cash; a resize DELTA below the exchange minimum is rejected
   (skipped) — never an unexecutable order.  This matches the exchange and
-  the 2026-11-02 review's corrected execution semantics.
+  the 2026-11-02 review's corrected execution semantics.  A target AT OR
+  ABOVE the minimum never rounds to zero: a step floor that lands below
+  minQty/minNotional rounds UP to the smallest executable size (2026-11-05
+  XAU incident: an 8.04U target floored to 0.001 = 4.07U dust was zeroed
+  and a live 0.002 position was wrongly closed).
 * Shared wallet, sizing on USDT marginBalance (equity incl. unrealized).
 * No trend logic, no gate, no drawdown de-leveraging.
 * Executed cycles normalize account config first (cross margin, 3x per-symbol
@@ -76,6 +80,30 @@ def _floor(value: float, step: float) -> float:
     return float((Decimal(str(value)) / Decimal(str(step))).to_integral_value(rounding=ROUND_DOWN) * Decimal(str(step)))
 
 
+def _ceil(value: float, step: float) -> float:
+    from decimal import Decimal, ROUND_UP
+    return float((Decimal(str(value)) / Decimal(str(step))).to_integral_value(rounding=ROUND_UP) * Decimal(str(step)))
+
+
+def _desired_quantity(*, target_notional: float, price: float, rule: LegRule) -> float:
+    """Executable size for a target notional; 0 only under cash semantics.
+
+    Cash semantics (contract): a target below the exchange minimum notional
+    is held as cash.  A target at or above it must never round to zero: when
+    the step floor lands in the dust zone (below minQty or minNotional) the
+    size rounds UP to the smallest executable quantity instead.
+    """
+    if target_notional < rule.minimum_notional:
+        return 0.0
+    floor_q = _floor(target_notional / price, rule.step_size)
+    if floor_q >= rule.minimum_quantity and floor_q * price >= rule.minimum_notional:
+        return floor_q
+    ceil_q = _ceil(max(rule.minimum_quantity, rule.minimum_notional / price), rule.step_size)
+    while ceil_q * price < rule.minimum_notional:      # float-edge guard
+        ceil_q += rule.step_size
+    return ceil_q
+
+
 def plan_legs(*, equity: float, prices: dict[str, float], held: dict[str, float],
               rules: dict[str, LegRule], pool: tuple[str, ...] = POOL,
               gross: float = GROSS) -> list[dict]:
@@ -93,11 +121,7 @@ def plan_legs(*, equity: float, prices: dict[str, float], held: dict[str, float]
         rule = rules[symbol]
         held_q = float(held.get(symbol, 0.0))
         target_notional = equity * gross * share
-        desired = 0.0
-        if target_notional >= rule.minimum_notional:
-            desired = _floor(target_notional / price, rule.step_size)
-            if desired < rule.minimum_quantity or desired * price < rule.minimum_notional:
-                desired = 0.0
+        desired = _desired_quantity(target_notional=target_notional, price=price, rule=rule)
         delta = desired - held_q
         if desired == 0.0 and held_q > 0.0:
             if held_q * price < rule.minimum_notional:
@@ -126,16 +150,31 @@ def plan_legs(*, equity: float, prices: dict[str, float], held: dict[str, float]
 
 
 def breaches(*, equity: float, prices: dict[str, float], held: dict[str, float],
-             pool: tuple[str, ...] = POOL, gross: float = GROSS,
-             drift_band: float = DRIFT_BAND) -> bool:
-    """Mirror the backtest breach rule: only held pool legs can breach."""
+             rules: dict[str, LegRule], pool: tuple[str, ...] = POOL,
+             gross: float = GROSS, drift_band: float = DRIFT_BAND) -> bool:
+    """Drift vs the executable book: every pool leg, not just held legs.
+
+    A missing leg whose target is executable is 100% drift and must trigger
+    the off-schedule resize that restores it (2026-11-05 XAU incident:
+    breaches() only iterated held legs, so a wrongly closed leg never
+    self-healed until the weekly scheduled resize).  Legs with zero
+    executable target (min-notional cash semantics) breach only while a
+    tradeable position is still held.  The comparison is against the
+    executable desired notional so a leg sitting at its feasible size never
+    churns in the min-notional granularity dead zone.
+    """
     share = 1.0 / len(pool)
-    for symbol, qty in held.items():
-        if qty <= 0 or symbol not in pool:
+    for symbol in pool:
+        rule = rules[symbol]
+        price = prices[symbol]
+        target_notional = equity * gross * share
+        desired = _desired_quantity(target_notional=target_notional, price=price, rule=rule)
+        actual = float(held.get(symbol, 0.0)) * price
+        if desired <= 0.0:
+            if actual >= rule.minimum_notional:
+                return True
             continue
-        target = equity * gross * share
-        actual = qty * prices[symbol]
-        if target <= 0 or abs(actual / target - 1.0) > drift_band:
+        if abs(actual / (desired * price) - 1.0) > drift_band:
             return True
     return False
 
@@ -273,7 +312,7 @@ class V3PoolLive:
             rules = {s: _rule(self.exchange, s) for s in POOL}
             cycle_count = int(self.state.get("cycle_count", 0))
             scheduled = cycle_count % REBALANCE_CYCLES == 0
-            breach = breaches(equity=equity, prices=prices, held=held)
+            breach = breaches(equity=equity, prices=prices, held=held, rules=rules)
             receipt.update(capital_usdt=equity, cycle_count=cycle_count,
                            scheduled_resize=bool(scheduled), drift_breach=bool(breach),
                            positions={s: q for s, q in held.items()})

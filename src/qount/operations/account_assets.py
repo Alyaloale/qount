@@ -191,26 +191,93 @@ def append_asset_history(path: Path, overview: dict[str, Any]) -> None:
         conn.execute("INSERT OR IGNORE INTO asset_observations VALUES (?,?)", (stamp, encoded))
 
 
-def read_asset_history(path: Path, days: int = 30) -> dict[str, Any]:
+JSON_ABSENT = object()
+
+
+def json_column_value(kind: str | None, raw: Any) -> Any:
+    """Exact Python value of one JSON column (json_type + json_extract pair)."""
+    if kind is None:
+        return JSON_ABSENT
+    if kind in ("object", "array"):
+        return json.loads(raw)
+    if kind == "true":
+        return True
+    if kind == "false":
+        return False
+    return raw  # null -> None, string -> str, number -> int/float
+
+
+def _downsample_resolution(days: int, resolution: str | None) -> str:
+    if resolution in {"raw", "1h", "6h"}:
+        return resolution
+    return "raw" if days <= 7 else "1h" if days <= 90 else "6h"
+
+
+def _downsample_bucket(observed: str, resolution: str) -> str:
+    parsed = datetime.fromisoformat(observed.replace("Z", "+00:00"))
+    if resolution == "1h":
+        parsed = parsed.replace(minute=0, second=0, microsecond=0)
+    elif resolution == "6h":
+        parsed = parsed.replace(hour=parsed.hour - parsed.hour % 6, minute=0, second=0, microsecond=0)
+    return parsed.isoformat()
+
+
+def _downsample_history(points: list[dict[str, Any]], resolution: str) -> list[dict[str, Any]]:
+    """Keep the first point of each (time bucket, wallet_scope) run plus the final point.
+
+    Grouping on wallet_scope as well preserves every coverage change the chart
+    uses to break the line, so downsampling never bridges a wallet-scope gap.
+    """
+    if resolution == "raw" or len(points) <= 2:
+        return points
+    kept: list[dict[str, Any]] = []
+    group: object = object()
+    for point in points:
+        key = (_downsample_bucket(point["observed_at"], resolution), tuple(point.get("wallet_scope") or ()))
+        if key != group:
+            kept.append(point)
+            group = key
+    if kept[-1] is not points[-1]:
+        kept.append(points[-1])
+    return kept
+
+
+def read_asset_history(path: Path, days: int = 30, resolution: str | None = None) -> dict[str, Any]:
     """Read existing observations only; API requests do not create history."""
+    resolution = _downsample_resolution(days, resolution)
     empty = {"currency": "USDT", "points": [], "observation_count": 0,
-             "status": "MISSING", "error": None,
+             "status": "MISSING", "error": None, "resolution": resolution,
+             "downsampled": resolution != "raw",
              "basis": "Observed asset values; deposits and withdrawals are not investment returns"}
     if not path.is_file():
         return empty
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     try:
-        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True, timeout=5) as conn:
-            rows = conn.execute("SELECT observed_at,payload FROM asset_observations WHERE observed_at>=? ORDER BY observed_at", (cutoff,)).fetchall()
         points = []
-        for observed, encoded in rows:
-            row = json.loads(encoded)
-            points.append({"observed_at": observed, "reported_total_usdt": row.get("reported_total_usdt"),
-                           "futures_equity_usdt": row.get("futures_equity_usdt"),
-                           "futures_unrealized_pnl_usdt": row.get("futures_unrealized_pnl_usdt"),
-                           "status": row["status"],
-                           "wallet_scope": sorted(w["name"] for w in row.get("wallets", []))})
-        return empty | {"status": "AVAILABLE" if points else "EMPTY", "points": points,
-                        "observation_count": len(points)}
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True, timeout=5) as conn:
+            # Project the chart fields inside SQLite (JSON1) and stream the cursor:
+            # full snapshot payloads (wallets + positions) must never accumulate in
+            # Python, or every refresh cycle ratchets RSS until the memcg
+            # MemoryHigh throttle hangs the API (2026-11-04/05 incidents).
+            rows = conn.execute(
+                "SELECT observed_at,"
+                " json_extract(payload,'$.reported_total_usdt'),"
+                " json_extract(payload,'$.futures_equity_usdt'),"
+                " json_extract(payload,'$.futures_unrealized_pnl_usdt'),"
+                " json_type(payload,'$.status'), json_extract(payload,'$.status'),"
+                " json_type(payload,'$.wallets'), json_extract(payload,'$.wallets')"
+                " FROM asset_observations WHERE observed_at>=? ORDER BY observed_at", (cutoff,))
+            for observed, total, equity, pnl, status_kind, status, wallets_kind, wallets_raw in rows:
+                if status_kind is None:
+                    raise KeyError("status")  # same failure as row["status"] on a missing key
+                wallets = json_column_value(wallets_kind, wallets_raw)
+                points.append({"observed_at": observed, "reported_total_usdt": total,
+                               "futures_equity_usdt": equity, "futures_unrealized_pnl_usdt": pnl,
+                               "status": status,
+                               "wallet_scope": sorted(w["name"] for w in ([] if wallets is JSON_ABSENT else wallets))})
+        raw_count = len(points)
+        return empty | {"status": "AVAILABLE" if points else "EMPTY",
+                        "points": _downsample_history(points, resolution),
+                        "observation_count": raw_count}
     except (sqlite3.Error, ValueError, KeyError) as exc:
         return empty | {"status": "ERROR", "error": type(exc).__name__}
